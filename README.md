@@ -1,16 +1,9 @@
-# DataDiff Pro
+# Toolbox
 
-A Dockerized web tool for deep, smart comparison of JSON, XML, and CSV data.
-Paste two documents side by side, click **Compare**, and instantly see every
-match, mismatch, equivalent value, and extra field — including inside deeply
-nested objects and lists.
-
-Both sides can be **different formats** — compare a JSON API response against
-an XML export or a CSV file from the same dataset.
-
-This tool now ships as part of the **Toolbox** — one bundled website (see
-`main.py` and `CLAUDE.md`) that can host multiple internal tools behind one
-home page. DataDiff Pro is tool #1.
+A Dockerized, single-container website that bundles multiple internal tools
+behind one home page. Each tool is self-contained and mounted in-process
+(no reverse proxy, no per-tool container) — see `CLAUDE.md` for the
+architecture and how to add a new tool.
 
 ---
 
@@ -18,16 +11,16 @@ home page. DataDiff Pro is tool #1.
 
 ```bash
 # 1. Clone the repo, then enter the project directory
-cd datadiff-pro
+cd toolbox
 
-# 2. Build and start (this builds the whole Toolbox image, not just this tool)
+# 2. Build and start (builds the one image containing every tool)
 docker-compose up --build -d
 
-# 3. Open the Toolbox home page, then click the DataDiff Pro card
+# 3. Open the home page
 http://localhost:8000
 ```
 
-DataDiff Pro itself lives at `http://localhost:8000/tools/datadiff-pro/`.
+Each tool is also reachable directly at `http://localhost:8000/tools/<name>/`.
 
 To stop:
 ```bash
@@ -36,7 +29,71 @@ docker-compose down
 
 ---
 
-## How to Use
+## Tools
+
+| | Tool | What it does |
+|---|---|---|
+| 🔍 | **DataDiff Pro** (`datadiff-pro`) | Deep smart diff for JSON, XML & CSV — nested objects, list keys, equivalence rules |
+| 🔐 | **Encode/Decode** (`encode-decode`) | Base64, URL, Hex, HTML entities, Gzip, AES, RSA, JWT, hashing — all client-side |
+| 🧮 | **Subnet Calculator** (`subnet-calc`) | Interactive IPv4 subnetting with binary bit visualization and worked explanations |
+| 🌐 | **DNS Lookup** (`dns-lookup`) | Live DNS records for any domain — 14 record types, plain-language explanations |
+| 🧩 | **VLAN Designer** (`vlan-designer`) | Design VLANs, switch ports, and inter-VLAN routing |
+| 📦 | **Packet Journey** (`packet-journey`) | One real HTTP request, traced layer by layer |
+| ⌨️ | **cURL Builder** (`curl-builder`) | Build complex curl commands from a form — copy-pasteable for bash, cmd.exe, PowerShell |
+| 📖 | **HTTP Header Reference** (`header-reference`) | Browsable glossary of ~90 widely-used HTTP headers |
+| 🧭 | **HTTP Methods & Status Codes** (`http-methods-status`) | Every HTTP method and status code with real examples and an architect's decision guide |
+| 🍪 | **Cookie Lab** (`cookie-lab`) | Live `document.cookie` playground plus full theory |
+| 🐼 | **DataFrame Studio** (`df-studio`) | Click-driven pandas — load, transform, export, save reusable templates |
+| 🗄️ | **SQL Studio** (`sql-studio`) | Paste, edit, pretty-print Postgres SQL — 125+ templates, live run, `show`-style commands |
+| 🗺️ | **Schema Map** (`schema-map`) | Explore a Postgres database's tables and foreign-key structure as a graph |
+
+`category: tool` entries (practical, act on real data) show on the home page
+by default; `category: learn` entries (educational/reference) are shown via
+the "Show learning tools" toggle. See `registry.yaml`.
+
+---
+
+## Project Structure
+
+```
+toolbox/
+├── core/                  DataDiff Pro's diff engine (normalizer, equivalence, mapper, list_resolver, diff_engine)
+├── api/                   DataDiff Pro's FastAPI app
+├── ui/                    DataDiff Pro's frontend
+├── encode-decode/         each tool below follows the same shape:
+├── subnet-calc/           its own package (server.py / engine code + ui/),
+├── dns-lookup/            plus its own CLAUDE.md
+├── vlan-designer/
+├── packet-journey/
+├── curl-builder/
+├── header-reference/
+├── http-methods-status/
+├── cookie-lab/
+├── df-studio/
+├── sql-studio/
+├── schema-map/
+├── environments/          DataDiff Pro's example YAML config
+├── notebook/
+├── main.py                 THE entrypoint — home page + mounts every tool
+├── registry.yaml            home-page card metadata (display only)
+├── theme-tokens.css          canonical color palette — copy-source only
+├── KNOWLEDGE_MAP.md           symptom → file lookup table, per tool
+├── CLAUDE.md                  architecture, conventions, how to add a tool
+├── Dockerfile                builds the one image (copies every tool)
+├── docker-compose.yml        one service, host port 8000
+└── requirements.txt           shared dependency set for the whole image
+```
+
+---
+
+## DataDiff Pro — detailed usage
+
+DataDiff Pro (tool #1, and the one this repo started as) compares JSON, XML,
+and CSV side by side. Paste two documents, click **Compare**, and instantly
+see every match, mismatch, equivalent value, and extra field — including
+inside deeply nested objects and lists. Both sides can be **different
+formats** — compare a JSON API response against an XML export or a CSV file
+from the same dataset.
 
 ### Basic compare
 
@@ -69,9 +126,7 @@ The results appear below with:
 
 Click **Export JSON** to download the full diff result as a `.json` file.
 
----
-
-## Field Mapper (optional)
+### Field Mapper (optional)
 
 Use this when the same data has different field names on each side.
 Expand the **Field Mapper** panel and paste one mapping per line:
@@ -92,16 +147,12 @@ user.address.city,person.location.city
 - Lines starting with `#` are treated as comments and ignored
 - Leave blank if both sides already use the same field names — mapping is optional
 
----
-
-## Environment / Rules (optional)
+### Environment / Rules (optional)
 
 Expand the **Environment / Rules** panel and paste a YAML config.
 See `environments/example.yaml` for the full annotated reference.
 
-### Equivalence rules
-
-Group values that should count as equal:
+**Equivalence rules** — group values that should count as equal:
 
 ```yaml
 equivalence_rules:
@@ -116,9 +167,7 @@ Built-in rules (always active):
 - `false / 0 / no / n / off` are equivalent
 - Numbers represented as strings are equivalent to their numeric form (`"1.0"` = `1`)
 
-### List keys
-
-Tell the engine how to pair items in a list of objects:
+**List keys** — tell the engine how to pair items in a list of objects:
 
 ```yaml
 list_keys:
@@ -129,13 +178,11 @@ list_keys:
 
 If no key is specified, the engine auto-detects one by looking for fields
 whose values are unique across the list (tries `id`, `key`, `code`, `name`,
-suffix matches like `*_id`, then pairs of candidates).
-Falls back to index-based pairing if nothing unique is found.
-The strategy used is shown in the results panel.
+suffix matches like `*_id`, then pairs of candidates). Falls back to
+index-based pairing if nothing unique is found. The strategy used is shown
+in the results panel.
 
----
-
-## Supported Input Formats
+### Supported Input Formats
 
 | Format | Notes |
 |--------|-------|
@@ -143,12 +190,7 @@ The strategy used is shown in the results panel.
 | **XML** | Single root element; attributes are automatically normalized to plain fields; `xsi:nil="true"` becomes null; mixed-content elements (text + attributes) are correctly hoisted |
 | **CSV** | First row is the header; delimiter is auto-detected (comma, tab, semicolon, pipe); JSON-encoded columns (arrays/objects stored as strings) are automatically parsed back to their native types |
 
----
-
-## XML Attribute Handling
-
-XML attributes are automatically converted to plain fields so they match their
-JSON equivalents without any mapping:
+### XML Attribute Handling
 
 | XML | Parsed as |
 |-----|-----------|
@@ -160,12 +202,7 @@ Namespace declarations (`xmlns:*`) are silently ignored. Unknown namespace
 prefixes (e.g. `xsi:`) are auto-declared so the parser never fails on
 real-world XML.
 
----
-
-## CSV Complex Columns
-
-When a CSV file contains JSON-encoded values in a column (common when exporting
-from databases or APIs), they are parsed automatically:
+### CSV Complex Columns
 
 | CSV cell value | Parsed as |
 |----------------|-----------|
@@ -178,36 +215,9 @@ from databases or APIs), they are parsed automatically:
 This means a JSON array field and its CSV export will compare as **MATCH**
 rather than MISMATCH.
 
----
+### API Reference
 
-## Project Structure
-
-```
-datadiff-pro/
-├── core/
-│   ├── normalizer.py     # parses JSON / XML / CSV → Python dict/list
-│   ├── equivalence.py    # equivalence rule engine
-│   ├── mapper.py         # field renaming before diff
-│   ├── list_resolver.py  # smart list item pairing (key auto-detect)
-│   └── diff_engine.py    # recursive deep comparison logic
-├── api/
-│   └── app.py            # FastAPI app — /compare endpoint + static UI
-├── ui/
-│   └── index.html        # single-file frontend (no build step)
-├── environments/
-│   └── example.yaml      # annotated config template
-├── Dockerfile
-├── docker-compose.yml
-└── requirements.txt
-```
-
----
-
-## API Reference
-
-The UI talks to one endpoint. You can also call it directly from any HTTP client.
-
-### `POST /compare`
+### `POST /tools/datadiff-pro/compare`
 
 **Request body (JSON):**
 
@@ -263,6 +273,8 @@ The UI talks to one endpoint. You can also call it directly from any HTTP client
 }
 ```
 
+For the other tools' APIs (if any), see each tool's own `CLAUDE.md`.
+
 ---
 
 ## Development (without Docker)
@@ -271,12 +283,12 @@ The UI talks to one endpoint. You can also call it directly from any HTTP client
 # Install dependencies
 pip install -r requirements.txt
 
-# Run from the datadiff-pro/ directory
-PYTHONPATH=. uvicorn api.app:app --host 0.0.0.0 --port 8089 --reload
+# Run the whole Toolbox from the repo root
+PYTHONPATH=. uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 `--reload` watches for file changes and restarts automatically — useful when
-editing the backend. For frontend changes, just refresh the browser.
+editing any tool's backend. For frontend changes, just refresh the browser.
 
 ---
 
@@ -292,4 +304,4 @@ editing the backend. For frontend changes, just refresh the browser.
 This project was designed and built entirely with
 [Claude](https://claude.ai) (Anthropic's AI) using
 [Claude Code](https://claude.ai/claude-code) — including the architecture,
-all backend modules, the frontend, and the Docker setup.
+every tool's backend and frontend, and the Docker setup.
