@@ -29,12 +29,7 @@ from pydantic import BaseModel, Field
 
 # Core pipeline imports
 from core.normalizer import normalize
-from core.mapper import parse_mapping, apply_mapping, MapTrace
-from core.equivalence import EquivalenceEngine
-from core.list_resolver import ListResolver
-from core.diff_engine import DiffEngine, DiffRecord, DiffResult
-from core.deep_expander import deep_expand
-from core.validator import validate_transform, ValidationResult
+from core.pipeline import run_compare, PipelineError
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -151,10 +146,10 @@ async def compare(req: CompareRequest) -> JSONResponse:
     -----
     1. Validate inputs are not empty.
     2. Parse left + right using the normalizer.
-    3. Parse and apply field mapping (left side only, optional).
-    4. Build EquivalenceEngine + ListResolver from the optional environment YAML.
-    5. Run DiffEngine.compare().
-    6. Return structured JSON.
+    3. Delegate everything else (mapping, deep-expand, equivalence/list-
+       resolver construction, the actual diff) to core.pipeline.run_compare
+       — the same function the headless orchestrator calls directly with
+       already-structured data (DB rows, parsed files), skipping steps 1-2.
     """
 
     # ------------------------------------------------------------------
@@ -189,120 +184,26 @@ async def compare(req: CompareRequest) -> JSONResponse:
         return _error(f"Right side — {right_err}")
 
     # ------------------------------------------------------------------
-    # Step 3 — Apply field mapping (optional)
-    # Direction: left_to_right → rename LEFT fields to match RIGHT (default)
-    #            right_to_left → rename RIGHT fields to match LEFT
+    # Step 3 — Mapping + diff, via the shared pipeline
     # ------------------------------------------------------------------
-    direction = (req.mapper_direction or "left_to_right").strip().lower()
-    if direction not in ("left_to_right", "right_to_left"):
-        return _error(
-            f"Invalid mapper_direction '{req.mapper_direction}'. "
-            f"Use 'left_to_right' or 'right_to_left'."
-        )
-
-    # ------------------------------------------------------------------
-    # Step 3a — Deep Mode: expand string-encoded JSON/XML values BEFORE
-    # mapping so the mapper can navigate into expanded fields.
-    # ------------------------------------------------------------------
-    if req.deep_mode:
-        left_data  = deep_expand(left_data)
-        right_data = deep_expand(right_data)
-
-    map_traces: list[MapTrace] = []
-    validation: ValidationResult | None = None
-    mapping_pairs: list = []
-
-    if req.mapper_csv and req.mapper_csv.strip():
-        mapping_pairs, map_err = parse_mapping(req.mapper_csv)
-        if map_err:
-            return _error(f"Field mapper — {map_err}")
-        if mapping_pairs:
-            try:
-                if direction == "left_to_right":
-                    original_snapshot = left_data
-                    left_data, map_traces = apply_mapping(
-                        left_data, mapping_pairs,
-                        strict_mode=req.strict_mode,
-                        multi_match_rule=req.multi_match_rule,
-                    )
-                    validation = validate_transform(
-                        original_snapshot, left_data,
-                        mapping_pairs, map_traces,
-                        strict_mode=req.strict_mode,
-                    )
-                else:  # right_to_left
-                    original_snapshot = right_data
-                    right_data, map_traces = apply_mapping(
-                        right_data, mapping_pairs,
-                        strict_mode=req.strict_mode,
-                        multi_match_rule=req.multi_match_rule,
-                    )
-                    validation = validate_transform(
-                        original_snapshot, right_data,
-                        mapping_pairs, map_traces,
-                        strict_mode=req.strict_mode,
-                    )
-            except ValueError as exc:
-                # Raised by apply_mapping when strict_mode=True and path missing
-                return _error(f"Field mapper (strict mode) — {exc}")
-
-            if validation and not validation.passed:
-                return _error(
-                    "Mapping validation failed:\n"
-                    + "\n".join(f"  • {e}" for e in validation.errors)
-                )
-
-    # ------------------------------------------------------------------
-    # Step 4 — Build engines from environment YAML
-    # ------------------------------------------------------------------
-    yaml_text = req.environment_yaml or ""
-
-    # Validate YAML syntax early so we give a clear error if it's broken
-    if yaml_text.strip():
-        yaml_err = _validate_yaml(yaml_text)
-        if yaml_err:
-            return _error(f"Environment YAML — {yaml_err}")
-
-    eq_engine   = EquivalenceEngine(yaml_text)
-    list_resolver = ListResolver(yaml_text)
-
-    # ------------------------------------------------------------------
-    # Step 5 — Run the diff
-    # ------------------------------------------------------------------
-    engine = DiffEngine(eq_engine, list_resolver, deep_mode=req.deep_mode,
-                        null_missing_equivalent=req.null_missing_equivalent)
     try:
-        diff_result: DiffResult = engine.compare(left_data, right_data)
-    except Exception as exc:
-        return _error(
-            f"Diff engine encountered an unexpected error: {exc}. "
-            f"Please check your input data and try again."
+        result = run_compare(
+            left_data, right_data,
+            mapper_csv=req.mapper_csv,
+            mapper_direction=req.mapper_direction,
+            strict_mode=req.strict_mode,
+            multi_match_rule=req.multi_match_rule,
+            deep_mode=req.deep_mode,
+            environment_yaml=req.environment_yaml,
+            null_missing_equivalent=req.null_missing_equivalent,
         )
+    except PipelineError as exc:
+        return _error(str(exc))
 
-    # ------------------------------------------------------------------
-    # Step 6 — Build and return the response
-    # ------------------------------------------------------------------
-    warnings = validation.warnings if validation else []
-
-    return JSONResponse(content={
-        "ok": True,
-        "summary": diff_result.summary,
-        "records": [_record_to_dict(r) for r in diff_result.records],
-        "list_strategies": diff_result.list_strategies,
-        "map_traces": [_trace_to_dict(t) for t in map_traces],
-        "validation": _validation_to_dict(validation) if validation else None,
-        "warnings": warnings,
-        "meta": {
-            "left_format":  req.left_format,
-            "right_format": req.right_format,
-            "mapping_applied":   bool(req.mapper_csv and req.mapper_csv.strip()),
-            "mapper_direction":  direction,
-            "strict_mode":       req.strict_mode,
-            "multi_match_rule":  req.multi_match_rule,
-            "deep_mode":         req.deep_mode,
-            "environment_applied": bool(yaml_text.strip()),
-        },
-    })
+    result["ok"] = True
+    result["meta"]["left_format"] = req.left_format
+    result["meta"]["right_format"] = req.right_format
+    return JSONResponse(content=result)
 
 
 # ---------------------------------------------------------------------------
@@ -315,59 +216,6 @@ def _error(message: str, status_code: int = 422) -> JSONResponse:
         status_code=status_code,
         content={"ok": False, "error": message},
     )
-
-
-def _record_to_dict(record: DiffRecord) -> dict:
-    """Convert a DiffRecord dataclass to a plain dict for JSON serialisation."""
-    d: dict = {
-        "path":        record.path,
-        "left_value":  record.left_value,
-        "right_value": record.right_value,
-        "status":      record.status,
-    }
-    if record.trace:
-        d["trace"] = record.trace
-    return d
-
-
-def _trace_to_dict(trace: MapTrace) -> dict:
-    """Convert a MapTrace dataclass to a plain dict for JSON serialisation."""
-    return {
-        "rule_index":          trace.rule_index,
-        "src_path":            trace.src_path,
-        "tgt_path":            trace.tgt_path,
-        "resolved_src_paths":  trace.resolved_src_paths,
-        "action":              trace.action,
-        "detail":              trace.detail,
-    }
-
-
-def _validation_to_dict(v: ValidationResult) -> dict:
-    """Convert a ValidationResult dataclass to a plain dict."""
-    return {
-        "passed":        v.passed,
-        "warnings":      v.warnings,
-        "errors":        v.errors,
-        "dropped_paths": v.dropped_paths,
-    }
-
-
-def _validate_yaml(yaml_text: str) -> str | None:
-    """
-    Try to parse *yaml_text* and return a human-readable error string if it
-    fails, or None if it is valid.
-    """
-    try:
-        import yaml
-        yaml.safe_load(yaml_text)
-        return None
-    except ImportError:
-        return None  # yaml not installed — skip validation, engines will handle it
-    except Exception as exc:
-        return (
-            f"Invalid YAML: {exc}. "
-            f"Check indentation and ensure keys are followed by a colon and space."
-        )
 
 
 # ---------------------------------------------------------------------------

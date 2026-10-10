@@ -32,3 +32,9 @@ Thumbs.db
 
 # DataFrame Studio runtime state (saved templates) — not source
 df-studio/data/
+
+# Duck Lab runtime state (uploaded files, DuckDB spill files) — not source
+duck-lab/data/
+
+# Pre-downloaded wheels for offline/slow-network Docker builds — not source
+wheelhouse/

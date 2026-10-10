@@ -556,8 +556,54 @@
             <label>Password</label>
             <input type="password" id="connPassword" />
           </div>
+          <div class="conn-field">
+            <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-weight:600;color:var(--text);">
+              <input type="checkbox" id="connUseSsh" style="width:auto;" /> Use SSH tunnel
+            </label>
+          </div>
+          <div id="sshFields" style="display:none;">
+            <div class="conn-row">
+              <div class="conn-field" style="flex: 2;">
+                <label>SSH Host</label>
+                <input type="text" id="sshHost" />
+              </div>
+              <div class="conn-field" style="flex: 1;">
+                <label>SSH Port</label>
+                <input type="number" id="sshPort" value="22" />
+              </div>
+            </div>
+            <div class="conn-field">
+              <label>SSH Username</label>
+              <input type="text" id="sshUsername" />
+            </div>
+            <div class="conn-field">
+              <label>SSH Auth</label>
+              <select id="sshAuthMethod">
+                <option value="password">Password</option>
+                <option value="key">Private key</option>
+              </select>
+            </div>
+            <div class="conn-field" id="sshPasswordField">
+              <label>SSH Password</label>
+              <input type="password" id="sshPassword" />
+            </div>
+            <div class="conn-field" id="sshKeyField" style="display:none;">
+              <label>SSH Private Key (PEM)</label>
+              <textarea id="sshPrivateKey" rows="4" class="mono-textarea"></textarea>
+            </div>
+          </div>
+          <div class="conn-field">
+            <label>Saved connections (Vault)</label>
+            <div class="btn-row" style="margin-top: 0;">
+              <select id="vaultSelect" style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:0.85rem;">
+                <option value="">— load saved —</option>
+              </select>
+              <button class="action secondary small" id="btnVaultLoad">Load</button>
+            </div>
+          </div>
           <div class="btn-row" style="margin-top: 0;">
             <button class="action" id="btnConnect">Connect</button>
+            <button class="action secondary small" id="btnVaultSave">💾 Save connection</button>
           </div>
           <div class="err-box" id="connectErr"></div>
         </div>
@@ -962,6 +1008,115 @@ function showConnectError(msg) {
   box.classList.add("show");
 }
 
+// ---- SSH tunnel fields + Vault save/load — identical to sql-studio's
+// own Connection panel (same element ids), see sql-studio/CLAUDE.md and
+// vault/CLAUDE.md for the full design. ----
+$("connUseSsh").addEventListener("change", () => {
+  $("sshFields").style.display = $("connUseSsh").checked ? "block" : "none";
+});
+$("sshAuthMethod").addEventListener("change", () => {
+  const useKey = $("sshAuthMethod").value === "key";
+  $("sshPasswordField").style.display = useKey ? "none" : "block";
+  $("sshKeyField").style.display = useKey ? "block" : "none";
+});
+
+function currentSshTunnelOrNull() {
+  if (!$("connUseSsh").checked) return null;
+  const usingKey = $("sshAuthMethod").value === "key";
+  return {
+    ssh_host: $("sshHost").value.trim(),
+    ssh_port: parseInt($("sshPort").value, 10) || 22,
+    ssh_username: $("sshUsername").value.trim(),
+    ssh_password: usingKey ? null : $("sshPassword").value,
+    ssh_private_key: usingKey ? $("sshPrivateKey").value : null,
+  };
+}
+
+function applySshTunnelToForm(tunnel) {
+  if (!tunnel) {
+    $("connUseSsh").checked = false;
+    $("sshFields").style.display = "none";
+    return;
+  }
+  $("connUseSsh").checked = true;
+  $("sshFields").style.display = "block";
+  $("sshHost").value = tunnel.ssh_host || "";
+  $("sshPort").value = tunnel.ssh_port || 22;
+  $("sshUsername").value = tunnel.ssh_username || "";
+  const usingKey = !!tunnel.ssh_private_key;
+  $("sshAuthMethod").value = usingKey ? "key" : "password";
+  $("sshPasswordField").style.display = usingKey ? "none" : "block";
+  $("sshKeyField").style.display = usingKey ? "block" : "none";
+  $("sshPassword").value = tunnel.ssh_password || "";
+  $("sshPrivateKey").value = tunnel.ssh_private_key || "";
+}
+
+const VAULT_KIND = "postgres_connection";
+
+async function refreshVaultList() {
+  const select = $("vaultSelect");
+  const previousValue = select.value;
+  try {
+    const res = await fetch(`/tools/vault/secrets?kind=${VAULT_KIND}`);
+    const data = await res.json();
+    const secrets = data.secrets || [];
+    select.innerHTML = '<option value="">— load saved —</option>' +
+      secrets.map((s) => `<option value="${s.id}">${s.name}</option>`).join("");
+    select.value = previousValue;
+  } catch (e) { /* Vault unreachable — the dropdown just stays empty, not fatal */ }
+}
+refreshVaultList();
+
+$("btnVaultLoad").addEventListener("click", async () => {
+  const id = $("vaultSelect").value;
+  if (!id) return;
+  showConnectError(null);
+  try {
+    const res = await fetch(`/tools/vault/secrets/${encodeURIComponent(id)}/reveal`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Couldn't load saved connection.");
+    const c = data.data;
+    $("connHost").value = c.host || "";
+    $("connPort").value = c.port || 5432;
+    $("connDatabase").value = c.database || "";
+    $("connUsername").value = c.username || "";
+    $("connPassword").value = c.password || "";
+    applySshTunnelToForm(c.ssh_tunnel || null);
+  } catch (e) {
+    showConnectError(e.message);
+  }
+});
+
+$("btnVaultSave").addEventListener("click", async () => {
+  const host = $("connHost").value.trim();
+  const database = $("connDatabase").value.trim();
+  const username = $("connUsername").value.trim();
+  if (!host || !database || !username) {
+    showConnectError("Fill in host, database, and username before saving.");
+    return;
+  }
+  const name = prompt("Save this connection as:", `${username}@${host}/${database}`);
+  if (!name) return;
+  const payload = {
+    name, kind: VAULT_KIND,
+    data: {
+      host, port: parseInt($("connPort").value, 10) || 5432, database, username,
+      password: $("connPassword").value,
+      ssh_tunnel: currentSshTunnelOrNull(),
+    },
+  };
+  try {
+    const res = await fetch("/tools/vault/secrets", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("Save failed.");
+    await refreshVaultList();
+  } catch (e) {
+    showConnectError(e.message);
+  }
+});
+
 // Collapsed by default (no `open` attribute in the HTML), not shown
 // expanded on page load — same deliberate pattern as SQL Studio's
 // Connection panel (see sql-studio/CLAUDE.md for why a silent status
@@ -976,7 +1131,8 @@ function applyConnectionStatus(status, forceOpen) {
     badge.textContent = "● Connected";
     badge.className = "status-badge connected";
     $("connectionStatusText").textContent =
-      `Connected — ${status.username}@${status.host}:${status.port}/${status.database}`;
+      `Connected — ${status.username}@${status.host}:${status.port}/${status.database}` +
+      (status.via_ssh_tunnel ? " (via SSH tunnel)" : "");
     $("connectionForm").style.display = "none";
     $("connectionStatusView").style.display = "block";
     details.open = false;
@@ -3244,9 +3400,14 @@ $("btnConnect").addEventListener("click", async () => {
     database: $("connDatabase").value.trim(),
     username: $("connUsername").value.trim(),
     password: $("connPassword").value,
+    ssh_tunnel: currentSshTunnelOrNull(),
   };
   if (!body.host || !body.database || !body.username) {
     showConnectError("Host, database, and username are required.");
+    return;
+  }
+  if (body.ssh_tunnel && (!body.ssh_tunnel.ssh_host || !body.ssh_tunnel.ssh_username)) {
+    showConnectError("SSH host and SSH username are required when using a tunnel.");
     return;
   }
   const btn = $("btnConnect");
@@ -3265,6 +3426,8 @@ $("btnConnect").addEventListener("click", async () => {
     }
     showConnectError(null);
     $("connPassword").value = "";
+    $("sshPassword").value = "";
+    $("sshPrivateKey").value = "";
     saveConnectionFields();
     applyConnectionStatus(data);
   } catch (e) {

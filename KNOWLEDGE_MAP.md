@@ -26,6 +26,12 @@ misleads. If a file's job changes, update its row here in the same commit.
 | The canonical color palette every new tool's `:root` should start from | `theme-tokens.css` — copy-source only, never served; see its own header for why |
 | Architecture decisions, conventions, "why is it built this way" | `CLAUDE.md` |
 | GitHub auth setup for this device                               | `GITHUB_AUTH.md` |
+| Calling a tool's engine directly without a browser (headless), chaining two tools together | `orchestrator/` — see its own `CLAUDE.md`; not a mounted tool, no entry here or in `registry.yaml` |
+| DataDiff Pro's mapping/equivalence/diff logic shared between the web UI and the orchestrator | `core/pipeline.py` (`run_compare`) |
+| Connecting to Postgres safely (conninfo, credential pre-validation, SSH tunneling, password scrubbing) — shared by sql-studio, schema-map, and the orchestrator's Postgres connector | `core/postgres_conn.py` (`build_conninfo`, `verify_connection`, `open_ssh_tunnel`, `scrub_password`) |
+| The pool+reaper lifecycle built on top of that — shared by sql-studio's and schema-map's own separate `_POOL` instances (NOT a shared connection, just shared mechanics) | `core/pooled_postgres.py` (`PooledPostgresConnection`) |
+| Mapping a file extension to a DuckDB read function (csv/json/parquet) — shared by duck-lab and the orchestrator's file connector | `core/file_source.py` (`build_read_expr`, `detect_format`) |
+| The shared encrypted secret store (saved DB connections, SSH credentials, anything else) — behind the Vault tool and sql-studio/schema-map's "Save/Load connection" controls | `core/vault.py` — see its own module docstring and `vault/CLAUDE.md` for the trust model |
 
 ---
 
@@ -489,9 +495,11 @@ rationale; don't mistake this for a "no backend processing" violation).
 | What counts as "equivalent but not equal" (null-likes, bool-likes, numeric tolerance, custom YAML groups) | `core/equivalence.py` |
 | "Deep Mode" — parsing string-encoded JSON/XML found inside fields      | `core/deep_expander.py` |
 | Post-mapping check for silently dropped fields                         | `core/validator.py` |
-| The `/compare` API contract (request/response shape, error format)     | `api/app.py` |
+| The mapping → deep-expand → equivalence/list-resolver → diff sequence itself (shared with the headless orchestrator, see `orchestrator/CLAUDE.md`) | `core/pipeline.py` (`run_compare`) |
+| The `/compare` API contract (request/response shape, error format) — now just validates raw text, calls `normalize()`, then `core.pipeline.run_compare()` | `api/app.py` |
 | The FastAPI app object that `main.py` mounts                           | `api/app.py` (`app = FastAPI(...)`) |
 | The frontend: layout, results table, filters, export (JSON/CSV/Excel)  | `ui/index.html` (single file, no build step) |
+| "Load from Vault" (per side, size-capped at 2000 rows by default)     | `ui/index.html`'s `refreshVaultDatasetSelects()`/`loadVaultDataset()` — calls `vault/server.py`'s `GET /datasets/{id}/preview`, same-origin, no proxy |
 | Example equivalence-rule / list-key YAML config                        | `environments/example.yaml` |
 | Batch/large-file comparison outside the browser                        | `notebook/compare_automation.ipynb` |
 
@@ -550,9 +558,10 @@ full picture.
 |-----------------------------------------------------------------------|-------|
 | Session state, the replay model, file loading, insights, script export, template replay, the Check/Add split (`preview_step`/`apply_step`) | `df-studio/engine.py` |
 | A transformation step's behavior or its generated pandas code line     | `df-studio/steps.py` (`STEP_HANDLERS`) |
-| API endpoints (`/load`, `/step`, `/step/check`, `/insight`, `/export`, `/script`, `/template/*`) | `df-studio/server.py` |
+| API endpoints (`/load`, `/load/vault`, `/step`, `/step/check`, `/insight`, `/export`, `/script`, `/template/*`) | `df-studio/server.py` |
 | Saved-template storage (JSON on disk)                                  | `df-studio/templates_store.py` |
-| The frontend: grid (Tabulator.js), form-based step fields, Query box (Check/Add + snippets), pipeline panel, script/template panels | `df-studio/ui/index.html` |
+| The frontend: grid (Tabulator.js), "load from Vault" picker, form-based step fields, Query box (Check/Add + snippets), pipeline panel, script/template panels | `df-studio/ui/index.html` |
+| Loading a saved Vault dataset in as a new session (the consumer side of duck-lab's/sql-studio's `/export/vault`) | `df-studio/server.py`'s `/load/vault` — decrypts via `core.vault.load_dataset_file()`, reads the bytes, then reuses the exact same `engine.load_dataframe()`/`create_session()` path `/load` uses for an upload |
 | Adding a brand-new form-based step type                                | `steps.py` (handler) **and** `ui/index.html` (`#f-<type>` fieldset + `<option>`) |
 | Adding a new Query-box quick-insert snippet                            | `ui/index.html` — `SNIPPETS` object only, no backend change |
 
@@ -587,6 +596,16 @@ full picture.
   `server.py` + `ui/` copy, because it has extra backend modules. Its
   `server.py`/`engine.py` use a try/except dual import so the tool still
   runs standalone from inside `df-studio/` for dev, not just mounted.
+- **`/load/vault` reads the whole decrypted dataset into memory**
+  (`content = await asyncio.to_thread(tmp_path.read_bytes)`) before
+  calling `engine.load_dataframe()` — consistent with this tool's own
+  accepted design (every upload is already fully materialized into
+  pandas, unlike duck-lab), not a new ceiling introduced by this
+  endpoint. Unlike duck-lab's equivalent endpoint, this one DOES wrap
+  its vault/file calls in `asyncio.to_thread`, matching every other
+  pandas-touching endpoint in this file (duck-lab's own convention is the
+  opposite — direct synchronous calls — because duck-lab never runs
+  pandas on the request path).
 
 ## Tool: SQL Studio — mounted at `/tools/sql-studio/`
 
@@ -652,9 +671,9 @@ two-copies-kept-in-sync tokenizer).
 | Templates panel rendering / search / insertion                          | `index.html` — `renderTemplateList()`, `insertTemplate()` (live mode replaces the trigger word via `currentLineLastWordSpan()`; blank-line padding uses `isAtLineStart()`/`isAtLineEnd()`, whitespace-aware not just single-character — see `sql-studio/CLAUDE.md` for two real bugs found here) |
 | Which words in a template become Tab-stop fields, adding a new one     | `index.html` — `PLACEHOLDER_TOKENS` Set (whitelist, not auto-detected) + `toSnippetTemplate()` — see `sql-studio/CLAUDE.md` for how the whitelist was built and verified against all 125 templates |
 | localStorage keys for restoring buffers/schema on reload                | `index.html` — `BUFFERS_KEY` (`sql_studio_buffers`), `ACTIVE_BUFFER_KEY` (`sql_studio_active_buffer`), `SCHEMA_KEY` (`sql_studio_schema`), `AUTOFORMAT_KEY` (`sql_studio_autoformat_on_paste`), `CONNECTION_KEY` (`sql_studio_connection` — host/port/database/username only, password never persisted); `QUERY_KEY` (`sql_studio_query`) is legacy, read-only, for one-time migration into buffer #1 |
-| The live Postgres connection pool (connect/disconnect/status, idle reaper) | `sql-studio/db_engine.py` — `STATE` (module-level, singular — see `sql-studio/CLAUDE.md` for why NOT a per-cookie dict), `connect()`/`disconnect()`/`status()`, `_reaper_loop()`/`_ensure_reaper_started()` |
+| The live Postgres connection pool (connect/disconnect/status, idle reaper) | `sql-studio/db_engine.py`'s `_POOL` — a `core.pooled_postgres.PooledPostgresConnection` (module-level, singular — see `sql-studio/CLAUDE.md` for why NOT a per-cookie dict). The pool+reaper mechanics (`connect()`/`disconnect()`/`status()`/`_reaper_loop()`) live in `core/pooled_postgres.py`, shared with `schema-map/db_engine.py`'s own separate instance — see `../CLAUDE.md`'s connector-consolidation note |
 | Whether a query is allowed to run, the destructive-statement check, the `LIMIT 500` wrap | `sql-studio/query_guard.py` — `prepare()` (entry point), `classify()`, `split_statements()` — the server-side, authoritative copy; `index.html`'s `splitTopLevelStatements()`/`firstStatementKeyword()` is the client-side UX-only twin, kept in sync by hand |
-| Connect/Disconnect/Run/Export backend routes                            | `sql-studio/server.py` — `/connect`, `/disconnect`, `/status`, `/query`, `/export/csv`, `/export/json` |
+| Connect/Disconnect/Run/Export backend routes                            | `sql-studio/server.py` — `/connect`, `/disconnect`, `/status`, `/query`, `/export/csv`, `/export/json`, `/export/vault` (the uncapped, streamed-to-Vault export — see `db_engine.export_to_file`) |
 | Connection panel UI (collapsed-by-default ↔ full-form ↔ collapsed-status-line, localStorage persistence) | `index.html` — `applyConnectionStatus(status, forceOpen)`, `loadConnectionFields()`/`saveConnectionFields()`, `#detConnection` (see `sql-studio/CLAUDE.md` for the `forceOpen` rule — only Disconnect's click handler passes `true`) |
 | Run button, the results overlay, the destructive-confirm dialog          | `index.html` — `runQuery()`/`sendQuery()`, `renderResults()` (`#resultsDialog`), `openConfirmDialog()` (`#confirmDialog`) |
 | The "show tables"/"show table X definition"/etc. commands — adding one, changing the mapped SQL, the "?" cheatsheet | `index.html` — `SHOW_COMMANDS` array (single source of truth for matching AND the cheatsheet AND the Templates entries), `matchShowCommand()`, `buildHelpDialog()` (`#helpDialog`) — see `sql-studio/CLAUDE.md`'s "Show commands" section before touching array order |
@@ -740,9 +759,12 @@ two-copies-kept-in-sync tokenizer).
   string/comment/dollar-quote-aware tokenizing rules as the PL/pgSQL
   formatter's own `tokenizePlpgsqlBody()`.
 - **Export never re-runs the query — it serializes the last cached
-  result** (`db_engine.STATE.last_result`, set on every successful
-  rows-shaped `/query`, cleared on every non-rows one). Re-querying on
-  export would double-execute a `DELETE`/`UPDATE`; this is why it doesn't.
+  result** (`db_engine._last_result`, a module-level variable local to
+  sql-studio — deliberately not part of the shared pool class, since
+  it's this tool's own concern — set on every successful rows-shaped
+  `/query`, cleared on every non-rows one and explicitly on disconnect).
+  Re-querying on export would double-execute a `DELETE`/`UPDATE`; this is
+  why it doesn't.
 - **The 500-row cap is enforced by an outer `LIMIT` at Postgres itself**
   (`SELECT * FROM (<query>) AS _sq LIMIT 500`), not fetched-then-truncated
   in Python — guarantees the row count returned, but does **not** by
@@ -751,17 +773,19 @@ two-copies-kept-in-sync tokenizer).
   before the outer `LIMIT` trims output). Runtime is bounded separately —
   see the next bullet.
 - **A 15-second `statement_timeout` applies to every query, set on the
-  connection pool's conninfo** (`db_engine.STATEMENT_TIMEOUT_MS`) — this
+  connection pool's conninfo** (`db_engine.STATEMENT_TIMEOUT_MS`, passed
+  as `statement_timeout_ms` to `PooledPostgresConnection`) — this
   is what actually bounds a slow query, since the row cap above doesn't. A
   query that runs long gets cancelled by Postgres (`QueryCanceled`) and
   surfaced as a clean error instead of hanging one of the pool's 3
   connections indefinitely.
 - **The live connection already survives an ordinary browser refresh —
-  no session/cookie/client-side storage involved.** `STATE` lives in
-  server-process memory; `GET /status` (polled on every page load)
+  no session/cookie/client-side storage involved.** `_POOL.state` lives
+  in server-process memory; `GET /status` (polled on every page load)
   reports it regardless of how many times the page reloads. Only three
-  things actually drop it: the 20-minute idle reaper
-  (`db_engine.IDLE_TIMEOUT_SECONDS`), an explicit Disconnect click, or the
+  things actually drop it: the 20-minute idle reaper (passed as
+  `idle_timeout_seconds` to `PooledPostgresConnection`), an explicit
+  Disconnect click, or the
   server process itself restarting (e.g. `docker-compose up --build` to
   ship a code change) — the last one is easy to mistake for "refresh
   drops it" if a rebuild and a refresh happen close together during
@@ -871,7 +895,7 @@ section before assuming any of those exist.
 
 | If you need to change...                                              | Go to |
 |-------------------------------------------------------------------------|-------|
-| The connection pool (connect/disconnect/status, idle reaper)            | `schema-map/db_engine.py` — same idiom as `sql-studio/db_engine.py` but a genuinely separate `STATE`, smaller pool (`max_size=2`) |
+| The connection pool (connect/disconnect/status, idle reaper)            | `schema-map/db_engine.py`'s own `_POOL` — a `core.pooled_postgres.PooledPostgresConnection`, genuinely separate instance from `sql-studio/db_engine.py`'s, smaller pool (`pool_max_size=2`) |
 | Which catalog queries run, adding a new introspection query             | `schema-map/introspection_postgres.py` — `get_schemas()`, `get_tables()`, `get_foreign_keys()`, `get_graph()`, `get_table_columns()`; every query is a direct port of an already-verified `sql-studio/ui/index.html` `SHOW_COMMANDS` query, extended to also select each FK's real target schema (`to_schema`) — see "Known non-obvious behavior" below |
 | The `/schemas`, `/graph`, `/table/{schema}/{table}` backend routes      | `schema-map/server.py` |
 | The schema picker, Connection panel UI                                  | `schema-map/ui/index.html` — `loadSchemaList()`, `applyConnectionStatus()` (Connection panel markup/behavior deliberately mirrors SQL Studio's) |
@@ -899,7 +923,7 @@ section before assuming any of those exist.
 | Auto-created "v0" initial version | `schema-map/ui/index.html` — `saveVersion()` (extracted, reusable), `autoSaveInitialVersionIfNeeded()`, called from scratch/paste project creation and the first successful `loadGraph()` |
 | Comparing the current (unsaved) state against any saved version | `schema-map/ui/index.html` — `CURRENT_STATE_SENTINEL`, `resolveCompareSide()`, `populateCompareSelects()`'s "Current (unsaved)" option |
 | Graph node positions staying stable across re-renders, "Reset Layout" | `schema-map/ui/index.html` — `nodePositions` (ONE shared map for both Explore and Editor — see next bullet for why), `capturePositions()`/`applyStoredPositions()`/`layoutPreservingPositions()`, `btnResetLayout`/`btnEditorResetLayout` |
-| Detecting a server-side DB connection timeout (the idle reaper) | `schema-map/ui/index.html` — the `setInterval` polling `GET /status`, `handleServerSideDisconnect()`; root cause in `schema-map/db_engine.py`'s `IDLE_TIMEOUT_SECONDS` |
+| Detecting a server-side DB connection timeout (the idle reaper) | `schema-map/ui/index.html` — the `setInterval` polling `GET /status`, `handleServerSideDisconnect()`; root cause is the `idle_timeout_seconds` passed to `schema-map/db_engine.py`'s `PooledPostgresConnection` (shared mechanics in `core/pooled_postgres.py`) |
 | Static HTML export (single self-contained file, view-only, no backend needed) | `schema-map/ui/index.html` — `buildStaticExportHtml()`, `jsonForInlineScript()`, wired to `#btnExportStaticHtml` — see `schema-map/CLAUDE.md`'s "Static HTML export" section |
 | Editor's 🔗 (FK) / 🔑 (UNIQUE) column badges | `schema-map/ui/index.html` — `renderEditorColumnsList()`'s `fkOutCols`/`fkInCols`; re-rendered by `btnConfirmAddFk` and the FK-row delete handler too, not just table selection |
 | The cross-schema-FK Cytoscape crash fix (Explore + Editor) | `schema-map/ui/index.html` — `edgeSafeForeignKeys()`, called from `renderGraph()` and `renderEditorCanvas()` — see `schema-map/CLAUDE.md`'s "v2 design, Phase F" |
@@ -1256,3 +1280,136 @@ section before assuming any of those exist.
   see `jsonForInlineScript()`, which escapes `<` in JSON before
   embedding it, for exactly that case. Check both any time a template
   embeds another HTML document's markup, not just embedded data.
+
+## Tool: Duck Lab — mounted at `/tools/duck-lab/`
+
+Load several CSV/JSON/Parquet/XML files, join/analyze them with SQL via
+embedded DuckDB. The gap this fills: DataFrame Studio loads one file fully
+into pandas memory; SQL Studio queries a live *Postgres* database, not
+local files. CSV/JSON/Parquet are scanned straight off disk by DuckDB
+(never read into Python); a query's result is materialized once inside
+DuckDB and the UI pages through it with `LIMIT`/`OFFSET` — only one page
+of rows is ever sent to the browser. Schema-aware SQL autocomplete (built
+from the loaded tables) and a per-table row preview round out the editing
+experience. See `duck-lab/CLAUDE.md` for the full picture.
+
+### Symptom → file
+
+| If you need to change...                                          | Go to |
+|-----------------------------------------------------------------------|-------|
+| Session state, DuckDB connection setup (memory/spill config), CSV/JSON/Parquet/XML loading, query materialization, pagination, export, table preview | `duck-lab/engine.py` |
+| API endpoints (`/upload`, `/load/vault`, `/tables`, `/table/remove`, `/preview/{name}`, `/query`, `/page`, `/export`, `/export/vault`, `/session/reset`) | `duck-lab/server.py` |
+| The frontend: upload/table list, "load from Vault" picker, preview panel, CodeMirror SQL editor + schema autocomplete, results table + pagination, query time | `duck-lab/ui/index.html` |
+| Loading a saved Vault dataset in as a new table (the consumer side of `/export/vault`) | `duck-lab/server.py`'s `/load/vault` — decrypts via `core.vault.load_dataset_file()`, moves the result into the session's own `data_dir` (not a tempfile) since `engine.load_file()` builds a LAZY view backed by that path, then loads it exactly like an upload |
+
+### Known non-obvious behavior (read before touching these areas)
+
+- **Sessions are in-memory only** (`engine.SESSIONS`), same accepted
+  tradeoff as df-studio — a restart drops every open session and its
+  uploaded files/DuckDB connection.
+- **CSV/JSON/Parquet never touch Python memory** — `read_csv_auto()`/
+  `read_json_auto()`/`read_parquet()` point DuckDB directly at the saved
+  file path. **XML is the one exception**: parsed once via
+  `core.normalizer.normalize()` (same code DataDiff Pro uses) into a
+  `pandas.DataFrame`, then `con.register()`ed into DuckDB — fully in
+  Python memory, same ceiling DataDiff Pro's XML handling already has.
+- **Schema autocomplete is reconfigured, not rebuilt, on every table
+  change** — `ui/index.html`'s `sqlCompartment` (a CodeMirror
+  `Compartment`, same technique as sql-studio's pasted-schema box) gets a
+  fresh `sql({schema: ...})` via `refreshSchemaAutocomplete()` inside
+  `refreshTables()`. A code path that mutates `STATE.tables` without going
+  through `refreshTables()` will leave autocomplete stale.
+- **`/preview/<name>` is unrelated to `/query`'s `_result`** — it reads
+  the named source directly, independent of whatever query was last run.
+- **`/load/vault` reuses `engine.load_file()` as-is** — the decrypted
+  file gets a fresh UUID-prefixed name under the session's `data_dir`
+  (same naming scheme `/upload` already uses), so the resulting table
+  name is sanitized/de-duplicated the same way an upload's would be; it
+  doesn't come back out named exactly what you typed in the "load from
+  Vault" picker. Check `/tables`'s `name` field (not `source_file`) for
+  what to actually type in SQL, same caveat as any upload.
+- **A query result is a session-scoped DuckDB TEMP TABLE
+  (`_result`), not a Python value.** `/query` materializes it once;
+  `/page` just re-slices it with `LIMIT`/`OFFSET` — no recomputation of
+  the join per page. `CREATE OR REPLACE` means only one `_result` exists
+  per session at a time.
+- **`PRAGMA memory_limit='512MB'` + a session-scoped `temp_directory`**
+  are set on every connection at creation (`engine._new_connection()`) —
+  this is what lets DuckDB spill a big materialized result to disk
+  instead of the container OOMing, not just the pagination on top of it.
+- **This is a THIRD stateful tool under `--workers 1`** (alongside
+  df-studio and sql-studio) — see `../Dockerfile`'s CMD comment and
+  `../CLAUDE.md`'s "Standing rule: stateful tools and `--workers`".
+- **Copied as a whole folder in `../Dockerfile`**
+  (`COPY duck-lab/ ./duck_lab/`), same reason as df-studio/sql-studio —
+  extra backend module (`engine.py`) beyond `server.py`. Imports
+  `core.normalizer` directly for XML, so it must be copied after `core/`.
+
+## Tool: Vault — mounted at `/tools/vault/`
+
+A management page for `core/vault.py`'s shared, encrypted secret store —
+list/delete/clear only, no add-new-secret form (creating one is always
+done from the tool that uses it, e.g. sql-studio's "Save this
+connection"). Started to fix one pain: sql-studio/schema-map's idle
+reaper drops the live DB connection after 20 minutes, and retyping
+credentials every time was real friction. **Grew a second, bigger
+purpose**: a generic hand-off point for feeding one tool's output into
+another as input (e.g. a transformed Postgres query result → DataDiff
+Pro), with memory use bounded regardless of dataset size — see
+`vault/CLAUDE.md`'s "datasets" section. See that file for the full
+picture, especially its security posture (no master password, by
+deliberate owner choice).
+
+### Symptom → file
+
+| If you need to change...                                          | Go to |
+|-----------------------------------------------------------------------|-------|
+| The actual encryption/storage (SQLite + Fernet, on the `vault_data` volume) | `core/vault.py` |
+| Credential save/load (small, whole-value encryption) | `core/vault.py` (`save_secret`, `get_secret`, `get_secret_by_name`) |
+| Dataset save/load (chunked encryption, bounded memory regardless of size) | `core/vault.py` (`save_dataset`, `load_dataset_file`, `load_dataset_file_by_name`, `CHUNK_SIZE`) |
+| API endpoints (`GET /secrets`, `POST /secrets`, `GET /secrets/{id}/reveal`, `DELETE /secrets/{id}`, `POST /clear`) | `vault/server.py` |
+| The management page itself (list/delete/clear) | `vault/ui/index.html` |
+| Producing a dataset to save (Postgres → Vault, DuckDB result → Vault) | `sql-studio/server.py`'s `/export/vault` (streaming cursor), `duck-lab/server.py`'s `/export/vault` (DuckDB `COPY TO`) |
+| Consuming a saved dataset headlessly, any size | `orchestrator/recipes/compare.py`'s `"vault_dataset"` source kind |
+| Consuming a saved dataset in a browser, size-capped (DataDiff Pro only) | `vault/server.py`'s `GET /datasets/{id}/preview`, `core.vault.preview_dataset_as_csv()`, wired up in `ui/index.html`'s "Load from Vault" buttons — the ONE path that enforces a row cap, since DataDiff Pro's textarea is paste-based |
+| Consuming a saved dataset in a browser as a brand-new table/session, uncapped (Duck Lab, DataFrame Studio) | `duck-lab/server.py`'s `/load/vault` (via `core.vault.load_dataset_file()`, loads into a new DuckDB table), `df-studio/server.py`'s `/load/vault` (same function, loads into a new pandas session) — uncapped because each tool already owns its own size story for an ordinary upload (DuckDB disk-backed views, pandas full-materialization) and this just sources the same path from a vault blob instead of an HTTP upload, not a second size policy to keep in sync |
+
+### Known non-obvious behavior (read before touching these areas)
+
+- **`list_secrets()` must never return decrypted data** — that's the one
+  invariant that keeps this page safe to leave open. `get_secret()`/
+  `get_secret_by_name()` (credentials) and `load_dataset_file()`/
+  `load_dataset_file_by_name()` (datasets) are the only functions that
+  decrypt anything, and are called only at the moment a tool is actually
+  about to use the secret/dataset — sql-studio/schema-map's "Load saved
+  connection," the orchestrator's `--left-vault`/`--right-vault`
+  (connections) or `--left-vault-dataset`/`--right-vault-dataset` (data
+  — a deliberately different flag, see `orchestrator/CLAUDE.md`).
+- **A dataset entry's bulk data is NEVER in `ciphertext`** — that column
+  holds only small metadata (`format`/`columns`/`row_count`) for a
+  dataset row; the real data is chunk-encrypted separately into a file
+  under `blobs/`, named by the row's `blob_path`. This split is what
+  keeps `save_dataset()`/`load_dataset_file()`'s memory use bounded by
+  `CHUNK_SIZE` (4 MiB) instead of by dataset size — verified directly:
+  saving/loading a 61 MB generated file showed essentially the same
+  process RSS as an 8 MB one.
+- **`has_data` in `list_secrets()`'s output is just `blob_path IS NOT
+  NULL`** — `false` for an ordinary credential, `true` for a dataset.
+  Doesn't decrypt anything to compute this.
+- **No vault master password, by deliberate owner choice** — the
+  encryption key lives in a `0600` file on the same volume as the
+  encrypted data. Protects against casually reading the DB file or a
+  stray backup; does NOT protect against anyone with access to the
+  running container. See `vault/CLAUDE.md` for the full writeup and what
+  would need to change if the threat model ever does.
+- **`core/vault.py` has no opinion on what a given `kind`'s data shape
+  is** — sql-studio/schema-map both save `{host, port, database,
+  username, password, ssh_tunnel}` under `kind: "postgres_connection"`
+  by convention, not because this module enforces it. A new consuming
+  tool is free to use its own `kind` and shape.
+- **This is a THIRD stateful... actually, it's NOT** — unlike df-studio/
+  sql-studio/schema-map/duck-lab, Vault has no in-memory per-worker
+  state at all (every call reads/writes SQLite through
+  `asyncio.to_thread`, same as `schema-map/project_store.py`) — it
+  doesn't add a new entry to `../CLAUDE.md`'s "Standing rule: stateful
+  tools and `--workers`" list, even though it's backend-touching.

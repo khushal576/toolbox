@@ -86,12 +86,24 @@ tools:
 
   - name: sql-studio
     title: "SQL Studio"
-    description: "Paste, edit, and pretty-print Postgres SQL — 125+ templates, live Run against a real database, and psql-style show commands (show tables, show table X definition, ...)"
+    description: "Paste, edit, and pretty-print Postgres SQL — 125+ templates, live Run (optionally via SSH tunnel) against a real database, save/load connections via Vault, and psql-style show commands"
     icon: "🗄️"
     category: tool
 
   - name: schema-map
     title: "Schema Map"
-    description: "Connect to a Postgres database and see its tables and foreign-key structure as an explorable graph — built for large, poorly-documented legacy schemas"
+    description: "Connect to a Postgres database (optionally via SSH tunnel) and see its tables and foreign-key structure as an explorable graph — built for large, poorly-documented legacy schemas"
     icon: "🗺️"
+    category: tool
+
+  - name: duck-lab
+    title: "Duck Lab"
+    description: "Load CSV/JSON/Parquet/XML files and join or analyze them with SQL (DuckDB) — schema-aware autocomplete, table preview, paginated results so a big join never floods the page"
+    icon: "🦆"
+    category: tool
+
+  - name: vault
+    title: "Vault"
+    description: "Shared encrypted secret store — save DB connections (and anything else) from any tool so you stop retyping credentials after every disconnect"
+    icon: "🔒"
     category: tool

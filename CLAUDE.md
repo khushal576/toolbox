@@ -41,7 +41,12 @@ without the owner asking for it again.
 
 ```
 datadiff-pro/                (repo root)
-├── core/  api/  ui/          DataDiff Pro's own code (unchanged since launch)
+├── core/  api/  ui/          DataDiff Pro's own code — core/ is now also a
+│                               shared library every tool imports from (pipeline,
+│                               postgres_conn, pooled_postgres, file_source,
+│                               vault); ui/'s own "Load from Vault" buttons are
+│                               the one place a vault dataset is allowed into a
+│                               browser, size-capped — see vault/CLAUDE.md
 ├── environments/  notebook/
 ├── main.py                    THE entrypoint — home page + mounts every tool
 ├── registry.yaml               home-page card metadata (display only)
@@ -69,6 +74,48 @@ same shape as DataDiff Pro's — this is what keeps navigation sane once the
 repo has 10+ tools instead of 1. If you change what a file is responsible
 for, update its row in that file in the same commit — a stale map actively
 misleads, which is worse than no map.
+
+## Headless recipes vs. a new tool
+
+Not everything that calls into a tool's engine needs a web UI. `orchestrator/`
+(see `orchestrator/CLAUDE.md`) is a plain Python package + CLI — no
+`server.py`, no `ui/`, no `registry.yaml` entry, no `main.py` mount — for
+composing existing engines (`core.pipeline`, duck-lab-style DuckDB reads, a
+one-shot Postgres connector) directly, invoked as `docker compose exec
+toolbox python -m orchestrator.cli ...`. Use it when the real need is "call
+this logic without a browser" (e.g. diffing data that lives in a database,
+not pasted text) — not a workflow engine, not a plugin system, just direct
+function calls between modules that already run in the same process. If a
+headless need later grows an actual UI requirement, that's when it becomes
+a new tool under the checklist below, not before.
+
+## Shared connectors — one Postgres connector, one file loader, one vault
+
+Postgres-connecting logic (conninfo building, credential pre-validation,
+SSH tunneling, password scrubbing) lives in exactly two places:
+`core/postgres_conn.py` (the low-level primitives, including
+`open_ssh_tunnel()`) and `core/pooled_postgres.py` (the pool+reaper
+lifecycle built on top, used by sql-studio and schema-map — each still
+builds its own separate instance, genuinely different connections, just
+shared mechanics). The orchestrator's one-shot connector uses the
+low-level primitives directly, skipping the pool (wrong shape for a
+script that connects once and exits). File-extension-to-DuckDB-function
+mapping lives in `core/file_source.py`, shared by duck-lab and the
+orchestrator's file connector. **Don't add a fourth independent
+implementation of either** — if a new tool needs to connect to Postgres
+or read a CSV/JSON/Parquet file, it calls into these, the same way
+duck-lab/sql-studio/schema-map/orchestrator already do.
+
+`core/vault.py` is the shared, generic encrypted secret store (Fernet,
+no master password by deliberate owner choice — see `vault/CLAUDE.md`
+for the full trust-model writeup) behind the "Vault" tool's management
+page. sql-studio and schema-map's Connection panels both have "Save this
+connection"/"Load saved connection" controls calling `/tools/vault/...`
+directly (same-origin, no proxy — see `schema-map/CLAUDE.md` Phase D for
+the precedent), and the orchestrator's `--left-vault <name>` loads one
+without an HTTP round-trip. Any future tool that wants to remember a
+credential (or any other secret) should save it here under its own
+`kind` tag, not invent a second store.
 
 ## Adding a new tool
 
@@ -141,6 +188,12 @@ pool means real, live connections held open against a real external
 database (visible in that database's own `pg_stat_activity`, consuming
 its connection-limit budget) until something notices and kills it — not
 just an inert lost value in memory.
+
+Duck Lab's loaded files + DuckDB connection (`duck-lab/engine.py`,
+`SESSIONS`) are a **third** instance of this — it deliberately copies
+df-studio's per-cookie-dict shape (not SQL Studio's single global), because
+each browser tab legitimately wants its own independent set of loaded
+files, the same reasoning df-studio uses. See `duck-lab/CLAUDE.md`.
 
 **Decided now, before it comes up again:** any future tool that needs
 multi-step or multi-request state (not just "read a form, compute an

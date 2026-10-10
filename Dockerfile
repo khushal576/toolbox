@@ -17,8 +17,15 @@ WORKDIR /app
 # --- Install dependencies first (separate layer for better caching) ----------
 # Copy only the requirements file first so Docker can cache this layer.
 # If requirements.txt doesn't change, this layer is reused on every rebuild.
+#
+# wheelhouse/ (gitignored) holds pre-downloaded wheels for this exact
+# platform/Python version — see "./download-wheels.sh". Installing from it
+# avoids hitting the network during the build, which matters on a slow
+# connection. Regenerate wheelhouse/ after changing requirements.txt.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY wheelhouse/ ./wheelhouse/
+RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse -r requirements.txt \
+    && rm -rf ./wheelhouse
 
 # --- Copy application code ---------------------------------------------------
 # DataDiff Pro (tool #1) — uses the un-namespaced "core"/"api" top-level
@@ -86,11 +93,31 @@ COPY sql-studio/ ./sql_studio/
 # connection pool, deliberately not shared with SQL Studio's.
 COPY schema-map/ ./schema_map/
 
+# Duck Lab (tool #14) — whole-folder copy, same reason as df-studio/
+# sql-studio/schema-map above (extra backend module: engine.py). Loads
+# CSV/JSON/XML files and queries/joins them with DuckDB; imports
+# core.normalizer directly for XML parsing (see duck-lab/CLAUDE.md), so it
+# must be copied after core/ above.
+COPY duck-lab/ ./duck_lab/
+
+# Orchestrator — NOT a mounted tool (no server.py, no ui/, no registry.yaml
+# entry, no main.py mount). Headless recipes that call other tools' engines
+# directly (core.pipeline, duck-lab-style DuckDB reads, a one-shot Postgres
+# connector) and are invoked as a one-shot process, not a web request — see
+# orchestrator/CLAUDE.md. Must be copied after core/ above, same reason as
+# duck-lab.
+COPY orchestrator/ ./orchestrator/
+
+# Vault (tool #15) — management page for core/vault.py's shared
+# encrypted secret store. Imports core.vault directly, so must be
+# copied after core/ above, same reason as duck-lab/orchestrator.
+COPY vault/ ./vault/
+
 COPY main.py .
 COPY registry.yaml .
 
 # Create empty __init__.py files so Python treats these as packages.
-RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py
+RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py
 
 # --- Runtime config ----------------------------------------------------------
 # Tell Python not to write .pyc files and not to buffer stdout/stderr.
@@ -104,7 +131,7 @@ EXPOSE 8080
 # Start the toolbox app (main.py) with uvicorn — this is the one process
 # that serves the home page and every mounted tool.
 # --host 0.0.0.0  makes it reachable from outside the container.
-# --workers 1     MUST stay 1, for TWO independent stateful tools now:
+# --workers 1     MUST stay 1, for THREE independent stateful tools now:
 #                 - DataFrame Studio keeps session state (engine.SESSIONS)
 #                   in an in-memory dict inside one process. With >1
 #                   worker, uvicorn runs separate OS processes that don't
@@ -124,7 +151,13 @@ EXPOSE 8080
 #                   pg_stat_activity), consuming that database's own
 #                   connection-limit budget until something notices and
 #                   kills it. See sql-studio/CLAUDE.md.
+#                 - Duck Lab keeps its own per-session dict (engine.SESSIONS)
+#                   the same way df-studio does — each browser tab's loaded
+#                   files/DuckDB connection live in one worker's memory.
+#                   Same "No active session"-style failure mode as
+#                   df-studio if split across workers. See
+#                   duck-lab/CLAUDE.md.
 #                 Every other tool here is stateless/client-side and
-#                 wouldn't care, but these two do. Don't raise this without
-#                 giving BOTH a real shared store first.
+#                 wouldn't care, but these three do. Don't raise this without
+#                 giving ALL THREE a real shared store first.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

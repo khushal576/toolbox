@@ -1441,6 +1441,18 @@ expansion, so nothing renders before you explicitly ask for it), Step 5
 canvas only ever draws real FK edges) — other DB engines, community
 detection beyond plain connected components.
 
+- **SSH tunnel + Vault — Connection panel gained the exact same fields
+  sql-studio's did**, same owner pain (the idle reaper drops the
+  connection, retyping credentials every time is friction) and same
+  implementation, both built on the shared `core/pooled_postgres.py`/
+  `core/postgres_conn.py`/`core/vault.py` modules — see
+  `sql-studio/CLAUDE.md`'s own "SSH tunnel + Vault" section for the full
+  writeup (the SSH tunnel lifecycle, the vault's save/load shape, the
+  same-origin direct-call pattern to `/tools/vault/...`); nothing here
+  diverges from that description except which tool's `server.py`/
+  `db_engine.py` the fields are wired into. Verified against the same
+  isolated SSH+Postgres test setup sql-studio's was verified against.
+
 ## How it's built
 
 - `server.py` — thin FastAPI app: `GET /` (UI), `POST /connect`,
@@ -1450,20 +1462,23 @@ detection beyond plain connected components.
   its own fixed introspection queries, so none of that machinery
   (statement splitting, destructive-keyword detection, the confirm-
   dialog flow) is needed or present here.
-- `db_engine.py` — copied from `sql-studio/db_engine.py`'s shape (own
-  module-level `STATE`, not shared with SQL Studio's — Schema Map and
-  SQL Studio might reasonably be pointed at two different databases at
-  once), but smaller pool (`max_size=2` vs. SQL Studio's 3 — this tool
+- `db_engine.py` — now a thin ~15-line wrapper around
+  `core.pooled_postgres.PooledPostgresConnection` (own instance, `_POOL`
+  — genuinely separate from SQL Studio's own `_POOL`, not shared; Schema
+  Map and SQL Studio might reasonably be pointed at two different
+  databases at once). The pool+reaper lifecycle (the `ConnectionState`
+  dataclass, the idle reaper, credential pre-validation before opening
+  the pool, password scrubbing) used to be a byte-for-byte-similar copy
+  of `sql-studio/db_engine.py`'s own version — that duplication is what
+  `core/pooled_postgres.py`/`core/postgres_conn.py` now eliminate; both
+  tools' `db_engine.py` call the same shared mechanics while keeping
+  their own, genuinely different state. This tool still only passes a
+  smaller pool size (`pool_max_size=2` vs. SQL Studio's 3 — this tool
   only ever runs a handful of introspection queries per fetch, never
-  sustained query traffic) and one new piece SQL Studio's doesn't have:
-  `run(fn, *args)`, a generic "execute this plain function against a
-  pooled connection" helper — the one integration point
-  `introspection_postgres.py` uses. Same credential-pre-validation fix
-  as SQL Studio's (`psycopg.connect()` directly before opening the pool
-  — `pool.open()` alone with `min_size=0` doesn't eagerly create a real
-  connection, so a bad password wouldn't be caught until the first
-  query; a real bug already found and fixed once there, ported the fix
-  here proactively rather than reintroducing it).
+  sustained query traffic) and exposes `run = _POOL.run` (SQL Studio's
+  `execute()` has its own extra logic on top — statement execution,
+  result caching — so it isn't a plain alias there, but the underlying
+  `run()` it's built on is the exact same shared method).
 - `introspection_postgres.py` — `get_schemas()`, `get_tables(schema)`,
   `get_foreign_keys(schema)`, `get_graph(schema)` (the one function
   `server.py`'s `/graph` route calls, combining the other two). Every

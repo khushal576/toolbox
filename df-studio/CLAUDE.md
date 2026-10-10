@@ -104,11 +104,22 @@ orient/date_format/indent, Parquet compression/index) before downloading.
 ## How it's built
 
 - `server.py` — FastAPI app: serves `ui/index.html`, plus `/load`,
-  `/step`, `/step/check`, `/step/remove`, `/step/reset`, `/insight`,
-  `/export`, `/script`, `/template/list`, `/template/save`,
+  `/load/vault`, `/step`, `/step/check`, `/step/remove`, `/step/reset`,
+  `/insight`, `/export`, `/script`, `/template/list`, `/template/save`,
   `/template/apply`, `/template/delete`. This is the one tool in the
   Toolbox so far with real backend state (every other tool is
   client-side-only or stateless), hence the extra modules below.
+  `/load/vault` is the consumer side of duck-lab's/sql-studio's
+  `/export/vault` — decrypts a saved vault dataset via
+  `core.vault.load_dataset_file()`, reads its bytes, then feeds them
+  into the exact same `engine.load_dataframe()`/`create_session()` path
+  `/load` already uses for an uploaded file, so a vault-sourced load
+  gets the same preview/insight/export/template behavior as any other
+  session with zero special-casing downstream. Like every other
+  pandas/vault-touching call in this file, it runs through
+  `asyncio.to_thread` — see the gotcha below for why that matters here
+  specifically (unlike duck-lab's own `/load/vault`, which deliberately
+  does NOT use `to_thread`, matching that tool's own convention).
 - `engine.py` — session store (`SESSIONS: dict[str, Session]`, in-memory,
   keyed by a `df_studio_sid` cookie) and the **replay model**: a session
   keeps `original_df` + an ordered `steps` list; the "current" DataFrame is

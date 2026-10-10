@@ -52,6 +52,14 @@ except ImportError:  # flat import when run standalone from within this folder
     import introspection_postgres
     import project_store
 
+try:  # core/ is a sibling top-level package in the real image (/app/core)
+    from core.postgres_conn import ssh_tunnel_from_dict
+except ImportError:  # standalone dev run from inside this folder: core/ is ../../core
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from core.postgres_conn import ssh_tunnel_from_dict
+
 project_store.init_db()
 
 app = FastAPI(
@@ -62,12 +70,21 @@ app = FastAPI(
 _UI_PATH = Path(__file__).resolve().parent / "ui" / "index.html"
 
 
+class SSHTunnelRequest(BaseModel):
+    ssh_host: str
+    ssh_port: int = 22
+    ssh_username: str
+    ssh_password: Optional[str] = None
+    ssh_private_key: Optional[str] = None
+
+
 class ConnectRequest(BaseModel):
     host: str
     port: int = 5432
     database: str
     username: str
     password: str
+    ssh_tunnel: Optional[SSHTunnelRequest] = None
 
 
 class CreateProjectRequest(BaseModel):
@@ -93,8 +110,12 @@ async def serve_ui() -> HTMLResponse:
 
 @app.post("/connect")
 async def connect(body: ConnectRequest):
+    tunnel_cfg = ssh_tunnel_from_dict(body.ssh_tunnel.model_dump() if body.ssh_tunnel else None)
     try:
-        return await db_engine.connect(body.host, body.port, body.database, body.username, body.password)
+        return await db_engine.connect(
+            body.host, body.port, body.database, body.username, body.password,
+            ssh_tunnel=tunnel_cfg,
+        )
     except db_engine.ConnectError as exc:
         return _error(str(exc))
 

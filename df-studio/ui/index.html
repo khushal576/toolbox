@@ -253,6 +253,11 @@
         <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.json,.xml,.parquet" />
       </div>
       <button id="loadBtn">Load</button>
+      <div>
+        <label for="vaultSelect">Load from Vault</label>
+        <select id="vaultSelect" style="font-size:0.82rem;"><option value="">— select —</option></select>
+      </div>
+      <button id="vaultLoadBtn">Load</button>
       <progress id="loadProgress" max="100" value="0" style="display:none;"></progress>
       <span class="meta" id="fileMeta">No file loaded yet.</span>
       <div class="preview-mode-group">
@@ -1329,6 +1334,43 @@
       loadBtn.disabled = false;
       loadBtn.textContent = originalLabel;
       progress.style.display = "none";
+    }
+  });
+
+  // ── Load from Vault — reuses the exact /load response shape (applyPreview),
+  // just sourced from core.vault instead of an HTTP upload. df-studio already
+  // reads every load fully into memory as its own accepted design (see
+  // engine.py), so there's no size cap here the way DataDiff Pro's "Load
+  // from Vault" needs one — anything already saved to the vault is fine.
+  async function refreshVaultSelect() {
+    const select = document.getElementById("vaultSelect");
+    try {
+      const data = await api("/tools/vault/secrets");
+      const secrets = (data.secrets || []).filter((s) => s.has_data);
+      select.innerHTML = '<option value="">— select —</option>' +
+        secrets.map((s) => `<option value="${s.id}" data-name="${s.name}">${s.name}</option>`).join("");
+    } catch (e) { /* Vault unreachable — select just stays empty, not fatal */ }
+  }
+  refreshVaultSelect();
+
+  document.getElementById("vaultLoadBtn").addEventListener("click", async () => {
+    const select = document.getElementById("vaultSelect");
+    const id = select.value;
+    if (!id) { showError("Choose a saved dataset first."); return; }
+    const name = select.selectedOptions[0].dataset.name;
+    const btn = document.getElementById("vaultLoadBtn");
+    btn.disabled = true;
+    try {
+      const preview = await api("load/vault", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, name }),
+      });
+      applyPreview(preview);
+      document.getElementById("loadOptionsPanel").open = false;
+    } catch (e) {
+      showError(e.message);
+    } finally {
+      btn.disabled = false;
     }
   });
 

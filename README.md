@@ -44,8 +44,10 @@ docker-compose down
 | 🧭 | **HTTP Methods & Status Codes** (`http-methods-status`) | Every HTTP method and status code with real examples and an architect's decision guide |
 | 🍪 | **Cookie Lab** (`cookie-lab`) | Live `document.cookie` playground plus full theory |
 | 🐼 | **DataFrame Studio** (`df-studio`) | Click-driven pandas — load, transform, export, save reusable templates |
-| 🗄️ | **SQL Studio** (`sql-studio`) | Paste, edit, pretty-print Postgres SQL — 125+ templates, live run, `show`-style commands |
-| 🗺️ | **Schema Map** (`schema-map`) | Explore a Postgres database's tables and foreign-key structure as a graph |
+| 🗄️ | **SQL Studio** (`sql-studio`) | Paste, edit, pretty-print Postgres SQL — 125+ templates, live run, `show`-style commands, optional SSH tunnel, save/load connections via Vault |
+| 🗺️ | **Schema Map** (`schema-map`) | Explore a Postgres database's tables and foreign-key structure as a graph — optional SSH tunnel, save/load connections via Vault |
+| 🦆 | **Duck Lab** (`duck-lab`) | Load CSV/JSON/Parquet/XML files and join/analyze them with SQL (DuckDB) — schema-aware autocomplete, table preview, paginated results that never flood the page |
+| 🔒 | **Vault** (`vault`) | Shared encrypted secret store — save DB connections (and anything else) from any tool so you stop retyping credentials after every disconnect |
 
 `category: tool` entries (practical, act on real data) show on the home page
 by default; `category: learn` entries (educational/reference) are shown via

@@ -56,6 +56,20 @@
       padding: 16px;
     }
 
+    /* ── Vault "Load from Vault" row (datasets only, size-capped — see
+       the JS below for why this is deliberately bounded, not a general
+       vault browser) ─────────────────────────────────────────────── */
+    .vault-load-row { display: flex; gap: 6px; margin: 6px 0 8px; }
+    .vault-load-row select { flex: 1; font-size: 0.78rem; }
+    .vault-load-row button { font-size: 0.75rem; padding: 4px 10px; }
+    .vault-load-err {
+      display: none; max-width: 900px; margin: 0 auto 12px;
+      background: rgba(220,38,38,0.08); color: #b91c1c;
+      border: 1px solid rgba(220,38,38,0.3); border-radius: 8px;
+      padding: 10px 12px; font-size: 0.82rem;
+    }
+    .vault-load-err.show { display: block; }
+
     /* ── Labels & selects ─────────────────────────────────────────── */
     label {
       font-size: 0.78rem;
@@ -400,6 +414,10 @@
         <option value="csv">CSV</option>
       </select>
     </label>
+    <div class="vault-load-row">
+      <select id="left-vault-select"><option value="">— load from Vault —</option></select>
+      <button id="left-vault-load" type="button">Load</button>
+    </div>
     <textarea id="left-data" placeholder='Paste JSON, XML, or CSV here…
 Example:
 {
@@ -418,6 +436,10 @@ Example:
         <option value="csv">CSV</option>
       </select>
     </label>
+    <div class="vault-load-row">
+      <select id="right-vault-select"><option value="">— load from Vault —</option></select>
+      <button id="right-vault-load" type="button">Load</button>
+    </div>
     <textarea id="right-data" placeholder='Paste JSON, XML, or CSV here…
 Example:
 {
@@ -427,6 +449,7 @@ Example:
   </div>
 
 </div>
+<div id="vault-load-err" class="vault-load-err"></div>
 
 <!-- ── Optional: Field Mapper ──────────────────────────────────────────── -->
 <div class="card" style="margin-top:16px;">
@@ -1002,6 +1025,52 @@ list_keys:
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   }
+
+  // ── Load from Vault (datasets only, size-capped) ───────────────────────
+  // Same-origin call directly to the Vault tool's endpoint — the same
+  // cross-tool pattern Schema Map's Compare feature already uses to call
+  // DataDiff Pro's own /compare endpoint. Capped at the server's default
+  // (2000 rows): this is the one place a vault dataset is allowed to flow
+  // into a browser textarea at all, and only up to that cap — see
+  // vault/CLAUDE.md and core.vault.preview_dataset_as_csv for why.
+  function showVaultLoadError(msg) {
+    const box = document.getElementById('vault-load-err');
+    if (!msg) { box.classList.remove('show'); box.textContent = ''; return; }
+    box.textContent = msg;
+    box.classList.add('show');
+  }
+
+  async function refreshVaultDatasetSelects() {
+    let secrets = [];
+    try {
+      const res = await fetch('/tools/vault/secrets');
+      const data = await res.json();
+      secrets = (data.secrets || []).filter((s) => s.has_data);
+    } catch (e) { /* Vault unreachable — selects just stay empty, not fatal */ return; }
+    const options = '<option value="">— load from Vault —</option>' +
+      secrets.map((s) => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join('');
+    document.getElementById('left-vault-select').innerHTML = options;
+    document.getElementById('right-vault-select').innerHTML = options;
+  }
+
+  async function loadVaultDataset(side) {
+    const select = document.getElementById(`${side}-vault-select`);
+    const id = select.value;
+    if (!id) return;
+    showVaultLoadError(null);
+    try {
+      const res = await fetch(`/tools/vault/datasets/${encodeURIComponent(id)}/preview`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Load from Vault failed.');
+      document.getElementById(`${side}-data`).value = data.csv;
+      document.getElementById(`${side}-format`).value = 'csv';
+    } catch (e) {
+      showVaultLoadError(e.message);
+    }
+  }
+  document.getElementById('left-vault-load').addEventListener('click', () => loadVaultDataset('left'));
+  document.getElementById('right-vault-load').addEventListener('click', () => loadVaultDataset('right'));
+  refreshVaultDatasetSelects();
 </script>
 </body>
 </html>

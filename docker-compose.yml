@@ -58,8 +58,17 @@ services:
     # version history. A named volume is Docker-managed storage that
     # survives image rebuilds and `docker-compose down` — only an
     # explicit `docker-compose down -v` removes it.
+    # Vault's secrets (encrypted) and its encryption key are stored at
+    # /app/data/vault/ (see core/vault.py). Same reasoning as
+    # schema_map_data above — without this, every saved secret and the
+    # key itself would be silently wiped on the next image rebuild,
+    # which would also make any already-encrypted-but-now-orphaned rows
+    # permanently undecryptable garbage even if the DB file somehow
+    # survived without the key.
     volumes:
       - schema_map_data:/app/data/schema-map
+      - vault_data:/app/data/vault
 
 volumes:
   schema_map_data:
+  vault_data:

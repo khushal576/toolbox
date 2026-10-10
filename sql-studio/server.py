@@ -22,6 +22,7 @@ GET  /status          — current connection state, polled by every open tab (ne
 POST /query            — run exactly one statement; destructive statements need confirmed: true
 GET  /export/csv        — download the last successful query's result as CSV
 GET  /export/json        — download the same result as JSON
+POST /export/vault        — run a statement with NO row cap, save the real full result into core.vault (see db_engine.export_to_file)
 """
 
 from __future__ import annotations
@@ -29,7 +30,11 @@ from __future__ import annotations
 import csv
 import io
 import json
+import tempfile
+import uuid
 from pathlib import Path
+
+from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -41,6 +46,16 @@ except ImportError:  # flat import when run standalone from within this folder
     import db_engine
     import query_guard
 
+try:  # core/ is a sibling top-level package in the real image (/app/core)
+    from core import vault
+    from core.postgres_conn import ssh_tunnel_from_dict
+except ImportError:  # standalone dev run from inside this folder: core/ is ../../core
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from core import vault
+    from core.postgres_conn import ssh_tunnel_from_dict
+
 app = FastAPI(
     title="SQL Studio",
     description="Postgres SQL editor, formatter, schema-aware autocomplete, and live query runner.",
@@ -49,17 +64,31 @@ app = FastAPI(
 _UI_PATH = Path(__file__).resolve().parent / "ui" / "index.html"
 
 
+class SSHTunnelRequest(BaseModel):
+    ssh_host: str
+    ssh_port: int = 22
+    ssh_username: str
+    ssh_password: Optional[str] = None
+    ssh_private_key: Optional[str] = None
+
+
 class ConnectRequest(BaseModel):
     host: str
     port: int = 5432
     database: str
     username: str
     password: str
+    ssh_tunnel: Optional[SSHTunnelRequest] = None
 
 
 class QueryRequest(BaseModel):
     sql: str
     confirmed: bool = False
+
+
+class ExportToVaultRequest(BaseModel):
+    sql: str
+    name: str
 
 
 def _error(message: str, status: int = 400) -> JSONResponse:
@@ -75,8 +104,12 @@ async def serve_ui() -> HTMLResponse:
 
 @app.post("/connect")
 async def connect(body: ConnectRequest):
+    tunnel_cfg = ssh_tunnel_from_dict(body.ssh_tunnel.model_dump() if body.ssh_tunnel else None)
     try:
-        return await db_engine.connect(body.host, body.port, body.database, body.username, body.password)
+        return await db_engine.connect(
+            body.host, body.port, body.database, body.username, body.password,
+            ssh_tunnel=tunnel_cfg,
+        )
     except db_engine.ConnectError as exc:
         return _error(str(exc))
 
@@ -148,3 +181,27 @@ async def export_json():
         media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="query_result.json"'},
     )
+
+
+@app.post("/export/vault")
+async def export_to_vault(body: ExportToVaultRequest):
+    """Export the REAL full result of *body.sql* (not the 500-row capped
+    Run/export-csv path — see db_engine.export_to_file's own docstring)
+    into the shared vault as a dataset, e.g. so the orchestrator can feed
+    it into DataDiff Pro later. Streams via a server-side cursor —
+    bounded memory regardless of row count."""
+    tmp_path = Path(tempfile.gettempdir()) / f"sql_studio_export_{uuid.uuid4().hex}.csv"
+    try:
+        export_info = await db_engine.export_to_file(body.sql, tmp_path)
+    except db_engine.ConnectError as exc:
+        return _error(str(exc))
+    try:
+        meta = {
+            "format": "csv",
+            "columns": export_info["columns"],
+            "row_count": export_info["row_count"],
+        }
+        secret_id = vault.save_dataset(body.name, "postgres_query_result", meta, tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    return JSONResponse({"ok": True, "id": secret_id, "row_count": export_info["row_count"]})

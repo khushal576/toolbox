@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Duck Lab</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+    --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --err-bg: rgba(220,38,38,0.08); --err-text: #b91c1c; --err-border: rgba(220,38,38,0.3);
+  }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; padding: 24px 20px 60px;
+  }
+  header { max-width: 1280px; margin: 0 auto 20px; }
+  header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
+  header h1 span { color: var(--accent); }
+  header p { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
+
+  .layout { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 1rem; font-weight: 700; margin-bottom: 4px; }
+  .card .hint { font-size: 0.78rem; color: var(--muted); margin-bottom: 12px; line-height: 1.5; }
+
+  .col-left { position: sticky; top: 20px; }
+
+  input[type="file"] { font-size: 0.82rem; width: 100%; }
+
+  .table-list { list-style: none; margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .table-item {
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    font-size: 0.8rem; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .table-item .name { font-weight: 700; }
+  .table-item .meta { color: var(--muted); font-size: 0.72rem; }
+  .table-item button { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 0.9rem; }
+  .table-item button:hover { color: var(--err-text); }
+  .empty-hint { color: var(--muted); font-size: 0.78rem; margin-top: 10px; }
+
+  button.action {
+    cursor: pointer; border: none; border-radius: 7px;
+    background: var(--accent); color: #fff; font-weight: 600;
+    font-size: 0.82rem; padding: 8px 16px;
+  }
+  button.action:hover { opacity: 0.88; }
+  button.action.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+  button.action.secondary:hover { border-color: var(--accent); color: var(--accent); }
+  button.action.small { padding: 5px 11px; font-size: 0.76rem; }
+  button.action:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; align-items: center; }
+  .btn-row .stats { color: var(--muted); font-size: 0.78rem; margin-left: auto; }
+
+  .table-item .name { cursor: pointer; }
+  .table-item .name:hover { color: var(--accent); }
+
+  .editor-wrap { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .cm-editor { height: 100%; }
+  .cm-editor .cm-scroller { font-family: 'Cascadia Code', 'Fira Code', 'Courier New', monospace; font-size: 0.85rem; line-height: 1.55; }
+  .cm-editor.cm-focused { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .cm-editor .cm-content { min-height: 160px; }
+
+  .error-box {
+    background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border);
+    border-radius: 8px; padding: 10px 12px; font-size: 0.82rem; margin: 12px 0; display: none;
+    white-space: pre-wrap; font-family: 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+  }
+  .error-box.show { display: block; }
+
+  .results-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+  table.results-table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
+  table.results-table th, table.results-table td {
+    border-bottom: 1px solid var(--border); padding: 6px 10px; text-align: left;
+    white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis;
+  }
+  table.results-table th { background: var(--bg); font-weight: 700; position: sticky; top: 0; }
+  table.results-table td.null { color: var(--muted); font-style: italic; }
+
+  .pagination { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 0.8rem; flex-wrap: wrap; }
+  .pagination select { border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 0.8rem; }
+  .pagination .stats { color: var(--muted); margin-left: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Duck<span>Lab</span></h1>
+  <p>Load CSV / JSON / Parquet / XML, join and analyze them with SQL — results are paginated, never fully loaded into the page.</p>
+</header>
+
+<div class="layout">
+  <div class="col-left">
+    <div class="card">
+      <h2>Load data</h2>
+      <p class="hint">Upload a CSV, JSON, Parquet, or XML file. Each becomes a queryable table.</p>
+      <input type="file" id="fileInput" accept=".csv,.tsv,.json,.parquet,.xml" />
+      <div class="btn-row" style="margin:8px 0 0;">
+        <select id="vaultSelect" style="flex:1;font-size:0.8rem;"><option value="">— load from Vault —</option></select>
+        <button class="action secondary small" id="btnVaultLoad">Load</button>
+      </div>
+      <p class="hint" style="margin:6px 0 0;">Click a loaded source's name for a quick preview.</p>
+      <ul class="table-list" id="tableList"></ul>
+      <p class="empty-hint" id="emptyHint">No sources loaded yet.</p>
+    </div>
+    <div class="card" id="previewCard" style="display:none;">
+      <h2 id="previewTitle">Preview</h2>
+      <div class="results-wrap">
+        <table class="results-table" id="previewTable">
+          <thead><tr id="previewHead"></tr></thead>
+          <tbody id="previewBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Session</h2>
+      <p class="hint">Clears every loaded source and any result for this session.</p>
+      <button class="action secondary small" id="btnReset">Reset session</button>
+    </div>
+  </div>
+
+  <div class="col-right">
+    <div class="card">
+      <h2>Query</h2>
+      <p class="hint">Reference loaded tables by name (see the list on the left). Example: <code>SELECT * FROM a JOIN b ON a.id = b.id</code></p>
+      <div class="editor-wrap" id="editor"></div>
+      <div class="btn-row">
+        <button class="action" id="btnRun">▶ Run</button>
+        <button class="action secondary small" id="btnExportCsv">Export CSV</button>
+        <button class="action secondary small" id="btnExportJson">Export JSON</button>
+        <button class="action secondary small" id="btnSaveToVault">🔒 Save to Vault</button>
+        <span class="stats" id="queryTime"></span>
+      </div>
+      <div class="error-box" id="errorBox"></div>
+    </div>
+
+    <div class="card" id="resultsCard" style="display:none;">
+      <h2>Results</h2>
+      <div class="results-wrap">
+        <table class="results-table" id="resultsTable">
+          <thead><tr id="resultsHead"></tr></thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button class="action secondary small" id="btnPrev">◀ Prev</button>
+        <button class="action secondary small" id="btnNext">Next ▶</button>
+        <label>Page size
+          <select id="pageSize">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="250">250</option>
+            <option value="500">500</option>
+          </select>
+        </label>
+        <span class="stats" id="pageStats"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+"use strict";
+
+// Same esm.sh version-dedup recipe already verified in sql-studio/ui/index.html
+// (range-string imports resolve to the one shared @codemirror/state/@codemirror/view
+// instance codemirror@6.0.2 itself uses internally) — reused as-is, not re-derived.
+import { EditorView, basicSetup } from "https://esm.sh/codemirror@6.0.2?target=es2022";
+import { Compartment } from "https://esm.sh/@codemirror/state@^6.0.0?target=es2022";
+import { sql } from "https://esm.sh/@codemirror/lang-sql@6.10.0?target=es2022";
+
+// --------------------------------------------------------------------------
+// STATE
+// --------------------------------------------------------------------------
+const STATE = {
+  tables: [],
+  totalRows: 0,
+  offset: 0,
+  pageSize: 100,
+};
+
+// --------------------------------------------------------------------------
+// API
+// --------------------------------------------------------------------------
+const API = {
+  async listTables() {
+    const res = await fetch("tables");
+    return res.json();
+  },
+  async upload(file) {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("upload", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Upload failed");
+    return data;
+  },
+  async loadFromVault(id, name) {
+    const res = await fetch("load/vault", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, name }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Load from Vault failed.");
+    return data;
+  },
+  async removeTable(name) {
+    const res = await fetch("table/remove", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Remove failed");
+    return data;
+  },
+  async previewTable(name) {
+    const res = await fetch(`preview/${encodeURIComponent(name)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Preview failed");
+    return data;
+  },
+  async runQuery(sqlText) {
+    const res = await fetch("query", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql: sqlText }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Query failed");
+    return data;
+  },
+  async fetchPage(offset, limit) {
+    const res = await fetch(`page?offset=${offset}&limit=${limit}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Fetch page failed");
+    return data;
+  },
+  async resetSession() {
+    const res = await fetch("session/reset", { method: "POST" });
+    return res.json();
+  },
+};
+
+// --------------------------------------------------------------------------
+// RENDER
+// --------------------------------------------------------------------------
+function renderTables() {
+  const list = document.getElementById("tableList");
+  const emptyHint = document.getElementById("emptyHint");
+  list.innerHTML = "";
+  emptyHint.style.display = STATE.tables.length ? "none" : "block";
+  STATE.tables.forEach((t) => {
+    const li = document.createElement("li");
+    li.className = "table-item";
+    li.innerHTML = `
+      <div>
+        <div class="name" data-preview="${escapeHtml(t.name)}">${escapeHtml(t.name)}</div>
+        <div class="meta">${t.format.toUpperCase()} · ${t.row_count.toLocaleString()} rows · ${t.columns.length} cols</div>
+      </div>
+      <button title="Remove" data-remove="${escapeHtml(t.name)}">✕</button>`;
+    list.appendChild(li);
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function renderHeaderInto(theadRow, columns) {
+  theadRow.innerHTML = columns.map((c) => `<th>${escapeHtml(c)}</th>`).join("");
+}
+
+function renderRowsInto(tbody, rows) {
+  // Replaced wholesale, never appended — only one page's (or preview's) rows
+  // ever sit in the DOM at once.
+  tbody.innerHTML = rows.map((row) => {
+    const cells = row.map((v) => {
+      if (v === null || v === undefined) return `<td class="null">null</td>`;
+      const text = typeof v === "object" ? JSON.stringify(v) : String(v);
+      return `<td title="${escapeHtml(text)}">${escapeHtml(text)}</td>`;
+    }).join("");
+    return `<tr>${cells}</tr>`;
+  }).join("");
+}
+
+function renderResultsHeader(columns) {
+  renderHeaderInto(document.getElementById("resultsHead"), columns);
+}
+
+function renderResultsPage(rows) {
+  renderRowsInto(document.getElementById("resultsBody"), rows);
+}
+
+function renderPreview(name, data) {
+  document.getElementById("previewTitle").textContent = `Preview — ${name}`;
+  renderHeaderInto(document.getElementById("previewHead"), data.columns);
+  renderRowsInto(document.getElementById("previewBody"), data.rows);
+  document.getElementById("previewCard").style.display = "block";
+}
+
+function renderPagination() {
+  const totalPages = Math.max(1, Math.ceil(STATE.totalRows / STATE.pageSize));
+  const currentPage = Math.floor(STATE.offset / STATE.pageSize) + 1;
+  document.getElementById("pageStats").textContent =
+    `Page ${currentPage} of ${totalPages} — ${STATE.totalRows.toLocaleString()} total rows`;
+  document.getElementById("btnPrev").disabled = STATE.offset <= 0;
+  document.getElementById("btnNext").disabled = STATE.offset + STATE.pageSize >= STATE.totalRows;
+}
+
+function showError(message) {
+  const box = document.getElementById("errorBox");
+  if (!message) { box.classList.remove("show"); box.textContent = ""; return; }
+  box.textContent = message;
+  box.classList.add("show");
+}
+
+// --------------------------------------------------------------------------
+// EDITOR
+// --------------------------------------------------------------------------
+// Schema autocomplete, built from the currently loaded tables (not a pasted
+// schema like sql-studio) — wrapped in a Compartment so it can be
+// reconfigured on the already-running editor every time a table is
+// added/removed, without tearing it down (same technique sql-studio uses
+// for its pasted-schema box).
+const sqlCompartment = new Compartment();
+
+function buildSchemaNamespace() {
+  const namespace = {};
+  STATE.tables.forEach((t) => { namespace[t.name] = t.columns; });
+  return namespace;
+}
+
+function makeSqlExtension() {
+  return sql({ schema: buildSchemaNamespace(), upperCaseKeywords: true });
+}
+
+const view = new EditorView({
+  doc: "SELECT * FROM ",
+  extensions: [basicSetup, sqlCompartment.of(makeSqlExtension())],
+  parent: document.getElementById("editor"),
+});
+
+function refreshSchemaAutocomplete() {
+  view.dispatch({ effects: sqlCompartment.reconfigure(makeSqlExtension()) });
+}
+
+// --------------------------------------------------------------------------
+// EVENTS
+// --------------------------------------------------------------------------
+async function refreshTables() {
+  const data = await API.listTables();
+  STATE.tables = data.tables || [];
+  renderTables();
+  refreshSchemaAutocomplete();
+}
+
+document.getElementById("fileInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  showError(null);
+  try {
+    await API.upload(file);
+    await refreshTables();
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    e.target.value = "";
+  }
+});
+
+// ── Load from Vault — the consumer-side counterpart to "Save to Vault"
+// (see btnSaveToVault below). No size cap here, unlike DataDiff Pro's own
+// "Load from Vault" — DuckDB reads the decrypted file lazily off disk the
+// same way an upload does, never materializing it in Python memory.
+async function refreshVaultSelect() {
+  const select = document.getElementById("vaultSelect");
+  try {
+    const res = await fetch("/tools/vault/secrets");
+    const data = await res.json();
+    const secrets = (data.secrets || []).filter((s) => s.has_data);
+    select.innerHTML = '<option value="">— load from Vault —</option>' +
+      secrets.map((s) => `<option value="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join("");
+  } catch (e) { /* Vault unreachable — select just stays empty, not fatal */ }
+}
+refreshVaultSelect();
+
+document.getElementById("btnVaultLoad").addEventListener("click", async () => {
+  const select = document.getElementById("vaultSelect");
+  const id = select.value;
+  if (!id) return;
+  const name = select.selectedOptions[0].dataset.name;
+  showError(null);
+  try {
+    await API.loadFromVault(id, name);
+    await refreshTables();
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+document.getElementById("tableList").addEventListener("click", async (e) => {
+  const removeBtn = e.target.closest("button[data-remove]");
+  if (removeBtn) {
+    showError(null);
+    try {
+      await API.removeTable(removeBtn.dataset.remove);
+      await refreshTables();
+      if (document.getElementById("previewTitle").textContent.endsWith(removeBtn.dataset.remove)) {
+        document.getElementById("previewCard").style.display = "none";
+      }
+    } catch (err) {
+      showError(err.message);
+    }
+    return;
+  }
+  const nameEl = e.target.closest("[data-preview]");
+  if (nameEl) {
+    showError(null);
+    try {
+      const data = await API.previewTable(nameEl.dataset.preview);
+      renderPreview(nameEl.dataset.preview, data);
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+});
+
+document.getElementById("btnReset").addEventListener("click", async () => {
+  await API.resetSession();
+  STATE.tables = [];
+  STATE.totalRows = 0;
+  STATE.offset = 0;
+  document.getElementById("resultsCard").style.display = "none";
+  document.getElementById("previewCard").style.display = "none";
+  document.getElementById("queryTime").textContent = "";
+  renderTables();
+  refreshSchemaAutocomplete();
+  showError(null);
+});
+
+async function runQuery() {
+  showError(null);
+  document.getElementById("queryTime").textContent = "Running…";
+  const text = view.state.doc.toString();
+  try {
+    const data = await API.runQuery(text);
+    STATE.totalRows = data.total_rows;
+    STATE.pageSize = data.page_size;
+    STATE.offset = 0;
+    document.getElementById("resultsCard").style.display = "block";
+    renderResultsHeader(data.columns);
+    renderResultsPage(data.rows);
+    renderPagination();
+    document.getElementById("queryTime").textContent = `${data.elapsed_ms} ms`;
+  } catch (err) {
+    showError(err.message);
+    document.getElementById("queryTime").textContent = "";
+  }
+}
+document.getElementById("btnRun").addEventListener("click", runQuery);
+
+async function goToPage(newOffset) {
+  showError(null);
+  try {
+    const data = await API.fetchPage(newOffset, STATE.pageSize);
+    STATE.offset = newOffset;
+    STATE.totalRows = data.total_rows;
+    renderResultsHeader(data.columns);
+    renderResultsPage(data.rows);
+    renderPagination();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+document.getElementById("btnPrev").addEventListener("click", () => {
+  goToPage(Math.max(0, STATE.offset - STATE.pageSize));
+});
+document.getElementById("btnNext").addEventListener("click", () => {
+  goToPage(STATE.offset + STATE.pageSize);
+});
+document.getElementById("pageSize").addEventListener("change", (e) => {
+  STATE.pageSize = parseInt(e.target.value, 10);
+  goToPage(0);
+});
+
+document.getElementById("btnExportCsv").addEventListener("click", () => {
+  window.location.href = "export?format=csv";
+});
+document.getElementById("btnExportJson").addEventListener("click", () => {
+  window.location.href = "export?format=json";
+});
+
+document.getElementById("btnSaveToVault").addEventListener("click", async () => {
+  if (!STATE.totalRows && STATE.totalRows !== 0) { showError("Run a query first."); return; }
+  const name = prompt("Save this result to the Vault as:");
+  if (!name) return;
+  showError(null);
+  try {
+    const res = await fetch("export/vault", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Save to Vault failed.");
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+refreshTables();
+</script>
+</body>
+</html>

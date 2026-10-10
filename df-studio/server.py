@@ -50,6 +50,14 @@ except ImportError:  # flat import when run standalone from within this folder
     import engine
     import templates_store
 
+try:  # core/ is a sibling top-level package in the real image (/app/core)
+    from core import vault
+except ImportError:  # standalone dev run from inside this folder: core/ is ../core
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from core import vault
+
 app = FastAPI(
     title="DataFrame Studio",
     description="Click-driven pandas: load, transform, and export CSV/JSON/XML/Parquet.",
@@ -75,6 +83,11 @@ class TemplateNameRequest(BaseModel):
 class PreviewModeRequest(BaseModel):
     mode: str
     resample: bool = False
+
+
+class LoadFromVaultRequest(BaseModel):
+    id: str
+    name: str
 
 
 def _session_id(request: Request) -> Optional[str]:
@@ -155,6 +168,37 @@ async def load(
     except engine.StepError as exc:
         return _error(exc)
     except Exception as exc:  # noqa: BLE001 - surface parser errors (bad csv/xml/etc) to the UI
+        return _error(exc)
+    response = JSONResponse(content=preview)
+    response.set_cookie(_COOKIE, session_id, httponly=True, samesite="lax")
+    return response
+
+
+@app.post("/load/vault")
+async def load_from_vault(response: Response, body: LoadFromVaultRequest):
+    """Load a dataset saved in core.vault (e.g. by duck-lab's or
+    sql-studio's "Save/Export to Vault") as a new session, the same way
+    /load does for an uploaded file. df-studio already reads every
+    upload fully into memory as its own accepted, documented design
+    (unlike duck-lab) — this reuses that exact path, just sourcing
+    `content` from a decrypted vault blob instead of an HTTP upload."""
+    try:
+        tmp_path = await asyncio.to_thread(vault.load_dataset_file, body.id)
+    except vault.SecretNotFound as exc:
+        return _error(exc, status=404)
+    try:
+        filename = f"{body.name}{tmp_path.suffix}"
+        content = await asyncio.to_thread(tmp_path.read_bytes)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    try:
+        df = await asyncio.to_thread(engine.load_dataframe, filename, content)
+        session_id = engine.create_session(filename, df)
+        session = engine.get_session(session_id)
+        preview = engine.build_preview(session, df)
+    except engine.StepError as exc:
+        return _error(exc)
+    except Exception as exc:  # noqa: BLE001 - surface parser errors to the UI
         return _error(exc)
     response = JSONResponse(content=preview)
     response.set_cookie(_COOKIE, session_id, httponly=True, samesite="lax")

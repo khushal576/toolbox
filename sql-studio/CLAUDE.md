@@ -75,15 +75,25 @@ with real document positions instead of re-flowed text) is still sound.
   routes: `/connect`, `/disconnect`, `/status`, `/query`, `/export/csv`,
   `/export/json`. Thin — parses the request, delegates to `db_engine`/
   `query_guard`, turns their exceptions into clean 400/409 JSON errors.
-- `db_engine.py` — the live Postgres connection. One module-level `STATE`
-  (a `ConnectionState` dataclass wrapping a `psycopg_pool.ConnectionPool`),
+- `db_engine.py` — the live Postgres connection. One module-level pool
+  instance (`_POOL`, a `core.pooled_postgres.PooledPostgresConnection`),
   **not** a per-cookie dict — see "Live database connection (Run)" below
   for why that's a deliberate departure from df-studio's session pattern,
-  not an oversight. Every psycopg call is sync, run via `asyncio.to_thread`
-  (same reason df-studio does this — see its own CLAUDE.md's `--workers 1`
-  gotcha). Also owns the idle-connection reaper (`_reaper_loop()`,
-  lazily started on first successful connect — see the lifespan gotcha
-  below for why it's *not* wired through FastAPI's `lifespan=`).
+  not an oversight. The pool+reaper lifecycle itself (the `ConnectionState`
+  dataclass, the idle reaper, credential pre-validation before opening the
+  pool) is now shared with `schema-map/db_engine.py` via
+  `core/pooled_postgres.py` — each tool still builds its **own** `_POOL`
+  instance (genuinely separate connections, not a shared one); only the
+  mechanics moved, not the state. This file keeps its own `execute()`/
+  `last_result`/`STATEMENT_TIMEOUT_MS`/`ROW_CAP` — the SQL-execution and
+  result-caching behavior specific to Run, built on `_POOL.run(...)`
+  rather than duplicating pool-checkout logic. Every psycopg call is
+  still sync, still run via `asyncio.to_thread` inside the shared
+  `_POOL.run()` (same reason df-studio does this — see its own
+  CLAUDE.md's `--workers 1` gotcha). The idle-connection reaper is owned
+  by the shared class now, lazily started on first successful connect —
+  see the lifespan gotcha below for why it's *not* wired through
+  FastAPI's `lifespan=`.
 - `query_guard.py` — the actual security boundary for Run: splits input
   into statements and classifies the one statement Run is allowed to
   execute (destructive? does it return rows? does it need the `LIMIT 500`
@@ -431,6 +441,65 @@ with real document positions instead of re-flowed text) is still sound.
   needs re-touching after a version bump, re-check that structure first
   rather than assuming today's class names still apply.
 
+### SSH tunnel + Vault (connect without retyping credentials)
+
+- **SSH tunnel**: the Connection panel's "Use SSH tunnel" checkbox reveals
+  SSH host/port/username + a password-or-private-key choice.
+  `server.py`'s `ConnectRequest.ssh_tunnel` becomes a
+  `core.postgres_conn.SSHTunnelConfig`, passed straight through to
+  `db_engine.connect(..., ssh_tunnel=...)` → `_POOL.connect(...)`, which
+  opens the tunnel first (`core.postgres_conn.open_ssh_tunnel()`) and
+  connects through its local forwarded port — see
+  `core/pooled_postgres.py`'s own docs for the tunnel-lifecycle details
+  (tied to `disconnect()`, same as the pool itself). `status()`'s
+  `via_ssh_tunnel` field drives the "(via SSH tunnel)" suffix in the
+  connected-status text. **Verified against a real, isolated setup**: a
+  throwaway Postgres container reachable ONLY from inside a throwaway SSH
+  container's own Docker network (confirmed unreachable directly from the
+  toolbox container first), connected successfully through the tunnel
+  with both password and private-key SSH auth, and confirmed the query
+  actually returned real data — not a no-op tunnel.
+- **Vault**: "Save this connection" (`POST /tools/vault/secrets`,
+  `kind: "postgres_connection"`) and "Load saved connection"
+  (`GET /tools/vault/secrets?kind=...` + `GET /tools/vault/secrets/{id}/reveal`)
+  call the Vault tool's endpoints **directly from the frontend** — same
+  same-origin pattern schema-map's Compare feature already uses to call
+  DataDiff Pro's endpoint (see `schema-map/CLAUDE.md` Phase D), not a
+  proxy through this tool's own backend. The saved JSON blob is
+  `{host, port, database, username, password, ssh_tunnel}` —
+  `ssh_tunnel` is `null` for a plain connection, or the same shape the
+  Connection panel's SSH fields produce. This is a genuinely separate,
+  explicit action from the ordinary connect flow — saving to the vault
+  does NOT change the existing "password never persisted in
+  localStorage" rule for a connection you don't explicitly save. See
+  `vault/CLAUDE.md` for the vault's own trust model (no master
+  password, by deliberate choice — encrypted at rest, not from anyone
+  with access to this running container).
+- **"Export FULL result to Vault" (`btnExportVault` / `POST
+  /export/vault`) is a genuinely different operation from Run, not a
+  mode of it.** It exists for one real case: "I ran a transforming query
+  against Postgres, now I want to feed the real result into another
+  tool (e.g. DataDiff Pro, via the orchestrator's `vault_dataset`
+  source)" — and Run's `LIMIT 500` cap exists specifically so that case
+  doesn't apply to ordinary Run. `db_engine.export_to_file()` deliberately
+  does NOT use `query_guard.classify()`'s `executable_sql` (the
+  LIMIT-wrapped version) — it re-validates with `split_statements()` +
+  `classify()` (exactly one statement, not destructive, must return
+  rows) and then runs the ORIGINAL statement text, unwrapped, via a
+  **server-side (named) psycopg cursor** (`conn.cursor(name=...)`,
+  `fetchmany(EXPORT_BATCH_SIZE)` in a loop) instead of `execute()`'s
+  plain `cur.fetchall()` — bounded memory regardless of row count, same
+  reasoning duck-lab's own DuckDB `COPY TO` already has. The existing
+  pool-level `statement_timeout` still applies (it's part of the
+  conninfo, not something Run-specific), so a runaway export still gets
+  cut off the same way a runaway Run would. **Verified against a real
+  1200-row table** (well over the 500 cap): ordinary Run returned
+  exactly 500 rows with `capped: true`; "Export FULL result to Vault" on
+  the identical query saved exactly 1200 — the one thing that would have
+  silently defeated the entire point of this feature if missed. Also
+  verified the destructive-statement refusal fires correctly (a `DELETE`
+  is rejected before anything runs, not exported).
+
 ### Live database connection (Run)
 
 - **One global connection, not a per-cookie session dict.** df-studio keys
@@ -441,8 +510,10 @@ with real document positions instead of re-flowed text) is still sound.
   per-tab resources. Keying this the df-studio way would let every open
   tab silently open its own 3-connection pool (3 tabs = up to 9 live
   connections against the target database), which breaks the "pool of 3"
-  requirement outright. `db_engine.STATE` is a single module-level
-  optional value; `GET /status` reports the same answer to every tab —
+  requirement outright. `db_engine._POOL` (a `PooledPostgresConnection`,
+  see `core/pooled_postgres.py`) holds a single optional connection state
+  internally (`_POOL.state`); `GET /status` reports the same answer to
+  every tab —
   that's correct behavior for "one database at a time," not a bug to fix
   by adding per-tab state.
 - **The idle reaper is started lazily, not via FastAPI `lifespan=`.**
@@ -457,11 +528,12 @@ with real document positions instead of re-flowed text) is still sound.
   "in-memory only, a restart drops state" gap is already accepted —
   document this as the same kind of accepted gap, not a promise this code
   currently keeps. **Idle threshold is 20 minutes**
-  (`db_engine.IDLE_TIMEOUT_SECONDS`, lowered from an initial 30 — the
-  owner's own call on the leaked-connection-risk/annoying-re-login
-  tradeoff, not a default worth second-guessing without being asked).
+  (passed as `idle_timeout_seconds=20*60` to `PooledPostgresConnection`
+  in `db_engine.py`, lowered from an initial 30 — the owner's own call
+  on the leaked-connection-risk/annoying-re-login tradeoff, not a
+  default worth second-guessing without being asked).
 - **The connection already survives an ordinary browser refresh with zero
-  extra code** — `STATE` lives in server-process memory, not in any
+  extra code** — `_POOL.state` lives in server-process memory, not in any
   per-browser session/cookie, so `GET /status` (what `loadInitialStatus()`
   calls on every page load) reports the real live connection regardless
   of how many times the page has been reloaded. The only things that
@@ -515,8 +587,16 @@ with real document positions instead of re-flowed text) is still sound.
   (see the comment-only-trailing-chunk fix — `"SELECT 1; -- comment"` must
   count as **one** statement in both implementations, not two).
 - **Export reads a cached result, it never re-runs the SQL.**
-  `db_engine.STATE.last_result` is set on every successful *rows*-shaped
-  `/query` and cleared on every non-rows one; `/export/csv` and
+  `db_engine._last_result` (a module-level variable in `db_engine.py`
+  itself, deliberately NOT part of the shared `PooledPostgresConnection`
+  — it's SQL Studio's own concern, not a generic pool behavior) is set
+  on every successful *rows*-shaped `/query` and cleared on every
+  non-rows one AND on disconnect (`db_engine.disconnect()` clears it
+  explicitly before calling `_POOL.disconnect()` — this matters: before
+  the shared-pool refactor, clearing `STATE` on disconnect implicitly
+  cleared `last_result` too; now that they're two separate things,
+  disconnect has to clear both on purpose or a stale cached result
+  could outlive the connection it came from); `/export/csv` and
   `/export/json` just serialize whatever's cached there. This is
   deliberate, not a shortcut: re-running the SQL on export would silently
   double-execute a `DELETE`/`UPDATE` a second time, and would re-trigger
@@ -524,11 +604,12 @@ with real document positions instead of re-flowed text) is still sound.
   into taking a `sql` parameter and re-querying, you've reintroduced that
   bug.
 - **The password is never persisted anywhere** — not `localStorage`, not a
-  cookie, not on disk, not in a server-side log (see `db_engine._scrub()`
-  for the log/error-message defense-in-depth, and verify it against the
-  actually-installed `psycopg` version before trusting it blindly — see
-  the next bullet). It lives only inside the live `ConnectionPool`'s own
-  connection objects for as long as `STATE` exists. Reconnecting after a
+  cookie, not on disk, not in a server-side log (see
+  `core.postgres_conn.scrub_password()` — shared with schema-map now,
+  same defense-in-depth, and verify it against the actually-installed
+  `psycopg` version before trusting it blindly — see the next bullet).
+  It lives only inside the live `ConnectionPool`'s own connection
+  objects for as long as `_POOL.state` exists. Reconnecting after a
   disconnect (explicit or reaper-triggered) always means re-typing it —
   that's the intended forcing function, not friction to remove.
 - **Validating credentials means a direct, unpooled `psycopg.connect()`
@@ -543,16 +624,19 @@ with real document positions instead of re-flowed text) is still sound.
   `ConnectionPool` retries failed connection attempts in the background,
   and a timed-out checkout raises a generic `"couldn't get a connection
   after 10.00 sec"` instead of the real error, and takes the full 10s
-  timeout to fail instead of failing immediately. `_connect_sync()` in
-  `db_engine.py` now validates with a plain `psycopg.connect(conninfo,
-  connect_timeout=10)` + a trivial `SELECT 1` *before* constructing the
-  pool — this raises the actual `OperationalError` (e.g. `"FATAL:
-  password authentication failed for user ..."`) immediately, and the
-  pool is only built once that succeeds. If you ever "simplify" this back
-  to just `pool.open()`, you've reintroduced both bugs.
-- **`db_engine._scrub()`'s password-redaction regex is defense-in-depth,
-  verified against the real thing, not just asserted safe.** Connected
-  with a deliberately wrong password against a throwaway
+  timeout to fail instead of failing immediately.
+  `core.postgres_conn.verify_connection()` (shared with schema-map, called
+  from `PooledPostgresConnection._connect_sync()` in `core/pooled_postgres.py`)
+  validates with a plain `psycopg.connect(conninfo, connect_timeout=10)`
+  + a trivial `SELECT 1` *before* constructing the pool — this raises the
+  actual `OperationalError` (e.g. `"FATAL: password authentication failed
+  for user ..."`) immediately, and the pool is only built once that
+  succeeds. If you ever "simplify" this back to just `pool.open()`,
+  you've reintroduced both bugs — in BOTH sql-studio and schema-map at
+  once now, since they share this code.
+- **`core.postgres_conn.scrub_password()`'s password-redaction regex is
+  defense-in-depth, verified against the real thing, not just asserted
+  safe.** Connected with a deliberately wrong password against a throwaway
   `postgres:16-alpine` container and inspected the actual error text
   psycopg/libpq raise (`"connection failed: connection to server at
   ..., port 5432 failed: FATAL: password authentication failed for user
