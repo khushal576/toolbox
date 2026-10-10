@@ -22,6 +22,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Optional
+
+try:  # core/ is a sibling top-level package in the real image (/app/core)
+    from core.db.dialect import Dialect
+except ImportError:  # standalone dev run from inside this folder: core/ is ../core
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+    from core.db.dialect import Dialect
 
 ROW_CAP = 500
 
@@ -31,7 +41,6 @@ DML_KEYWORDS = {"INSERT", "UPDATE", "DELETE"}
 
 _DOLLAR_TAG_RE = re.compile(r"^\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-_RETURNING_RE = re.compile(r"\bRETURNING\b", re.IGNORECASE)
 
 
 class GuardError(ValueError):
@@ -165,9 +174,9 @@ def _first_keyword(statement: str) -> str:
     return ""
 
 
-def _has_returning(statement: str) -> bool:
+def _has_returning(statement: str, dialect: Dialect) -> bool:
     return any(
-        seg.type == "code" and _RETURNING_RE.search(seg.text)
+        seg.type == "code" and dialect.returning_pattern.search(seg.text)
         for seg in tokenize(statement)
     )
 
@@ -177,26 +186,44 @@ class Classification:
     keyword: str
     is_destructive: bool
     returns_rows: bool
-    executable_sql: str  # what actually gets sent to Postgres (LIMIT-wrapped where applicable)
+    # What actually gets sent to the database for ordinary Run (row-cap-
+    # wrapped where applicable) — None when this dialect has no clean way
+    # to cap this statement's row-returning DML idiom (see classify()).
+    # export_to_file() never reads this field at all (it always runs the
+    # ORIGINAL, unwrapped statement text), so a None here only matters to
+    # prepare()/ordinary Run, not to export.
+    executable_sql: Optional[str]
 
 
-def classify(statement: str) -> Classification:
+def classify(statement: str, dialect: Dialect) -> Classification:
     keyword = _first_keyword(statement)
     is_destructive = keyword in DESTRUCTIVE_KEYWORDS
-    returning = keyword in DML_KEYWORDS and _has_returning(statement)
+    returning = keyword in DML_KEYWORDS and _has_returning(statement, dialect)
 
     if keyword in ROW_RETURNING_KEYWORDS:
-        return Classification(keyword, is_destructive, True, f"SELECT * FROM ({statement}) AS _sq LIMIT {ROW_CAP}")
+        return Classification(keyword, is_destructive, True, dialect.wrap_row_cap(statement, ROW_CAP))
     if keyword in DML_KEYWORDS and returning:
-        return Classification(keyword, is_destructive, True, f"WITH _dml AS ({statement}) SELECT * FROM _dml LIMIT {ROW_CAP}")
+        # dialect.wrap_dml_returning_cap() returns None when there's no
+        # clean way to cap this dialect's row-returning DML idiom
+        # (Oracle's bind-variable-based RETURNING INTO, SQL Server's
+        # OUTPUT) without risking changing which rows get WRITTEN, not
+        # just what's echoed back — confirmed against real engines that
+        # even attempting the SELECT-wrap trick fails outright. Returned
+        # here as None rather than raised, so a caller that doesn't need
+        # the capped SQL at all (export_to_file, which always runs the
+        # original statement uncapped) isn't blocked by a cap that was
+        # never going to be used anyway — see prepare() for the caller
+        # that DOES need it and rejects a None here.
+        return Classification(keyword, is_destructive, True, dialect.wrap_dml_returning_cap(statement, ROW_CAP))
     return Classification(keyword, is_destructive, False, statement)
 
 
-def prepare(sql_text: str) -> Classification:
-    """The one entry point server.py calls. Raises GuardError (caller turns
-    this into a clean 400) for anything that can't go through Run at all —
-    empty input, more than one statement, or COPY (file/stream semantics
-    don't fit a single query-string executor)."""
+def prepare(sql_text: str, dialect: Dialect) -> Classification:
+    """The one entry point server.py's ordinary Run calls. Raises
+    GuardError (caller turns this into a clean 400) for anything that
+    can't go through Run at all — empty input, more than one statement,
+    COPY (file/stream semantics don't fit a single query-string
+    executor), or row-returning DML this dialect can't safely cap."""
     statements = split_statements(sql_text)
     if not statements:
         raise GuardError("Nothing to run — the query is empty.")
@@ -209,4 +236,11 @@ def prepare(sql_text: str) -> Classification:
     keyword = _first_keyword(statement)
     if keyword == "COPY":
         raise GuardError("COPY is not supported through Run — use psql.")
-    return classify(statement)
+    result = classify(statement, dialect)
+    if result.executable_sql is None:
+        raise GuardError(
+            f"Row-returning {result.keyword} isn't supported through Run for {dialect.name} yet "
+            "(no safe way to cap how many rows come back without risking the statement's own "
+            "write behavior)."
+        )
+    return result

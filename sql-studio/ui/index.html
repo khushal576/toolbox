@@ -310,11 +310,20 @@
       <div class="body">
         <div id="connectionForm">
           <p class="hint">
-            Connects through this tool's own backend to a real Postgres
-            database (a pool of up to 3 connections). Host/port/database/
-            username are remembered between visits — the password never is;
-            re-enter it each time you connect.
+            Connects through this tool's own backend to a real database
+            (Postgres, SQL Server, or Oracle — a pool of up to 3
+            connections). Host/port/database/username are remembered
+            between visits — the password never is; re-enter it each
+            time you connect.
           </p>
+          <div class="conn-field">
+            <label>Database type</label>
+            <select id="connDbType">
+              <option value="postgres">PostgreSQL</option>
+              <option value="mssql">SQL Server</option>
+              <option value="oracle">Oracle</option>
+            </select>
+          </div>
           <div class="conn-row">
             <div class="conn-field" style="flex: 2;">
               <label>Host</label>
@@ -322,11 +331,11 @@
             </div>
             <div class="conn-field" style="flex: 1;">
               <label>Port</label>
-              <input type="number" id="connPort" value="5432" />
+              <input type="number" id="connPort" placeholder="5432" />
             </div>
           </div>
           <div class="conn-field">
-            <label>Database</label>
+            <label id="connDatabaseLabel">Database</label>
             <input type="text" id="connDatabase" />
           </div>
           <div class="conn-field">
@@ -483,7 +492,7 @@
 import { EditorView, basicSetup } from "https://esm.sh/codemirror@6.0.2?target=es2022";
 import { EditorState, Compartment } from "https://esm.sh/@codemirror/state@^6.0.0?target=es2022";
 import { keymap } from "https://esm.sh/@codemirror/view@^6.0.0?target=es2022";
-import { sql, PostgreSQL } from "https://esm.sh/@codemirror/lang-sql@6.10.0?target=es2022";
+import { sql, PostgreSQL, MSSQL, PLSQL } from "https://esm.sh/@codemirror/lang-sql@6.10.0?target=es2022";
 import { search } from "https://esm.sh/@codemirror/search@6.7.2?target=es2022";
 import { snippet } from "https://esm.sh/@codemirror/autocomplete@^6.0.0?target=es2022";
 import { format as sqlFormat } from "https://esm.sh/sql-formatter@15.9.0?target=es2022";
@@ -521,7 +530,7 @@ const EXAMPLE_SCHEMA = {
 // qualified as "schema.table" ONLY if it's not unique among the selected
 // schemas; everything else stays flat and backward-compatible with a
 // single-schema fetch.
-function buildSchemaFetchQuery(schemas) {
+function buildSchemaFetchQueryPostgres(schemas) {
   const filter = (!schemas || schemas === "all" || schemas.length === 0)
     ? SYS_SCHEMA_FILTER
     : `n.nspname IN (${schemas.map(sqlLiteral).join(", ")})`;
@@ -545,6 +554,106 @@ disambiguated AS (
 SELECT json_object_agg(display_name, columns) FROM disambiguated`;
 }
 
+// SQL Server/Oracle variants — same two-level {table: {col: type}} shape,
+// each dialect's own system catalogs. These are JS copies of the exact
+// queries already verified against real throwaway containers in
+// core/db/dialect_mssql.py / dialect_oracle.py's own schema_fetch_query()
+// — same "two independent copies, kept in sync by hand" convention this
+// file already documents for its tokenizer, since the Python versions
+// are what the orchestrator/future headless consumers would use, and
+// these JS ones are what this UI's Fetch Schema button sends.
+function buildSchemaFetchQueryMssql(schemas) {
+  const filter = (!schemas || schemas === "all" || schemas.length === 0)
+    ? "s.name NOT IN ('sys', 'INFORMATION_SCHEMA')"
+    : `s.name IN (${schemas.map(sqlLiteral).join(", ")})`;
+  return `WITH cols AS (
+  SELECT s.name AS schema_name, tb.name AS table_name, c.name AS column_name,
+         ty.name AS data_type, c.column_id
+  FROM sys.columns c
+  JOIN sys.tables tb ON tb.object_id = c.object_id
+  JOIN sys.schemas s ON s.schema_id = tb.schema_id
+  JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+  WHERE ${filter}
+),
+per_table AS (
+  SELECT schema_name, table_name,
+    '{' + STRING_AGG(
+      '"' + REPLACE(column_name, '"', '\\"') + '":"' + REPLACE(data_type, '"', '\\"') + '"', ','
+    ) WITHIN GROUP (ORDER BY column_id) + '}' AS columns_json
+  FROM cols
+  GROUP BY schema_name, table_name
+),
+disambiguated AS (
+  SELECT
+    CASE WHEN COUNT(*) OVER (PARTITION BY table_name) > 1
+      THEN schema_name + '.' + table_name ELSE table_name END AS display_name,
+    columns_json
+  FROM per_table
+)
+SELECT '{' + STRING_AGG(
+  '"' + REPLACE(display_name, '"', '\\"') + '":' + columns_json, ','
+) + '}' AS schema_json
+FROM disambiguated`;
+}
+
+// Oracle's own default install ships several more built-in schemas than
+// the obvious SYS/SYSTEM — confirmed directly against a real
+// gvenzl/oracle-free container (these specific names actually own
+// tables in a fresh 23ai install, found by running the unfiltered query
+// and seeing them show up, not guessed from documentation). Shared by
+// buildSchemaFetchQueryOracle, SCHEMA_LIST_QUERIES.oracle, AND the
+// oracle SHOW_COMMANDS entries below (list_tables/functions/triggers/
+// indexes/foreign_keys/views) — same list core/db/dialect_oracle.py's
+// Python copy uses.
+const ORACLE_SYSTEM_SCHEMAS = [
+  "SYS", "SYSTEM", "OUTLN", "XDB", "ORDS_METADATA", "ORDS_PUBLIC_USER",
+  "APPQOSSYS", "AUDSYS", "DBSFWUSER", "DBSNMP", "DVSYS", "GSMADMIN_INTERNAL",
+  "LBACSYS", "VECSYS",
+];
+const ORACLE_SYSTEM_SCHEMA_FILTER = `owner NOT IN (${ORACLE_SYSTEM_SCHEMAS.map(sqlLiteral).join(", ")})`;
+
+// Same list SCHEMA_LIST_QUERIES.mssql and core/db/dialect_mssql.py's
+// Python copy use — every built-in schema shipped by default in any
+// SQL Server database. Shared with the mssql SHOW_COMMANDS entries below.
+const MSSQL_SYSTEM_SCHEMAS = [
+  "sys", "INFORMATION_SCHEMA", "guest", "db_accessadmin", "db_backupoperator", "db_datareader",
+  "db_datawriter", "db_ddladmin", "db_denydatareader", "db_denydatawriter", "db_owner", "db_securityadmin",
+];
+const MSSQL_SYSTEM_SCHEMA_FILTER = `s.name NOT IN (${MSSQL_SYSTEM_SCHEMAS.map(sqlLiteral).join(", ")})`;
+
+function buildSchemaFetchQueryOracle(schemas) {
+  const filter = (!schemas || schemas === "all" || schemas.length === 0)
+    ? `owner NOT IN (${ORACLE_SYSTEM_SCHEMAS.map(sqlLiteral).join(", ")})`
+    : `owner IN (${schemas.map((s) => sqlLiteral(s.toUpperCase())).join(", ")})`;
+  return `WITH per_table AS (
+  SELECT owner, table_name,
+    JSON_OBJECTAGG(column_name VALUE data_type RETURNING CLOB) AS columns_json
+  FROM all_tab_columns
+  WHERE ${filter}
+  GROUP BY owner, table_name
+),
+disambiguated AS (
+  SELECT
+    CASE WHEN COUNT(*) OVER (PARTITION BY table_name) > 1
+      THEN owner || '.' || table_name ELSE table_name END AS display_name,
+    columns_json
+  FROM per_table
+)
+SELECT JSON_OBJECTAGG(display_name VALUE columns_json FORMAT JSON RETURNING CLOB) AS schema_json
+FROM disambiguated`;
+}
+
+const SCHEMA_FETCH_QUERY_BUILDERS = {
+  postgres: buildSchemaFetchQueryPostgres,
+  mssql: buildSchemaFetchQueryMssql,
+  oracle: buildSchemaFetchQueryOracle,
+};
+
+function buildSchemaFetchQuery(schemas) {
+  const builder = SCHEMA_FETCH_QUERY_BUILDERS[currentDbType()] || buildSchemaFetchQueryPostgres;
+  return builder(schemas);
+}
+
 // ---------------------------------------------------------------------
 // Schema JSON -> CodeMirror SQL namespace
 // ---------------------------------------------------------------------
@@ -560,10 +669,28 @@ function buildSchemaNamespace(schemaObj) {
   return ns;
 }
 
+// Per-db_type lookups — one source of truth for every place this file
+// needs to behave differently depending on which database is connected
+// (or, while disconnected, whichever type is selected in the Connection
+// panel). Both libraries' exact support for these three identifiers was
+// verified against the pinned CDN versions actually used here (curled
+// the resolved .mjs bundles directly) before wiring them in, not assumed
+// from package docs.
+const DB_TYPE_LABELS = { postgres: "PostgreSQL", mssql: "SQL Server", oracle: "Oracle" };
+const DB_TYPE_DEFAULT_PORTS = { postgres: 5432, mssql: 1433, oracle: 1521 };
+const CM_DIALECT_FOR_DBTYPE = { postgres: PostgreSQL, mssql: MSSQL, oracle: PLSQL };
+const FORMATTER_LANG_FOR_DBTYPE = { postgres: "postgresql", mssql: "tsql", oracle: "plsql" };
+
+function currentDbType() {
+  const el = $("connDbType");
+  return (el && el.value) || "postgres";
+}
+
 const sqlLangCompartment = new Compartment();
 
 function makeSqlExtension(schemaObj) {
-  return sql({ dialect: PostgreSQL, schema: buildSchemaNamespace(schemaObj), upperCaseKeywords: true });
+  const dialect = CM_DIALECT_FOR_DBTYPE[currentDbType()] || PostgreSQL;
+  return sql({ dialect, schema: buildSchemaNamespace(schemaObj), upperCaseKeywords: true });
 }
 
 // ---------------------------------------------------------------------
@@ -882,6 +1009,10 @@ function popFrame(stack, type) {
 }
 
 function maybeFormatStatement(line) {
+  // Deliberately always "postgresql", not dialect-aware — this only ever
+  // runs on DML found INSIDE a $$...$$ dollar-quoted body, which is
+  // Postgres-only syntax to begin with (SQL Server/Oracle have no
+  // equivalent), so there's no other dialect this could legitimately be.
   if (!/^(SELECT|INSERT|UPDATE|DELETE|WITH)\b/i.test(line)) return line;
   try {
     return sqlFormat(line, { language: "postgresql", tabWidth: 2, keywordCase: "upper" });
@@ -1037,7 +1168,7 @@ function formatQuery() {
   let formatted;
   try {
     formatted = sqlFormat(current, {
-      language: "postgresql",
+      language: FORMATTER_LANG_FOR_DBTYPE[currentDbType()] || "postgresql",
       tabWidth: 2,
       keywordCase: "upper",
       linesBetweenQueries: 2,
@@ -1082,6 +1213,14 @@ function showSchemaError(msg) {
   if (!msg) { box.classList.remove("show"); box.textContent = ""; return; }
   box.textContent = msg;
   box.classList.add("show");
+}
+
+function refreshSqlDialectExtension() {
+  // Re-applies the CURRENT schema under whatever dialect is now
+  // selected/connected — called when connDbType changes on its own
+  // (no new schema paste), so highlighting/autocomplete dialect stays
+  // in sync without needing a schema re-apply.
+  view.dispatch({ effects: sqlLangCompartment.reconfigure(makeSqlExtension(currentSchemaObj)) });
 }
 
 function applySchema(text) {
@@ -1527,11 +1666,262 @@ ORDER BY n.nspname LIMIT 1`,
     pattern: /^show\s+grants\s+(\S+)$/i,
     buildSql: (m) => `SELECT grantee, privilege_type FROM information_schema.role_table_grants WHERE table_name = ${sqlLiteral(m[1])}`,
   },
+
+  // ---- SQL Server — the ~11 highest-value commands, not full 32-for-32
+  // parity (several of Postgres's, e.g. extensions/enum types, have no
+  // clean T-SQL equivalent at all). Every query below was run against a
+  // real throwaway mssql/server container before being added here, same
+  // discipline as the Postgres set above — one real bug was caught this
+  // way (see core/db/dialect_mssql.py's CTE-wrap history for the related
+  // row-cap bug this set's own schema-fetch query exposed). ----
+  {
+    cat: "Show: Tables", name: "Show Tables", template: "show tables", dbTypes: ["mssql"],
+    desc: "Every table's columns — schema_name, table_name, column_name, column_datatype.",
+    pattern: /^show\s+tables$/i,
+    buildSql: () => `SELECT s.name AS schema_name, t.name AS table_name, c.name AS column_name, ty.name AS column_datatype
+FROM sys.columns c
+JOIN sys.tables t ON t.object_id = c.object_id
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+WHERE ${MSSQL_SYSTEM_SCHEMA_FILTER}
+ORDER BY s.name, t.name, c.column_id`,
+  },
+  {
+    cat: "Show: Tables", name: "Show Table Columns", template: "show table table_name", dbTypes: ["mssql"],
+    desc: "One table's columns, types, and nullability.",
+    pattern: /^show\s+table\s+(\S+)$/i,
+    buildSql: (m) => `SELECT c.name AS column_name, ty.name AS data_type, c.is_nullable AS is_nullable
+FROM sys.columns c
+JOIN sys.tables t ON t.object_id = c.object_id
+JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+WHERE t.name = ${sqlLiteral(m[1])}
+ORDER BY c.column_id`,
+  },
+  {
+    cat: "Show: Tables", name: "Show Table Definition", template: "show table table_name definition", dbTypes: ["mssql"],
+    desc: "Reconstructed CREATE TABLE — columns, types, and NOT NULL.",
+    pattern: /^show\s+table\s+(\S+)\s+definition$/i,
+    buildSql: (m) => `SELECT 'CREATE TABLE ' + s.name + '.' + t.name + ' (' + CHAR(13) + CHAR(10) +
+  STRING_AGG(
+    '  ' + c.name + ' ' + ty.name +
+    CASE WHEN ty.name IN ('varchar','nvarchar','char','nchar') AND c.max_length > 0
+         THEN '(' + CAST(CASE WHEN ty.name IN ('nvarchar','nchar') THEN c.max_length/2 ELSE c.max_length END AS VARCHAR) + ')'
+         ELSE '' END +
+    CASE WHEN c.is_nullable = 0 THEN ' NOT NULL' ELSE '' END,
+    ',' + CHAR(13) + CHAR(10)
+  ) WITHIN GROUP (ORDER BY c.column_id) + CHAR(13) + CHAR(10) + ');' AS table_definition
+FROM sys.columns c
+JOIN sys.tables t ON t.object_id = c.object_id
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+WHERE t.name = ${sqlLiteral(m[1])}
+GROUP BY s.name, t.name`,
+  },
+  {
+    cat: "Show: Functions & Procedures", name: "Show Functions", template: "show functions", dbTypes: ["mssql"],
+    desc: "Every scalar/inline/table-valued function.",
+    pattern: /^show\s+functions$/i,
+    buildSql: () => `SELECT s.name AS schema_name, o.name AS function_name, o.type_desc AS function_type
+FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id
+WHERE o.type IN ('FN','IF','TF') AND ${MSSQL_SYSTEM_SCHEMA_FILTER}
+ORDER BY s.name, o.name`,
+  },
+  {
+    cat: "Show: Functions & Procedures", name: "Show Procedures", template: "show procedures", dbTypes: ["mssql"],
+    desc: "Every stored procedure.",
+    pattern: /^show\s+procedures$/i,
+    buildSql: () => `SELECT s.name AS schema_name, p.name AS procedure_name
+FROM sys.procedures p JOIN sys.schemas s ON s.schema_id = p.schema_id
+ORDER BY s.name, p.name`,
+  },
+  {
+    cat: "Show: Triggers", name: "Show Triggers", template: "show triggers", dbTypes: ["mssql"],
+    desc: "Every trigger — which table, enabled or disabled.",
+    pattern: /^show\s+triggers$/i,
+    buildSql: () => `SELECT s.name AS schema_name, t.name AS table_name, tr.name AS trigger_name, tr.is_disabled
+FROM sys.triggers tr
+JOIN sys.tables t ON t.object_id = tr.parent_id
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+WHERE ${MSSQL_SYSTEM_SCHEMA_FILTER}
+ORDER BY s.name, t.name, tr.name`,
+  },
+  {
+    cat: "Show: Indexes & Constraints", name: "Show Indexes", template: "show indexes", dbTypes: ["mssql"],
+    desc: "Every index — which table, unique or not, type (clustered/nonclustered).",
+    pattern: /^show\s+indexes$/i,
+    buildSql: () => `SELECT s.name AS schema_name, t.name AS table_name, i.name AS index_name, i.is_unique, i.type_desc
+FROM sys.indexes i
+JOIN sys.tables t ON t.object_id = i.object_id
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+WHERE i.name IS NOT NULL AND ${MSSQL_SYSTEM_SCHEMA_FILTER}
+ORDER BY s.name, t.name, i.name`,
+  },
+  {
+    cat: "Show: Foreign Keys", name: "Show Foreign Keys", template: "show foreign keys", dbTypes: ["mssql"],
+    desc: "Every foreign key — source table/column, target table/column.",
+    pattern: /^show\s+foreign\s+keys$/i,
+    buildSql: () => `SELECT fk.name AS fk_name, s1.name AS from_schema, t1.name AS from_table, c1.name AS from_column,
+       s2.name AS to_schema, t2.name AS to_table, c2.name AS to_column
+FROM sys.foreign_keys fk
+JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+JOIN sys.tables t1 ON t1.object_id = fk.parent_object_id
+JOIN sys.schemas s1 ON s1.schema_id = t1.schema_id
+JOIN sys.columns c1 ON c1.object_id = t1.object_id AND c1.column_id = fkc.parent_column_id
+JOIN sys.tables t2 ON t2.object_id = fk.referenced_object_id
+JOIN sys.schemas s2 ON s2.schema_id = t2.schema_id
+JOIN sys.columns c2 ON c2.object_id = t2.object_id AND c2.column_id = fkc.referenced_column_id
+WHERE ${MSSQL_SYSTEM_SCHEMA_FILTER.replace("s.name", "s1.name")}
+ORDER BY s1.name, t1.name`,
+  },
+  {
+    cat: "Show: Views", name: "Show Views", template: "show views", dbTypes: ["mssql"],
+    desc: "Every view.",
+    pattern: /^show\s+views$/i,
+    buildSql: () => `SELECT s.name AS schema_name, v.name AS view_name
+FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id
+WHERE ${MSSQL_SYSTEM_SCHEMA_FILTER}
+ORDER BY s.name, v.name`,
+  },
+  {
+    cat: "Show: Activity", name: "Show Activity", template: "show activity", dbTypes: ["mssql"],
+    desc: "Every active session — login, host, program, status.",
+    pattern: /^show\s+activity$/i,
+    buildSql: () => `SELECT session_id, login_name, host_name, program_name, status
+FROM sys.dm_exec_sessions WHERE is_user_process = 1
+ORDER BY session_id`,
+  },
+  {
+    cat: "Show: Roles & Permissions", name: "Show Grants", template: "show grants", dbTypes: ["mssql"],
+    desc: "Every database-level permission grant.",
+    pattern: /^show\s+grants$/i,
+    buildSql: () => `SELECT pr.name AS grantee, pe.permission_name, pe.state_desc, o.name AS object_name
+FROM sys.database_permissions pe
+JOIN sys.database_principals pr ON pr.principal_id = pe.grantee_principal_id
+LEFT JOIN sys.objects o ON o.object_id = pe.major_id
+ORDER BY pr.name`,
+  },
+  {
+    cat: "Show: Version", name: "Show Version", template: "show version", dbTypes: ["mssql"],
+    desc: "The connected SQL Server's version string.",
+    pattern: /^show\s+version$/i,
+    buildSql: () => `SELECT @@VERSION AS version`,
+  },
+
+  // ---- Oracle — same ~11 highest-value set, same verification
+  // discipline (every query run against a real gvenzl/oracle-free
+  // container first). One real bug caught this way: ALL_TAB_PRIVS uses
+  // TABLE_SCHEMA, not OWNER, on this version — found only by running it,
+  // not by trusting older Oracle documentation. ----
+  {
+    cat: "Show: Tables", name: "Show Tables", template: "show tables", dbTypes: ["oracle"],
+    desc: "Every table's columns — schema_name, table_name, column_name, column_datatype.",
+    pattern: /^show\s+tables$/i,
+    buildSql: () => `SELECT owner AS schema_name, table_name, column_name, data_type AS column_datatype
+FROM all_tab_columns
+WHERE ${ORACLE_SYSTEM_SCHEMA_FILTER}
+ORDER BY owner, table_name, column_id`,
+  },
+  {
+    cat: "Show: Tables", name: "Show Table Columns", template: "show table table_name", dbTypes: ["oracle"],
+    desc: "One table's columns, types, and nullability.",
+    pattern: /^show\s+table\s+(\S+)$/i,
+    buildSql: (m) => `SELECT column_name, data_type, nullable
+FROM all_tab_columns WHERE table_name = ${sqlLiteral(m[1].toUpperCase())}
+ORDER BY column_id`,
+  },
+  {
+    cat: "Show: Tables", name: "Show Table Definition", template: "show table table_name definition", dbTypes: ["oracle"],
+    desc: "Reconstructed CREATE TABLE — columns, types, and NOT NULL.",
+    pattern: /^show\s+table\s+(\S+)\s+definition$/i,
+    buildSql: (m) => `SELECT 'CREATE TABLE ' || owner || '.' || table_name || ' (' || CHR(10) ||
+  LISTAGG('  ' || column_name || ' ' || data_type ||
+    CASE WHEN nullable = 'N' THEN ' NOT NULL' ELSE '' END, ',' || CHR(10))
+  WITHIN GROUP (ORDER BY column_id) || CHR(10) || ');' AS table_definition
+FROM all_tab_columns
+WHERE table_name = ${sqlLiteral(m[1].toUpperCase())}
+GROUP BY owner, table_name`,
+  },
+  {
+    cat: "Show: Functions & Procedures", name: "Show Functions & Procedures", template: "show functions", dbTypes: ["oracle"],
+    desc: "Every function and procedure.",
+    pattern: /^show\s+functions$/i,
+    buildSql: () => `SELECT owner, object_name, object_type
+FROM all_objects WHERE object_type IN ('FUNCTION','PROCEDURE') AND ${ORACLE_SYSTEM_SCHEMA_FILTER}
+ORDER BY owner, object_name`,
+  },
+  {
+    cat: "Show: Triggers", name: "Show Triggers", template: "show triggers", dbTypes: ["oracle"],
+    desc: "Every trigger — which table, triggering event, enabled or disabled.",
+    pattern: /^show\s+triggers$/i,
+    buildSql: () => `SELECT owner, trigger_name, table_name, triggering_event, status
+FROM all_triggers
+WHERE ${ORACLE_SYSTEM_SCHEMA_FILTER}
+ORDER BY owner, table_name, trigger_name`,
+  },
+  {
+    cat: "Show: Indexes & Constraints", name: "Show Indexes", template: "show indexes", dbTypes: ["oracle"],
+    desc: "Every index — which table, unique or not.",
+    pattern: /^show\s+indexes$/i,
+    buildSql: () => `SELECT owner, index_name, table_name, uniqueness
+FROM all_indexes
+WHERE ${ORACLE_SYSTEM_SCHEMA_FILTER}
+ORDER BY owner, table_name, index_name`,
+  },
+  {
+    cat: "Show: Foreign Keys", name: "Show Foreign Keys", template: "show foreign keys", dbTypes: ["oracle"],
+    desc: "Every foreign key — source table/column, target table/column.",
+    pattern: /^show\s+foreign\s+keys$/i,
+    buildSql: () => `SELECT a.owner AS from_schema, a.table_name AS from_table, acc.column_name AS from_column,
+       r.owner AS to_schema, r.table_name AS to_table, rcc.column_name AS to_column
+FROM all_constraints a
+JOIN all_cons_columns acc ON acc.constraint_name = a.constraint_name AND acc.owner = a.owner
+JOIN all_constraints r ON r.constraint_name = a.r_constraint_name AND r.owner = a.r_owner
+JOIN all_cons_columns rcc ON rcc.constraint_name = r.constraint_name AND rcc.owner = r.owner AND rcc.position = acc.position
+WHERE a.constraint_type = 'R' AND ${ORACLE_SYSTEM_SCHEMA_FILTER.replace("owner", "a.owner")}
+ORDER BY a.owner, a.table_name`,
+  },
+  {
+    cat: "Show: Views", name: "Show Views", template: "show views", dbTypes: ["oracle"],
+    desc: "Every view.",
+    pattern: /^show\s+views$/i,
+    buildSql: () => `SELECT owner, view_name FROM all_views WHERE ${ORACLE_SYSTEM_SCHEMA_FILTER} ORDER BY owner, view_name`,
+  },
+  {
+    cat: "Show: Activity", name: "Show Activity", template: "show activity", dbTypes: ["oracle"],
+    desc: "Every active session — username, machine, program, status.",
+    pattern: /^show\s+activity$/i,
+    buildSql: () => `SELECT sid, serial#, username, status, machine, program
+FROM v$session WHERE username IS NOT NULL
+ORDER BY sid`,
+  },
+  {
+    cat: "Show: Roles & Permissions", name: "Show Grants", template: "show grants", dbTypes: ["oracle"],
+    desc: "Every table-level privilege grant.",
+    pattern: /^show\s+grants$/i,
+    buildSql: () => `SELECT grantee, table_schema AS owner, table_name, privilege
+FROM all_tab_privs
+ORDER BY grantee`,
+  },
+  {
+    cat: "Show: Version", name: "Show Version", template: "show version", dbTypes: ["oracle"],
+    desc: "The connected Oracle database's version string.",
+    pattern: /^show\s+version$/i,
+    buildSql: () => `SELECT banner AS version FROM v$version WHERE banner LIKE 'Oracle%'`,
+  },
 ];
 
 // The one entry point runQuery() calls. Returns { name, sql } on a match
 // (sql is the real query to actually run), or null for ordinary SQL that
 // should go through the normal pipeline untouched.
+function commandAppliesToCurrentDbType(cmd) {
+  // Missing dbTypes means Postgres-only — every one of the original 32
+  // SHOW_COMMANDS entries predates multi-database support and is
+  // 100% pg_catalog-based, so that's the correct implicit default, not
+  // a guess. Only the newer mssql/oracle entries set dbTypes explicitly.
+  const types = cmd.dbTypes || ["postgres"];
+  return types.includes(currentDbType());
+}
+
 function matchShowCommand(statementText) {
   // Order matters: stripping a trailing ";" (plus whatever trails it)
   // BEFORE trimming/collapsing is what handles "show tables ;" correctly
@@ -1541,6 +1931,7 @@ function matchShowCommand(statementText) {
   // input, not assumed.
   const normalized = statementText.replace(/;\s*$/, "").trim().replace(/\s+/g, " ");
   for (const cmd of SHOW_COMMANDS) {
+    if (!commandAppliesToCurrentDbType(cmd)) continue;
     const m = cmd.pattern.exec(normalized);
     if (m) return { name: cmd.name, sql: cmd.buildSql(m) };
   }
@@ -1565,10 +1956,12 @@ function matchShowCommand(statementText) {
 // as one contiguous block regardless of where its entries sit in
 // SHOW_COMMANDS — while leaving that array's own order untouched, since
 // changing it would break the matching precedence it exists for.
-(function buildHelpDialog() {
+function buildHelpDialog() {
   const body = $("helpBody");
+  body.innerHTML = ""; // re-buildable, not just a load-time IIFE — called again whenever connDbType changes, so the cheatsheet only ever lists commands that actually apply
   const byCategory = new Map();
   for (const cmd of SHOW_COMMANDS) {
+    if (!commandAppliesToCurrentDbType(cmd)) continue;
     if (!byCategory.has(cmd.cat)) byCategory.set(cmd.cat, []);
     byCategory.get(cmd.cat).push(cmd);
   }
@@ -1607,7 +2000,8 @@ function matchShowCommand(statementText) {
       body.appendChild(row);
     }
   }
-})();
+}
+buildHelpDialog();
 
 $("btnShowHelp").addEventListener("click", () => $("helpDialog").showModal());
 $("btnCloseHelp").addEventListener("click", () => $("helpDialog").close());
@@ -1632,6 +2026,7 @@ function loadConnectionFields() {
 function saveConnectionFields() {
   try {
     localStorage.setItem(CONNECTION_KEY, JSON.stringify({
+      db_type: $("connDbType").value,
       host: $("connHost").value,
       port: $("connPort").value,
       database: $("connDatabase").value,
@@ -1642,8 +2037,11 @@ function saveConnectionFields() {
 (function prefillConnectionFields() {
   const saved = loadConnectionFields();
   if (!saved) return;
+  const dbType = saved.db_type || "postgres"; // pre-multi-db saves were always Postgres
+  $("connDbType").value = dbType;
+  applyDbTypeToForm(dbType);
   $("connHost").value = saved.host || "";
-  $("connPort").value = saved.port || 5432;
+  $("connPort").value = saved.port || DB_TYPE_DEFAULT_PORTS[dbType];
   $("connDatabase").value = saved.database || "";
   $("connUsername").value = saved.username || "";
 })();
@@ -1654,6 +2052,21 @@ function showConnectError(msg) {
   box.textContent = msg;
   box.classList.add("show");
 }
+
+// ---- Database type (port placeholder, "Database" vs "Service Name"
+// label, and the editor's highlighting/autocomplete dialect all follow
+// the selected type) ----
+const CONN_DATABASE_LABELS = { postgres: "Database", mssql: "Database", oracle: "Service Name" };
+
+function applyDbTypeToForm(dbType) {
+  $("connPort").placeholder = String(DB_TYPE_DEFAULT_PORTS[dbType] || "");
+  $("connDatabaseLabel").textContent = CONN_DATABASE_LABELS[dbType] || "Database";
+  refreshSqlDialectExtension();
+  buildHelpDialog(); // the "?" cheatsheet only lists commands that apply to the now-selected db type
+}
+
+$("connDbType").addEventListener("change", () => applyDbTypeToForm($("connDbType").value));
+applyDbTypeToForm($("connDbType").value);
 
 // ---- SSH tunnel fields (purely client-side show/hide) ----
 $("connUseSsh").addEventListener("change", () => {
@@ -1724,8 +2137,14 @@ $("btnVaultLoad").addEventListener("click", async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Couldn't load saved connection.");
     const c = data.data;
+    // Missing db_type means a connection saved before multi-database
+    // support existed — those were always Postgres, so that's the
+    // correct implicit default, not a guess.
+    const dbType = c.db_type || "postgres";
+    $("connDbType").value = dbType;
+    applyDbTypeToForm(dbType);
     $("connHost").value = c.host || "";
-    $("connPort").value = c.port || 5432;
+    $("connPort").value = c.port || DB_TYPE_DEFAULT_PORTS[dbType];
     $("connDatabase").value = c.database || "";
     $("connUsername").value = c.username || "";
     $("connPassword").value = c.password || "";
@@ -1745,11 +2164,13 @@ $("btnVaultSave").addEventListener("click", async () => {
   }
   const name = prompt("Save this connection as:", `${username}@${host}/${database}`);
   if (!name) return;
+  const dbType = currentDbType();
   const payload = {
     name, kind: VAULT_KIND,
     data: {
-      host, port: parseInt($("connPort").value, 10) || 5432, database, username,
+      host, port: parseInt($("connPort").value, 10) || DB_TYPE_DEFAULT_PORTS[dbType], database, username,
       password: $("connPassword").value,
+      db_type: dbType,
       ssh_tunnel: currentSshTunnelOrNull(),
     },
   };
@@ -1811,8 +2232,9 @@ function applyConnectionStatus(status, forceOpen) {
   if (isConnected) {
     badge.textContent = "● Connected";
     badge.className = "count-badge status-badge connected";
+    const dbTypeLabel = DB_TYPE_LABELS[status.db_type] ? ` [${DB_TYPE_LABELS[status.db_type]}]` : "";
     $("connectionStatusText").textContent =
-      `Connected — ${status.username}@${status.host}:${status.port}/${status.database}` +
+      `Connected — ${status.username}@${status.host}:${status.port}/${status.database}${dbTypeLabel}` +
       (status.via_ssh_tunnel ? " (via SSH tunnel)" : "");
     $("connectionForm").style.display = "none";
     $("connectionStatusView").style.display = "block";
@@ -1828,9 +2250,11 @@ function applyConnectionStatus(status, forceOpen) {
 }
 
 $("btnConnect").addEventListener("click", async () => {
+  const dbType = currentDbType();
   const body = {
+    db_type: dbType,
     host: $("connHost").value.trim(),
-    port: parseInt($("connPort").value, 10) || 5432,
+    port: parseInt($("connPort").value, 10) || DB_TYPE_DEFAULT_PORTS[dbType],
     database: $("connDatabase").value.trim(),
     username: $("connUsername").value.trim(),
     password: $("connPassword").value,
@@ -2239,22 +2663,38 @@ $("chkAllSchemas").addEventListener("change", (e) => {
   updateSchemaFilterButtonLabel();
 });
 
+const SCHEMA_LIST_QUERIES = {
+  postgres: () => `SELECT n.nspname AS schema_name FROM pg_namespace n WHERE ${SYS_SCHEMA_FILTER} ORDER BY n.nspname`,
+  mssql: () => `SELECT name AS schema_name FROM sys.schemas WHERE name NOT IN (
+    'sys','INFORMATION_SCHEMA','guest','db_accessadmin','db_backupoperator','db_datareader',
+    'db_datawriter','db_ddladmin','db_denydatareader','db_denydatawriter','db_owner','db_securityadmin'
+  ) ORDER BY name`,
+  oracle: () => `SELECT DISTINCT owner AS schema_name FROM all_tables WHERE owner NOT IN (
+    ${ORACLE_SYSTEM_SCHEMAS.map(sqlLiteral).join(",")}
+  ) ORDER BY owner`,
+};
+
 async function ensureSchemaListLoaded() {
   if (schemaListLoaded) return;
   try {
+    const queryFn = SCHEMA_LIST_QUERIES[currentDbType()] || SCHEMA_LIST_QUERIES.postgres;
     const res = await fetch("query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sql: `SELECT n.nspname AS schema_name FROM pg_namespace n WHERE ${SYS_SCHEMA_FILTER} ORDER BY n.nspname` }),
+      body: JSON.stringify({ sql: queryFn() }),
     });
     const data = await res.json();
     if (res.ok && data.kind === "rows") {
       availableSchemas = data.rows.map((r) => r[0]);
-      // Default selection: 'public' if it exists (matches this tool's
-      // original public-only behavior, so existing users aren't
-      // surprised), else just leave nothing pre-checked — better than
-      // guessing at an unfamiliar database's "main" schema.
-      selectedSchemas = new Set(availableSchemas.includes("public") ? ["public"] : []);
+      // Default selection: Postgres's conventional 'public' / SQL
+      // Server's conventional 'dbo', if it exists (matches this tool's
+      // original public-only behavior for Postgres, extended the same
+      // way for SQL Server's equivalent convention) — Oracle has no
+      // comparable universal default schema name (schema == username),
+      // so nothing is pre-checked there; better than guessing at an
+      // unfamiliar database's "main" schema.
+      const defaultSchemaName = { postgres: "public", mssql: "dbo", oracle: null }[currentDbType()];
+      selectedSchemas = new Set(defaultSchemaName && availableSchemas.includes(defaultSchemaName) ? [defaultSchemaName] : []);
       schemaListLoaded = true;
     }
   } catch (e) {
@@ -2318,12 +2758,17 @@ $("btnFetchSchema").addEventListener("click", async () => {
       showSchemaError("No tables found in the selected schema(s).");
       return;
     }
-    // cell is already a parsed object — psycopg decodes json/jsonb columns
-    // automatically, and that decoded value round-trips through this
-    // response's own JSON encoding, so no JSON.parse needed here. Re-stringify
-    // it (pretty-printed) so it displays in the textarea the same way a
+    // Postgres: cell is already a parsed object — psycopg decodes json/
+    // jsonb columns automatically, and that decoded value round-trips
+    // through this response's own JSON encoding, no JSON.parse needed.
+    // SQL Server/Oracle: neither driver auto-decodes JSON the way
+    // psycopg does — cell is the raw JSON text as a plain string (for
+    // Oracle, only after db_engine.py's LOB-to-str conversion), so it
+    // needs an explicit parse first. Either way, re-stringify
+    // (pretty-printed) so it displays in the textarea the same way a
     // manually-pasted schema would.
-    const text = JSON.stringify(cell, null, 2);
+    const parsed = typeof cell === "string" ? JSON.parse(cell) : cell;
+    const text = JSON.stringify(parsed, null, 2);
     $("schemaInput").value = text;
     applySchema(text);
   } catch (e) {
@@ -2505,7 +2950,21 @@ const TEMPLATES = [
 // `template` text (table_name, function_name, ...) are already in
 // PLACEHOLDER_TOKENS from the original 125 templates, so they become
 // Tab-stop fields automatically too.
+//
+// Deduplicated by `template` text, not pushed one-per-SHOW_COMMANDS-entry
+// — the mssql/oracle variants added for multi-database support
+// deliberately reuse the EXACT SAME phrase as their Postgres equivalent
+// (e.g. "show tables" means the same thing regardless of which database
+// is connected), so without this, the Templates search panel would show
+// 2-3 visually-identical "show tables" rows that insert byte-identical
+// text either way — Run's own matchShowCommand() already resolves to
+// the right dialect's SQL at run time regardless of which duplicate was
+// clicked here, so collapsing to one row per distinct phrase loses
+// nothing and avoids cluttering search results with lookalikes.
+const seenShowTemplates = new Set();
 SHOW_COMMANDS.forEach((cmd) => {
+  if (seenShowTemplates.has(cmd.template)) return;
+  seenShowTemplates.add(cmd.template);
   TEMPLATES.push({ cat: cmd.cat, name: cmd.name, sql: cmd.template });
 });
 $("templateSearch").placeholder = "Search all " + TEMPLATES.length + " templates…";

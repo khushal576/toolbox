@@ -853,6 +853,223 @@ version, and extensions.
   would preserve formatting perfectly but never wrap, forcing horizontal
   scroll for something like a long `CHECK` constraint line).
 
+### Multi-database support (Postgres, SQL Server, Oracle)
+
+Originally Postgres-only. A "Database type" selector in the Connection
+panel now lets Run/Connect/Export/Fetch Schema/show-commands all work
+against SQL Server and Oracle too — built explicitly as a reusable base
+(`core/db/`'s `Dialect` abstraction, see root `CLAUDE.md`'s "Shared
+connectors" section), not a one-off bolted onto this tool alone, though
+this is still the only tool that actually uses it. Schema Map stays
+Postgres-only and untouched.
+
+- **One `Dialect` per database** (`core/db/dialect_postgres.py`/
+  `dialect_mssql.py`/`dialect_oracle.py`, looked up by
+  `core/db/registry.py`'s `get_dialect(db_type)`) is what every
+  dialect-specific piece of behavior hides behind — conninfo building,
+  pool open/checkout/close, the row-cap SQL template, streaming export
+  cursors, and the schema-fetch query. `sql-studio/db_engine.py`'s
+  `_POOL` (a `core.pooled_db.PooledDbConnection`) has no fixed dialect
+  of its own — `connect(db_type=...)` resolves one fresh each call, so
+  reconnecting under a different `db_type` just works, same "one
+  connection at a time" model as before.
+- **Drivers: `python-tds` (SQL Server) and `python-oracledb` in thin
+  mode (Oracle)** — both pure-Python, no ODBC/FreeTDS/Oracle Instant
+  Client install needed in the one shared Dockerfile, chosen
+  specifically to avoid repeating this repo's documented `duckdb`
+  wheel-availability pain. `pytds` turned out to need no `pyodbc`
+  fallback at all — confirmed directly against a real throwaway
+  `mssql/server` container: immediate failure on a bad password (no
+  hang), `fetchmany()` streaming without a named server-side cursor,
+  and a genuine working per-statement timeout via its own `timeout=`
+  kwarg (cut a deliberate 5-second query off at ~1 second).
+- **Row-cap wrapping is a different SQL template per dialect, found the
+  hard way for SQL Server specifically.** Postgres (unchanged):
+  `SELECT * FROM (<sql>) AS _sq LIMIT {n}`. Oracle (12c+):
+  `SELECT * FROM (<sql>) FETCH FIRST {n} ROWS ONLY` — confirmed to work
+  even when `<sql>` itself is a multi-CTE `WITH ...` chain. **SQL
+  Server's first implementation used the same "wrap in TOP + a derived
+  table" shape and was wrong in two different ways, both found only by
+  running it against a real engine, not by reasoning about T-SQL
+  syntax**: (1) a trailing `ORDER BY` inside a derived table is illegal
+  in T-SQL unless that inner query itself has `TOP`/`OFFSET`/`FOR XML`
+  — real error, not hypothetical (`"The ORDER BY clause is invalid in
+  views, inline functions, derived tables..."`); (2) wrapping a
+  `WITH ...` (CTE) statement the same way is ALSO illegal
+  (`"Incorrect syntax near the keyword 'WITH'"`) — which matters a lot
+  here specifically because `dialect_mssql.py`'s own `schema_fetch_query()`
+  always produces a multi-CTE statement, so the original wrap broke
+  Fetch Schema outright for this dialect. Rewritten entirely: SQL Server
+  now appends a trailing `OFFSET 0 ROWS FETCH NEXT {n} ROWS ONLY`
+  directly onto the original statement instead of wrapping it in
+  anything — if the statement already ends in a top-level `ORDER BY`
+  (detected by `core/db/dialect_mssql.py`'s own small string/comment/
+  paren-depth-aware scanner, `_has_trailing_order_by()` — NOT a reuse of
+  this file's own tokenizer, since `core/` doesn't import from a tool
+  folder), the suffix is appended right after it; otherwise a dummy
+  `ORDER BY (SELECT NULL)` is inserted first, since T-SQL's `FETCH`
+  clause requires an `ORDER BY` to be legal at all. This sidesteps both
+  bugs at once — no derived table, no CTE-nesting problem, no
+  TOP-must-come-after-DISTINCT ordering problem either. Verified against
+  a real SQL Server: a plain `SELECT`, a `SELECT ... ORDER BY`, and a
+  multi-CTE `WITH ...` chain all cap correctly at exactly `n` rows.
+- **Row-returning DML (`INSERT`/`UPDATE`/`DELETE ... RETURNING`, SQL
+  Server's `OUTPUT`, Oracle's `RETURNING ... INTO`) has no safe cap for
+  SQL Server or Oracle, confirmed empirically, not assumed.** Wrapping
+  either in the same SELECT-cap pattern fails outright against a real
+  engine (SQL Server: `"Incorrect syntax near 'OUTPUT'"`; Oracle:
+  `"ORA-00903: invalid table name"` — `RETURNING INTO` is
+  bind-variable-based, never a real result set, so it can't sit inside
+  a `FROM` clause at all). `wrap_dml_returning_cap()` returns `None` for
+  both dialects, and `query_guard.prepare()` rejects that case with a
+  clear error ("Row-returning UPDATE isn't supported through Run for
+  oracle yet...") rather than running it uncapped or guessing at a
+  rewrite. This does NOT affect "Export FULL result to Vault" — that
+  path never reads `executable_sql` at all, it always runs the
+  original, unwrapped statement (see that section above), so exporting
+  a row-returning DML statement for these two dialects still works.
+- **Oracle CLOB columns need an explicit decode — FastAPI's
+  `JSONResponse` can't serialize an `oracledb.LOB` object, and this
+  isn't hypothetical: `dialect_oracle.py`'s own `schema_fetch_query()`
+  returns one.** `db_engine.py`'s `_decode_lob_cell()` detects any
+  value with a `.read` attribute (driver-agnostic — Postgres/SQL Server
+  rows never have this) and reads it into a plain string before it's
+  ever put in a response, in both `_execute_sync` (ordinary Run) and
+  `_export_sync` (the uncapped Vault export). Without this, ANY query
+  touching a CLOB/BLOB column against Oracle would 500, not just the
+  schema-fetch one.
+- **Column names must be read by index (`d[0]`), never `.name`** — a
+  real portability gap, not a style preference: `psycopg`'s cursor
+  `description` entries support `.name` as a convenience, but `pytds`'s
+  are plain tuples and don't (confirmed directly against a real SQL
+  Server: `'tuple' object has no attribute 'name'`). `[0]` is the one
+  access pattern the DB-API spec actually guarantees across all three
+  drivers.
+- **Schema-fetch's result shape differs by dialect, and the frontend
+  has to handle both.** Postgres's `json_object_agg` comes back as an
+  already-parsed nested object (psycopg auto-decodes `json`/`jsonb`
+  columns), round-tripping through this response's own JSON encoding
+  with zero extra work. SQL Server (`STRING_AGG` + manual string
+  concatenation — no built-in "aggregate into one JSON object"
+  function available on this image) and Oracle (`JSON_OBJECTAGG`, after
+  the LOB-decode fix above) both come back as a plain STRING containing
+  JSON text, needing an explicit `JSON.parse()` first.
+  `ui/index.html`'s `btnFetchSchema` handler branches on
+  `typeof cell === "string"` to cover both cases with one code path.
+- **Oracle's `JSON_OBJECTAGG` defaults to a 4000-character `VARCHAR2`
+  output and throws `ORA-40478` the moment a real schema's JSON exceeds
+  that — found only by running it against real tables, not from reading
+  Oracle's own docs.** Both the inner (per-table) and outer
+  (whole-schema) aggregation in `dialect_oracle.py`'s
+  `schema_fetch_query()` need `RETURNING CLOB` explicitly — a single
+  wide table's own column list alone can exceed 4000 characters, so the
+  inner one needs it too, not just the outer.
+- **Oracle's default install ships several more built-in schemas than
+  the obvious `SYS`/`SYSTEM`** — found by running the UNFILTERED schema
+  list query against a real `gvenzl/oracle-free` container and seeing
+  `APPQOSSYS`/`AUDSYS`/`DBSFWUSER`/`DBSNMP`/`DVSYS`/
+  `GSMADMIN_INTERNAL`/`LBACSYS`/`VECSYS` show up as real owners of real
+  tables. `_ORACLE_SYSTEM_SCHEMAS` in `core/db/dialect_oracle.py` and
+  `ORACLE_SYSTEM_SCHEMAS` in `ui/index.html` are the same list, kept in
+  sync by hand — if a newer Oracle version ships yet another one, it'll
+  show up as a surprise "schema" in the Fetch Schema filter dropdown,
+  not a crash; add it to both lists.
+- **`ALL_TAB_PRIVS`'s schema-name column is `TABLE_SCHEMA`, not
+  `OWNER`, on this Oracle version** — the "Show Grants" oracle
+  show-command was written assuming `OWNER` (matching older Oracle
+  documentation/training data) and failed with `ORA-00904` until
+  checked directly against the real catalog's actual columns. Re-verify
+  column names against the real engine rather than trusting recalled
+  Oracle documentation, especially for less common `ALL_*`/`DBA_*`
+  views — this project's own history already has one precedent for this
+  exact mistake (see "Show commands" above, the `json_object_agg`/
+  `jsonb_object_agg` bug).
+- **Show-commands parity is deliberately NOT 32-for-32.** SQL Server and
+  Oracle each get the ~11 highest-value commands (tables, table
+  columns, table definition, functions/procedures, triggers, indexes,
+  foreign keys, views, activity, grants, version) — tagged
+  `dbTypes: ["mssql"]`/`["oracle"]` on their `SHOW_COMMANDS` entries.
+  Entries with NO `dbTypes` field are implicitly Postgres-only (every
+  one of the original 32 predates multi-database support and is
+  entirely `pg_catalog`-based) — `commandAppliesToCurrentDbType()` is
+  the one function both `matchShowCommand()` (Run) and
+  `buildHelpDialog()` (the "?" cheatsheet) check before a command is
+  allowed to match/show. ~20 of the original 32 (extensions, enum-type
+  catalogs, several sequence/tablespace variants) have no clean 1:1
+  concept in the other two databases at all and are staying
+  Postgres-only for the foreseeable future — not a gap to "complete"
+  without a real design discussion, since several of them genuinely
+  don't translate.
+- **The mssql/oracle show-command phrases deliberately reuse the EXACT
+  same text as their Postgres equivalent** (`"show tables"` means the
+  same thing no matter which database is connected) — which means
+  `SHOW_COMMANDS.forEach((cmd) => TEMPLATES.push(...))` needed a
+  dedup step (`seenShowTemplates`, a `Set` keyed on `cmd.template`) to
+  avoid the Templates search panel showing 2-3 visually-identical
+  "show tables" rows. Deduplicating is correct here, not just
+  convenient — clicking any copy inserts byte-identical text, and
+  `matchShowCommand()` already resolves to the right dialect's real SQL
+  at Run time regardless of which copy was clicked.
+- **`buildHelpDialog()` is now a rebuildable function, not a load-time
+  IIFE** — called once on page load and again every time `connDbType`
+  changes (from `applyDbTypeToForm()`), so the "?" cheatsheet always
+  lists exactly the commands that apply to whichever database is
+  currently selected, not whatever was selected when the page first
+  loaded.
+- **Verified with the same discipline as the original Postgres-only
+  build — every new SQL template run against a real throwaway container
+  (`mcr.microsoft.com/mssql/server`, `gvenzl/oracle-free`) before being
+  trusted, not written from memory and assumed correct.** This is what
+  caught every bug listed above; none of them were visible from reading
+  the SQL alone.
+
+### The introspection SQL also lives in `core/db/` now, not just `ui/index.html`
+
+A second pass, after the owner explicitly asked "will this become the
+base for what's next" and "is everything each database supports
+actually shown." Each `Dialect` (`core/db/dialect_postgres.py`/
+`dialect_mssql.py`/`dialect_oracle.py`) gained 11 methods —
+`list_tables_sql()`, `table_columns_sql(table)`, `table_definition_sql(table)`,
+`list_functions_sql()`, `list_triggers_sql()`, `list_indexes_sql()`,
+`list_foreign_keys_sql()`, `list_views_sql()`, `activity_sql()`,
+`grants_sql(table=None)`, `version_sql()` — each returning SQL TEXT
+(same shape as `schema_fetch_query()`), ported verbatim from the
+already-verified `SHOW_COMMANDS` entries (Postgres's included — those
+existed only as JS before this pass). **The point**: before this,
+these queries existed ONLY as JavaScript in this file — a future
+headless tool (a multi-db Schema Map, a migration tool, anything
+without a browser) had nothing to call. Now `core/db/` has a genuinely
+symmetric introspection API across all three databases, not just a
+connector. `ui/index.html`'s `SHOW_COMMANDS` keeps its own copy
+unchanged in shape — same "two independent copies, kept in sync by
+hand" convention already used for `schema_fetch_query` and the
+tokenizer — this was additive, not a rewire of Run's execution path.
+
+**A real, more severe bug found BY doing this verification pass, not
+by the original build**: re-running `list_tables_sql()` against real
+containers surfaced that Oracle's version returned **138,097 rows** —
+every catalog/internal table in the entire instance, not just the
+connected user's own tables, because none of the six "list everything"
+queries (tables, functions, triggers, indexes, foreign keys, views)
+had a system-schema exclusion filter at all, unlike `schema_fetch_query()`
+(which already filtered via `_ORACLE_SYSTEM_SCHEMAS`). SQL Server had
+the identical gap at a smaller scale (housekeeping tables mixed in
+with real ones). Fixed by applying the SAME exclusion filter
+(`_ORACLE_SYSTEM_SCHEMA_FILTER`/`_MSSQL_SYSTEM_SCHEMA_FILTER`, both
+derived from the constants `schema_fetch_query()` already used) to all
+six queries, **in both the new Python methods AND their pre-existing
+JS twins** — the JS ones had exactly the same gap and are what SQL
+Studio's UI actually runs, so fixing only the new Python copies would
+have left the real bug live in the product. Verified by creating a
+genuine non-system user+table on each real container (`TESTUSER`/
+`testdb`, not `SYSTEM`/`master` — the original test accounts, which
+are themselves excluded by the fix and would have silently shown zero
+results) and confirming `list_tables_sql()`/`list_views_sql()`/
+`list_foreign_keys_sql()`/`list_indexes_sql()` each correctly surface
+the real table/view/FK/index while showing zero rows from any system
+schema — Oracle's count dropped from 138,097 to exactly the 6 rows
+belonging to the real test tables.
+
 ## Things that will bite you if you don't know them
 
 - **CodeMirror 6 packages must resolve to one shared instance of

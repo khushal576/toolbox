@@ -89,22 +89,38 @@ function calls between modules that already run in the same process. If a
 headless need later grows an actual UI requirement, that's when it becomes
 a new tool under the checklist below, not before.
 
-## Shared connectors — one Postgres connector, one file loader, one vault
+## Shared connectors — one multi-database connector, one file loader, one vault
 
-Postgres-connecting logic (conninfo building, credential pre-validation,
-SSH tunneling, password scrubbing) lives in exactly two places:
-`core/postgres_conn.py` (the low-level primitives, including
-`open_ssh_tunnel()`) and `core/pooled_postgres.py` (the pool+reaper
-lifecycle built on top, used by sql-studio and schema-map — each still
-builds its own separate instance, genuinely different connections, just
-shared mechanics). The orchestrator's one-shot connector uses the
-low-level primitives directly, skipping the pool (wrong shape for a
-script that connects once and exits). File-extension-to-DuckDB-function
-mapping lives in `core/file_source.py`, shared by duck-lab and the
-orchestrator's file connector. **Don't add a fourth independent
-implementation of either** — if a new tool needs to connect to Postgres
-or read a CSV/JSON/Parquet file, it calls into these, the same way
-duck-lab/sql-studio/schema-map/orchestrator already do.
+**Multi-database support (Postgres/SQL Server/Oracle)** lives behind
+`core/db/dialect.py`'s `Dialect` protocol — one concrete class per
+database (`core/db/dialect_postgres.py`, `dialect_mssql.py`,
+`dialect_oracle.py`) implementing conninfo-building, pool open/checkout/
+close, the row-cap SQL template, and introspection (`schema_fetch_query()`
+plus 11 SQL-text-returning methods — `list_tables_sql()`,
+`list_functions_sql()`, `list_foreign_keys_sql()`, etc. — symmetric
+across all three databases, not just Postgres). `core/db/registry.py`'s
+`get_dialect(db_type)` is the one lookup point from a `"postgres"`/
+`"mssql"`/`"oracle"` string to a `Dialect` instance. `core/pooled_db.py`'s
+`PooledDbConnection` is the generalized pool+reaper lifecycle built on
+top — dialect-agnostic, parametrized by whichever `Dialect` a given
+`connect()` call passes in. **This is the precedent any future tool
+needing more than one database type should extend** — SQL Studio
+(`sql-studio/db_engine.py`/`query_guard.py`) is the first and so far
+only consumer that lets the dialect vary per connection; don't hand-roll
+a fourth connector or a second dialect-dispatch mechanism.
+
+`core/postgres_conn.py` (conninfo/verify primitives) and
+`core/pooled_postgres.py` (now a thin subclass of `PooledDbConnection`
+with `PostgresDialect` fixed as its default — see that file's own
+docstring) still exist exactly as before, backward-compatible: schema-map
+and the orchestrator's one-shot connector only ever talk to Postgres, so
+they keep using these directly, unaware anything underneath changed.
+File-extension-to-DuckDB-function mapping lives in `core/file_source.py`,
+shared by duck-lab and the orchestrator's file connector. **Don't add a
+fourth independent implementation of either** — if a new tool needs to
+connect to a database or read a CSV/JSON/Parquet file, it calls into
+these, the same way duck-lab/sql-studio/schema-map/orchestrator already
+do.
 
 `core/vault.py` is the shared, generic encrypted secret store (Fernet,
 no master password by deliberate owner choice — see `vault/CLAUDE.md`

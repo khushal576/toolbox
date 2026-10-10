@@ -34,7 +34,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -48,12 +48,14 @@ except ImportError:  # flat import when run standalone from within this folder
 
 try:  # core/ is a sibling top-level package in the real image (/app/core)
     from core import vault
+    from core.db.registry import get_dialect
     from core.postgres_conn import ssh_tunnel_from_dict
 except ImportError:  # standalone dev run from inside this folder: core/ is ../../core
     import sys as _sys
 
     _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from core import vault
+    from core.db.registry import get_dialect
     from core.postgres_conn import ssh_tunnel_from_dict
 
 app = FastAPI(
@@ -74,10 +76,11 @@ class SSHTunnelRequest(BaseModel):
 
 class ConnectRequest(BaseModel):
     host: str
-    port: int = 5432
+    port: Optional[int] = None  # None resolves to the chosen db_type's own default port
     database: str
     username: str
     password: str
+    db_type: Literal["postgres", "mssql", "oracle"] = "postgres"
     ssh_tunnel: Optional[SSHTunnelRequest] = None
 
 
@@ -105,10 +108,11 @@ async def serve_ui() -> HTMLResponse:
 @app.post("/connect")
 async def connect(body: ConnectRequest):
     tunnel_cfg = ssh_tunnel_from_dict(body.ssh_tunnel.model_dump() if body.ssh_tunnel else None)
+    port = body.port if body.port is not None else get_dialect(body.db_type).default_port
     try:
         return await db_engine.connect(
-            body.host, body.port, body.database, body.username, body.password,
-            ssh_tunnel=tunnel_cfg,
+            body.host, port, body.database, body.username, body.password,
+            db_type=body.db_type, ssh_tunnel=tunnel_cfg,
         )
     except db_engine.ConnectError as exc:
         return _error(str(exc))
@@ -126,8 +130,11 @@ async def status():
 
 @app.post("/query")
 async def run_query(body: QueryRequest):
+    dialect = db_engine.current_dialect()
+    if dialect is None:
+        return _error("Not connected — connect to a database first.")
     try:
-        classification = query_guard.prepare(body.sql)
+        classification = query_guard.prepare(body.sql, dialect)
     except query_guard.GuardError as exc:
         return _error(str(exc))
 
@@ -191,6 +198,7 @@ async def export_to_vault(body: ExportToVaultRequest):
     it into DataDiff Pro later. Streams via a server-side cursor —
     bounded memory regardless of row count."""
     tmp_path = Path(tempfile.gettempdir()) / f"sql_studio_export_{uuid.uuid4().hex}.csv"
+    dialect = db_engine.current_dialect()
     try:
         export_info = await db_engine.export_to_file(body.sql, tmp_path)
     except db_engine.ConnectError as exc:
@@ -201,7 +209,8 @@ async def export_to_vault(body: ExportToVaultRequest):
             "columns": export_info["columns"],
             "row_count": export_info["row_count"],
         }
-        secret_id = vault.save_dataset(body.name, "postgres_query_result", meta, tmp_path)
+        kind = f"{dialect.name}_query_result" if dialect else "sql_query_result"
+        secret_id = vault.save_dataset(body.name, kind, meta, tmp_path)
     finally:
         tmp_path.unlink(missing_ok=True)
     return JSONResponse({"ok": True, "id": secret_id, "row_count": export_info["row_count"]})

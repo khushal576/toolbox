@@ -28,8 +28,9 @@ misleads. If a file's job changes, update its row here in the same commit.
 | GitHub auth setup for this device                               | `GITHUB_AUTH.md` |
 | Calling a tool's engine directly without a browser (headless), chaining two tools together | `orchestrator/` — see its own `CLAUDE.md`; not a mounted tool, no entry here or in `registry.yaml` |
 | DataDiff Pro's mapping/equivalence/diff logic shared between the web UI and the orchestrator | `core/pipeline.py` (`run_compare`) |
-| Connecting to Postgres safely (conninfo, credential pre-validation, SSH tunneling, password scrubbing) — shared by sql-studio, schema-map, and the orchestrator's Postgres connector | `core/postgres_conn.py` (`build_conninfo`, `verify_connection`, `open_ssh_tunnel`, `scrub_password`) |
-| The pool+reaper lifecycle built on top of that — shared by sql-studio's and schema-map's own separate `_POOL` instances (NOT a shared connection, just shared mechanics) | `core/pooled_postgres.py` (`PooledPostgresConnection`) |
+| Connecting to Postgres safely (conninfo, credential pre-validation, SSH tunneling, password scrubbing) — shared by schema-map and the orchestrator's Postgres connector (Postgres-only consumers) | `core/postgres_conn.py` (`build_conninfo`, `verify_connection`, `open_ssh_tunnel`, `scrub_password`) |
+| Connecting to Postgres **or** SQL Server **or** Oracle — the `Dialect` abstraction SQL Studio uses to pick a database type per connection | `core/db/dialect.py` (the `Dialect` protocol), `core/db/dialect_postgres.py`/`dialect_mssql.py`/`dialect_oracle.py` (the three implementations), `core/db/registry.py` (`get_dialect(db_type)`) |
+| The pool+reaper lifecycle, generalized over any `Dialect` — SQL Studio passes a dialect per `connect()` call; schema-map's own separate `_POOL` instance keeps using the Postgres-only subclass, unaware anything changed underneath | `core/pooled_db.py` (`PooledDbConnection`), `core/pooled_postgres.py` (`PooledPostgresConnection`, now a 3-line backward-compatible subclass) |
 | Mapping a file extension to a DuckDB read function (csv/json/parquet) — shared by duck-lab and the orchestrator's file connector | `core/file_source.py` (`build_read_expr`, `detect_format`) |
 | The shared encrypted secret store (saved DB connections, SSH credentials, anything else) — behind the Vault tool and sql-studio/schema-map's "Save/Load connection" controls | `core/vault.py` — see its own module docstring and `vault/CLAUDE.md` for the trust model |
 
@@ -609,7 +610,9 @@ full picture.
 
 ## Tool: SQL Studio — mounted at `/tools/sql-studio/`
 
-A Postgres SQL workspace: paste/edit/pretty-print a query (arbitrary
+A multi-database SQL workspace (Postgres, SQL Server, or Oracle — a
+"Database type" selector in the Connection panel, see `core/db/`'s
+`Dialect` abstraction in the repo-wide table above): paste/edit/pretty-print a query (arbitrary
 complexity, comments preserved), an optional schema panel — paste
 `{"table_name": {"column_name": "data_type"}}` to get table/column
 autocomplete, or click "⚡ Fetch Schema" (in the main toolbar, next to
@@ -624,19 +627,27 @@ Code-style, auto-format on paste), a Templates panel (sidebar, between
 Connection and Schema) with ~125 prebuilt Postgres/PL/pgSQL snippets that
 insert at the cursor as real Tab-navigable fields, live-filtered against
 whatever you're typing with the last word weighted highest — and a
-**live Run against a real Postgres database**: a Connection panel (top of
-the sidebar, collapsed by default, collapses to a compact status line
-once connected) opens a server-side pool of up to 3 connections, Run
-executes exactly one statement at a time with a hard 500-row cap enforced
-by Postgres itself (`LIMIT`-wrapped, not fetched-then-truncated),
-destructive statements (`DROP`/`TRUNCATE`/`DELETE`/`ALTER`) require an
-explicit confirm, and results show in a dismissible overlay with CSV/JSON
-export — plus **32 "show" commands** (`show tables`, `show table orders
-definition`, `show functions`, `show triggers`, `show activity`, ...), a
-`psql \d`-family equivalent typed as plain phrases: type one and press
-Run, the real system-catalog SQL runs in its place, results show the
-same way. They're listed in the Templates panel (typing "show" surfaces
-them) and in a full cheatsheet behind the "?" button next to Run. Format,
+**live Run against a real database of any of the three types**: a
+Connection panel (top of the sidebar, collapsed by default, collapses to
+a compact status line once connected) opens a server-side pool of up to
+3 connections, Run executes exactly one statement at a time with a hard
+500-row cap enforced by the database itself (a dialect-specific wrap —
+`LIMIT` for Postgres, a trailing `OFFSET/FETCH` for SQL Server, `FETCH
+FIRST` for Oracle — never fetched-then-truncated), destructive statements
+(`DROP`/`TRUNCATE`/`DELETE`/`ALTER`) require an explicit confirm, and
+results show in a dismissible overlay with CSV/JSON export — plus **"show"
+commands** (`show tables`, `show table orders definition`, `show
+functions`, `show triggers`, `show activity`, ...), a `psql \d`-family
+equivalent typed as plain phrases: type one and press Run, the real
+system-catalog SQL runs in its place, results show the same way. 32 for
+Postgres; an additional ~11 each for SQL Server/Oracle (the highest-value
+subset — several Postgres ones, like extensions or enum-type catalogs,
+have no clean equivalent in the other two and are Postgres-only by
+design, not an oversight). They're listed in the Templates panel (typing
+"show" surfaces them, deduplicated across dialects since the phrase is
+identical either way — see `sql-studio/CLAUDE.md`) and in a full
+cheatsheet behind the "?" button next to Run, filtered to whichever
+database type is currently selected. Format,
 Templates, and Schema autocomplete remain 100% client-side and
 unaffected — only Run/Connect/Export/schema-fetch touch
 `sql-studio/server.py`'s backend routes (`db_engine.py`/`query_guard.py`);
@@ -671,12 +682,16 @@ two-copies-kept-in-sync tokenizer).
 | Templates panel rendering / search / insertion                          | `index.html` — `renderTemplateList()`, `insertTemplate()` (live mode replaces the trigger word via `currentLineLastWordSpan()`; blank-line padding uses `isAtLineStart()`/`isAtLineEnd()`, whitespace-aware not just single-character — see `sql-studio/CLAUDE.md` for two real bugs found here) |
 | Which words in a template become Tab-stop fields, adding a new one     | `index.html` — `PLACEHOLDER_TOKENS` Set (whitelist, not auto-detected) + `toSnippetTemplate()` — see `sql-studio/CLAUDE.md` for how the whitelist was built and verified against all 125 templates |
 | localStorage keys for restoring buffers/schema on reload                | `index.html` — `BUFFERS_KEY` (`sql_studio_buffers`), `ACTIVE_BUFFER_KEY` (`sql_studio_active_buffer`), `SCHEMA_KEY` (`sql_studio_schema`), `AUTOFORMAT_KEY` (`sql_studio_autoformat_on_paste`), `CONNECTION_KEY` (`sql_studio_connection` — host/port/database/username only, password never persisted); `QUERY_KEY` (`sql_studio_query`) is legacy, read-only, for one-time migration into buffer #1 |
-| The live Postgres connection pool (connect/disconnect/status, idle reaper) | `sql-studio/db_engine.py`'s `_POOL` — a `core.pooled_postgres.PooledPostgresConnection` (module-level, singular — see `sql-studio/CLAUDE.md` for why NOT a per-cookie dict). The pool+reaper mechanics (`connect()`/`disconnect()`/`status()`/`_reaper_loop()`) live in `core/pooled_postgres.py`, shared with `schema-map/db_engine.py`'s own separate instance — see `../CLAUDE.md`'s connector-consolidation note |
-| Whether a query is allowed to run, the destructive-statement check, the `LIMIT 500` wrap | `sql-studio/query_guard.py` — `prepare()` (entry point), `classify()`, `split_statements()` — the server-side, authoritative copy; `index.html`'s `splitTopLevelStatements()`/`firstStatementKeyword()` is the client-side UX-only twin, kept in sync by hand |
+| The live connection pool (connect/disconnect/status, idle reaper) for whichever of Postgres/SQL Server/Oracle is currently selected | `sql-studio/db_engine.py`'s `_POOL` — a `core.pooled_db.PooledDbConnection` (module-level, singular — see `sql-studio/CLAUDE.md` for why NOT a per-cookie dict) with NO fixed dialect; `connect(db_type=...)` resolves one via `core.db.registry.get_dialect()` and passes it in per call, so the same `_POOL` can hold a Postgres connection, then later a SQL Server one, never both at once |
+| Whether a query is allowed to run, the destructive-statement check, the row-cap wrap (dialect-specific template, see `core/db/dialect_*.py`'s `wrap_row_cap`/`wrap_dml_returning_cap`) | `sql-studio/query_guard.py` — `prepare(sql_text, dialect)` (entry point), `classify(statement, dialect)`, `split_statements()` — the server-side, authoritative copy; `index.html`'s `splitTopLevelStatements()`/`firstStatementKeyword()` is the client-side UX-only twin, kept in sync by hand. A row-returning `INSERT`/`UPDATE`/`DELETE ... RETURNING`/`OUTPUT` statement that this dialect can't safely cap (`wrap_dml_returning_cap()` returns `None` — Oracle's `RETURNING INTO`, SQL Server's `OUTPUT`) is rejected with a clear `GuardError`, not run uncapped |
 | Connect/Disconnect/Run/Export backend routes                            | `sql-studio/server.py` — `/connect`, `/disconnect`, `/status`, `/query`, `/export/csv`, `/export/json`, `/export/vault` (the uncapped, streamed-to-Vault export — see `db_engine.export_to_file`) |
 | Connection panel UI (collapsed-by-default ↔ full-form ↔ collapsed-status-line, localStorage persistence) | `index.html` — `applyConnectionStatus(status, forceOpen)`, `loadConnectionFields()`/`saveConnectionFields()`, `#detConnection` (see `sql-studio/CLAUDE.md` for the `forceOpen` rule — only Disconnect's click handler passes `true`) |
 | Run button, the results overlay, the destructive-confirm dialog          | `index.html` — `runQuery()`/`sendQuery()`, `renderResults()` (`#resultsDialog`), `openConfirmDialog()` (`#confirmDialog`) |
 | The "show tables"/"show table X definition"/etc. commands — adding one, changing the mapped SQL, the "?" cheatsheet | `index.html` — `SHOW_COMMANDS` array (single source of truth for matching AND the cheatsheet AND the Templates entries), `matchShowCommand()`, `buildHelpDialog()` (`#helpDialog`) — see `sql-studio/CLAUDE.md`'s "Show commands" section before touching array order |
+| Which database type is selected/connected, and everything that follows from it (port default, "Database" vs "Service Name" label, CodeMirror highlighting dialect, sql-formatter language, which `SHOW_COMMANDS`/schema-fetch/schema-list query applies) | `index.html` — `#connDbType`, `currentDbType()`, `DB_TYPE_LABELS`/`DB_TYPE_DEFAULT_PORTS`/`CM_DIALECT_FOR_DBTYPE`/`FORMATTER_LANG_FOR_DBTYPE`/`CONN_DATABASE_LABELS` lookup tables, `applyDbTypeToForm()` (called on page load and on the selector's `change` event — also what re-runs `buildHelpDialog()` and `refreshSqlDialectExtension()`) |
+| A `SHOW_COMMANDS` entry's dialect scope — which db type(s) it applies to | `index.html` — the entry's `dbTypes` field (array of `"postgres"`/`"mssql"`/`"oracle"`; **missing entirely means Postgres-only**, since all 32 original entries predate multi-database support); `commandAppliesToCurrentDbType()` is the one function both `matchShowCommand()` and `buildHelpDialog()` check before matching/listing an entry |
+| Fetching the schema live from a connected database (any of the three types) | `index.html` — `buildSchemaFetchQuery()` dispatches to `buildSchemaFetchQueryPostgres`/`Mssql`/`Oracle` by `currentDbType()`; Python twins (same SQL, verified against real containers) live in `core/db/dialect_*.py`'s `schema_fetch_query()` — two independent copies, kept in sync by hand, same convention as the tokenizer |
+| Calling the SAME introspection (tables/columns/functions/triggers/indexes/foreign keys/views/activity/grants/version) headlessly, without a browser, for any of the three database types | `core/db/dialect_*.py`'s `list_tables_sql()`/`table_columns_sql()`/`table_definition_sql()`/`list_functions_sql()`/`list_triggers_sql()`/`list_indexes_sql()`/`list_foreign_keys_sql()`/`list_views_sql()`/`activity_sql()`/`grants_sql()`/`version_sql()` — real SQL-text-returning methods on every `Dialect`, not just Postgres; this is what makes `core/db/` an actual reusable introspection base, not just a connector. `ui/index.html`'s `SHOW_COMMANDS` keeps its own independent copy (same convention as above); both were fixed together when a system-schema-filtering gap was found (see `sql-studio/CLAUDE.md`) |
 
 ### Known non-obvious behavior
 

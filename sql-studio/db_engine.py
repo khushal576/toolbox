@@ -46,13 +46,17 @@ except ImportError:  # flat import when run standalone from within this folder
     import query_guard
 
 try:  # core/ is a sibling top-level package in the real image (/app/core)
-    from core.pooled_postgres import PooledPostgresConnection
+    from core.db.dialect import Dialect
+    from core.db.registry import get_dialect
+    from core.pooled_db import PooledDbConnection
 except ImportError:  # standalone dev run from inside this folder: core/ is ../../core
     import sys as _sys
     from pathlib import Path as _Path
 
     _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
-    from core.pooled_postgres import PooledPostgresConnection
+    from core.db.dialect import Dialect
+    from core.db.registry import get_dialect
+    from core.pooled_db import PooledDbConnection
 
 ROW_CAP = query_guard.ROW_CAP
 
@@ -79,13 +83,27 @@ class QueryResult:
     rows: list[list[Any]]
 
 
-_POOL = PooledPostgresConnection(
+_POOL = PooledDbConnection(
     pool_max_size=3, idle_timeout_seconds=20 * 60,
     statement_timeout_ms=STATEMENT_TIMEOUT_MS, connect_error_cls=ConnectError,
 )
+# No default dialect (unlike schema-map's PooledPostgresConnection) —
+# this tool can connect to any ONE of Postgres/SQL Server/Oracle at a
+# time, chosen per connect() call, not fixed for the tool's lifetime.
 
-connect = _POOL.connect
 status = _POOL.status
+current_dialect = _POOL.current_dialect
+
+
+async def connect(
+    host: str, port: int, database: str, username: str, password: str,
+    *, db_type: str = "postgres", ssh_tunnel=None,
+) -> dict[str, Any]:
+    try:
+        dialect = get_dialect(db_type)
+    except ValueError as exc:
+        raise ConnectError(str(exc)) from exc
+    return await _POOL.connect(host, port, database, username, password, dialect=dialect, ssh_tunnel=ssh_tunnel)
 
 # last_result is SQL Studio's own concern (what /export/csv and
 # /export/json read), not part of the shared pool lifecycle — cleared
@@ -100,13 +118,34 @@ def disconnect() -> dict[str, Any]:
     return _POOL.disconnect()
 
 
+def _decode_lob_cell(value: Any) -> Any:
+    """Oracle's driver hands back a CLOB/BLOB column as an `oracledb.LOB`
+    object (confirmed directly — JSON_OBJECTAGG's output in
+    dialect_oracle.py's schema_fetch_query is one real example), which
+    FastAPI's JSONResponse can't serialize at all (it isn't a str/int/
+    dict/list) — every row-returning query, not just that one, needs
+    this or Run breaks outright the first time it touches a LOB column.
+    Detected generically via a `.read` attribute (any DB-API LOB-like
+    object), not by importing oracledb here — Postgres/SQL Server rows
+    never have this attribute, so this is a no-op for them."""
+    if hasattr(value, "read"):
+        read = value.read()
+        return read.decode("utf-8", errors="replace") if isinstance(read, bytes) else read
+    return value
+
+
 def _execute_sync(conn, classification: "query_guard.Classification") -> dict[str, Any]:
     global _last_result
     with conn.cursor() as cur:
         cur.execute(classification.executable_sql)
         if cur.description is not None:
-            columns = [d.name for d in cur.description]
-            rows = [list(r) for r in cur.fetchall()]
+            # Index 0, not `.name` — portable across DB-API cursors.
+            # psycopg's description entries support `.name` as a
+            # convenience, but pytds's are plain tuples and don't
+            # (confirmed against a real SQL Server) — `[0]` is the one
+            # access pattern the DB-API spec actually guarantees.
+            columns = [d[0] for d in cur.description]
+            rows = [[_decode_lob_cell(v) for v in r] for r in cur.fetchall()]
             conn.commit()
             _last_result = QueryResult(columns=columns, rows=rows)
             return {
@@ -155,10 +194,11 @@ EXPORT_BATCH_SIZE = 5_000
 # "never materialize the whole thing in Python" design.
 
 
-def _export_sync(conn, statement: str, dest_path: Path) -> dict[str, Any]:
-    with conn.cursor(name=f"export_{uuid.uuid4().hex}") as cur:
+def _export_sync(conn, dialect: Dialect, statement: str, dest_path: Path) -> dict[str, Any]:
+    cur = dialect.open_export_cursor(conn, f"export_{uuid.uuid4().hex}", batch_size=EXPORT_BATCH_SIZE)
+    with cur:
         cur.execute(statement)
-        columns = [d.name for d in cur.description]
+        columns = [d[0] for d in cur.description]
         row_count = 0
         with dest_path.open("w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -167,6 +207,7 @@ def _export_sync(conn, statement: str, dest_path: Path) -> dict[str, Any]:
                 batch = cur.fetchmany(EXPORT_BATCH_SIZE)
                 if not batch:
                     break
+                batch = [[_decode_lob_cell(v) for v in row] for row in batch]
                 writer.writerows(batch)
                 row_count += len(batch)
     conn.commit()
@@ -178,17 +219,20 @@ async def export_to_file(sql: str, dest_path: Path) -> dict[str, Any]:
     statement, then stream its REAL full result (no row cap) to
     dest_path as CSV. Raises ConnectError for anything that fails
     validation or the export itself."""
+    dialect = current_dialect()
+    if dialect is None:
+        raise ConnectError("Not connected — connect to a database first.")
     statements = query_guard.split_statements(sql)
     if not statements:
         raise ConnectError("Nothing to export — the query is empty.")
     if len(statements) > 1:
         raise ConnectError("Export works on exactly one statement at a time.")
     statement = statements[0]
-    classification = query_guard.classify(statement)
+    classification = query_guard.classify(statement, dialect)
     if classification.is_destructive:
         raise ConnectError(
             f"Refusing to export a {classification.keyword} statement — export only supports read queries."
         )
     if not classification.returns_rows:
         raise ConnectError("This statement doesn't return rows — nothing to export.")
-    return await _POOL.run(_export_sync, statement, dest_path)
+    return await _POOL.run(_export_sync, dialect, statement, dest_path)
