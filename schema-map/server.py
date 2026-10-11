@@ -106,7 +106,7 @@ def _error(message: str, status: int = 400) -> JSONResponse:
 async def serve_ui() -> HTMLResponse:
     if not _UI_PATH.exists():
         return HTMLResponse(content="<h1>UI not found</h1>", status_code=404)
-    return HTMLResponse(content=_UI_PATH.read_text(encoding="utf-8"))
+    return HTMLResponse(content=_UI_PATH.read_text(encoding="utf-8"), headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/connect")

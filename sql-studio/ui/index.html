@@ -2352,22 +2352,32 @@ function applyConnectionStatus(status, forceOpen) {
 // Used to recover from a direct connect that timed out only because the
 // form was refilled without its SSH settings. Returns the saved data or null.
 async function findSavedTunnelConnection(body) {
+  // Returns {name, data, exact} for the best match, else {none: <reason text>}.
+  // Match = same host+port (case-insensitive), OR same database+username
+  // (the form's host can differ from the saved one — e.g. an IP vs a DNS
+  // name — while it's clearly the same database). Exact on all wins.
   try {
     const list = await (await fetch(`/tools/vault/secrets?kind=${VAULT_KIND}`)).json();
-    let best = null;
+    let best = null, withTunnel = 0;
     for (const s of list.secrets || []) {
       const res = await fetch(`/tools/vault/secrets/${encodeURIComponent(s.id)}/reveal`);
       if (!res.ok) continue;
       const c = (await res.json()).data || {};
       if (!c.ssh_tunnel || !c.ssh_tunnel.ssh_host) continue;
-      if (String(c.host || "").toLowerCase() !== body.host.toLowerCase()) continue;
-      if ((parseInt(c.port, 10) || 5432) !== body.port) continue;
-      const exact = c.database === body.database && c.username === body.username;
-      if (!best || (exact && !best.exact)) best = { name: s.name, data: c, exact };
+      withTunnel++;
+      const sameServer = String(c.host || "").toLowerCase() === body.host.toLowerCase() &&
+        (parseInt(c.port, 10) || 5432) === body.port;
+      const sameDbUser = c.database === body.database && c.username === body.username;
+      if (!sameServer && !sameDbUser) continue;
+      const score = (sameServer ? 1 : 0) + (sameDbUser ? 1 : 0);
+      if (!best || score > best.score) best = { name: s.name, data: c, score };
     }
-    return best;
+    if (best) return best;
+    return { none: withTunnel
+      ? `${withTunnel} saved connection(s) use an SSH tunnel, but none matches host "${body.host}" / database "${body.database}".`
+      : "No saved Vault connection uses an SSH tunnel." };
   } catch (e) {
-    return null;
+    return { none: "Couldn't read the Vault: " + e.message };
   }
 }
 
@@ -2407,7 +2417,9 @@ $("btnConnect").addEventListener("click", async () => {
       // Direct connect timed out with no tunnel configured: if a saved
       // connection for this same server uses an SSH tunnel, retry through it.
       const saved = await findSavedTunnelConnection(body);
-      if (saved) {
+      if (saved.none) {
+        data = { error: data.error + "\n\n(Auto-retry via a saved SSH tunnel not possible: " + saved.none + ")" };
+      } else {
         showConnectError(`Direct connection timed out — retrying through the SSH tunnel saved in "${saved.name}"…`);
         body.ssh_tunnel = saved.data.ssh_tunnel;
         if (!body.password) body.password = saved.data.password || "";

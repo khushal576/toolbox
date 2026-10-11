@@ -88,7 +88,7 @@ async def test_connection(body: TestConnectionRequest) -> JSONResponse:
 
 @app.get("/", response_class=HTMLResponse)
 async def home() -> HTMLResponse:
-    return HTMLResponse(_UI_PATH.read_text())
+    return HTMLResponse(_UI_PATH.read_text(), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/secrets")
