@@ -87,6 +87,25 @@ to the existing "metadata only, never decrypted data" invariant below.
 `delete_secret()` removes the blob file too if present; `clear_all()`
 wipes the whole `blobs/` directory, not just the SQLite rows.
 
+## Add connection (with test-before-save)
+
+The Vault page has an "Add connection" form (DB type, host/port/database/
+username/password, optional SSH tunnel with password or private key +
+passphrase), so a connection can be saved without opening SQL Studio
+first. This reverses the page's original "no add form" rule at the
+owner's request — it saves only the one shape the tools already use
+(`kind: "postgres_connection"`, data `{host, port, database, username,
+password, db_type, ssh_tunnel}`), so the Connection panels' "Saved
+connections" pickers list it as-is. "Test & save" first calls
+`POST /test-connection` (one-off, unpooled connect through the tunnel if
+configured, via the same `dialect.verify_connection` Connect uses; nothing
+stored), and refuses to save on failure; "Test only" and a deliberate
+"Save anyway (untested)" are also there. Password/key fields are cleared
+after a save. Verified in headless Chrome against a real Postgres and a
+real SSH bastion: empty form, bad password, good plain, SSH wrong/right
+passphrase, save-anyway, and loading the saved entries into SQL Studio and
+connecting (plain and via tunnel). SQL Server/Oracle test path untested.
+
 ## Security posture — read this before touching `core/vault.py`
 
 **No vault master password**, by explicit owner choice. The encryption

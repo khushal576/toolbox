@@ -558,7 +558,7 @@
           </div>
           <div class="conn-field">
             <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-weight:600;color:var(--text);">
-              <input type="checkbox" id="connUseSsh" style="width:auto;" /> Use SSH tunnel
+              <input type="checkbox" id="connUseSsh" style="width:auto;" onchange="document.getElementById('sshFields').style.display=this.checked?'block':'none'" /> Use SSH tunnel
             </label>
           </div>
           <div id="sshFields" style="display:none;">
@@ -578,7 +578,7 @@
             </div>
             <div class="conn-field">
               <label>SSH Auth</label>
-              <select id="sshAuthMethod">
+              <select id="sshAuthMethod" onchange="var k=this.value==='key';document.getElementById('sshPasswordField').style.display=k?'none':'block';document.getElementById('sshKeyField').style.display=k?'block':'none'">
                 <option value="password">Password</option>
                 <option value="key">Private key</option>
               </select>

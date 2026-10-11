@@ -53,6 +53,20 @@
   button.action.danger { background: var(--err-text); }
   button.action.small { padding: 5px 11px; font-size: 0.76rem; }
 
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .form-grid label { display: block; font-size: 0.72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
+  .form-grid input[type=text], .form-grid input[type=number], .form-grid input[type=password], .form-grid select, .form-grid textarea {
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 7px 10px; font-size: 0.85rem; font-family: inherit;
+  }
+  .form-grid textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.78rem; }
+  .form-grid .check { display: flex; align-items: center; gap: 6px; text-transform: none; font-size: 0.85rem; color: var(--text); letter-spacing: 0; }
+  .ok-box {
+    background: rgba(22,163,74,0.08); color: #15803d; border: 1px solid rgba(22,163,74,0.3);
+    border-radius: 8px; padding: 10px 12px; font-size: 0.82rem; margin: 12px 0; display: none;
+  }
+  .ok-box.show { display: block; }
   .error-box {
     background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border);
     border-radius: 8px; padding: 10px 12px; font-size: 0.82rem; margin: 12px 0; display: none;
@@ -63,7 +77,7 @@
 <body>
 <header>
   <h1>Vault<span>.</span></h1>
-  <p>Shared encrypted secret store — saved from sql-studio/schema-map's Connection panel, or any other tool that wants to remember something. Encrypted at rest; see vault/CLAUDE.md for the exact trust model.</p>
+  <p>Shared encrypted secret store — add connections here, or save them from sql-studio/schema-map's Connection panel. Encrypted at rest; see vault/CLAUDE.md for the exact trust model.</p>
 </header>
 
 <div class="wrap">
@@ -72,6 +86,52 @@
     <p class="hint">Values are never shown here — only name, kind, and when they were saved/updated. A consuming tool (e.g. sql-studio's "Load saved connection") decrypts one only at the moment it's actually used.</p>
     <ul class="secret-list" id="secretList"></ul>
     <p class="empty-hint" id="emptyHint">Nothing saved yet.</p>
+  </div>
+  <div class="card">
+    <h2>Add connection</h2>
+    <p class="hint">Save a database connection here instead of typing it into a tool each time. It appears under "Saved connections (Vault)" in SQL Studio and Schema Map. Stored encrypted.</p>
+    <div class="form-grid">
+      <div class="full"><label>Name</label><input type="text" id="cName" placeholder="e.g. prod-readonly" /></div>
+      <div><label>Database type</label>
+        <select id="cDbType">
+          <option value="postgres">PostgreSQL</option>
+          <option value="mssql">SQL Server</option>
+          <option value="oracle">Oracle</option>
+        </select></div>
+      <div><label>Port</label><input type="number" id="cPort" value="5432" /></div>
+      <div class="full"><label>Host</label><input type="text" id="cHost" placeholder="localhost" /></div>
+      <div class="full"><label id="cDatabaseLabel">Database</label><input type="text" id="cDatabase" /></div>
+      <div><label>Username</label><input type="text" id="cUsername" autocomplete="off" /></div>
+      <div><label>Password</label><input type="password" id="cPassword" autocomplete="new-password" /></div>
+      <div class="full"><label class="check"><input type="checkbox" id="cUseSsh" /> Connect via SSH tunnel</label></div>
+      <div class="full" id="sshBox" style="display:none;">
+        <div class="form-grid">
+          <div><label>SSH host</label><input type="text" id="cSshHost" /></div>
+          <div><label>SSH port</label><input type="number" id="cSshPort" value="22" /></div>
+          <div class="full"><label>SSH username</label><input type="text" id="cSshUsername" /></div>
+          <div class="full"><label>SSH auth</label>
+            <select id="cSshAuth">
+              <option value="password">Password</option>
+              <option value="key">Private key</option>
+            </select></div>
+          <div class="full" id="sshPwBox"><label>SSH password</label><input type="password" id="cSshPassword" autocomplete="new-password" /></div>
+          <div class="full" id="sshKeyBox" style="display:none;">
+            <label>SSH private key</label>
+            <input type="file" id="cSshKeyFile" style="margin-bottom:6px;" />
+            <textarea id="cSshKey" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+            <label style="margin-top:6px;">Key passphrase (if encrypted)</label>
+            <input type="password" id="cSshPassphrase" autocomplete="new-password" />
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="error-box" id="addErr"></div>
+    <div class="ok-box" id="addOk"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+      <button class="action" id="btnAddConn">Test &amp; save</button>
+      <button class="action small" id="btnTestOnly" style="background:var(--muted);">Test only</button>
+      <button class="action small danger" id="btnSaveAnyway" style="display:none;">Save anyway (untested)</button>
+    </div>
   </div>
   <div class="card">
     <h2>Clear vault</h2>
@@ -138,6 +198,161 @@ document.getElementById("btnClear").addEventListener("click", async () => {
     await refresh();
   } catch (err) {
     showError(err.message);
+  }
+});
+
+// ---- Add connection ----
+// Saved in exactly the shape sql-studio / schema-map save and load:
+// kind "postgres_connection" (the one kind their pickers list), data
+// {host, port, database, username, password, db_type, ssh_tunnel|null}.
+const $ = (id) => document.getElementById(id);
+const DEFAULT_PORTS = { postgres: 5432, mssql: 1433, oracle: 1521 };
+const DATABASE_LABELS = { postgres: "Database", mssql: "Database", oracle: "Service name" };
+
+$("cDbType").addEventListener("change", () => {
+  const t = $("cDbType").value;
+  $("cPort").value = DEFAULT_PORTS[t];
+  $("cDatabaseLabel").textContent = DATABASE_LABELS[t];
+});
+$("cUseSsh").addEventListener("change", () => {
+  $("sshBox").style.display = $("cUseSsh").checked ? "block" : "none";
+});
+$("cSshAuth").addEventListener("change", () => {
+  const key = $("cSshAuth").value === "key";
+  $("sshPwBox").style.display = key ? "none" : "block";
+  $("sshKeyBox").style.display = key ? "block" : "none";
+});
+$("cSshKeyFile").addEventListener("change", () => {
+  const file = $("cSshKeyFile").files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { $("cSshKey").value = String(reader.result || ""); };
+  reader.readAsText(file);
+});
+
+function showAddMessage(kind, msg) {
+  const err = $("addErr"), ok = $("addOk");
+  err.classList.remove("show"); ok.classList.remove("show");
+  const box = kind === "ok" ? ok : err;
+  if (!msg) return;
+  box.textContent = msg;
+  box.classList.add("show");
+}
+
+function collectConnection() {
+  showAddMessage("err", null);
+  const name = $("cName").value.trim();
+  const host = $("cHost").value.trim();
+  const database = $("cDatabase").value.trim();
+  const username = $("cUsername").value.trim();
+  if (!name || !host || !database || !username) {
+    showAddMessage("err", "Name, host, database and username are required.");
+    return null;
+  }
+  const dbType = $("cDbType").value;
+  let ssh = null;
+  if ($("cUseSsh").checked) {
+    const usingKey = $("cSshAuth").value === "key";
+    ssh = {
+      ssh_host: $("cSshHost").value.trim(),
+      ssh_port: parseInt($("cSshPort").value, 10) || 22,
+      ssh_username: $("cSshUsername").value.trim(),
+      ssh_password: usingKey ? null : $("cSshPassword").value,
+      ssh_private_key: usingKey ? $("cSshKey").value : null,
+      ssh_private_key_passphrase: usingKey ? ($("cSshPassphrase").value || null) : null,
+    };
+    if (!ssh.ssh_host || !ssh.ssh_username) {
+      showAddMessage("err", "SSH host and SSH username are required for a tunnel.");
+      return null;
+    }
+    if (usingKey && !ssh.ssh_private_key.trim()) {
+      showAddMessage("err", "Paste or choose a private key file, or switch to password auth.");
+      return null;
+    }
+  }
+  return {
+    name, kind: "postgres_connection",
+    data: {
+      host, port: parseInt($("cPort").value, 10) || DEFAULT_PORTS[dbType], database, username,
+      password: $("cPassword").value, db_type: dbType, ssh_tunnel: ssh,
+    },
+  };
+}
+
+// Returns null on success, else the error message.
+async function testConnection(data) {
+  const res = await fetch("test-connection", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+  });
+  const out = await res.json();
+  return out.ok ? null : (out.error || "Connection test failed.");
+}
+
+async function saveConnection(payload) {
+  const res = await fetch("secrets", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Save failed.");
+  // Clear every secret field — nothing sensitive should linger in the form.
+  for (const id of ["cPassword", "cSshPassword", "cSshKey", "cSshPassphrase", "cSshKeyFile"]) $(id).value = "";
+  await refresh();
+}
+
+function setBusy(busy, label) {
+  for (const id of ["btnAddConn", "btnTestOnly", "btnSaveAnyway"]) $(id).disabled = busy;
+  if (busy) showAddMessage("ok", label);
+}
+
+$("btnTestOnly").addEventListener("click", async () => {
+  const payload = collectConnection();
+  if (!payload) return;
+  setBusy(true, "Testing connection…");
+  try {
+    const err = await testConnection(payload.data);
+    if (err) showAddMessage("err", "Test failed: " + err);
+    else showAddMessage("ok", "Connection works.");
+  } catch (e) {
+    showAddMessage("err", e.message);
+  } finally {
+    setBusy(false);
+  }
+});
+
+$("btnAddConn").addEventListener("click", async () => {
+  $("btnSaveAnyway").style.display = "none";
+  const payload = collectConnection();
+  if (!payload) return;
+  setBusy(true, "Testing connection before saving…");
+  try {
+    const err = await testConnection(payload.data);
+    if (err) {
+      // Not saved. The user can fix the fields and retry, or knowingly
+      // override (e.g. a host only reachable from another network).
+      showAddMessage("err", "Not saved — the connection test failed: " + err);
+      $("btnSaveAnyway").style.display = "inline-block";
+      return;
+    }
+    await saveConnection(payload);
+    showAddMessage("ok", `Connection works — saved "${payload.name}". Load it from the Connection panel in SQL Studio or Schema Map.`);
+  } catch (e) {
+    showAddMessage("err", e.message);
+  } finally {
+    setBusy(false);
+  }
+});
+
+$("btnSaveAnyway").addEventListener("click", async () => {
+  const payload = collectConnection();
+  if (!payload) return;
+  setBusy(true, "Saving…");
+  try {
+    await saveConnection(payload);
+    $("btnSaveAnyway").style.display = "none";
+    showAddMessage("ok", `Saved "${payload.name}" without a successful test.`);
+  } catch (e) {
+    showAddMessage("err", e.message);
+  } finally {
+    setBusy(false);
   }
 });
 

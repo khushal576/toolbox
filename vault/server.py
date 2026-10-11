@@ -20,11 +20,15 @@ from pydantic import BaseModel
 
 try:  # core/ is a sibling top-level package in the real image (/app/core)
     from core import vault
+    from core.db.registry import get_dialect
+    from core.postgres_conn import open_ssh_tunnel, scrub_password, ssh_tunnel_from_dict
 except ImportError:  # standalone dev run from inside this folder: core/ is ../core
     import sys as _sys
 
     _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from core import vault
+    from core.db.registry import get_dialect
+    from core.postgres_conn import open_ssh_tunnel, scrub_password, ssh_tunnel_from_dict
 
 app = FastAPI(title="Vault")
 
@@ -35,6 +39,51 @@ class SaveSecretRequest(BaseModel):
     name: str
     kind: str
     data: dict
+
+
+class TestConnectionRequest(BaseModel):
+    host: str
+    port: int
+    database: str
+    username: str
+    password: str
+    db_type: str = "postgres"
+    ssh_tunnel: dict | None = None
+
+
+def _test_connection_sync(body: TestConnectionRequest) -> None:
+    """One-off, UNPOOLED connect + trivial query, through the SSH tunnel
+    if one is configured, then everything is closed again. Nothing is
+    stored. Same verify path SQL Studio's Connect uses (dialect.
+    verify_connection), so "passes here" means "will connect there"."""
+    dialect = get_dialect(body.db_type)
+    tunnel = None
+    host, port = body.host, body.port
+    try:
+        cfg = ssh_tunnel_from_dict(body.ssh_tunnel)
+        if cfg is not None:
+            tunnel = open_ssh_tunnel(cfg, remote_host=body.host, remote_port=body.port)
+            host, port = "127.0.0.1", tunnel.local_bind_port
+        conninfo = dialect.build_conninfo(host, port, body.database, body.username, body.password)
+        dialect.verify_connection(conninfo, connect_timeout=10)
+    finally:
+        if tunnel is not None:
+            try:
+                tunnel.stop()
+            except Exception:  # noqa: BLE001 - best-effort close
+                pass
+
+
+@app.post("/test-connection")
+async def test_connection(body: TestConnectionRequest) -> JSONResponse:
+    """Used by this page's "Add connection" form to check a connection
+    BEFORE saving it. Always answers 200 with {ok: bool, error?} — a
+    failed test is a normal result, not a server error."""
+    try:
+        await asyncio.to_thread(_test_connection_sync, body)
+    except Exception as exc:  # noqa: BLE001 - each driver / ssh lib raises its own types
+        return JSONResponse({"ok": False, "error": scrub_password(str(exc)) or exc.__class__.__name__})
+    return JSONResponse({"ok": True})
 
 
 @app.get("/", response_class=HTMLResponse)
