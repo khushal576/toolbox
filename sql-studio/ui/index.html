@@ -29,6 +29,7 @@
 })();
 </script>
 <style>
+  #connectErr { white-space: pre-wrap; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
     --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
@@ -2171,6 +2172,19 @@ function applySshTunnelToForm(tunnel) {
 // another tool's endpoint directly like this is fine in this toolbox) ----
 const VAULT_KIND = "postgres_connection";
 
+// A direct connection that times out is almost always a database that is
+// only reachable through an SSH bastion (private address) — the form
+// refills host/database/username from last time but NOT the SSH settings,
+// so say what to do instead of a bare "connection timeout expired".
+function connectErrorWithHint(message, usedSshTunnel) {
+  if (!usedSshTunnel && /time.?out|timed out/i.test(message)) {
+    return message + "\n\nNo SSH tunnel was used. If this database is only reachable through an SSH bastion " +
+      "(pgAdmin connects via a tunnel), tick \"Use SSH tunnel\" or pick the connection under " +
+      "\"Saved connections (Vault)\" and press Load, then Connect.";
+  }
+  return message;
+}
+
 async function refreshVaultList() {
   const select = $("vaultSelect");
   const previousValue = select.value;
@@ -2183,6 +2197,13 @@ async function refreshVaultList() {
     select.innerHTML = placeholder(secrets.length ? "— load saved —" : "— none saved yet (add one in the Vault tool) —") +
       secrets.map((s) => `<option value="${s.id}">${s.name}</option>`).join("");
     select.value = previousValue;
+    if (!select.value) {
+      // Pre-select the connection loaded last time (the user still presses Load).
+      try {
+        const last = localStorage.getItem("sql_studio_last_vault_id");
+        if (last && secrets.some((x) => x.id === last)) select.value = last;
+      } catch (e) { /* storage unavailable — fine */ }
+    }
   } catch (e) {
     // Say why, in the dropdown itself — not fatal, but never silent.
     select.innerHTML = placeholder("⚠ couldn't load saved connections: " + e.message);
@@ -2202,6 +2223,7 @@ $("vaultSelect").addEventListener("focus", refreshVaultList);
 $("btnVaultLoad").addEventListener("click", async () => {
   const id = $("vaultSelect").value;
   if (!id) return;
+  try { localStorage.setItem("sql_studio_last_vault_id", id); } catch (e) { /* ignore */ }
   showConnectError(null);
   try {
     const res = await fetch(`/tools/vault/secrets/${encodeURIComponent(id)}/reveal`);
@@ -2355,7 +2377,7 @@ $("btnConnect").addEventListener("click", async () => {
     });
     const data = await res.json();
     if (!res.ok || data.error) {
-      showConnectError(data.error || "Couldn't connect.");
+      showConnectError(connectErrorWithHint(data.error || "Couldn't connect.", !!body.ssh_tunnel));
       return;
     }
     showConnectError(null);
