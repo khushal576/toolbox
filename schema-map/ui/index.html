@@ -1070,6 +1070,15 @@ async function refreshVaultList() {
   } catch (e) { /* Vault unreachable — the dropdown just stays empty, not fatal */ }
 }
 refreshVaultList();
+// The list used to load only once per page load, so a connection added in
+// the Vault tab afterwards never appeared until a manual reload. Re-read
+// it whenever the user comes back to this tab/window or reaches for the
+// dropdown (hover/focus — not mousedown, which would rebuild the options
+// under an already-opening list).
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshVaultList(); });
+window.addEventListener("focus", refreshVaultList);
+$("vaultSelect").addEventListener("pointerenter", refreshVaultList);
+$("vaultSelect").addEventListener("focus", refreshVaultList);
 
 $("btnVaultLoad").addEventListener("click", async () => {
   const id = $("vaultSelect").value;
