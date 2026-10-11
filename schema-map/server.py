@@ -76,6 +76,7 @@ class SSHTunnelRequest(BaseModel):
     ssh_username: str
     ssh_password: Optional[str] = None
     ssh_private_key: Optional[str] = None
+    ssh_private_key_passphrase: Optional[str] = None
 
 
 class ConnectRequest(BaseModel):

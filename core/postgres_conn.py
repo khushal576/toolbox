@@ -39,6 +39,7 @@ class SSHTunnelConfig:
     ssh_username: str
     ssh_password: str | None = None
     ssh_private_key: str | None = None  # pasted PEM text, not a file path
+    ssh_private_key_passphrase: str | None = None  # only for an encrypted private key
 
 
 def ssh_tunnel_from_dict(raw: dict | None) -> SSHTunnelConfig | None:
@@ -53,6 +54,7 @@ def ssh_tunnel_from_dict(raw: dict | None) -> SSHTunnelConfig | None:
         ssh_host=raw["ssh_host"], ssh_port=raw.get("ssh_port", 22),
         ssh_username=raw["ssh_username"], ssh_password=raw.get("ssh_password"),
         ssh_private_key=raw.get("ssh_private_key"),
+        ssh_private_key_passphrase=raw.get("ssh_private_key_passphrase") or None,
     )
 
 
@@ -103,23 +105,50 @@ def verify_connection(conninfo: str, connect_timeout: int = 10) -> None:
         conn.execute("SELECT 1")
 
 
-def _parse_private_key(pem_text: str):
-    """Pasted PEM text, not a file path. Tries the common key types in
-    turn (paramiko has no single auto-detecting loader across the
-    versions this repo might run) — RSA/Ed25519/ECDSA cover the
-    overwhelming majority of real-world keys; raises the last error if
-    none parse."""
-    import io
+def _parse_private_key(pem_text: str, passphrase: str | None = None):
+    """Pasted PEM/OpenSSH text, not a file path. Decoded with
+    `cryptography`'s universal loaders, NOT by trying each paramiko key
+    class's own from_private_key() in turn: those only recognise their
+    own PEM header, so a PKCS#8 key ('BEGIN PRIVATE KEY', a very common
+    shape) matched none of them and surfaced a misleading error naming
+    the wrong algorithm. The real algorithm is read off the decoded key
+    object, then wrapped in the matching paramiko class. The passphrase
+    (if the key is encrypted) is used only here, in memory."""
+    import paramiko
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed25519, rsa
 
-    from paramiko import ECDSAKey, Ed25519Key, RSAKey
+    key_bytes = pem_text.strip().encode()
+    password = passphrase.encode() if passphrase else None
+    is_openssh = b"OPENSSH PRIVATE KEY" in key_bytes
+    try:
+        if is_openssh:
+            crypto_key = serialization.load_ssh_private_key(key_bytes, password=password)
+        else:
+            crypto_key = serialization.load_pem_private_key(key_bytes, password=password)
+    except Exception as exc:  # noqa: BLE001 - cryptography raises TypeError/ValueError/UnsupportedAlgorithm
+        if password is None and ("password" in str(exc).lower() or "encrypted" in str(exc).lower()):
+            raise ValueError("The SSH private key is encrypted — enter its passphrase.") from exc
+        if password is not None:
+            raise ValueError("Couldn't decrypt the SSH private key — wrong passphrase?") from exc
+        raise ValueError(f"Couldn't parse the SSH private key: {exc}") from exc
+    if isinstance(crypto_key, ed25519.Ed25519PrivateKey):
+        # paramiko's Ed25519Key can't take a decoded key object — hand it
+        # the same key re-serialized, unencrypted, in memory only.
+        import io
 
-    last_exc: Exception | None = None
-    for key_cls in (RSAKey, Ed25519Key, ECDSAKey):
-        try:
-            return key_cls.from_private_key(io.StringIO(pem_text))
-        except Exception as exc:  # noqa: BLE001 - trying multiple key types by design
-            last_exc = exc
-    raise ValueError(f"Could not parse SSH private key: {last_exc}")
+        text = crypto_key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.OpenSSH, serialization.NoEncryption(),
+        ).decode()
+        return paramiko.Ed25519Key.from_private_key(io.StringIO(text))
+    for crypto_type, paramiko_type in (
+        (rsa.RSAPrivateKey, paramiko.RSAKey),
+        (ec.EllipticCurvePrivateKey, paramiko.ECDSAKey),
+        (dsa.DSAPrivateKey, paramiko.DSSKey),
+    ):
+        if isinstance(crypto_key, crypto_type):
+            return paramiko_type(key=crypto_key)
+    raise ValueError(f"Unsupported SSH private key algorithm: {type(crypto_key).__name__}")
 
 
 def open_ssh_tunnel(config: SSHTunnelConfig, *, remote_host: str, remote_port: int) -> SSHTunnelForwarder:
@@ -136,7 +165,10 @@ def open_ssh_tunnel(config: SSHTunnelConfig, *, remote_host: str, remote_port: i
     the vault/UI, nothing here ever touches the local filesystem for it)
     takes precedence if both are somehow provided.
     """
-    pkey = _parse_private_key(config.ssh_private_key) if config.ssh_private_key else None
+    pkey = (
+        _parse_private_key(config.ssh_private_key, config.ssh_private_key_passphrase)
+        if config.ssh_private_key else None
+    )
 
     tunnel = SSHTunnelForwarder(
         (config.ssh_host, config.ssh_port),

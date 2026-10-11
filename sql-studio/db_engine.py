@@ -47,6 +47,7 @@ except ImportError:  # flat import when run standalone from within this folder
 
 try:  # core/ is a sibling top-level package in the real image (/app/core)
     from core.db.dialect import Dialect
+    from core.db.loader import load_file_into_table
     from core.db.registry import get_dialect
     from core.pooled_db import PooledDbConnection
 except ImportError:  # standalone dev run from inside this folder: core/ is ../../core
@@ -55,6 +56,7 @@ except ImportError:  # standalone dev run from inside this folder: core/ is ../.
 
     _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
     from core.db.dialect import Dialect
+    from core.db.loader import load_file_into_table
     from core.db.registry import get_dialect
     from core.pooled_db import PooledDbConnection
 
@@ -176,6 +178,20 @@ async def execute(classification: "query_guard.Classification") -> dict[str, Any
     result = await _POOL.run(_execute_sync, classification)
     result["elapsed_ms"] = round((time.monotonic() - start) * 1000, 1)
     return result
+
+
+def _import_sync(conn, dialect_name: str, file_path: str, table: str, mode: str) -> dict[str, Any]:
+    return load_file_into_table(conn, dialect_name, file_path, table, mode=mode)
+
+
+async def import_file(file_path: str, table: str, mode: str) -> dict[str, Any]:
+    """Load a file (a decrypted Vault dataset) into *table* on the live
+    connection — see core/db/loader.py. Raises ConnectError with a clean
+    message for any failure."""
+    dialect = current_dialect()
+    if dialect is None:
+        raise ConnectError("Not connected — connect to a database first.")
+    return await _POOL.run(_import_sync, dialect.name, file_path, table, mode)
 
 
 def last_result() -> Optional[QueryResult]:

@@ -27,6 +27,7 @@ class SSHTunnelSource(TypedDict, total=False):
     ssh_username: str
     ssh_password: Optional[str]
     ssh_private_key: Optional[str]
+    ssh_private_key_passphrase: Optional[str]
 
 
 class Source(TypedDict, total=False):

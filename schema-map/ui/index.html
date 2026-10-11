@@ -590,6 +590,8 @@
             <div class="conn-field" id="sshKeyField" style="display:none;">
               <label>SSH Private Key (PEM)</label>
               <textarea id="sshPrivateKey" rows="4" class="mono-textarea"></textarea>
+              <label style="margin-top:6px;">Key passphrase (if encrypted)</label>
+              <input type="password" id="sshKeyPassphrase" />
             </div>
           </div>
           <div class="conn-field">
@@ -1029,6 +1031,7 @@ function currentSshTunnelOrNull() {
     ssh_username: $("sshUsername").value.trim(),
     ssh_password: usingKey ? null : $("sshPassword").value,
     ssh_private_key: usingKey ? $("sshPrivateKey").value : null,
+    ssh_private_key_passphrase: usingKey ? ($("sshKeyPassphrase").value || null) : null,
   };
 }
 
@@ -1049,6 +1052,7 @@ function applySshTunnelToForm(tunnel) {
   $("sshKeyField").style.display = usingKey ? "block" : "none";
   $("sshPassword").value = tunnel.ssh_password || "";
   $("sshPrivateKey").value = tunnel.ssh_private_key || "";
+  $("sshKeyPassphrase").value = tunnel.ssh_private_key_passphrase || "";
 }
 
 const VAULT_KIND = "postgres_connection";
@@ -3428,6 +3432,7 @@ $("btnConnect").addEventListener("click", async () => {
     $("connPassword").value = "";
     $("sshPassword").value = "";
     $("sshPrivateKey").value = "";
+    $("sshKeyPassphrase").value = "";
     saveConnectionFields();
     applyConnectionStatus(data);
   } catch (e) {

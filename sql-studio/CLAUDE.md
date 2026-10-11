@@ -500,6 +500,31 @@ with real document positions instead of re-flowed text) is still sound.
   verified the destructive-statement refusal fires correctly (a `DELETE`
   is rejected before anything runs, not exported).
 
+### SSH key passphrase + "Import Vault dataset → table"
+
+- **SSH private-key passphrase**: the SSH panel's key field has a
+  "Key passphrase (if encrypted)" box (also in schema-map), carried as
+  `ssh_private_key_passphrase` through `SSHTunnelConfig` and saved with
+  the connection in the Vault like the rest of `ssh_tunnel`.
+  `core/postgres_conn._parse_private_key()` decodes with `cryptography`
+  (handles PKCS#1, PKCS#8 and OpenSSH formats, encrypted or not) and
+  gives distinct errors for "encrypted — enter its passphrase" vs.
+  "wrong passphrase". The old per-paramiko-class loop only knew each
+  class's own PEM header and failed on PKCS#8 keys and encrypted keys.
+  Verified: encrypted Ed25519 + RSA, PKCS#8, plain RSA, missing and wrong
+  passphrase. Not re-verified against a live sshd.
+- **Import Vault dataset → table** (`btnImportVault`, `POST /import/vault`,
+  `core/db/loader.py`): the reverse of "Export FULL result → Vault".
+  Streams the decrypted dataset through DuckDB in 1000-row batches into
+  `CREATE TABLE` (types inferred by DuckDB, mapped per dialect) or an
+  existing table (`append`, columns matched by name), in one transaction.
+  Writes to the database, so the endpoint answers 409 until called with
+  `confirmed: true` (the UI shows a confirm). Table names are validated
+  (`table` or `schema.table`, `[A-Za-z_][A-Za-z0-9_$]*`) and always
+  quoted; Oracle names are uppercased. **Verified on Postgres only** —
+  the SQL Server/Oracle branches (placeholders, type map, Oracle DDL
+  auto-commit cleanup) are written but untested against real engines.
+
 ### Live database connection (Run)
 
 - **One global connection, not a per-cookie session dict.** df-studio keys

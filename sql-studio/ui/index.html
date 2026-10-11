@@ -231,6 +231,10 @@
     padding: 16px 18px; margin: 0; color: var(--text);
   }
 
+  dialog#importDialog { width: 460px; max-width: 90vw; padding: 20px; }
+  dialog#importDialog h2 { font-size: 1rem; font-weight: 700; margin-bottom: 8px; }
+  dialog#importDialog .conn-field { margin-bottom: 10px; }
+  dialog#importDialog select, dialog#importDialog input[type=text] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 0.85rem; }
   dialog#confirmDialog { width: 440px; max-width: 90vw; padding: 20px; }
   dialog#confirmDialog h2 { font-size: 1rem; font-weight: 700; margin-bottom: 8px; }
   dialog#confirmDialog pre {
@@ -278,6 +282,7 @@
       <div class="btn-row">
         <button class="action" id="btnFormat" title="Ctrl+Enter">✨ Format</button>
         <button class="action run" id="btnRun" title="Connect to a database first" disabled>▶ Run</button>
+        <button class="action secondary small" id="btnImportVault" disabled title="Connect to a database first">📥 Import Vault dataset → table</button>
         <button class="action secondary small" id="btnExportVault" disabled title="Connect to a database first">🔒 Export FULL result → Vault</button>
         <div class="schema-filter-wrap">
           <button type="button" class="action secondary small" id="btnSchemaFilter" disabled title="Connect to a database first">Schemas: public ▾</button>
@@ -380,6 +385,8 @@
             <div class="conn-field" id="sshKeyField" style="display:none;">
               <label>SSH Private Key (PEM)</label>
               <textarea id="sshPrivateKey" rows="4"></textarea>
+              <label style="margin-top:6px;">Key passphrase (if encrypted)</label>
+              <input type="password" id="sshKeyPassphrase" />
             </div>
           </div>
           <div class="conn-field">
@@ -463,6 +470,31 @@
   <div class="btn-row" style="margin-bottom: 0;">
     <button class="action secondary" id="btnConfirmCancel">Cancel</button>
     <button class="action" id="btnConfirmRun" style="background: var(--err-text);">Run Anyway</button>
+  </div>
+</dialog>
+
+<dialog id="importDialog">
+  <h2>Import a Vault dataset into a table</h2>
+  <p class="hint">Writes to the connected database. Column types are inferred from the data.</p>
+  <div class="conn-field">
+    <label>Vault dataset</label>
+    <select id="importDataset"></select>
+  </div>
+  <div class="conn-field">
+    <label>Table name (<code>table</code> or <code>schema.table</code>)</label>
+    <input type="text" id="importTable" placeholder="my_table" />
+  </div>
+  <div class="conn-field">
+    <label>If the table…</label>
+    <select id="importMode">
+      <option value="create">Doesn't exist — create it (fails if it exists)</option>
+      <option value="append">Already exists — append rows (columns matched by name)</option>
+    </select>
+  </div>
+  <div class="err-box" id="importErr"></div>
+  <div class="btn-row">
+    <button class="action run" id="btnImportGo">Import</button>
+    <button class="action secondary" id="btnImportCancel">Cancel</button>
   </div>
 </dialog>
 
@@ -2087,6 +2119,7 @@ function currentSshTunnelOrNull() {
     ssh_username: $("sshUsername").value.trim(),
     ssh_password: usingKey ? null : $("sshPassword").value,
     ssh_private_key: usingKey ? $("sshPrivateKey").value : null,
+    ssh_private_key_passphrase: usingKey ? ($("sshKeyPassphrase").value || null) : null,
   };
 }
 
@@ -2107,6 +2140,7 @@ function applySshTunnelToForm(tunnel) {
   $("sshKeyField").style.display = usingKey ? "block" : "none";
   $("sshPassword").value = tunnel.ssh_password || "";
   $("sshPrivateKey").value = tunnel.ssh_private_key || "";
+  $("sshKeyPassphrase").value = tunnel.ssh_private_key_passphrase || "";
 }
 
 // ---- Vault (shared encrypted store, /tools/vault/ — same-origin, see
@@ -2202,6 +2236,11 @@ function updateConnectionGatedButtons() {
   schemaFilterBtn.title = isConnected
     ? "Choose which schema(s) Fetch Schema pulls tables from"
     : "Connect to a database first";
+  const importVaultBtn = $("btnImportVault");
+  importVaultBtn.disabled = !isConnected;
+  importVaultBtn.title = isConnected
+    ? "Load a dataset saved in the Vault into a new (or existing) table on the connected database"
+    : "Connect to a database first";
   const exportVaultBtn = $("btnExportVault");
   exportVaultBtn.disabled = !isConnected;
   exportVaultBtn.title = isConnected
@@ -2286,6 +2325,7 @@ $("btnConnect").addEventListener("click", async () => {
     $("connPassword").value = ""; // never persisted, never left sitting in the field either
     $("sshPassword").value = "";
     $("sshPrivateKey").value = "";
+    $("sshKeyPassphrase").value = "";
     saveConnectionFields();
     applyConnectionStatus(data);
   } catch (e) {
@@ -2589,6 +2629,68 @@ async function exportFullResultToVault() {
   }
 }
 $("btnExportVault").addEventListener("click", exportFullResultToVault);
+
+// ---- Import a Vault dataset INTO a table (reverse of the export above) ----
+function showImportError(msg) {
+  const box = $("importErr");
+  box.textContent = msg || "";
+  box.classList.toggle("show", !!msg);
+}
+
+$("btnImportVault").addEventListener("click", async () => {
+  showImportError(null);
+  const select = $("importDataset");
+  select.innerHTML = "";
+  try {
+    const res = await fetch("/tools/vault/secrets");
+    const data = await res.json();
+    const datasets = (data.secrets || []).filter((s) => s.has_data);
+    if (!datasets.length) {
+      showResultsError("The Vault has no datasets yet — use \"Export FULL result → Vault\" (or Duck Lab's export) first.");
+      return;
+    }
+    select.innerHTML = datasets.map((s) => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join("");
+    $("importDialog").showModal();
+  } catch (e) {
+    showResultsError("Couldn't list Vault datasets: " + e.message);
+  }
+});
+$("btnImportCancel").addEventListener("click", () => $("importDialog").close());
+$("btnImportGo").addEventListener("click", async () => {
+  const table = $("importTable").value.trim();
+  if (!table) { showImportError("Enter a table name."); return; }
+  const body = { secret_id: $("importDataset").value, table, mode: $("importMode").value };
+  const go = $("btnImportGo");
+  go.disabled = true;
+  go.textContent = "Importing…";
+  showImportError(null);
+  try {
+    const first = await fetch("import/vault", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    let res = first, data = await first.json();
+    if (first.status === 409 && data.requires_confirmation) {
+      if (!confirm(data.message + "\n\nProceed?")) return;
+      res = await fetch("import/vault", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, confirmed: true }),
+      });
+      data = await res.json();
+    }
+    if (!res.ok || data.error) { showImportError(data.error || "Import failed."); return; }
+    $("importDialog").close();
+    $("resultsTitle").textContent = "Imported from Vault";
+    $("resultsMeta").textContent = `${data.row_count.toLocaleString()} rows loaded into ${data.table} (${data.columns.length} columns)`;
+    $("resultsBody").innerHTML = "";
+    setExportEnabled(false);
+    $("resultsDialog").showModal();
+  } catch (e) {
+    showImportError("Network error: " + e.message);
+  } finally {
+    go.disabled = false;
+    go.textContent = "Import";
+  }
+});
 
 // ---------------------------------------------------------------------
 // Schema-filter dropdown — which schema(s) "Fetch Schema" / "Copy

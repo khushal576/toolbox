@@ -70,6 +70,7 @@ def _source_from_args(args: argparse.Namespace, prefix: str) -> Source:
                 "ssh_host": g("ssh_host"), "ssh_port": g("ssh_port"),
                 "ssh_username": g("ssh_username"), "ssh_password": g("ssh_password"),
                 "ssh_private_key": open(key_path, encoding="utf-8").read() if key_path else None,
+                "ssh_private_key_passphrase": g("ssh_key_passphrase"),
             }
         return {
             "kind": "postgres",
@@ -100,6 +101,7 @@ def _add_source_args(parser: argparse.ArgumentParser, prefix: str, label: str) -
     parser.add_argument(f"--{prefix}-ssh-username", help=f"{label} SSH tunnel username")
     parser.add_argument(f"--{prefix}-ssh-password", help=f"{label} SSH tunnel password")
     parser.add_argument(f"--{prefix}-ssh-key-file", help=f"{label} path to an SSH private key file (PEM)")
+    parser.add_argument(f"--{prefix}-ssh-key-passphrase", help=f"{label} passphrase for an encrypted SSH private key")
 
 
 def main(argv: list[str] | None = None) -> int:

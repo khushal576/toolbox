@@ -22,11 +22,13 @@ GET  /status          — current connection state, polled by every open tab (ne
 POST /query            — run exactly one statement; destructive statements need confirmed: true
 GET  /export/csv        — download the last successful query's result as CSV
 GET  /export/json        — download the same result as JSON
+POST /import/vault        — load a Vault dataset INTO a table on the live connection (create/append; needs confirmed=true — see core/db/loader.py)
 POST /export/vault        — run a statement with NO row cap, save the real full result into core.vault (see db_engine.export_to_file)
 """
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
@@ -72,6 +74,7 @@ class SSHTunnelRequest(BaseModel):
     ssh_username: str
     ssh_password: Optional[str] = None
     ssh_private_key: Optional[str] = None
+    ssh_private_key_passphrase: Optional[str] = None
 
 
 class ConnectRequest(BaseModel):
@@ -92,6 +95,13 @@ class QueryRequest(BaseModel):
 class ExportToVaultRequest(BaseModel):
     sql: str
     name: str
+
+
+class ImportFromVaultRequest(BaseModel):
+    secret_id: str
+    table: str
+    mode: str = "create"  # "create" a new table, or "append" to an existing one
+    confirmed: bool = False
 
 
 def _error(message: str, status: int = 400) -> JSONResponse:
@@ -214,3 +224,35 @@ async def export_to_vault(body: ExportToVaultRequest):
     finally:
         tmp_path.unlink(missing_ok=True)
     return JSONResponse({"ok": True, "id": secret_id, "row_count": export_info["row_count"]})
+
+
+@app.post("/import/vault")
+async def import_from_vault(body: ImportFromVaultRequest):
+    """Load a Vault dataset INTO a table on the live connection — the
+    reverse of /export/vault. Writes to the connected database, so (like
+    a destructive Run) it needs an explicit `confirmed: true` from the
+    caller; without it the response is a 409 describing what would
+    happen. See core/db/loader.py."""
+    dialect = db_engine.current_dialect()
+    if dialect is None:
+        return _error("Not connected — connect to a database first.")
+    if not body.confirmed:
+        verb = "Create table" if body.mode == "create" else "Append rows to table"
+        return JSONResponse(
+            status_code=409,
+            content={
+                "requires_confirmation": True,
+                "message": f"{verb} {body.table} on the connected {dialect.name} database and load the dataset into it.",
+            },
+        )
+    try:
+        tmp_path = await asyncio.to_thread(vault.load_dataset_file, body.secret_id)
+    except vault.SecretNotFound:
+        return _error("No such dataset in the Vault.")
+    try:
+        info = await db_engine.import_file(str(tmp_path), body.table, body.mode)
+    except db_engine.ConnectError as exc:
+        return _error(str(exc))
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    return JSONResponse({"ok": True, **info})
