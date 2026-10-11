@@ -1095,6 +1095,31 @@ the real table/view/FK/index while showing zero rows from any system
 schema — Oracle's count dropped from 138,097 to exactly the 6 rows
 belonging to the real test tables.
 
+## Editor libraries are a LOCAL bundle, not a CDN (read before touching imports)
+
+`ui/vendor/cm-bundle.js` (served by `GET /vendor/cm-bundle.js` in
+`server.py`) is the one file `ui/index.html` imports CodeMirror,
+`@codemirror/{state,view,lang-sql,search,autocomplete}` and `sql-formatter`
+from. It replaced seven separate `esm.sh` imports because a single failed
+CDN request killed the page's whole module script — Connect, the Vault
+dropdown, SSH fields and Import all went dead at once on a slow/blocked
+network. Verified with esm.sh blocked at the browser (Chrome
+`--host-resolver-rules`): editor renders, Vault list loads, Connect works,
+Run works, Format works. Not separately re-tested: Templates insertion.
+This also makes the old "dedupe @codemirror/state via esm.sh version
+ranges" gotcha below obsolete — the bundle contains exactly one copy of
+each core package by construction; ignore that note's CDN specifics.
+
+To rebuild (e.g. to bump a version): in an empty temp dir,
+`npm i codemirror@6.0.2 @codemirror/state@6 @codemirror/view@6
+@codemirror/lang-sql@6.10.0 @codemirror/search@6.7.2 @codemirror/autocomplete@6
+sql-formatter@15.9.0 esbuild`, an `entry.js` that re-exports `EditorView,
+basicSetup` (codemirror), `EditorState, Compartment` (state), `keymap`
+(view), `sql, PostgreSQL, MSSQL, PLSQL` (lang-sql), `search`, `snippet`,
+`format` (sql-formatter), then `esbuild entry.js --bundle --format=esm
+--minify --target=es2022 --outfile=cm-bundle.js` and copy it to
+`ui/vendor/`. Built with state 6.7.6, view 6.43.14, autocomplete 6.20.3.
+
 ## Things that will bite you if you don't know them
 
 - **CodeMirror 6 packages must resolve to one shared instance of

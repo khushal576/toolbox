@@ -510,24 +510,19 @@
 </dialog>
 
 <script type="module">
-// Loaded from esm.sh, not jsDelivr's `+esm`: esm.sh resolves each package's
-// *internal* dependencies (e.g. codemirror's own `@codemirror/state@^6.0.0`)
-// through the same version-range shim URL every importer uses, so they all
-// converge on one shared module instance. jsDelivr's `+esm` instead bakes in
-// a fully-resolved exact version per package independently — pinning our own
-// @codemirror/state import there landed on a *different* patch version than
-// the one bundled inside codemirror@6.0.2, which is exactly the setup that
-// throws CodeMirror's "Unrecognized extension value" duplicate-instance
-// error. Importing `@codemirror/state@^6.0.0` here (matching codemirror's own
-// internal range, verified via its published bundle) is what makes this
-// resolve to the identical shared file — see sql-studio/CLAUDE.md.
-import { EditorView, basicSetup } from "https://esm.sh/codemirror@6.0.2?target=es2022";
-import { EditorState, Compartment } from "https://esm.sh/@codemirror/state@^6.0.0?target=es2022";
-import { keymap } from "https://esm.sh/@codemirror/view@^6.0.0?target=es2022";
-import { sql, PostgreSQL, MSSQL, PLSQL } from "https://esm.sh/@codemirror/lang-sql@6.10.0?target=es2022";
-import { search } from "https://esm.sh/@codemirror/search@6.7.2?target=es2022";
-import { snippet } from "https://esm.sh/@codemirror/autocomplete@^6.0.0?target=es2022";
-import { format as sqlFormat } from "https://esm.sh/sql-formatter@15.9.0?target=es2022";
+// CodeMirror + sql-formatter come from ONE locally-served bundle
+// (ui/vendor/cm-bundle.js, built with esbuild from the pinned npm packages
+// listed in sql-studio/CLAUDE.md), NOT from a CDN. They used to be seven
+// separate esm.sh imports: if any single one failed to load (slow or
+// blocked network), this whole module script died and EVERY button on the
+// page (Connect, the Vault dropdown, SSH fields, Import...) silently did
+// nothing. One same-origin file also guarantees a single shared
+// @codemirror/state / view instance (the old "Unrecognized extension
+// value" duplicate-instance risk).
+import {
+  EditorView, basicSetup, EditorState, Compartment, keymap,
+  sql, PostgreSQL, MSSQL, PLSQL, search, snippet, format as sqlFormat,
+} from "./vendor/cm-bundle.js";
 
 const $ = (id) => document.getElementById(id);
 

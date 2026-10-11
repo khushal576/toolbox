@@ -108,6 +108,21 @@ def _error(message: str, status: int = 400) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": message})
 
 
+_VENDOR_BUNDLE = Path(__file__).resolve().parent / "ui" / "vendor" / "cm-bundle.js"
+
+
+@app.get("/vendor/cm-bundle.js", include_in_schema=False)
+async def serve_editor_bundle():
+    """The one local JS bundle (CodeMirror + sql-formatter) the page imports
+    — see the comment above the import in ui/index.html. A single fixed
+    file, not a general static-files mount."""
+    return Response(
+        content=_VENDOR_BUNDLE.read_bytes(),
+        media_type="text/javascript",
+        headers={"Cache-Control": "no-cache"},  # revalidate, so a rebuilt bundle is picked up
+    )
+
+
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def serve_ui() -> HTMLResponse:
     if not _UI_PATH.exists():
