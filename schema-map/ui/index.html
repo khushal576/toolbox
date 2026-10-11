@@ -3457,6 +3457,30 @@ $("btnCreateScratchProject").addEventListener("click", async () => {
   }
 });
 
+// Find a saved Vault connection for the same server that uses an SSH
+// tunnel (matching host + port; an exact database+username match wins).
+// Used to recover from a direct connect that timed out only because the
+// form was refilled without its SSH settings. Returns the saved data or null.
+async function findSavedTunnelConnection(body) {
+  try {
+    const list = await (await fetch(`/tools/vault/secrets?kind=${VAULT_KIND}`)).json();
+    let best = null;
+    for (const s of list.secrets || []) {
+      const res = await fetch(`/tools/vault/secrets/${encodeURIComponent(s.id)}/reveal`);
+      if (!res.ok) continue;
+      const c = (await res.json()).data || {};
+      if (!c.ssh_tunnel || !c.ssh_tunnel.ssh_host) continue;
+      if (String(c.host || "").toLowerCase() !== body.host.toLowerCase()) continue;
+      if ((parseInt(c.port, 10) || 5432) !== body.port) continue;
+      const exact = c.database === body.database && c.username === body.username;
+      if (!best || (exact && !best.exact)) best = { name: s.name, data: c, exact };
+    }
+    return best;
+  } catch (e) {
+    return null;
+  }
+}
+
 $("btnConnect").addEventListener("click", async () => {
   const body = {
     host: $("connHost").value.trim(),
@@ -3478,12 +3502,27 @@ $("btnConnect").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "Connecting…";
   try {
-    const res = await fetch("connect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
+    const post = async (b) => {
+      const res = await fetch("connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(b),
+      });
+      return { res, data: await res.json() };
+    };
+    let { res, data } = await post(body);
+    if ((!res.ok || data.error) && !body.ssh_tunnel && /time.?out|timed out/i.test(data.error || "")) {
+      // Direct connect timed out with no tunnel configured: if a saved
+      // connection for this same server uses an SSH tunnel, retry through it.
+      const saved = await findSavedTunnelConnection(body);
+      if (saved) {
+        showConnectError(`Direct connection timed out — retrying through the SSH tunnel saved in "${saved.name}"…`);
+        body.ssh_tunnel = saved.data.ssh_tunnel;
+        if (!body.password) body.password = saved.data.password || "";
+        applySshTunnelToForm(saved.data.ssh_tunnel);
+        ({ res, data } = await post(body));
+      }
+    }
     if (!res.ok || data.error) {
       showConnectError(connectErrorWithHint(data.error || "Couldn't connect.", !!body.ssh_tunnel));
       return;
