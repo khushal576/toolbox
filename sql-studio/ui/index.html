@@ -4,6 +4,30 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>SQL Studio</title>
+<script>
+// Diagnostic banner: if anything on this page throws, or the main module
+// script fails to load, say so on screen instead of leaving buttons that
+// silently do nothing.
+(function () {
+  function show(msg) {
+    var b = document.getElementById("__pageErr");
+    if (!b) {
+      b = document.createElement("div");
+      b.id = "__pageErr";
+      b.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:99999;background:#b91c1c;color:#fff;font:13px/1.4 system-ui,sans-serif;padding:8px 14px;white-space:pre-wrap;";
+      (document.body || document.documentElement).appendChild(b);
+    }
+    b.textContent = "Page problem: " + msg + "  (press Ctrl+Shift+R; if it stays, send this text)";
+  }
+  window.__showPageError = show;
+  window.addEventListener("error", function (e) {
+    show((e.message || "script error") + (e.filename ? " @ " + e.filename.split("/").slice(-2).join("/") + ":" + e.lineno : ""));
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    show("unhandled: " + (e.reason && e.reason.message || e.reason));
+  });
+})();
+</script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -509,7 +533,7 @@
   <div class="dialog-body" id="helpBody"></div>
 </dialog>
 
-<script type="module">
+<script type="module" onerror="__showPageError('the main page script failed to load (a file it needs could not be fetched)')">
 // CodeMirror + sql-formatter come from ONE locally-served bundle
 // (ui/vendor/cm-bundle.js, built with esbuild from the pinned npm packages
 // listed in sql-studio/CLAUDE.md), NOT from a CDN. They used to be seven
@@ -2146,14 +2170,19 @@ const VAULT_KIND = "postgres_connection";
 async function refreshVaultList() {
   const select = $("vaultSelect");
   const previousValue = select.value;
+  const placeholder = (text) => `<option value="">${text}</option>`;
   try {
     const res = await fetch(`/tools/vault/secrets?kind=${VAULT_KIND}`);
+    if (!res.ok) throw new Error(`Vault answered HTTP ${res.status}`);
     const data = await res.json();
     const secrets = data.secrets || [];
-    select.innerHTML = '<option value="">— load saved —</option>' +
+    select.innerHTML = placeholder(secrets.length ? "— load saved —" : "— none saved yet (add one in the Vault tool) —") +
       secrets.map((s) => `<option value="${s.id}">${s.name}</option>`).join("");
     select.value = previousValue;
-  } catch (e) { /* Vault unreachable — the dropdown just stays empty, not fatal */ }
+  } catch (e) {
+    // Say why, in the dropdown itself — not fatal, but never silent.
+    select.innerHTML = placeholder("⚠ couldn't load saved connections: " + e.message);
+  }
 }
 refreshVaultList();
 // The list used to load only once per page load, so a connection added in
