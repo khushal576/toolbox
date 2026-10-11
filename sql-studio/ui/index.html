@@ -729,6 +729,11 @@ function buildSchemaNamespace(schemaObj) {
 // from package docs.
 const DB_TYPE_LABELS = { postgres: "PostgreSQL", mssql: "SQL Server", oracle: "Oracle" };
 const DB_TYPE_DEFAULT_PORTS = { postgres: 5432, mssql: 1433, oracle: 1521 };
+// Declared up here (not next to applyDbTypeToForm) because prefillConnectionFields()
+// below runs at load and calls applyDbTypeToForm() — a const declared later in
+// the file is still in its temporal dead zone at that point and throws, which
+// killed the whole script for anyone with a saved connection in localStorage.
+const CONN_DATABASE_LABELS = { postgres: "Database", mssql: "Database", oracle: "Service Name" };
 const CM_DIALECT_FOR_DBTYPE = { postgres: PostgreSQL, mssql: MSSQL, oracle: PLSQL };
 const FORMATTER_LANG_FOR_DBTYPE = { postgres: "postgresql", mssql: "tsql", oracle: "plsql" };
 
@@ -2107,7 +2112,6 @@ function showConnectError(msg) {
 // ---- Database type (port placeholder, "Database" vs "Service Name"
 // label, and the editor's highlighting/autocomplete dialect all follow
 // the selected type) ----
-const CONN_DATABASE_LABELS = { postgres: "Database", mssql: "Database", oracle: "Service Name" };
 
 function applyDbTypeToForm(dbType) {
   $("connPort").placeholder = String(DB_TYPE_DEFAULT_PORTS[dbType] || "");

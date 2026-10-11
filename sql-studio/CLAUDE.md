@@ -1120,6 +1120,21 @@ basicSetup` (codemirror), `EditorState, Compartment` (state), `keymap`
 --minify --target=es2022 --outfile=cm-bundle.js` and copy it to
 `ui/vendor/`. Built with state 6.7.6, view 6.43.14, autocomplete 6.20.3.
 
+## Load-order gotcha: top-level `const` used by code that runs at load
+
+`prefillConnectionFields()` runs at page load (only when localStorage has a
+saved connection) and calls `applyDbTypeToForm()`, which reads
+`CONN_DATABASE_LABELS`. That const used to be declared ~30 lines LATER, so
+it was still in its temporal dead zone and threw `ReferenceError: Cannot
+access 'CONN_DATABASE_LABELS' before initialization` — killing the rest of
+the module script (SSH listeners, Vault dropdown, Connect: all dead). It
+only fired for browsers with a saved connection, so a fresh test browser
+never saw it. It's now declared next to `DB_TYPE_DEFAULT_PORTS`. When
+testing this page, SEED localStorage (`sql_studio_connection`) — an empty
+profile hides this whole class of bug. The red "Page problem:" bar and the
+"⚠ couldn't load saved connections" dropdown text exist so such failures
+show on screen.
+
 ## Things that will bite you if you don't know them
 
 - **CodeMirror 6 packages must resolve to one shared instance of
