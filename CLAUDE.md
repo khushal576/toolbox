@@ -116,11 +116,16 @@ docstring) still exist exactly as before, backward-compatible: schema-map
 and the orchestrator's one-shot connector only ever talk to Postgres, so
 they keep using these directly, unaware anything underneath changed.
 File-extension-to-DuckDB-function mapping lives in `core/file_source.py`,
-shared by duck-lab and the orchestrator's file connector. **Don't add a
-fourth independent implementation of either** — if a new tool needs to
-connect to a database or read a CSV/JSON/Parquet file, it calls into
-these, the same way duck-lab/sql-studio/schema-map/orchestrator already
-do.
+shared by duck-lab and the orchestrator's file connector. A bounded,
+streaming, async outbound HTTP executor (timeout + response-size cap,
+never buffers an unbounded response) lives in `core/http_exec.py`,
+built for cURL Builder's "Run" feature but kept generic/reusable there
+rather than tool-local, same reasoning as everything else in this
+section. **Don't add a fourth independent implementation of any of
+these** — if a new tool needs to connect to a database, read a
+CSV/JSON/Parquet file, or make an outbound HTTP request, it calls into
+these, the same way duck-lab/sql-studio/schema-map/orchestrator/
+curl-builder already do.
 
 `core/vault.py` is the shared, generic encrypted secret store (Fernet,
 no master password by deliberate owner choice — see `vault/CLAUDE.md`

@@ -12,11 +12,15 @@ POST /secrets directly. See vault/CLAUDE.md for the full picture.
 from __future__ import annotations
 
 import asyncio
+import shutil
+import tempfile
+import zipfile
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 try:  # core/ is a sibling top-level package in the real image (/app/core)
     from core import vault
@@ -149,4 +153,75 @@ async def delete_secret(secret_id: str) -> JSONResponse:
 @app.post("/clear")
 async def clear_all() -> JSONResponse:
     await asyncio.to_thread(vault.clear_all)
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------
+# Backup & restore — a real, portable, off-volume safety net. The
+# vault_data Docker volume already survives an ordinary rebuild/restart
+# (confirmed directly — see vault/CLAUDE.md), but not an explicit
+# `docker-compose down -v` or a manual volume deletion. This is the
+# answer to "is my data actually safe" beyond just trusting the volume.
+# ---------------------------------------------------------------------
+
+def _build_backup_zip_sync(dest_path: Path) -> None:
+    """Bundles vault.db + vault.key + every file under blobs/ into one
+    zip, written straight to disk (never buffered whole in memory —
+    a dataset's blob file can be sizable)."""
+    with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        if vault.DB_PATH.exists():
+            zf.write(vault.DB_PATH, "vault.db")
+        if vault.KEY_PATH.exists():
+            zf.write(vault.KEY_PATH, "vault.key")
+        if vault.BLOBS_DIR.exists():
+            for f in vault.BLOBS_DIR.iterdir():
+                if f.is_file():
+                    zf.write(f, f"blobs/{f.name}")
+
+
+@app.get("/backup")
+async def backup() -> FileResponse:
+    tmp_path = Path(tempfile.mkstemp(suffix=".zip")[1])
+    await asyncio.to_thread(_build_backup_zip_sync, tmp_path)
+    return FileResponse(
+        tmp_path, filename="vault-backup.zip", media_type="application/zip",
+        background=BackgroundTask(tmp_path.unlink, missing_ok=True),
+    )
+
+
+def _restore_backup_sync(zip_path: Path) -> None:
+    """Extracts a backup zip back into the vault's data directory,
+    OVERWRITING whatever's currently there in full — the frontend's own
+    confirm dialog is what makes this a deliberate action, this function
+    just does it unconditionally once called. Invalidates the cached
+    encryption key afterward so THIS process immediately starts using
+    the restored key instead of whatever it had cached from before —
+    see vault.invalidate_key_cache()'s docstring for the real bug that
+    would otherwise cause (every decrypt silently using the wrong key)."""
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+        if "vault.db" not in names or "vault.key" not in names:
+            raise ValueError("This doesn't look like a Vault backup — missing vault.db/vault.key.")
+        vault.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        if vault.BLOBS_DIR.exists():
+            shutil.rmtree(vault.BLOBS_DIR, ignore_errors=True)
+        zf.extractall(vault.DATA_DIR)
+    vault.invalidate_key_cache()
+
+
+@app.post("/restore")
+async def restore(file: UploadFile) -> JSONResponse:
+    """Replaces the ENTIRE vault (every secret and dataset) with the
+    contents of an uploaded backup zip. Streams the upload straight to a
+    temp file (never buffers the whole thing in Python memory, same
+    convention as duck-lab's own file uploads) before extracting."""
+    tmp_path = Path(tempfile.mkstemp(suffix=".zip")[1])
+    try:
+        with tmp_path.open("wb") as out:
+            await asyncio.to_thread(shutil.copyfileobj, file.file, out)
+        await asyncio.to_thread(_restore_backup_sync, tmp_path)
+    except (zipfile.BadZipFile, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    finally:
+        tmp_path.unlink(missing_ok=True)
     return JSONResponse({"ok": True})

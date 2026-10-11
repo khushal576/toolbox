@@ -140,14 +140,44 @@
   .warn-box ul { margin: 2px 0 0 18px; }
   .copied-flash { color: var(--ok-text); font-size: 0.76rem; font-weight: 600; opacity: 0; transition: opacity 0.2s; }
   .copied-flash.show { opacity: 1; }
+
+  /* list-mode (multi-value field) toggle on a kv-row */
+  .list-toggle { flex: none; cursor: pointer; border: 1px solid var(--border); background: var(--surface);
+    color: var(--muted); border-radius: 6px; width: 28px; height: 28px; font-size: 0.8rem; line-height: 1; }
+  .list-toggle.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .kv-row textarea.list-values { flex: 1; min-width: 0; min-height: 56px; font-size: 0.8rem; }
+
+  /* Run panel */
+  .run-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }
+  .run-row .field { margin-bottom: 0; flex: 0 0 140px; }
+  .combo-table-wrap { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; }
+  table.combo-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  table.combo-table th, table.combo-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+  table.combo-table th { background: var(--bg); position: sticky; top: 0; }
+  table.combo-table input[type="checkbox"] { accent-color: var(--accent); }
+  .blocked-note { font-size: 0.78rem; background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-border);
+    border-radius: 7px; padding: 9px 12px; margin-bottom: 10px; }
+
+  /* results */
+  .result-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .result-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .result-status { font-weight: 700; font-size: 0.82rem; }
+  .result-status.ok { color: var(--ok-text); }
+  .result-status.err { color: #dc2626; }
+  .result-meta { font-size: 0.74rem; color: var(--muted); }
+  .result-body { background: var(--code-bg); color: var(--code-text); border-radius: 7px; padding: 10px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Courier New', monospace; font-size: 0.76rem;
+    max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin-top: 6px; }
+  .result-headers { font-size: 0.74rem; color: var(--muted); margin-top: 6px; }
+  .result-headers summary { cursor: pointer; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>cURL <span>Builder</span></h1>
-  <p>Pick your request piece by piece — get a copy-pasteable curl command for bash, cmd.exe, or PowerShell</p>
-  <div class="trust-badge">🔒 100% client-side — this tool builds a command string, it never sends your request anywhere</div>
+  <p>Pick your request piece by piece — get a copy-pasteable curl command, or run it directly and see the real result</p>
+  <div class="trust-badge">🔒 Building the command still never leaves the browser — only clicking "Run" sends anything, straight to the URL you typed</div>
 </header>
 
 <div class="layout">
@@ -159,6 +189,11 @@
       <div class="btn-row" style="margin:0 0 12px;">
         <button class="action secondary small" id="btnExample">Load example</button>
         <button class="action secondary small" id="btnReset">Reset all</button>
+      </div>
+      <div class="btn-row" style="margin:0 0 12px;">
+        <select id="vaultRequestSelect" style="flex:1;font-size:0.8rem;"><option value="">— load saved request —</option></select>
+        <button class="action secondary small" id="btnLoadRequest">Load</button>
+        <button class="action secondary small" id="btnSaveRequest">💾 Save request</button>
       </div>
       <h2>Request</h2>
       <div class="row">
@@ -384,6 +419,46 @@
       <label>Command</label>
       <pre class="cmd" id="cmdOut">curl ...</pre>
     </div>
+
+    <div class="card">
+      <h2>Run</h2>
+      <p class="hint">Actually sends the request from this server — not the browser — so it works against your own local/internal APIs too, not just public ones with permissive CORS. See the trust note above.</p>
+      <div class="blocked-note" id="runBlockedNote" style="display:none;"></div>
+      <div class="run-row">
+        <div class="field">
+          <label for="repeatCount">Repeat</label>
+          <input type="number" id="repeatCount" value="1" min="1" max="200">
+        </div>
+        <div class="field">
+          <label for="timeoutS">Timeout (s)</label>
+          <input type="number" id="timeoutS" value="30" min="1" max="120">
+        </div>
+        <button class="action secondary small" id="btnGenerateCombos">Generate combinations</button>
+      </div>
+      <p class="hint" id="comboHint" style="display:none;">Toggle "List" on a Query/Header/Cookie/Form-field row (click the 📋 button next to it) and enter one value per line to vary it across runs — every combination of every list-enabled field is generated below. Uncheck any you don't want to actually run.</p>
+      <div id="comboPanel" style="display:none;">
+        <div class="btn-row" style="margin:0 0 8px;">
+          <button class="action secondary small" id="btnComboAll">Select all</button>
+          <button class="action secondary small" id="btnComboNone">Select none</button>
+          <span class="result-meta" id="comboCountLabel"></span>
+        </div>
+        <div class="combo-table-wrap"><table class="combo-table" id="comboTable"></table></div>
+      </div>
+      <div class="btn-row">
+        <button class="action" id="btnRun">▶ Run</button>
+        <div class="check-field" style="margin:0;">
+          <input type="checkbox" id="autoSaveToggle">
+          <label for="autoSaveToggle">Auto-save results to Vault, up to</label>
+        </div>
+        <input type="number" id="autoSaveCount" value="50" min="1" max="200" style="width:70px;">
+      </div>
+      <div class="result-meta" id="runProgress"></div>
+    </div>
+
+    <div class="card" id="resultsCard" style="display:none;">
+      <h2>Results</h2>
+      <div id="resultsList"></div>
+    </div>
   </div>
 
 </div>
@@ -405,8 +480,8 @@
     const container = $(containerId);
     const rows = [];
 
-    function row(key = "", value = "", enabled = true, isFile = false, mime = "") {
-      return { key, value, enabled, isFile, mime };
+    function row(key = "", value = "", enabled = true, isFile = false, mime = "", listMode = false, listValues = "") {
+      return { key, value, enabled, isFile, mime, listMode, listValues };
     }
 
     function render() {
@@ -425,14 +500,31 @@
         keyInput.value = r.key;
         keyInput.addEventListener("input", () => { r.key = keyInput.value; generate(); });
 
-        const valInput = document.createElement("input");
-        valInput.type = "text"; valInput.placeholder = r.isFile ? "/path/to/file" : (opts.valuePlaceholder || "value");
-        valInput.value = r.value;
-        valInput.addEventListener("input", () => { r.value = valInput.value; generate(); });
-
         div.appendChild(chk);
         div.appendChild(keyInput);
-        div.appendChild(valInput);
+
+        if (opts.allowListMode) {
+          const listBtn = document.createElement("button");
+          listBtn.type = "button"; listBtn.className = "list-toggle" + (r.listMode ? " active" : "");
+          listBtn.title = r.listMode ? "Switch back to a single value" : "Use a list of values (one per line) — run once per value";
+          listBtn.textContent = "📋";
+          listBtn.addEventListener("click", () => { r.listMode = !r.listMode; render(); generate(); });
+          div.appendChild(listBtn);
+        }
+
+        if (opts.allowListMode && r.listMode) {
+          const ta = document.createElement("textarea");
+          ta.className = "list-values"; ta.placeholder = "one value per line";
+          ta.value = r.listValues;
+          ta.addEventListener("input", () => { r.listValues = ta.value; generate(); });
+          div.appendChild(ta);
+        } else {
+          const valInput = document.createElement("input");
+          valInput.type = "text"; valInput.placeholder = r.isFile ? "/path/to/file" : (opts.valuePlaceholder || "value");
+          valInput.value = r.value;
+          valInput.addEventListener("input", () => { r.value = valInput.value; generate(); });
+          div.appendChild(valInput);
+        }
 
         if (opts.withFileToggle) {
           const lbl = document.createElement("label");
@@ -467,16 +559,16 @@
     return {
       add(k = "", v = "", enabled = true, isFile = false, mime = "") { rows.push(row(k, v, enabled, isFile, mime)); render(); generate(); },
       clear() { rows.length = 0; render(); generate(); },
-      setAll(list) { rows.length = 0; list.forEach((r) => rows.push(row(r.k, r.v, r.enabled !== false, !!r.isFile, r.mime || ""))); render(); generate(); },
+      setAll(list) { rows.length = 0; list.forEach((r) => rows.push(row(r.k, r.v, r.enabled !== false, !!r.isFile, r.mime || "", !!r.listMode, r.listValues || ""))); render(); generate(); },
       enabled() { return rows.filter((r) => r.enabled && r.key.trim() !== ""); },
       all() { return rows; },
     };
   }
 
-  const queryList = makeRowList("queryList", "queryCount", { keyPlaceholder: "param", valuePlaceholder: "value" });
-  const headerList = makeRowList("headerList", "headerCount", { keyPlaceholder: "Header-Name", valuePlaceholder: "value" });
-  const cookieList = makeRowList("cookieList", "cookieCount", { keyPlaceholder: "name", valuePlaceholder: "value" });
-  const urlencodedList = makeRowList("urlencodedList", null, { keyPlaceholder: "field", valuePlaceholder: "value" });
+  const queryList = makeRowList("queryList", "queryCount", { keyPlaceholder: "param", valuePlaceholder: "value", allowListMode: true });
+  const headerList = makeRowList("headerList", "headerCount", { keyPlaceholder: "Header-Name", valuePlaceholder: "value", allowListMode: true });
+  const cookieList = makeRowList("cookieList", "cookieCount", { keyPlaceholder: "name", valuePlaceholder: "value", allowListMode: true });
+  const urlencodedList = makeRowList("urlencodedList", null, { keyPlaceholder: "field", valuePlaceholder: "value", allowListMode: true });
   const multipartList = makeRowList("multipartList", null, { keyPlaceholder: "field", valuePlaceholder: "value", withFileToggle: true });
 
   $("addQuery").addEventListener("click", () => queryList.add());
@@ -582,6 +674,130 @@
   // ---------------------------------------------------------------------
   function buildQueryString(pairs) {
     return pairs.map((p) => encodeURIComponent(p.key) + "=" + encodeURIComponent(p.value)).join("&");
+  }
+
+  // ---------------------------------------------------------------------
+  // Run — a second, INDEPENDENT read of the form into a plain, unquoted
+  // {method, url, headers, body} object for actually executing the
+  // request (no shell involved at all, so none of quote()/assemble()'s
+  // escaping applies). Deliberately a separate function from generate(),
+  // not a refactor of it — generate()'s shell-command output is already
+  // working and verified; growing a second consumer off a shared
+  // extraction would risk regressing it for zero benefit, since the two
+  // are read-only views over the same DOM state anyway.
+  //
+  // Scope, stated plainly: Run supports body types none/raw/graphql/
+  // urlencoded and auth types none/basic/bearer/apikey. It does NOT
+  // support multipart or binary bodies (both fundamentally reference a
+  // local file by path — this browser-based tool has no way to read
+  // that file's real content, only the typed path string) or Digest
+  // auth (a real implementation needs a server challenge round-trip,
+  // not a single static header). Each of those sets `blockedReason`
+  // instead of silently sending something wrong.
+  // ---------------------------------------------------------------------
+  function assembleRequest() {
+    let method = $("method").value;
+    if (method === "__custom") method = ($("customMethod").value || "GET").trim().toUpperCase();
+
+    const authType = $("authType").value;
+    const autoHeaderKeys = new Set();
+    const extraQueryFromAuth = [];
+    let authHeaderValue = null;
+    let blockedReason = null;
+
+    if (authType === "basic") {
+      autoHeaderKeys.add("authorization");
+      authHeaderValue = "Basic " + btoa(unescape(encodeURIComponent($("basicUser").value + ":" + $("basicPass").value)));
+    } else if (authType === "digest") {
+      autoHeaderKeys.add("authorization");
+      blockedReason = "Digest auth needs a server challenge round-trip this tool doesn't implement — copy the command above and run it with curl instead.";
+    } else if (authType === "bearer") {
+      autoHeaderKeys.add("authorization");
+      authHeaderValue = "Bearer " + $("bearerToken").value;
+    } else if (authType === "apikey") {
+      const loc = $("apiKeyLoc").value;
+      const name = $("apiKeyName").value.trim() || "X-API-Key";
+      if (loc === "header") autoHeaderKeys.add(name.toLowerCase());
+      else extraQueryFromAuth.push({ key: name, value: $("apiKeyValue").value });
+    }
+
+    let contentTypeFromBody = null;
+    let bodyPayload = null;
+    const RAW_CT = { json: "application/json", xml: "application/xml", text: "text/plain", html: "text/html", js: "application/javascript" };
+
+    if (bodyType === "raw") {
+      contentTypeFromBody = RAW_CT[$("rawFormat").value] || "text/plain";
+      bodyPayload = $("rawContent").value || null;
+    } else if (bodyType === "graphql") {
+      contentTypeFromBody = "application/json";
+      let vars = {};
+      try { vars = $("gqlVars").value.trim() ? JSON.parse($("gqlVars").value) : {}; } catch (e) { /* sent as {} if invalid, same as generate()'s own handling */ }
+      bodyPayload = JSON.stringify({ query: $("gqlQuery").value || "", variables: vars });
+    } else if (bodyType === "urlencoded") {
+      const enabled = urlencodedList.enabled();
+      contentTypeFromBody = "application/x-www-form-urlencoded";
+      bodyPayload = enabled.length ? enabled.map((r) => encodeURIComponent(r.key) + "=" + encodeURIComponent(r.value)).join("&") : null;
+    } else if (bodyType === "multipart") {
+      blockedReason = "A multipart body can reference local files by path — this browser-based tool can't read local files. Copy the command above and run it in your terminal instead.";
+    } else if (bodyType === "binary") {
+      blockedReason = "A binary body reads a local file by path — this browser-based tool can't do that. Copy the command above and run it in your terminal instead.";
+    }
+    if (contentTypeFromBody && !blockedReason) autoHeaderKeys.add("content-type");
+
+    let baseUrl = $("url").value.trim() || "https://";
+    const allQueryPairs = [...queryList.enabled().map((r) => ({ key: r.key, value: r.value })), ...extraQueryFromAuth];
+    let resolvedUrl = baseUrl;
+    if (allQueryPairs.length) resolvedUrl += (baseUrl.includes("?") ? "&" : "?") + buildQueryString(allQueryPairs);
+
+    const headers = [];
+    if (contentTypeFromBody && !headerList.enabled().some((r) => r.key.trim().toLowerCase() === "content-type")) {
+      headers.push({ key: "Content-Type", value: contentTypeFromBody });
+    }
+    if (authHeaderValue) headers.push({ key: "Authorization", value: authHeaderValue });
+    if (authType === "apikey" && $("apiKeyLoc").value === "header") {
+      headers.push({ key: $("apiKeyName").value.trim() || "X-API-Key", value: $("apiKeyValue").value });
+    }
+    headerList.enabled().forEach((r) => {
+      if (autoHeaderKeys.has(r.key.trim().toLowerCase())) return;
+      headers.push({ key: r.key, value: r.value });
+    });
+    if (cookieList.enabled().length) {
+      headers.push({ key: "Cookie", value: cookieList.enabled().map((r) => r.key + "=" + r.value).join("; ") });
+    }
+
+    return { method, url: resolvedUrl, headers, body: bodyPayload, canRun: !blockedReason, blockedReason };
+  }
+
+  // Every list-mode-capable row-list, with a label used in the
+  // combination table's column headers.
+  const LIST_MODE_LISTS = [
+    { list: queryList, label: "Query" },
+    { list: headerList, label: "Header" },
+    { list: cookieList, label: "Cookie" },
+    { list: urlencodedList, label: "Form field" },
+  ];
+
+  function activeListAxes() {
+    const axes = [];
+    LIST_MODE_LISTS.forEach(({ list, label }) => {
+      list.all().forEach((r) => {
+        if (r.enabled && r.listMode && r.key.trim()) {
+          const values = (r.listValues || "").split("\n").map((v) => v.trim()).filter((v) => v !== "");
+          if (values.length) axes.push({ row: r, label, key: r.key, values });
+        }
+      });
+    });
+    return axes;
+  }
+
+  function cartesianCombinations(axes) {
+    let combos = [[]];
+    axes.forEach((axis) => {
+      const next = [];
+      combos.forEach((combo) => axis.values.forEach((v) => next.push([...combo, { axis, value: v }])));
+      combos = next;
+    });
+    return combos;
   }
 
   function generate() {
@@ -737,6 +953,14 @@
     if (!baseUrl || baseUrl === "https://") {
       warnings.push("URL is empty — fill it in above.");
     }
+    const listAxisCount = activeListAxes().length;
+    if (listAxisCount > 0) {
+      warnings.push(
+        listAxisCount + " field" + (listAxisCount > 1 ? "s are" : " is") + " in list mode — this command shows only the " +
+        "first value of each. Use the Run panel's \"Generate combinations\" to execute every value."
+      );
+    }
+    updateRunPanelBlockedState();
 
     const warnBox = $("warnBox");
     if (warnings.length) {
@@ -746,6 +970,274 @@
       warnBox.classList.remove("show");
     }
   }
+
+  // ---------------------------------------------------------------------
+  // Run — actually execute the assembled request via this tool's own
+  // backend (/execute — see curl-builder/CLAUDE.md for why "no backend
+  // processing" was deliberately reversed, and the bounds in place:
+  // per-request timeout, a 10MB response cap, and a 200-requests-per-
+  // click ceiling enforced client-side below).
+  // ---------------------------------------------------------------------
+  const MAX_REQUESTS_PER_RUN = 200;
+  let currentCombos = []; // [{ selected: bool, labelParts: [...], values: [{axis, value}] }]
+
+  function updateRunPanelBlockedState() {
+    const req = assembleRequest();
+    const note = $("runBlockedNote");
+    const runBtn = $("btnRun");
+    if (req.blockedReason) {
+      note.textContent = "⚠️ Run is disabled: " + req.blockedReason;
+      note.style.display = "block";
+      runBtn.disabled = true;
+    } else {
+      note.style.display = "none";
+      runBtn.disabled = false;
+    }
+  }
+
+  async function executeOnce(req, timeoutS) {
+    const t0 = performance.now();
+    try {
+      const res = await fetch("execute", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ method: req.method, url: req.url, headers: req.headers, body: req.body, timeout_s: timeoutS }),
+      });
+      const data = await res.json();
+      return data;
+    } catch (e) {
+      return { status_code: null, headers: {}, body: "", is_base64: false, truncated: false, elapsed_ms: performance.now() - t0, error: "Network error reaching this tool's own backend: " + e.message };
+    }
+  }
+
+  function renderComboTable() {
+    const axes = activeListAxes();
+    const panel = $("comboPanel");
+    const hint = $("comboHint");
+    if (!axes.length) {
+      panel.style.display = "none";
+      hint.style.display = "none";
+      currentCombos = [];
+      return;
+    }
+    hint.style.display = "block";
+    const raw = cartesianCombinations(axes);
+    currentCombos = raw.map((combo) => ({ selected: true, values: combo }));
+    const table = $("comboTable");
+    const headRow = "<tr><th></th>" + axes.map((a) => `<th>${esc(a.label)}: ${esc(a.key)}</th>`).join("") + "</tr>";
+    const bodyRows = currentCombos.map((c, i) => {
+      const cells = c.values.map((v) => `<td>${esc(v.value)}</td>`).join("");
+      return `<tr><td><input type="checkbox" data-combo="${i}" ${c.selected ? "checked" : ""}></td>${cells}</tr>`;
+    }).join("");
+    table.innerHTML = headRow + bodyRows;
+    table.querySelectorAll("input[data-combo]").forEach((cb) => {
+      cb.addEventListener("change", () => { currentCombos[+cb.dataset.combo].selected = cb.checked; updateComboCountLabel(); });
+    });
+    panel.style.display = "block";
+    updateComboCountLabel();
+  }
+
+  function updateComboCountLabel() {
+    const selected = currentCombos.filter((c) => c.selected).length;
+    $("comboCountLabel").textContent = `${selected} of ${currentCombos.length} combinations selected`;
+  }
+
+  $("btnGenerateCombos").addEventListener("click", renderComboTable);
+  $("btnComboAll").addEventListener("click", () => {
+    currentCombos.forEach((c) => (c.selected = true));
+    $("comboTable").querySelectorAll("input[data-combo]").forEach((cb) => (cb.checked = true));
+    updateComboCountLabel();
+  });
+  $("btnComboNone").addEventListener("click", () => {
+    currentCombos.forEach((c) => (c.selected = false));
+    $("comboTable").querySelectorAll("input[data-combo]").forEach((cb) => (cb.checked = false));
+    updateComboCountLabel();
+  });
+
+  function renderResultItem(label, req, data) {
+    const card = $("resultsCard");
+    card.style.display = "block";
+    const list = $("resultsList");
+    const item = document.createElement("div");
+    item.className = "result-item";
+    const ok = data.status_code !== null && data.status_code !== undefined;
+    const statusText = data.error ? "ERROR" : `${data.status_code}`;
+    const headerRows = Object.entries(data.headers || {}).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join("\n");
+    const bodyPreview = data.error ? data.error : (data.is_base64 ? "(binary response, base64-encoded — not shown inline)" : data.body);
+    const truncNote = data.truncated ? ' <span class="result-meta">(truncated at the 10MB cap)</span>' : "";
+    item.innerHTML = `
+      <div class="result-head">
+        <span class="result-status ${ok ? "ok" : "err"}">${esc(label)} — ${esc(statusText)}</span>
+        <span class="result-meta">${esc(req.method)} ${esc(req.url)} · ${data.elapsed_ms} ms${truncNote}</span>
+        <button class="action secondary small" data-save-result>🔒 Save to Vault</button>
+      </div>
+      <details class="result-headers"><summary>Response headers (${Object.keys(data.headers || {}).length})</summary><pre>${esc(headerRows)}</pre></details>
+      <div class="result-body">${esc(bodyPreview).slice(0, 20000)}</div>
+    `;
+    item.querySelector("[data-save-result]").addEventListener("click", () => saveResultToVault(req, data, label));
+    list.insertBefore(item, list.firstChild); // newest on top — live progress reads top-down as it happens
+    return item;
+  }
+
+  async function saveResultToVault(req, data, label) {
+    const name = `${req.method} ${req.url} — ${label} — ${new Date().toISOString()}`;
+    try {
+      const res = await fetch("/tools/vault/secrets", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name, kind: "curl_result",
+          data: { status_code: data.status_code, headers: data.headers, body: data.body, is_base64: data.is_base64, method: req.method, url: req.url, elapsed_ms: data.elapsed_ms },
+        }),
+      });
+      if (!res.ok) throw new Error("Save failed.");
+      return true;
+    } catch (e) {
+      alert("Couldn't save to Vault: " + e.message);
+      return false;
+    }
+  }
+
+  $("btnRun").addEventListener("click", async () => {
+    const baseReq = assembleRequest();
+    if (baseReq.blockedReason) return; // button is disabled in this case, but guard anyway
+    const timeoutS = Math.min(Math.max(parseFloat($("timeoutS").value) || 30, 1), 120);
+    const autoSave = $("autoSaveToggle").checked;
+    const autoSaveCount = Math.min(Math.max(parseInt($("autoSaveCount").value, 10) || 50, 1), MAX_REQUESTS_PER_RUN);
+
+    // Snapshot the real row values for every axis so we can restore them
+    // after running combinations — running Run must never permanently
+    // mutate the form the way a combo iteration temporarily does.
+    const axes = activeListAxes();
+    const originalValues = axes.map((a) => a.row.value);
+
+    let jobs; // [{ label, run: () => request-object-for-this-iteration }]
+    if (currentCombos.length) {
+      const selected = currentCombos.filter((c) => c.selected);
+      jobs = selected.map((combo, idx) => ({
+        label: `combo ${idx + 1}/${selected.length}`,
+        apply: () => combo.values.forEach((v) => { v.axis.row.value = v.value; }),
+      }));
+    } else {
+      const n = Math.min(Math.max(parseInt($("repeatCount").value, 10) || 1, 1), MAX_REQUESTS_PER_RUN);
+      jobs = Array.from({ length: n }, (_, i) => ({ label: `run ${i + 1}/${n}`, apply: () => {} }));
+    }
+
+    if (jobs.length > MAX_REQUESTS_PER_RUN) {
+      alert(`That's ${jobs.length} requests — capped at ${MAX_REQUESTS_PER_RUN} per click. Select fewer combinations or lower the repeat count.`);
+      return;
+    }
+
+    $("resultsList").innerHTML = "";
+    const btn = $("btnRun");
+    btn.disabled = true;
+    let saved = 0;
+    try {
+      for (let i = 0; i < jobs.length; i++) {
+        $("runProgress").textContent = `Running ${i + 1} of ${jobs.length}…`;
+        jobs[i].apply();
+        const req = assembleRequest(); // re-assemble AFTER applying this iteration's values
+        const data = await executeOnce(req, timeoutS);
+        const item = renderResultItem(jobs[i].label, req, data);
+        if (autoSave && saved < autoSaveCount) {
+          await saveResultToVault(req, data, jobs[i].label);
+          saved++;
+        }
+      }
+      $("runProgress").textContent = `Done — ${jobs.length} request${jobs.length > 1 ? "s" : ""}` + (autoSave ? `, ${saved} saved to Vault` : "") + ".";
+    } finally {
+      axes.forEach((a, i) => { a.row.value = originalValues[i]; });
+      render_all_lists_after_run();
+      btn.disabled = false;
+    }
+  });
+
+  function render_all_lists_after_run() {
+    // Re-render every list-mode-capable list so the DOM reflects the
+    // restored (pre-run) values rather than whatever the last
+    // combination iteration left in memory — generate() alone wouldn't
+    // touch these rows' own rendered <input> values.
+    LIST_MODE_LISTS.forEach(({ list }) => list.setAll(list.all().map((r) => ({ k: r.key, v: r.value, enabled: r.enabled, isFile: r.isFile, mime: r.mime, listMode: r.listMode, listValues: r.listValues }))));
+  }
+
+  // ---------------------------------------------------------------------
+  // Save / Load the built request itself, via the shared Vault
+  // (same-origin direct call — same pattern SQL Studio/Schema Map's
+  // "Save connection" already uses, see schema-map/CLAUDE.md Phase D).
+  // ---------------------------------------------------------------------
+  function snapshotFormState() {
+    return {
+      method: $("method").value, customMethod: $("customMethod").value, url: $("url").value,
+      query: queryList.all(), headers: headerList.all(), cookies: cookieList.all(),
+      authType: $("authType").value,
+      basicUser: $("basicUser").value, basicPass: $("basicPass").value,
+      digestUser: $("digestUser").value, digestPass: $("digestPass").value,
+      bearerToken: $("bearerToken").value,
+      apiKeyName: $("apiKeyName").value, apiKeyValue: $("apiKeyValue").value, apiKeyLoc: $("apiKeyLoc").value,
+      bodyType, rawFormat: $("rawFormat").value, rawContent: $("rawContent").value,
+      gqlQuery: $("gqlQuery").value, gqlVars: $("gqlVars").value,
+      urlencoded: urlencodedList.all(), multipart: multipartList.all(), binaryPath: $("binaryPath").value,
+    };
+  }
+
+  function applyFormState(s) {
+    $("method").value = s.method || "GET";
+    $("customMethodField").style.display = s.method === "__custom" ? "" : "none";
+    $("customMethod").value = s.customMethod || "";
+    $("url").value = s.url || "";
+    queryList.setAll(s.query || []); headerList.setAll(s.headers || []); cookieList.setAll(s.cookies || []);
+    $("authType").value = s.authType || "none"; $("authType").dispatchEvent(new Event("change"));
+    $("basicUser").value = s.basicUser || ""; $("basicPass").value = s.basicPass || "";
+    $("digestUser").value = s.digestUser || ""; $("digestPass").value = s.digestPass || "";
+    $("bearerToken").value = s.bearerToken || "";
+    $("apiKeyName").value = s.apiKeyName || ""; $("apiKeyValue").value = s.apiKeyValue || ""; $("apiKeyLoc").value = s.apiKeyLoc || "header";
+    document.querySelector(`#bodyTypeSeg button[data-val="${s.bodyType || "none"}"]`).click();
+    $("rawFormat").value = s.rawFormat || "json"; $("rawContent").value = s.rawContent || "";
+    $("gqlQuery").value = s.gqlQuery || ""; $("gqlVars").value = s.gqlVars || "";
+    urlencodedList.setAll(s.urlencoded || []); multipartList.setAll(s.multipart || []);
+    $("binaryPath").value = s.binaryPath || "";
+    generate();
+  }
+
+  async function refreshVaultRequestSelect() {
+    const select = $("vaultRequestSelect");
+    const previous = select.value;
+    try {
+      const res = await fetch("/tools/vault/secrets?kind=curl_request");
+      const data = await res.json();
+      const secrets = data.secrets || [];
+      select.innerHTML = '<option value="">— load saved request —</option>' +
+        secrets.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+      select.value = previous;
+    } catch (e) { /* Vault unreachable — dropdown just stays empty, not fatal */ }
+  }
+  refreshVaultRequestSelect();
+
+  $("btnSaveRequest").addEventListener("click", async () => {
+    const name = prompt("Save this request as:", $("url").value || "untitled request");
+    if (!name) return;
+    try {
+      const res = await fetch("/tools/vault/secrets", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, kind: "curl_request", data: snapshotFormState() }),
+      });
+      if (!res.ok) throw new Error("Save failed.");
+      await refreshVaultRequestSelect();
+    } catch (e) {
+      alert("Couldn't save to Vault: " + e.message);
+    }
+  });
+
+  $("btnLoadRequest").addEventListener("click", async () => {
+    const id = $("vaultRequestSelect").value;
+    if (!id) return;
+    try {
+      const res = await fetch(`/tools/vault/secrets/${encodeURIComponent(id)}/reveal`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Couldn't load saved request.");
+      applyFormState(data.data);
+    } catch (e) {
+      alert("Couldn't load from Vault: " + e.message);
+    }
+  });
 
   // ---------------------------------------------------------------------
   // Copy, reset, example
@@ -774,6 +1266,9 @@
     ["optCompressed","optInclude","optVerbose","optSilent","optInsecure"].forEach((id) => $(id).checked = false);
     $("optHttpVersion").value = "";
     ["optConnectTimeout","optMaxTime","optRetry","optUserAgent","optReferer","optProxy","optOutputFile"].forEach((id) => $(id).value = "");
+    currentCombos = [];
+    $("comboPanel").style.display = "none"; $("comboHint").style.display = "none";
+    $("resultsCard").style.display = "none"; $("resultsList").innerHTML = ""; $("runProgress").textContent = "";
     generate();
   });
 

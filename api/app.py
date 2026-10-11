@@ -63,8 +63,8 @@ class CompareRequest(BaseModel):
 
     left_data: str = Field(..., description="Raw text of the left-side input.")
     right_data: str = Field(..., description="Raw text of the right-side input.")
-    left_format: str = Field(..., description="Format of the left input: json | xml | csv")
-    right_format: str = Field(..., description="Format of the right input: json | xml | csv")
+    left_format: str = Field(..., description="Format of the left input: json | xml | csv | yaml | env")
+    right_format: str = Field(..., description="Format of the right input: json | xml | csv | yaml | env")
     mapper_csv: Optional[str] = Field(
         default=None,
         description=(
@@ -160,16 +160,16 @@ async def compare(req: CompareRequest) -> JSONResponse:
     if not req.right_data or not req.right_data.strip():
         return _error("Right input is empty. Please paste some data to compare.")
 
-    valid_formats = {"json", "xml", "csv"}
+    valid_formats = {"json", "xml", "csv", "yaml", "env"}
     if req.left_format.lower() not in valid_formats:
         return _error(
             f"Invalid left format '{req.left_format}'. "
-            f"Choose one of: json, xml, csv."
+            f"Choose one of: json, xml, csv, yaml, env."
         )
     if req.right_format.lower() not in valid_formats:
         return _error(
             f"Invalid right format '{req.right_format}'. "
-            f"Choose one of: json, xml, csv."
+            f"Choose one of: json, xml, csv, yaml, env."
         )
 
     # ------------------------------------------------------------------

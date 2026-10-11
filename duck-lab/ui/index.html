@@ -102,6 +102,7 @@
       <h2>Load data</h2>
       <p class="hint">Upload a CSV, JSON, Parquet, or XML file. Each becomes a queryable table.</p>
       <input type="file" id="fileInput" accept=".csv,.tsv,.json,.parquet,.xml" />
+      <span class="stats" id="uploadStatus" style="display:block;margin-top:4px;"></span>
       <div class="btn-row" style="margin:8px 0 0;">
         <select id="vaultSelect" style="flex:1;font-size:0.8rem;"><option value="">— load from Vault —</option></select>
         <button class="action secondary small" id="btnVaultLoad">Load</button>
@@ -364,13 +365,19 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   showError(null);
+  const input = e.target;
+  const status = document.getElementById("uploadStatus");
+  input.disabled = true;
+  status.textContent = `Uploading ${file.name}…`;
   try {
     await API.upload(file);
     await refreshTables();
   } catch (err) {
     showError(err.message);
   } finally {
-    e.target.value = "";
+    input.disabled = false;
+    status.textContent = "";
+    input.value = "";
   }
 });
 
@@ -396,11 +403,18 @@ document.getElementById("btnVaultLoad").addEventListener("click", async () => {
   if (!id) return;
   const name = select.selectedOptions[0].dataset.name;
   showError(null);
+  const btn = document.getElementById("btnVaultLoad");
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Loading…";
   try {
     await API.loadFromVault(id, name);
     await refreshTables();
   } catch (err) {
     showError(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
   }
 });
 
@@ -446,7 +460,10 @@ document.getElementById("btnReset").addEventListener("click", async () => {
 
 async function runQuery() {
   showError(null);
-  document.getElementById("queryTime").textContent = "Running…";
+  const btn = document.getElementById("btnRun");
+  btn.disabled = true;
+  btn.textContent = "Running…";
+  document.getElementById("queryTime").textContent = "";
   const text = view.state.doc.toString();
   try {
     const data = await API.runQuery(text);
@@ -461,6 +478,9 @@ async function runQuery() {
   } catch (err) {
     showError(err.message);
     document.getElementById("queryTime").textContent = "";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "▶ Run";
   }
 }
 document.getElementById("btnRun").addEventListener("click", runQuery);
@@ -501,6 +521,10 @@ document.getElementById("btnSaveToVault").addEventListener("click", async () => 
   const name = prompt("Save this result to the Vault as:");
   if (!name) return;
   showError(null);
+  const btn = document.getElementById("btnSaveToVault");
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Saving…";
   try {
     const res = await fetch("export/vault", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -510,6 +534,9 @@ document.getElementById("btnSaveToVault").addEventListener("click", async () => 
     if (!res.ok) throw new Error(data.detail || "Save to Vault failed.");
   } catch (err) {
     showError(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
   }
 });
 

@@ -134,6 +134,17 @@
     </div>
   </div>
   <div class="card">
+    <h2>Backup &amp; restore</h2>
+    <p class="hint">The Docker volume this data lives on already survives an ordinary rebuild/restart — this is a REAL, portable copy you can keep somewhere else entirely (another disk, cloud storage, a different machine), for the one case that doesn't survive: an explicit volume deletion.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="action small" id="btnBackup">⬇ Download backup</button>
+      <input type="file" id="restoreFile" accept=".zip" style="display:none;">
+      <button class="action small danger" id="btnRestore">⬆ Restore from backup…</button>
+    </div>
+    <div class="error-box" id="backupErr"></div>
+    <div class="ok-box" id="backupOk"></div>
+  </div>
+  <div class="card">
     <h2>Clear vault</h2>
     <p class="hint">Permanently deletes every saved secret. Cannot be undone.</p>
     <button class="action danger small" id="btnClear">Clear vault</button>
@@ -186,6 +197,42 @@ document.getElementById("secretList").addEventListener("click", async (e) => {
     await refresh();
   } catch (err) {
     showError(err.message);
+  }
+});
+
+// ---- Backup & restore ----
+function showBackupMsg(kind, msg) {
+  document.getElementById("backupErr").textContent = kind === "err" ? msg : "";
+  document.getElementById("backupOk").textContent = kind === "ok" ? msg : "";
+}
+
+document.getElementById("btnBackup").addEventListener("click", () => {
+  // A plain navigation, not fetch() — lets the browser handle the
+  // download/save-as flow natively instead of us building a Blob URL
+  // for what could be a sizable file.
+  window.location.href = "backup";
+});
+
+document.getElementById("btnRestore").addEventListener("click", () => {
+  document.getElementById("restoreFile").click();
+});
+
+document.getElementById("restoreFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (!confirm(`Restore from "${file.name}"? This REPLACES every secret and dataset currently in the Vault — not merged, not appended. This cannot be undone.`)) return;
+  showBackupMsg(null, "");
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const res = await fetch("restore", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Restore failed.");
+    showBackupMsg("ok", "Restored successfully.");
+    await refresh();
+  } catch (err) {
+    showBackupMsg("err", err.message);
   }
 });
 

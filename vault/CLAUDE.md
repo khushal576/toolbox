@@ -139,19 +139,85 @@ database. This means:
   tool's own "load saved connection" action, never by this page),
   `GET /datasets/{id}/preview` (the row-count-gated CSV preview for
   DataDiff Pro's "Load from Vault" — see `core.vault.preview_dataset_as_csv()`),
-  `DELETE /secrets/{id}`, `POST /clear`.
+  `DELETE /secrets/{id}`, `POST /clear`, `POST /test-connection` (used by
+  this page's own "Add connection" form to validate before saving — see
+  below), `GET /backup`/`POST /restore` (see "Backup & restore" below).
 - `ui/index.html` — lists name/kind/timestamps, a Delete button per row,
-  a confirmed "Clear vault" button. **Deliberately has no add-new-secret
-  form** — this page has no opinion on what fields a "postgres_connection"
-  vs. an "ssh_credential" needs, so creating one always happens from the
-  tool that actually uses that shape of data (sql-studio's "Save this
-  connection" button calls `POST /tools/vault/secrets` directly — same
-  same-origin cross-tool pattern schema-map's Compare feature already
-  uses to call DataDiff Pro's endpoint, see `schema-map/CLAUDE.md` Phase D).
+  a confirmed "Clear vault" button, an "Add connection" form, and a
+  "Backup & restore" card. **This page now has ONE add-secret form of
+  its own — but only for the one shape it genuinely understands**: a
+  database connection (host/port/database/username/password/db_type,
+  optionally an SSH tunnel), test-before-save via `POST /test-connection`
+  (a one-off `dialect.verify_connection()` call, nothing stored unless
+  the save button is actually clicked — or "Save anyway" to skip the
+  test). This does NOT contradict the module's own "no opinion on what
+  fields a kind's data contains" design — this page just happens to also
+  know one common shape, the same way any other tool could. Every OTHER
+  secret shape (an SSH-only credential, a `curl_request`, a
+  `curl_result`, anything a future tool invents) still only ever gets
+  created from the tool that actually uses that shape, calling
+  `POST /tools/vault/secrets` directly — same same-origin cross-tool
+  pattern schema-map's Compare feature already uses to call DataDiff
+  Pro's endpoint (see `schema-map/CLAUDE.md` Phase D).
 - `core/vault.py` — the actual storage/encryption, shared by every
   consuming tool, not owned by this one. See its own docstring for the
   SQLite-on-Docker-volume pattern (copied from `schema-map/project_store.py`)
   and the `Fernet`/key-file mechanics.
+
+## Backup & restore — a real, portable safety net
+
+Added after the owner asked directly: "does this survive if I delete the
+container... can we use a different database for this?" Answered by
+reading the code, not assumed: `core/vault.py` stores everything under
+`/app/data/vault/` (`vault.db`, `vault.key`, `blobs/`), and
+`../docker-compose.yml` mounts that exact path to the named Docker
+volume `vault_data`. That volume already survives an ordinary
+`docker-compose up --build -d` / container recreation — proven
+empirically across dozens of rebuilds this project has already gone
+through with zero data loss. It does NOT survive an explicit
+`docker-compose down -v` or a manual volume deletion, both of which
+require a deliberate action, never triggered by a normal rebuild.
+**Recommendation that stands: keep SQLite, don't switch to a
+client-server database** — SQLite is already the right engine for a
+single local writer with a moderate record count, and the actual bulk
+data already bypasses it entirely via the chunked-blob-file pattern; a
+"real" database would add a whole second service to operate for zero
+real gain at this scale, breaking this repo's explicit one-container
+decision. The real fix for "is my data safe" is a backup, not a
+different engine underneath:
+
+- `GET /backup` — bundles `vault.db` + `vault.key` + every file under
+  `blobs/` into one streamed zip (built via `zipfile`, written straight
+  to a temp file and cleaned up via a `BackgroundTask` after the
+  response is sent — never held fully in memory, since a dataset's blob
+  can be sizable). A "⬇ Download backup" button in `ui/index.html`.
+- `POST /restore` — accepts that zip (streamed straight to a temp file
+  via `shutil.copyfileobj`, same "never buffer the whole upload in
+  Python memory" convention `duck-lab/server.py`'s own upload handler
+  already uses), extracts it into `DATA_DIR`, **replacing everything
+  currently there** — `blobs/` is removed first (`shutil.rmtree`) so a
+  restore can never leave orphaned blob files from before it ran. The
+  frontend's own confirm dialog (naming exactly what's being replaced)
+  is what makes this a deliberate action; the endpoint itself just does
+  it unconditionally once called, same as `/clear`.
+- **`vault.invalidate_key_cache()`** — called at the end of every
+  restore. `core/vault.py` caches the Fernet key in a module-level
+  variable after first load (`_cached_key`), on the correct assumption
+  that the key never changes during a process's normal lifetime — but a
+  restore is exactly the one case that DOES change it out from under a
+  running process. Without this call, every decrypt after a restore
+  would keep using the stale OLD in-memory key against data now
+  encrypted under a genuinely DIFFERENT key, and fail. **Verified for
+  real, not just reasoned about**: built a second, independent
+  vault.db+vault.key pair with its own freshly-generated key (not a
+  copy of the running instance's), restored it onto the already-running
+  process, and confirmed the newly-restored secret decrypted correctly
+  — this would have thrown a Fernet `InvalidToken` error had the cache
+  invalidation not actually been wired in. A naive restore-and-reload
+  test using the SAME instance's own backup would NOT have caught this
+  bug, since the key never actually changes in that case — don't
+  mistake that weaker test for proof this works if you ever touch this
+  code again.
 
 ## Things that will bite you if you don't know them
 

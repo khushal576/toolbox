@@ -100,6 +100,19 @@ def _load_or_create_key() -> bytes:
     return key
 
 
+def invalidate_key_cache() -> None:
+    """Must be called after anything replaces vault.key on disk out from
+    under this process — a restore-from-backup, specifically. Without
+    this, _load_or_create_key() keeps returning the OLD in-memory key
+    even though the file now holds a different one, and every decrypt
+    after a restore would silently fail (or worse, succeed on stale
+    data if the old key happened to still be cached from before this
+    process's own key was ever written) rather than using the restored
+    key."""
+    global _cached_key
+    _cached_key = None
+
+
 def _fernet() -> Fernet:
     return Fernet(_load_or_create_key())
 

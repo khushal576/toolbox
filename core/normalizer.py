@@ -23,6 +23,10 @@ try:
 except ImportError:
     _XML_AVAILABLE = False
 
+# PyYAML — already a dependency (used by the orchestrator's recipe
+# configs), reused here so .yaml/.yml comparison needs no new package.
+import yaml
+
 
 # ---------------------------------------------------------------------------
 # Public entry point
@@ -50,9 +54,13 @@ def normalize(raw: str, fmt: str) -> tuple[Any, str | None]:
         return _parse_xml(raw)
     elif fmt == "csv":
         return _parse_csv(raw)
+    elif fmt == "yaml":
+        return _parse_yaml(raw)
+    elif fmt == "env":
+        return _parse_env(raw)
     else:
         return None, (
-            f"Unknown format '{fmt}'. Supported formats are: json, xml, csv."
+            f"Unknown format '{fmt}'. Supported formats are: json, xml, csv, yaml, env."
         )
 
 
@@ -519,6 +527,114 @@ def _parse_csv(raw: str) -> tuple[list[dict], str | None]:
             f"Unexpected error while parsing CSV: {e}.\n"
             f"Please check your input and try again."
         )
+
+
+# ---------------------------------------------------------------------------
+# YAML parser
+# ---------------------------------------------------------------------------
+
+def _parse_yaml(raw: str) -> tuple[Any, str | None]:
+    """Parse a YAML string into a Python dict/list/scalar via PyYAML's
+    safe_load (never the plain loader — safe_load refuses to construct
+    arbitrary Python objects from tags like `!!python/object`, which
+    matters here since this is user-pasted text, not a trusted config
+    file on disk).
+
+    A `---`-separated multi-document YAML file (e.g. a Kubernetes
+    manifest) is parsed as a LIST of documents, one entry per document
+    — the same "one root value, but it can be a list" shape CSV's
+    list-of-rows already uses — rather than raising on anything but a
+    single document. A single document stays its own bare value (dict/
+    list/scalar), not wrapped in a one-element list, since that's by
+    far the common case (an ordinary config file) and wrapping it would
+    surprise anyone comparing two plain single-document YAML files.
+    """
+    try:
+        docs = list(yaml.safe_load_all(raw))
+    except yaml.YAMLError as e:
+        mark = getattr(e, "problem_mark", None)
+        if mark is not None:
+            line_num = mark.line + 1  # PyYAML's mark is 0-indexed
+            snippet = _get_snippet(raw, line_num)
+            problem = getattr(e, "problem", None) or str(e)
+            return None, (
+                f"YAML parse error on line {line_num}, column {mark.column + 1}: {problem}.\n"
+                f"  Near: {snippet}\n"
+                f"Hint: YAML is indentation-sensitive — check that nested lines "
+                f"line up consistently, and that any value containing a colon "
+                f"or '#' is quoted."
+            )
+        return None, f"YAML parse error: {e}"
+
+    if not docs or all(d is None for d in docs):
+        return None, (
+            "YAML parsed successfully but produced no data (empty document)."
+        )
+    data = docs[0] if len(docs) == 1 else docs
+    return data, None
+
+
+# ---------------------------------------------------------------------------
+# .env parser
+# ---------------------------------------------------------------------------
+
+_ENV_LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
+
+
+def _parse_env(raw: str) -> tuple[dict, str | None]:
+    """Parse a .env-style `KEY=VALUE` file into a flat dict.
+
+    Supports: an optional leading `export `, full-line `#` comments,
+    blank lines, single/double-quoted values (quotes are stripped and
+    the inner text is kept as a literal string — NOT further type-
+    coerced, the same convention real dotenv parsers use, since an
+    explicit quote is the author saying "treat this as text"), and a
+    trailing ` #comment` on an unquoted value. An unquoted value is run
+    through the same `_coerce_csv_value()` CSV already uses, so
+    `PORT=8080` compares naturally against a YAML/JSON config's
+    `"port": 8080` instead of always being the string `"8080"` — .env
+    has no real type system either, same problem CSV already solves.
+    A key assigned more than once keeps its LAST value, matching real
+    shell/.env sourcing semantics (not an error — intentional overrides
+    are a normal, valid pattern in real .env files).
+
+    Explicitly NOT supported (reads the file's literal text, doesn't
+    emulate a shell sourcing it): multi-line values, `${OTHER_VAR}`
+    interpolation, and backslash escaping inside unquoted values.
+    """
+    result: dict[str, Any] = {}
+    for line_num, line in enumerate(raw.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        m = _ENV_LINE_RE.match(line)
+        if not m:
+            snippet = _get_snippet(raw, line_num)
+            return None, (
+                f".env parse error on line {line_num}: expected KEY=VALUE.\n"
+                f"  Near: {snippet}\n"
+                f"Hint: Each non-comment line must look like NAME=value "
+                f"(an optional leading 'export ' is fine)."
+            )
+        key, value = m.group(1), m.group(2).strip()
+        if value and value[0] not in ("'", '"'):
+            if value.startswith("#"):
+                value = ""
+            else:
+                hash_pos = value.find(" #")
+                if hash_pos != -1:
+                    value = value[:hash_pos].strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        else:
+            value = _coerce_csv_value(value)
+        result[key] = value
+    if not result:
+        return None, (
+            ".env parsed successfully but contains no variables. "
+            "Make sure there is at least one NAME=value line."
+        )
+    return result, None
 
 
 # ---------------------------------------------------------------------------

@@ -1342,6 +1342,15 @@ async function loadGraph() {
       return;
     }
     lastGraphData = data; // cached so the size-mode toggle can re-render without a fresh fetch
+    // renderGraph() runs the cose layout synchronously — for a large schema
+    // that's the actually-slow part, not the fetch above. Swap the label
+    // and yield one tick (setTimeout 0) so the browser actually paints
+    // "Rendering…" before the heavy synchronous layout call blocks the
+    // main thread — setting btn.textContent right before a long sync call
+    // would otherwise never visibly appear, since nothing repaints until
+    // that call returns.
+    btn.textContent = "Rendering…";
+    await new Promise((resolve) => setTimeout(resolve, 0));
     renderGraph(data);
     await autoSaveInitialVersionIfNeeded();
   } catch (e) {
