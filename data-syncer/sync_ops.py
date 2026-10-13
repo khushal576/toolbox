@@ -57,6 +57,26 @@ def _safe_rollback(conn: psycopg.Connection) -> None:
         pass
 
 
+def _n(name: str) -> str:
+    """A column name for a MESSAGE: quoted, so leading/trailing spaces are visible
+    (a column really can be called 'id ')."""
+    return f"'{name}'"
+
+
+def resolve_name(wanted: str, names: list[str]) -> tuple[Optional[str], bool]:
+    """Find *wanted* among *names*: the EXACT name wins; otherwise the single name
+    that differs only by leading/trailing whitespace. Returns (match, ambiguous).
+    Column names in real databases do carry stray spaces ('id ', ' name'), and a
+    name typed or displayed in a UI easily loses them — so an exact match is
+    preferred but a whitespace-insensitive one is accepted when it is unique."""
+    if wanted in names:
+        return wanted, False
+    loose = [n for n in names if n.strip() == wanted.strip()]
+    if len(loose) == 1:
+        return loose[0], False
+    return None, len(loose) > 1
+
+
 def _cols(names: list[str]) -> sql.Composable:
     return sql.SQL(", ").join(sql.Identifier(n) for n in names)
 
@@ -178,14 +198,89 @@ class PostgresSyncOps:
 
     # ------------------------------------------------------------------ preflight
 
+    def plan_columns(self, s_info: dict, t_info: dict, key_cols: list[str]) -> tuple[dict, list[str], list[str]]:
+        """Work out, once, which SOURCE column goes to which TARGET column and what the
+        key is on each side. Names match exactly when they can; names that differ only
+        by leading/trailing spaces are matched too (and reported as warnings). Returns
+        (plan, errors, warnings); plan = {cols, tcols, key, tkey, key_types} is only
+        meaningful when there are no errors."""
+        errors: list[str] = []
+        warnings: list[str] = []
+        s_by = {c["name"]: c for c in s_info["columns"]}
+        t_by = {c["name"]: c for c in t_info["columns"]}
+        s_names, t_names = list(s_by), list(t_by)
+        cols = [n for n in s_names if not s_by[n]["generated"]]
+
+        mapping: dict[str, str] = {}
+        missing, ambiguous = [], []
+        for n in cols:
+            m, amb = resolve_name(n, t_names)
+            if m is None:
+                (ambiguous if amb else missing).append(n)
+            else:
+                mapping[n] = m
+        if missing:
+            errors.append(f"Target is missing column(s): {', '.join(_n(c) for c in missing)}.")
+        if ambiguous:
+            errors.append(
+                f"Source column(s) {', '.join(_n(c) for c in ambiguous)} match several target columns that differ only "
+                "by spaces — rename the target columns so the names match exactly."
+            )
+        if len(set(mapping.values())) != len(mapping):
+            errors.append("Two source columns map to the same target column (their names differ only by spaces).")
+        not_writable = [m for n, m in mapping.items() if t_by[m]["generated"]]
+        if not_writable:
+            errors.append(f"Target column(s) are GENERATED and cannot be written: {', '.join(_n(c) for c in not_writable)}.")
+        renamed = [f"{_n(n)} → {_n(m)}" for n, m in mapping.items() if n != m]
+        if renamed:
+            warnings.append(
+                "Source and target column names differ only by leading/trailing spaces; matched anyway: "
+                + ", ".join(renamed) + "."
+            )
+        for n, m in mapping.items():
+            if t_by[m]["type"] != s_by[n]["type"]:
+                warnings.append(f"Column {_n(n)} type differs: source {s_by[n]['type']} vs target {t_by[m]['type']}.")
+
+        key: list[str] = []
+        bad: list[tuple[str, bool]] = []
+        for k in key_cols:
+            r, amb = resolve_name(k, s_names)
+            if r is None:
+                bad.append((k, amb))
+            else:
+                key.append(r)
+        if bad:
+            errors.append(
+                "Key column(s) not in source table: "
+                + ", ".join(_n(k) + (" (several columns differ only by spaces)" if amb else "") for k, amb in bad) + "."
+            )
+        elif any(r != k for r, k in zip(key, key_cols)):
+            warnings.append(
+                "Key matched to the column(s) " + ", ".join(_n(r) for r, k in zip(key, key_cols) if r != k)
+                + " — their real names contain leading/trailing spaces."
+            )
+        tkey: list[str] = []
+        if key and not bad:
+            for k in key:
+                if k in mapping:
+                    tkey.append(mapping[k])
+                elif s_by[k]["generated"]:
+                    errors.append(f"Key column {_n(k)} is a GENERATED column; it cannot be written to the target.")
+        plan = {
+            "cols": [n for n in cols if n in mapping], "tcols": [mapping[n] for n in cols if n in mapping],
+            "key": key, "tkey": tkey, "key_types": [s_by[k]["type"] for k in key],
+        }
+        return plan, errors, warnings
+
     def preflight_table(
         self, src: psycopg.Connection, tgt: psycopg.Connection, *, mode: str,
         source: tuple[str, str], target: tuple[str, str], key_cols: list[str],
     ) -> dict:
         """Cheap, read-only checks for one table. Returns
         {errors, warnings, info}; any error means the table must not run.
-        Used both by the API's Preflight button and by the engine itself
-        before a table starts, so what the UI promised is what runs."""
+        info["plan"] is the resolved column/key mapping (see plan_columns) the
+        engine then uses. Used both by the API's Preflight button and by the
+        engine itself before a table starts, so what the UI promised is what runs."""
         errors: list[str] = []
         warnings: list[str] = []
         s_info = self.table_info(src, *source)
@@ -198,27 +293,17 @@ class PostgresSyncOps:
         if s_info is None or t_info is None:
             return {"errors": errors, "warnings": warnings, "info": info}
 
-        copy_cols = [c["name"] for c in s_info["columns"] if not c["generated"]]
-        t_cols = {c["name"]: c for c in t_info["columns"]}
-        missing = [c for c in copy_cols if c not in t_cols]
-        if missing:
-            errors.append(f"Target is missing column(s): {', '.join(missing)}.")
-        not_writable = [c for c in copy_cols if c in t_cols and t_cols[c]["generated"]]
-        if not_writable:
-            errors.append(f"Target column(s) are GENERATED and cannot be written: {', '.join(not_writable)}.")
-        for c in s_info["columns"]:
-            tc = t_cols.get(c["name"])
-            if tc and not c["generated"] and tc["type"] != c["type"]:
-                warnings.append(f"Column '{c['name']}' type differs: source {c['type']} vs target {tc['type']}.")
-        info["columns"] = copy_cols
+        plan, e, w = self.plan_columns(s_info, t_info, key_cols)
+        errors += e
+        warnings += w
+        info["plan"] = plan
+        info["columns"] = plan["cols"]
+        key_ok = bool(key_cols) and len(plan["key"]) == len(key_cols) and len(plan["tkey"]) == len(key_cols)
 
         if key_cols:
-            s_cols = {c["name"]: c for c in s_info["columns"]}
-            bad = [k for k in key_cols if k not in s_cols]
-            if bad:
-                errors.append(f"Key column(s) not in source table: {', '.join(bad)}.")
-            else:
-                nullable = [k for k in key_cols if not s_cols[k]["notnull"]]
+            if key_ok:
+                s_cols = {c["name"]: c for c in s_info["columns"]}
+                nullable = [k for k in plan["key"] if not s_cols[k]["notnull"]]
                 if nullable:
                     # A NULL key is invisible to `key > x` range reads: those rows would be
                     # skipped SILENTLY. A NOT NULL constraint is proof enough; otherwise look.
@@ -233,23 +318,23 @@ class PostgresSyncOps:
                     src.rollback()
                     if has_null:
                         errors.append(
-                            f"Key column(s) {', '.join(nullable)} contain NULLs in the source — those rows "
+                            f"Key column(s) {', '.join(_n(k) for k in nullable)} contain NULLs in the source — those rows "
                             "would be silently skipped. Pick a different key or fix the data."
                         )
-                if not self._has_leading_index(src, s_info, key_cols):
+                if not self._has_leading_index(src, s_info, plan["key"]):
                     warnings.append(
-                        f"Source has no index starting with ({', '.join(key_cols)}) — every batch will sort/scan "
-                        "the table, which gets very slow on big tables."
+                        f"Source has no index starting with ({', '.join(_n(k) for k in plan['key'])}) — every batch will "
+                        "sort/scan the table, which gets very slow on big tables."
                     )
         elif mode == "upsert":
             errors.append("Upsert mode needs a key (one or more columns).")
         else:
             warnings.append("No key: this table is copied in ONE transaction — not resumable mid-table, restarts from zero.")
 
-        if mode == "upsert" and key_cols and not missing:
-            if not self._has_unique_index(tgt, t_info["oid"], key_cols):
+        if mode == "upsert" and key_ok and not e:
+            if not self._has_unique_index(tgt, t_info["oid"], plan["tkey"]):
                 errors.append(
-                    f"Target has no unique index/constraint on exactly ({', '.join(key_cols)}) — "
+                    f"Target has no unique index/constraint on exactly ({', '.join(_n(k) for k in plan['tkey'])}) — "
                     "ON CONFLICT needs one. Create it on the target (the syncer won't)."
                 )
         return {"errors": errors, "warnings": warnings, "info": info}
@@ -381,8 +466,8 @@ class PostgresSyncOps:
 
     def transfer_chunk(
         self, src: psycopg.Connection, tgt: psycopg.Connection, *, mode: str,
-        source: tuple[str, str], target: tuple[str, str], cols: list[str],
-        key_cols: list[str], key_types: list[str], lower: Key, upper: Key,
+        source: tuple[str, str], target: tuple[str, str], cols: list[str], tcols: list[str],
+        key_cols: list[str], tkey_cols: list[str], key_types: list[str], lower: Key, upper: Key,
         on_block: Optional[Callable[[], None]] = None,
     ) -> dict:
         """Move one chunk. Target side is ONE transaction: it commits only after
@@ -395,7 +480,7 @@ class PostgresSyncOps:
             select += sql.SQL(" WHERE ") + where
         copy_out = sql.SQL("COPY ({}) TO STDOUT").format(select)
         dest = sql.SQL("_sync_stage") if mode == "upsert" else _ident(*target)
-        copy_in = sql.SQL("COPY {} ({}) FROM STDIN").format(dest, _cols(cols))
+        copy_in = sql.SQL("COPY {} ({}) FROM STDIN").format(dest, _cols(tcols))  # same positions, TARGET names
 
         try:
             with src.cursor() as scur, tgt.cursor() as tcur:
@@ -408,7 +493,7 @@ class PostgresSyncOps:
                 read = tcur.rowcount
                 written = read
                 if mode == "upsert":
-                    written = self._merge_stage(tcur, target, cols, key_cols)
+                    written = self._merge_stage(tcur, target, tcols, tkey_cols)
             tgt.commit()
         except BaseException:
             _safe_rollback(tgt)

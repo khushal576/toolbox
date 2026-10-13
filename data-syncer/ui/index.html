@@ -188,6 +188,9 @@
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* Names are kept EXACTLY as the database has them — a column can really be called "id " — so
+   anything with leading/trailing spaces is shown in quotes, and nothing here ever trims a name. */
+const vis = n => (n !== n.trim() ? `"${n}"` : n);
 const fmt = n => (n === null || n === undefined) ? '?' : Number(n).toLocaleString();
 let state = { view: 'list', pid: null, editing: null, mode: 'upsert', discovered: [], selected: {}, poll: null, project: null };
 
@@ -245,7 +248,7 @@ async function openEdit(project) {
   const locked = project && project.has_progress;
   for (const id of ['fSource', 'fTarget']) $(id).disabled = !!locked;
   document.querySelectorAll('.mode').forEach(el => el.style.pointerEvents = locked ? 'none' : '');
-  if (project) for (const t of project.tables) { const [s, n] = t.source.split(/\.(.+)/); state.selected[t.source] = { schema: s, table: n, key: t.key_columns.join(', ') }; }
+  if (project) for (const t of project.tables) { const [s, n] = t.source.split(/\.(.+)/); state.selected[t.source] = { schema: s, table: n, key: t.key_columns.join(',') }; }
   setMode(p ? p.mode : 'upsert');
   $('tablesBox').classList.add('hidden'); $('tablesMsg').textContent = 'Choose a source and click “Load tables from source”.';
   if (project) await loadTables();
@@ -263,15 +266,16 @@ function renderTables() {
   const rows = state.discovered.filter(t => !f || `${t.schema}.${t.table}`.toLowerCase().includes(f));
   $('tBody').innerHTML = rows.map(t => {
     const id = `${t.schema}.${t.table}`, sel = state.selected[id];
-    const key = sel ? sel.key : t.primary_key.join(', ');
+    const key = sel ? sel.key : t.primary_key.join(',');
     const bad = sel && state.mode === 'upsert' && !key.trim();
     return `<tr><td><input type="checkbox" data-id="${esc(id)}" ${sel ? 'checked' : ''}></td>
-      <td>${esc(id)}${t.primary_key.length ? '' : ' <span class="badge">no PK</span>'}</td><td class="mono">${fmt(t.approx_rows)}</td>
-      <td><input type="text" data-key="${esc(id)}" value="${esc(key)}" class="${bad ? 'bad' : ''}" placeholder="${state.mode === 'upsert' ? 'required' : 'optional (enables resume)'}"></td></tr>`;
+      <td>${esc(vis(t.table) === t.table ? id : t.schema + '.' + vis(t.table))}${t.primary_key.length ? '' : ' <span class="badge">no PK</span>'}</td><td class="mono">${fmt(t.approx_rows)}</td>
+      <td><input type="text" data-key="${esc(id)}" value="${esc(key)}" class="${bad ? 'bad' : ''}" placeholder="${state.mode === 'upsert' ? 'required' : 'optional (enables resume)'}">
+        ${key.split(',').some(k => k !== k.trim() && k.trim()) ? `<div class="hint" style="margin:2px 0 0">spaces are part of the name and are kept exactly: ${esc(key.split(',').filter(k => k.trim()).map(vis).join(', '))}</div>` : ''}</td></tr>`;
   }).join('');
   $('tBody').querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = () => {
     const t = state.discovered.find(x => `${x.schema}.${x.table}` === cb.dataset.id);
-    if (cb.checked) state.selected[cb.dataset.id] = { schema: t.schema, table: t.table, key: t.primary_key.join(', ') };
+    if (cb.checked) state.selected[cb.dataset.id] = { schema: t.schema, table: t.table, key: t.primary_key.join(',') };
     else delete state.selected[cb.dataset.id];
     renderTables();
   });
@@ -288,7 +292,7 @@ function updateSelCount() { const n = Object.keys(state.selected).length; $('sel
 const saveProject = guard(async () => {
   const tables = Object.values(state.selected).map(s => {
     const d = state.discovered.find(x => x.schema === s.schema && x.table === s.table);
-    return { schema: s.schema, table: s.table, key_columns: s.key.split(',').map(x => x.trim()).filter(Boolean), approx_rows: d ? d.approx_rows : null };
+    return { schema: s.schema, table: s.table, key_columns: s.key.split(',').filter(x => x.trim() !== ''), approx_rows: d ? d.approx_rows : null };
   });
   if (!tables.length) return toast('Select at least one table.');
   const body = { name: $('fName').value.trim(), source_conn_id: $('fSource').value, target_conn_id: $('fTarget').value, mode: state.mode,
@@ -330,7 +334,7 @@ function render(d) {
   $('runTables').innerHTML = tables.map(t => {
     const p = t.approx_total > 0 ? Math.min(100, Math.floor(t.rows_done * 100 / t.approx_total)) : (t.status === 'done' ? 100 : 0);
     const barp = t.status === 'done' ? 100 : p;
-    return `<tr><td><b>${esc(t.source)}</b><div class="hint" style="margin:0">key: ${t.key_columns.length ? esc(t.key_columns.join(', ')) : '<i>none (whole-table)</i>'}</div>
+    return `<tr><td><b>${esc((() => { const [sc, tb] = t.source.split(/\.(.+)/); return sc + '.' + vis(tb); })())}</b><div class="hint" style="margin:0">key: ${t.key_columns.length ? esc(t.key_columns.map(vis).join(', ')) : '<i>none (whole-table)</i>'}</div>
       ${t.error ? `<div class="err-line">${esc(t.error)}</div>` : ''}</td>
       <td><span class="badge st-${t.status}">${t.status}</span></td>
       <td><div class="bar ${t.status === 'done' ? 'done' : ''}"><i style="width:${barp}%"></i></div><div class="mono muted">${fmt(t.rows_done)} / ~${fmt(t.approx_total)}</div></td>
@@ -393,7 +397,7 @@ $('tFilter').oninput = renderTables;
 $('tAll').onchange = e => {
   const f = $('tFilter').value.toLowerCase();
   for (const t of state.discovered) { const id = `${t.schema}.${t.table}`; if (f && !id.toLowerCase().includes(f)) continue;
-    if (e.target.checked) state.selected[id] = state.selected[id] || { schema: t.schema, table: t.table, key: t.primary_key.join(', ') }; else delete state.selected[id]; }
+    if (e.target.checked) state.selected[id] = state.selected[id] || { schema: t.schema, table: t.table, key: t.primary_key.join(',') }; else delete state.selected[id]; }
   renderTables();
 };
 document.querySelectorAll('.mode').forEach(el => el.onclick = () => setMode(el.dataset.mode));

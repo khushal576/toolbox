@@ -123,18 +123,19 @@ def order_tables(tables: list[dict], edges: list[tuple[tuple[str, str], tuple[st
 
 # ------------------------------------------------------------------ one table
 
-def _cleanup_inflight(ops: Any, tgt: Endpoint, project: dict, t: dict, log: LogFn) -> None:
+def _cleanup_inflight(ops: Any, tgt: Endpoint, project: dict, t: dict, log: LogFn, tkey: list[str]) -> None:
     """Copy mode only: delete whatever a cut-off chunk may have left in the
     target. Uses the range that was RECORDED, not the one we'd compute now
-    (the batch size or the source may have changed since)."""
+    (the batch size or the source may have changed since). *tkey* is the key's
+    column names ON THE TARGET (they can differ from the source's by spaces)."""
     fresh = store.get_table(t["id"])
     inflight = fresh["inflight"] if fresh else None
-    if not inflight or project["mode"] != "copy" or not t["key_columns"]:
+    if not inflight or project["mode"] != "copy" or not tkey:
         return
     target = (t["target_schema"], t["target_table"])
-    s_info = ops.table_info(tgt.conn, *target)
-    key_types = ops.key_types(s_info, t["key_columns"])
-    n = ops.delete_range(tgt.conn, target, t["key_columns"], key_types, inflight["lower"], inflight["upper"])
+    t_info = ops.table_info(tgt.conn, *target)
+    key_types = ops.key_types(t_info, tkey)
+    n = ops.delete_range(tgt.conn, target, tkey, key_types, inflight["lower"], inflight["upper"])
     if n:
         log("warn", f"removed {n:,} row(s) left by an interrupted chunk before re-copying it", t["name"])
 
@@ -152,17 +153,19 @@ def sync_table(project: dict, t: dict, ops: Any, src: Endpoint, tgt: Endpoint, s
     if pf["errors"]:
         raise TableFailed(" ".join(pf["errors"]))
 
-    s_info = ops.table_info(src.conn, *source)
-    cols = [c["name"] for c in s_info["columns"] if not c["generated"]]
-    key_types = ops.key_types(s_info, key_cols) if key_cols else []
-    approx = s_info["approx_rows"]
+    # The resolved mapping: SOURCE names for reading, TARGET names for writing. Usually identical;
+    # they differ when names differ only by leading/trailing spaces (preflight warned about it).
+    plan = pf["info"]["plan"]
+    cols, tcols = plan["cols"], plan["tcols"]
+    key, tkey, key_types = plan["key"], plan["tkey"], plan["key_types"]
+    approx = pf["info"]["approx_rows"]
     store.update_table(t["id"], approx_total=approx)
 
     lower: Optional[list] = t["last_key"]
     fresh_start = lower is None
 
     # Stale in-flight marker from a cut-off run: undo before anything else.
-    _cleanup_inflight(ops, tgt, project, t, log)
+    _cleanup_inflight(ops, tgt, project, t, log, tkey)
 
     if mode == "copy" and fresh_start:
         if project["truncate_target"]:
@@ -174,7 +177,7 @@ def sync_table(project: dict, t: dict, ops: Any, src: Endpoint, tgt: Endpoint, s
                 "Empty it yourself, enable 'truncate target first' on the project, or use upsert mode."
             )
 
-    ops.begin_table(tgt.conn, mode=mode, target=target, cols=cols)
+    ops.begin_table(tgt.conn, mode=mode, target=target, cols=tcols)
     log("info", f"started — {'resuming after key ' + _key_str(lower) if lower else 'from the beginning'}"
                 f" ({mode}, ~{_fmt(approx)} rows)", name)
 
@@ -197,20 +200,20 @@ def sync_table(project: dict, t: dict, ops: Any, src: Endpoint, tgt: Endpoint, s
                 if need_reconnect:
                     src.reconnect()
                     tgt.reconnect()
-                    ops.begin_table(tgt.conn, mode=mode, target=target, cols=cols)
+                    ops.begin_table(tgt.conn, mode=mode, target=target, cols=tcols)
                     need_reconnect = False
                 if cleanup_pending:
-                    _cleanup_inflight(ops, tgt, project, t, log)
+                    _cleanup_inflight(ops, tgt, project, t, log, tkey)
                     cleanup_pending = False
                 if key_cols:
-                    upper = ops.next_upper(src.conn, source, key_cols, key_types, lower, project["batch_size"])
+                    upper = ops.next_upper(src.conn, source, key, key_types, lower, project["batch_size"])
                     if mode == "copy":
                         store.update_table(t["id"], inflight={"lower": lower, "upper": upper})
                 else:
                     upper = None  # no key: the whole table is one chunk
                 res = ops.transfer_chunk(
-                    src.conn, tgt.conn, mode=mode, source=source, target=target, cols=cols,
-                    key_cols=key_cols, key_types=key_types, lower=lower, upper=upper, on_block=check_stop,
+                    src.conn, tgt.conn, mode=mode, source=source, target=target, cols=cols, tcols=tcols,
+                    key_cols=key, tkey_cols=tkey, key_types=key_types, lower=lower, upper=upper, on_block=check_stop,
                 )
                 break
             except Stopped:
@@ -235,7 +238,7 @@ def sync_table(project: dict, t: dict, ops: Any, src: Endpoint, tgt: Endpoint, s
 
         last = upper
         if upper is None:  # final, open-ended chunk: record where the table really ended
-            last = (ops.max_key(src.conn, source, key_cols) if key_cols and res["read"] else None) or lower
+            last = (ops.max_key(src.conn, source, key) if key and res["read"] else None) or lower
         store.advance(t["id"], last_key=last, rows_added=res["read"])
         rows_done += res["read"]
         elapsed = max(time.monotonic() - t0, 1e-6)

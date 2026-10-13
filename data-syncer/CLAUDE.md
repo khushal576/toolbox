@@ -84,6 +84,19 @@ timestamp/text/composite keys all survive SQLite with no per-type code.
   target isn't touched, so copy mode then needs an empty/truncated target).
   New source rows with keys *below* a saved position are never seen — it's a
   full pass, not change-tracking. Deletes in the source are not propagated.
+- **Column and table names are never trimmed — they can contain spaces** (`"id "`,
+  `" name"`, even `"spaced table "`). The UI keeps names exactly (key box, saved
+  keys, displays show such names in quotes) and every identifier is quoted with
+  `psycopg.sql.Identifier`. Because a name typed or pasted by hand easily loses
+  its spaces (the original bug: the UI trimmed `"id "` to `id` and preflight said
+  "Key column(s) not in source table: id"), `sync_ops.resolve_name()` matches the
+  EXACT name first and otherwise the single column that differs only by
+  leading/trailing spaces — so projects saved before the fix keep working with no
+  edit. `plan_columns()` also maps SOURCE→TARGET columns the same way (a target
+  built with trimmed names still works) and the engine reads with source names
+  but writes/merges/cleans-up with target names (`plan["tkey"]`, `tcols`). Every
+  loose match is a visible warning; several candidates = an error, never a guess.
+  Names containing a comma can't be typed in the key box (comma-separated).
 - **Generated columns are skipped**; identity columns are written
   (`OVERRIDING SYSTEM VALUE` for upsert; COPY accepts explicit values).
 - **Source/target/mode can't change once a table has progress** (the saved
@@ -113,5 +126,5 @@ Stop; server-side killed connections (`pg_terminate_backend`) with retry;
 misconfigured tables (missing column, NULL key, no unique index, duplicate
 source keys, non-empty copy target, TRUNCATE blocked by FK); FK ordering; a
 full `docker restart` mid-run then resume; the UI driven in headless Chrome.
-Not tested: SSH-tunnelled connections, SQL Server/Oracle (unsupported).
+Whitespace names: source columns `"id "`, `" name"`, `"val  "` and a table `"spaced table "` with a composite spaced key, in both modes, against a target with the same names and one with trimmed names, with the key given exact or trimmed (8 combinations), copy-mode crash recovery with differing names, an ambiguous name, and the UI in headless Chrome. Not tested: SSH-tunnelled connections, SQL Server/Oracle (unsupported).
 Rough speed on a laptop container: copy ≈ 95k rows/s, upsert ≈ 60k rows/s.
