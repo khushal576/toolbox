@@ -9,16 +9,21 @@
 
 # --- Stage 1: the PostgreSQL client bundle (pg_dump + psql) ------------------
 # Schema Copy shells out to the REAL pg_dump/psql. The toolbox image below is
-# Debian 12 (bookworm); the stock `postgres:17` image is Debian 13 and its
-# binaries do not run here, so this stage uses the bookworm variant and copies
-# the two binaries plus exactly the shared libraries they need (everything but
-# glibc) into /opt/pgclient. They are put on LD_LIBRARY_PATH only for the
-# child processes schema-copy/pgtools.py spawns. pg_dump 17 can dump servers
-# 9.2 through 17; a newer server needs this tag bumped (preflight says so).
-FROM postgres:17-bookworm AS pgclient
+# Debian 12 (bookworm); the stock `postgres:N` image is Debian 13 and its
+# binaries do not run here, so this stage uses the `-bookworm` variant and
+# copies the two binaries plus exactly the shared libraries they need
+# (everything but glibc) into /opt/pgclient. They are put on LD_LIBRARY_PATH
+# only for the child processes schema-copy/pgtools.py spawns.
+# A pg_dump can dump any server up to its OWN major version, so keep this at
+# (or above) the newest server you will copy FROM — preflight says so when a
+# source is newer. Bump with: docker build --build-arg PG_CLIENT_MAJOR=19 …
+# (or change the default here / `args:` in docker-compose.yml).
+ARG PG_CLIENT_MAJOR=18
+FROM postgres:${PG_CLIENT_MAJOR}-bookworm AS pgclient
+ARG PG_CLIENT_MAJOR
 RUN mkdir -p /opt/pgclient/bin /opt/pgclient/lib \
- && cp /usr/lib/postgresql/17/bin/pg_dump /usr/lib/postgresql/17/bin/psql /opt/pgclient/bin/ \
- && for b in pg_dump psql; do ldd /usr/lib/postgresql/17/bin/$b | awk '/=> \//{print $3}'; done | sort -u \
+ && cp /usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/pg_dump /usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/psql /opt/pgclient/bin/ \
+ && for b in pg_dump psql; do ldd /usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/$b | awk '/=> \//{print $3}'; done | sort -u \
     | grep -Ev '/(libc|libm|libdl|libpthread|librt|libresolv)\.so' | xargs -I{} cp -L {} /opt/pgclient/lib/
 
 # --- Stage 2: the toolbox ------------------------------------------------------

@@ -58,11 +58,14 @@ rolls back.
 ## Things that will bite you if you don't know them
 
 - **The binaries are bundled, not apt-installed.** `../Dockerfile` has a
-  `pgclient` stage built `FROM postgres:17-bookworm` (the stock `postgres:17` is
-  Debian 13; the toolbox image is Debian 12 — its binaries don't run here) that
-  copies `pg_dump` + `psql` and the shared libs they need into `/opt/pgclient`.
-  `LD_LIBRARY_PATH` is set for the child processes only. `pg_dump` 17 can dump
-  servers up to 17; for a newer source, bump the tag (preflight says so).
+  `pgclient` stage built `FROM postgres:${PG_CLIENT_MAJOR}-bookworm` (default
+  **18**; the stock `postgres:N` is Debian 13 while the toolbox image is Debian 12,
+  so its binaries don't run here) that copies `pg_dump` + `psql` and the shared
+  libs they need into `/opt/pgclient`. `LD_LIBRARY_PATH` is set for the child
+  processes only. **A pg_dump only dumps servers up to its own major version**, so
+  keep `PG_CLIENT_MAJOR` ≥ the newest source you copy from (an 18 source with the
+  original 17 bundle failed preflight — that is how this was found); newer
+  clients dump all older servers. Preflight reports a too-old client.
 - **Credentials reach the tools via `PGPASSWORD` in the child's environment**,
   never on the command line, and nothing logs the environment. SSH tunnels work
   because `Endpoint.open()` exposes `.host/.port` (the local tunnel end).
@@ -97,7 +100,7 @@ rolls back.
   extension at the target's default version; the report compares extension
   names, not versions.
 
-## Verified (real Postgres 17, throwaway containers; bundled pg_dump/psql 17.11 inside the toolbox image)
+## Verified (real Postgres 17 source, throwaway containers; bundled pg_dump/psql 17.11 inside the toolbox image — the bundle has since been bumped to 18, re-verify against a v18 source)
 
 A source with: 3 extensions (pg_trgm, btree_gist, postgres_fdw), range/list/
 default partitions, inheritance, identity + generated columns, enum/domain/
@@ -114,7 +117,7 @@ leaves ZERO objects behind (incl. extensions); keep-owner and sequence values
 source/target refused; Stop mid-apply rolls back; the whole UI driven in
 headless Chrome (create → load schemas → preview → view script → apply →
 report). Not tested: SSH-tunnelled connections; a source newer than the bundled
-client; the missing-extension-on-target preflight error.
+client (it is caught by preflight); the missing-extension-on-target preflight error.
 
 ## Not built (decided, not forgotten)
 

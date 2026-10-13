@@ -4,7 +4,7 @@ schema-copy/pgtools.py
 Runs the bundled PostgreSQL client tools (`pg_dump`, `psql`) as subprocesses.
 They are COPIED into the image from an official postgres image in a
 multi-stage Docker build (see ../Dockerfile, stage "pgclient") rather than
-apt-installed: the toolbox image is Debian 12, the stock `postgres:17` image
+apt-installed: the toolbox image is Debian 12, the stock `postgres:N` image
 is Debian 13 (its binaries won't run here), and a pinned bookworm stage makes
 the bundle reproducible without adding apt repositories at build time. The
 shared libraries travel with them in /opt/pgclient/lib, put on
