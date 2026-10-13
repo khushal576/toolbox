@@ -127,6 +127,20 @@ CSV/JSON/Parquet file, or make an outbound HTTP request, it calls into
 these, the same way duck-lab/sql-studio/schema-map/orchestrator/
 curl-builder already do.
 
+Data Syncer (`data-syncer/`) is a **consumer of these, not a new
+connector**: it resolves Vault entries via `core.vault`, opens (optionally
+SSH-tunnelled) connections with `core.postgres_conn`'s primitives, and puts
+its own write-side database operations (COPY/upsert, key-range chunking —
+things `Dialect` has no notion of) behind a small per-database class in
+`data-syncer/sync_ops.py`. A new database engine means a new class there.
+
+`core/db_endpoint.py` is the shared **Vault entry → live connection**
+helper (SSH tunnel aware, reconnectable, exposes the tunnel-aware host/port
+for subprocess clients like `pg_dump`) used by Data Syncer and Schema Copy —
+it was extracted from `data-syncer/connections.py` (now a thin re-export)
+when the second consumer appeared, per this section's "don't add another
+independent implementation" rule.
+
 `core/vault.py` is the shared, generic encrypted secret store (Fernet,
 no master password by deliberate owner choice — see `vault/CLAUDE.md`
 for the full trust-model writeup) behind the "Vault" tool's management
@@ -215,6 +229,17 @@ Duck Lab's loaded files + DuckDB connection (`duck-lab/engine.py`,
 df-studio's per-cookie-dict shape (not SQL Studio's single global), because
 each browser tab legitimately wants its own independent set of loaded
 files, the same reasoning df-studio uses. See `duck-lab/CLAUDE.md`.
+
+Data Syncer (`data-syncer/runner.py`) is a **fourth** instance: each sync
+runs on a background thread, and the job registry plus the log ring buffer
+live in that one process's memory. Its durable progress (per-table resume
+positions) is in SQLite and survives anything, but "is a run alive right
+now" and the log tail do not — with >1 worker a Start on one process would be
+invisible to the status poll on another. See `data-syncer/CLAUDE.md`.
+
+Schema Copy (`schema-copy/runner.py`) is a **fifth**, same shape as Data
+Syncer: a background thread plus an in-process job registry/log tail; the last
+run's result is durable in SQLite. See `schema-copy/CLAUDE.md`.
 
 **Decided now, before it comes up again:** any future tool that needs
 multi-step or multi-request state (not just "read a form, compute an

@@ -107,3 +107,15 @@ tools:
     description: "Shared encrypted secret store — save DB connections (and anything else) from any tool so you stop retyping credentials after every disconnect"
     icon: "🔒"
     category: tool
+
+  - name: data-syncer
+    title: "Data Syncer"
+    description: "Copy or upsert whole tables between databases saved in the Vault, in resumable key-ranged chunks — progress is saved after every chunk, so stop and restart any time; shows only progress and a short log, never table data"
+    icon: "🔄"
+    category: tool
+
+  - name: schema-copy
+    title: "Schema Copy"
+    description: "Copy a Postgres database's whole structure — tables, partitions, indexes, constraints, views, materialized views, functions, procedures, triggers, types, extensions — into a new empty database (no rows), with preflight, one-transaction apply and a source-vs-target verification report"
+    icon: "🧬"
+    category: tool

@@ -7,6 +7,21 @@
 # Run:     docker-compose up
 # =============================================================================
 
+# --- Stage 1: the PostgreSQL client bundle (pg_dump + psql) ------------------
+# Schema Copy shells out to the REAL pg_dump/psql. The toolbox image below is
+# Debian 12 (bookworm); the stock `postgres:17` image is Debian 13 and its
+# binaries do not run here, so this stage uses the bookworm variant and copies
+# the two binaries plus exactly the shared libraries they need (everything but
+# glibc) into /opt/pgclient. They are put on LD_LIBRARY_PATH only for the
+# child processes schema-copy/pgtools.py spawns. pg_dump 17 can dump servers
+# 9.2 through 17; a newer server needs this tag bumped (preflight says so).
+FROM postgres:17-bookworm AS pgclient
+RUN mkdir -p /opt/pgclient/bin /opt/pgclient/lib \
+ && cp /usr/lib/postgresql/17/bin/pg_dump /usr/lib/postgresql/17/bin/psql /opt/pgclient/bin/ \
+ && for b in pg_dump psql; do ldd /usr/lib/postgresql/17/bin/$b | awk '/=> \//{print $3}'; done | sort -u \
+    | grep -Ev '/(libc|libm|libdl|libpthread|librt|libresolv)\.so' | xargs -I{} cp -L {} /opt/pgclient/lib/
+
+# --- Stage 2: the toolbox ------------------------------------------------------
 # Use the official slim Python 3.11 image as the base.
 # "slim" strips dev tools and docs to keep the image small (~60 MB base).
 FROM python:3.11-slim
@@ -113,11 +128,27 @@ COPY orchestrator/ ./orchestrator/
 # copied after core/ above, same reason as duck-lab/orchestrator.
 COPY vault/ ./vault/
 
+# Data Syncer (tool #16) — whole-folder copy (engine, sync_ops, state_store,
+# runner, connections modules alongside server.py). Resumable table
+# copy/upsert between two Vault-saved Postgres connections; imports
+# core.vault / core.postgres_conn, so must be copied after core/ above. Its
+# run thread and job registry are in-process state — one more reason
+# --workers stays 1 (see CMD comment below).
+COPY data-syncer/ ./data_syncer/
+
+# Schema Copy (tool #17) — whole-folder copy. Copies a database's STRUCTURE
+# (no rows) into a new empty database via the real pg_dump/psql from the
+# 'pgclient' stage above. Imports core.db_endpoint (Vault -> connection,
+# shared with data-syncer), so must be copied after core/. Its job registry
+# is in-process state, like data-syncer's.
+COPY --from=pgclient /opt/pgclient /opt/pgclient
+COPY schema-copy/ ./schema_copy/
+
 COPY main.py .
 COPY registry.yaml .
 
 # Create empty __init__.py files so Python treats these as packages.
-RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py
+RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py
 
 # --- Runtime config ----------------------------------------------------------
 # Tell Python not to write .pyc files and not to buffer stdout/stderr.
@@ -157,7 +188,16 @@ EXPOSE 8080
 #                   Same "No active session"-style failure mode as
 #                   df-studio if split across workers. See
 #                   duck-lab/CLAUDE.md.
+#                 - Data Syncer runs each sync on a background thread and keeps
+#                   the live job registry + log ring buffer in this process's
+#                   memory (data-syncer/runner.py). Its durable progress is in
+#                   SQLite, but "is a run alive" and the log tail are not — a
+#                   Start on one worker would be invisible to the status poll
+#                   on another. See data-syncer/CLAUDE.md.
+#                 - Schema Copy keeps its run registry + log tail in memory
+#                   the same way (schema-copy/runner.py); the last run's result
+#                   is in SQLite. See schema-copy/CLAUDE.md.
 #                 Every other tool here is stateless/client-side and
-#                 wouldn't care, but these three do. Don't raise this without
-#                 giving ALL THREE a real shared store first.
+#                 wouldn't care, but these five do. Don't raise this without
+#                 giving ALL FIVE a real shared store first.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

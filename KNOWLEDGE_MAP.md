@@ -1453,3 +1453,91 @@ right engine here rather than switching to a client-server database).
   `asyncio.to_thread`, same as `schema-map/project_store.py`) — it
   doesn't add a new entry to `../CLAUDE.md`'s "Standing rule: stateful
   tools and `--workers`" list, even though it's backend-touching.
+
+---
+
+## Tool: Data Syncer — mounted at `/tools/data-syncer/`
+
+Copy or upsert whole tables from one Vault-saved Postgres connection to
+another, in resumable key-ranged chunks. Progress (a key position per
+table) is saved after every chunk, so a run can be stopped or killed at any
+time and resumed; the page shows only status/counts/positions and the last
+N log lines, never data. Two modes per project: **upsert** (insert/update,
+needs a unique index on the key in the target) and **copy** (raw bulk
+`COPY`, target must be empty, no transformation). No manual connection form —
+connections are picked from the Vault. See `data-syncer/CLAUDE.md` for the
+design (why chunks are key *ranges*, the copy-mode crash-recovery marker,
+what is deliberately not built).
+
+### Symptom → file
+
+| If you need to change...                                          | Go to |
+|-----------------------------------------------------------------------|-------|
+| How a Vault entry becomes a live connection (SSH tunnel, reconnect, keepalives, UTF8) | `data-syncer/connections.py` (`Endpoint`, `resolve`) |
+| The COPY / upsert SQL, chunk-boundary query, NULL-key and unique-index checks, table discovery | `data-syncer/sync_ops.py` (`PostgresSyncOps`) |
+| Adding another database engine (MSSQL/Oracle) | new class in `data-syncer/sync_ops.py` + register in `_OPS`; the engine is dialect-agnostic |
+| The resumable loop: retries/backoff, stop, crash cleanup, FK ordering, per-table failure handling | `data-syncer/engine.py` (`sync_table`, `run_project`, `order_tables`) |
+| What "Preflight" checks | `data-syncer/sync_ops.py` (`preflight_table`) + `data-syncer/engine.py` (`preflight_project`) — the engine runs the same checks before every table |
+| Where progress/positions/projects are stored, manual position edits, reset | `data-syncer/state_store.py` (SQLite, `data_syncer_data` volume) |
+| Starting/stopping a run, the log ring buffer (last N lines) | `data-syncer/runner.py` |
+| API endpoints, input validation, "can't edit while running" guards | `data-syncer/server.py` |
+| The page (project list/editor/run view, polling, log box) | `data-syncer/ui/index.html` |
+
+### Known non-obvious behavior (read before touching these areas)
+
+- **Chunks are key ranges `(lower, upper]`, never `LIMIT n`** — a LIMIT cut can
+  split rows sharing a key value across two batches and lose some, and a range
+  can be re-run exactly. Keys are stored as text and cast back in SQL.
+- **Copy-mode `inflight` marker** — writing a chunk (target DB) and saving the
+  position (SQLite) can't be atomic; the recorded in-flight range is deleted
+  from the target before a re-copy. Upsert is naturally idempotent.
+- **Boundary queries alias their output columns** (`AS _k0`) — without it,
+  `ORDER BY "id"` sorts by the `::text` output column. A real bug found by test.
+- **Stateful, `--workers 1`**: the job registry and log buffer are in-process
+  (`runner.py`) — a fourth entry for `../CLAUDE.md`'s standing rule. Durable
+  state is SQLite; orphaned `running` tables become `interrupted` on startup.
+- Postgres → Postgres only for now; no table creation, no delete propagation,
+  no change-tracking (a re-run is a full pass).
+
+---
+
+## Tool: Schema Copy — mounted at `/tools/schema-copy/`
+
+Copies a Postgres database's **structure — everything except the rows** —
+into a new, empty database: tables (partitions, inheritance, identity/
+generated columns), constraints, indexes, sequences, views, materialized
+views (created unpopulated), functions, procedures, triggers, rules, RLS
+policies, types, extensions, schemas, comments. Source and target are Vault
+connections. The DDL is the real `pg_dump --schema-only` (bundled into the
+image), wrapped with preflight, a one-transaction apply (first error rolls
+everything back) and a source-vs-target verification report. See
+`schema-copy/CLAUDE.md` — especially why a bare `pg_dump` is NOT used (it
+copies user-mapping passwords in cleartext).
+
+### Symptom → file
+
+| If you need to change...                                          | Go to |
+|-----------------------------------------------------------------------|-------|
+| Which `pg_dump` flags are used, how credentials/cancel are passed to the child process | `schema-copy/pgtools.py` |
+| Where the `pg_dump`/`psql` binaries come from (and their shared libs) | `Dockerfile` stage `pgclient` (`FROM postgres:17-bookworm`) → `/opt/pgclient`; env override `PGCLIENT_BIN_DIR`/`PGCLIENT_LIB_DIR` |
+| What the script contains beyond pg_dump's output (extensions, `IF NOT EXISTS` schemas, sequence values, header) | `schema-copy/engine.py` (`build_script`) |
+| What Preflight checks (empty target, same-or-newer server, extensions available, client version, foreign tables) | `schema-copy/engine.py` (`preflight`) + `schema-copy/catalog.py` |
+| How a failed apply is reported (failing line + context) | `schema-copy/engine.py` (`_explain_failure`) |
+| What "Verify" compares / adding an object category to the report | `schema-copy/catalog.py` (`_NAME_QUERIES`, `compare`) |
+| Projects, last-run result, the saved `.sql` script | `schema-copy/state_store.py` (SQLite + files on the `schema_copy_data` volume) |
+| Background run + log tail | `schema-copy/runner.py` |
+| API endpoints, guards | `schema-copy/server.py` |
+| The page | `schema-copy/ui/index.html` |
+| Vault entry → live connection incl. SSH tunnel (shared with data-syncer) | `core/db_endpoint.py` |
+
+### Known non-obvious behavior (read before touching these areas)
+
+- **Never run an unfiltered `pg_dump` here** — it emits foreign servers, publications
+  and USER MAPPINGS WITH PASSWORDS. Every schema is passed with `-n`; that in turn
+  drops `CREATE EXTENSION`, which `build_script` re-adds from the catalog.
+- **The toolbox image is Debian 12, the stock `postgres:17` image is Debian 13** —
+  the `pgclient` Docker stage deliberately uses `postgres:17-bookworm`.
+- Postgres → Postgres only; target must be empty; roles/owners/grants stripped by
+  default; matviews created empty; sequences fresh unless opted in.
+- **Stateful, `--workers 1`**: the run registry/log tail is in-process (fifth entry
+  for `../CLAUDE.md`'s standing rule); the last run's result is in SQLite.

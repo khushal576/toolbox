@@ -48,6 +48,8 @@ docker-compose down
 | 🗺️ | **Schema Map** (`schema-map`) | Explore a Postgres database's tables and foreign-key structure as a graph — optional SSH tunnel, save/load connections via Vault |
 | 🦆 | **Duck Lab** (`duck-lab`) | Load CSV/JSON/Parquet/XML files and join/analyze them with SQL (DuckDB) — schema-aware autocomplete, table preview, paginated results that never flood the page |
 | 🔒 | **Vault** (`vault`) | Shared encrypted secret store — save DB connections (and anything else) from any tool so you stop retyping credentials after every disconnect |
+| 🔄 | **Data Syncer** (`data-syncer`) | Copy or upsert whole tables between Vault-saved Postgres databases in resumable chunks — progress saved after every chunk, stop/restart any time, shows only progress and a short log |
+| 🧬 | **Schema Copy** (`schema-copy`) | Copy a Postgres database's whole structure (tables, partitions, indexes, views, materialized views, functions, triggers…) into a new empty database — no rows; preflight, one-transaction apply, verification report |
 
 `category: tool` entries (practical, act on real data) show on the home page
 by default; `category: learn` entries (educational/reference) are shown via

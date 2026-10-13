@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Data Syncer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+    --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --ok: #15803d; --ok-bg: rgba(22,163,74,0.10);
+    --warn: #b45309; --warn-bg: rgba(217,119,6,0.12);
+    --err: #b91c1c; --err-bg: rgba(220,38,38,0.08); --err-border: rgba(220,38,38,0.3);
+    --run: #4f5ef0; --run-bg: rgba(79,94,240,0.10);
+    --mono: ui-monospace, Menlo, Consolas, monospace;
+  }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 24px 20px 70px; }
+  header, .wrap { max-width: 1000px; margin: 0 auto; }
+  header { margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; cursor: pointer; }
+  header h1 span { color: var(--accent); }
+  header p { color: var(--muted); font-size: 0.85rem; margin-top: 2px; max-width: 640px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 1rem; font-weight: 700; margin-bottom: 4px; }
+  .hint { font-size: 0.78rem; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
+  .muted { color: var(--muted); }
+  .mono { font-family: var(--mono); font-size: 0.78rem; }
+
+  button { cursor: pointer; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text);
+           font-weight: 600; font-size: 0.82rem; padding: 7px 14px; font-family: inherit; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--err); }
+  button.small { padding: 3px 9px; font-size: 0.72rem; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+
+  .badge { background: var(--bg); color: var(--muted); border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px;
+           font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
+  .st-done { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+  .st-running { background: var(--run-bg); color: var(--run); border-color: transparent; }
+  .st-failed { background: var(--err-bg); color: var(--err); border-color: transparent; }
+  .st-stopped, .st-interrupted { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+  .st-skipped { opacity: .7; }
+
+  /* project list */
+  .proj { display: flex; gap: 14px; align-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; background: var(--surface); }
+  .proj:hover { border-color: var(--accent); }
+  .proj .name { font-weight: 700; }
+  .proj .meta { font-size: 0.76rem; color: var(--muted); margin-top: 2px; }
+
+  /* form */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+  .grid .full { grid-column: 1 / -1; }
+  label.f { display: block; font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 3px; }
+  input[type=text], input[type=number], select { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+           border-radius: 6px; padding: 7px 10px; font-size: .85rem; font-family: inherit; }
+  .check { display: flex; align-items: flex-start; gap: 7px; font-size: .84rem; line-height: 1.4; }
+  .check input { margin-top: 3px; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mode { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+  .mode.sel { border-color: var(--accent); background: var(--run-bg); }
+  .mode b { font-size: .88rem; } .mode div { font-size: .76rem; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+
+  table.t { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  table.t th { text-align: left; font-size: .68rem; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  table.t td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.t tr:last-child td { border-bottom: none; }
+  td input[type=text] { padding: 4px 7px; font-family: var(--mono); font-size: .76rem; }
+  td input.bad { border-color: var(--err); background: var(--err-bg); }
+  .scroll { max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+
+  .bar { height: 7px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; min-width: 90px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+  .bar.done > i { background: var(--ok); }
+  .big-bar { height: 12px; }
+
+  .box { border-radius: 8px; padding: 10px 12px; font-size: .82rem; margin: 10px 0; line-height: 1.5; }
+  .box.err { background: var(--err-bg); color: var(--err); border: 1px solid var(--err-border); }
+  .box.warn { background: var(--warn-bg); color: var(--warn); }
+  .box.ok { background: var(--ok-bg); color: var(--ok); }
+  .box ul { margin: 4px 0 0 18px; }
+
+  .log { background: #11142a; color: #d7dbef; border-radius: 8px; padding: 10px 12px; font-family: var(--mono); font-size: .74rem;
+         height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
+  .log .l-warn { color: #fbbf24; } .log .l-error { color: #f87171; } .log .l-ok { color: #4ade80; } .log .t { color: #7c86b8; } .log .tb { color: #9aa6ff; }
+  .err-line { color: var(--err); font-size: .74rem; margin-top: 3px; word-break: break-word; }
+  .hidden { display: none !important; }
+  @media (max-width: 700px) { .grid, .modes { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 id="home">Data Syncer<span>.</span></h1>
+    <p>Copy or upsert whole tables between databases saved in the Vault — in resumable chunks. Progress is saved after every chunk, so you can stop and start any time. This page never shows table data, only progress.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="toast" class="box err hidden"></div>
+
+  <!-- ===== list ===== -->
+  <section id="v-list">
+    <div class="card">
+      <div class="row"><h2>Projects</h2><span class="spacer"></span><button class="primary" id="btnNew">+ New project</button></div>
+      <p class="hint">A project = one source, one target, a set of tables with keys, and the saved position of each table.</p>
+      <div id="projList"></div>
+    </div>
+  </section>
+
+  <!-- ===== edit ===== -->
+  <section id="v-edit" class="hidden">
+    <div class="card">
+      <h2 id="editTitle">New project</h2>
+      <p class="hint">Connections come from the Vault — add or change them there. Nothing is typed here.</p>
+      <div class="grid">
+        <div class="full"><label class="f">Project name</label><input type="text" id="fName" placeholder="e.g. Prod → Reporting nightly" /></div>
+        <div><label class="f">Source (read-only)</label><select id="fSource"></select></div>
+        <div><label class="f">Target (written to)</label><select id="fTarget"></select></div>
+        <div class="full">
+          <label class="f">Mode</label>
+          <div class="modes">
+            <div class="mode" data-mode="upsert"><b>Upsert</b><div>Insert new rows, update changed ones, leave unchanged rows alone. Safe to re-run on a target that already has data. Needs a key and a unique index on it in the target.</div></div>
+            <div class="mode" data-mode="copy"><b>Copy</b><div>Fastest: raw bulk load, no row handling, no transformation. Target tables must be empty (or truncated first). Key is only used to make it resumable.</div></div>
+          </div>
+        </div>
+        <div><label class="f">Batch size (rows per chunk)</label><input type="number" id="fBatch" value="50000" min="100" /></div>
+        <div><label class="f">Retries per chunk</label><input type="number" id="fRetries" value="3" min="0" max="20" /></div>
+        <div><label class="f">Log lines kept</label><input type="number" id="fLog" value="100" min="10" max="2000" /></div>
+        <div class="full">
+          <label class="check"><input type="checkbox" id="fStopFail" /> Stop the whole run at the first failed table (default: skip the failed table and continue)</label>
+        </div>
+        <div class="full" id="truncWrap">
+          <label class="check"><input type="checkbox" id="fTrunc" /> <span><b style="color:var(--err)">Truncate each target table</b> when it starts from the beginning (copy mode). Deletes existing rows in the target tables — won't work if other tables reference them by foreign key.</span></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row"><h2>Tables</h2><span class="spacer"></span>
+        <input type="text" id="tFilter" placeholder="filter…" style="width:180px" />
+        <button id="btnLoadTables">Load tables from source</button></div>
+      <p class="hint">Tick the tables to sync. The key (one or more columns, comma-separated) is pre-filled from the primary key. <b>Key columns must never be NULL</b> — a NULL key row would be skipped silently, so the syncer checks and refuses.</p>
+      <div id="tablesMsg" class="hint">Choose a source and click “Load tables from source”.</div>
+      <div class="scroll hidden" id="tablesBox">
+        <table class="t"><thead><tr><th style="width:30px"><input type="checkbox" id="tAll" /></th><th>Table</th><th>≈ Rows</th><th>Key column(s)</th></tr></thead><tbody id="tBody"></tbody></table>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="primary" id="btnSave">Save project</button><button id="btnCancel">Cancel</button><span class="hint" id="selCount"></span></div>
+    </div>
+  </section>
+
+  <!-- ===== run ===== -->
+  <section id="v-run" class="hidden">
+    <div class="card">
+      <div class="row">
+        <h2 id="runName"></h2><span class="badge" id="runMode"></span><span class="badge" id="runState"></span><span class="spacer"></span>
+        <button id="btnPre">Preflight</button>
+        <button class="primary" id="btnStart">Start</button>
+        <button id="btnStop" class="danger">Stop</button>
+      </div>
+      <p class="hint" style="margin-top:6px"><span class="mono" id="runSrc"></span> &nbsp;→&nbsp; <span class="mono" id="runTgt"></span></p>
+      <div class="row" style="margin-top:6px"><div class="bar big-bar" style="flex:1" id="overallBar"><i style="width:0"></i></div><span id="overallTxt" class="mono"></span></div>
+      <div id="runErr" class="box err hidden"></div>
+      <div id="preBox" class="hidden"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="small" id="btnEdit">Edit project</button>
+        <button class="small danger" id="btnResetAll">Reset all to start</button>
+        <button class="small danger" id="btnDelete">Delete project</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tables</h2>
+      <table class="t"><thead><tr><th>Table</th><th>Status</th><th style="width:220px">Progress</th><th>Position (last key)</th><th></th></tr></thead><tbody id="runTables"></tbody></table>
+    </div>
+
+    <div class="card">
+      <div class="row"><h2>Log</h2><span class="hint" id="logInfo" style="margin:0"></span></div>
+      <div class="log" id="log"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => (n === null || n === undefined) ? '?' : Number(n).toLocaleString();
+let state = { view: 'list', pid: null, editing: null, mode: 'upsert', discovered: [], selected: {}, poll: null, project: null };
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  let data = null; try { data = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error((data && data.detail) ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : `HTTP ${r.status}`);
+  return data;
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add('hidden'), 9000); }
+const guard = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
+
+function show(view) {
+  state.view = view;
+  for (const v of ['list', 'edit', 'run']) $('v-' + v).classList.toggle('hidden', v !== view);
+  clearInterval(state.poll); state.poll = null;
+}
+
+/* ---------------- list ---------------- */
+async function showList() {
+  show('list'); state.pid = null;
+  const { projects } = await api('projects');
+  const box = $('projList');
+  if (!projects.length) { box.innerHTML = '<p class="hint">No projects yet — create one.</p>'; return; }
+  box.innerHTML = projects.map(p => {
+    const s = p.summary, done = (s.by_status.done || 0) + (s.by_status.skipped || 0);
+    const st = p.running ? '<span class="badge st-running">running</span>' : (s.by_status.failed ? '<span class="badge st-failed">failed</span>' : (s.tables && done === s.tables ? '<span class="badge st-done">done</span>' : ''));
+    return `<div class="proj" data-id="${esc(p.id)}"><div style="flex:1"><div class="name">${esc(p.name)}</div>
+      <div class="meta">${esc(p.source_conn_name)} → ${esc(p.target_conn_name)} · ${done}/${s.tables} tables · ${fmt(s.rows_done)} rows</div></div>
+      <span class="badge">${esc(p.mode)}</span>${st}</div>`;
+  }).join('');
+  box.querySelectorAll('.proj').forEach(el => el.onclick = guard(() => openRun(el.dataset.id)));
+}
+
+/* ---------------- edit ---------------- */
+function setMode(m) {
+  state.mode = m;
+  document.querySelectorAll('.mode').forEach(el => el.classList.toggle('sel', el.dataset.mode === m));
+  $('truncWrap').classList.toggle('hidden', m !== 'copy');
+  renderTables();
+}
+async function openEdit(project) {
+  show('edit'); state.editing = project; state.discovered = []; state.selected = {};
+  $('editTitle').textContent = project ? 'Edit project' : 'New project';
+  const { connections } = await api('connections');
+  const opts = connections.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  $('fSource').innerHTML = opts; $('fTarget').innerHTML = opts;
+  if (!connections.length) toast('No saved connections — add some on the Vault page first.');
+  const p = project ? project.project : null;
+  $('fName').value = p ? p.name : '';
+  if (p) { $('fSource').value = p.source_conn_id; $('fTarget').value = p.target_conn_id; }
+  else if (connections.length > 1) $('fTarget').selectedIndex = 1;
+  $('fBatch').value = p ? p.batch_size : 50000; $('fRetries').value = p ? p.max_retries : 3; $('fLog').value = p ? p.log_size : 100;
+  $('fStopFail').checked = !!(p && p.stop_on_failure); $('fTrunc').checked = !!(p && p.truncate_target);
+  const locked = project && project.has_progress;
+  for (const id of ['fSource', 'fTarget']) $(id).disabled = !!locked;
+  document.querySelectorAll('.mode').forEach(el => el.style.pointerEvents = locked ? 'none' : '');
+  if (project) for (const t of project.tables) { const [s, n] = t.source.split(/\.(.+)/); state.selected[t.source] = { schema: s, table: n, key: t.key_columns.join(', ') }; }
+  setMode(p ? p.mode : 'upsert');
+  $('tablesBox').classList.add('hidden'); $('tablesMsg').textContent = 'Choose a source and click “Load tables from source”.';
+  if (project) await loadTables();
+}
+const loadTables = guard(async () => {
+  const conn_id = $('fSource').value; if (!conn_id) return toast('Pick a source connection first.');
+  $('tablesMsg').textContent = 'Connecting to the source…';
+  const d = await api('discover', { method: 'POST', body: { conn_id } });
+  state.discovered = d.tables;
+  $('tablesMsg').textContent = `${d.tables.length} tables in ${d.connection}`;
+  $('tablesBox').classList.remove('hidden'); renderTables();
+});
+function renderTables() {
+  const f = $('tFilter').value.toLowerCase();
+  const rows = state.discovered.filter(t => !f || `${t.schema}.${t.table}`.toLowerCase().includes(f));
+  $('tBody').innerHTML = rows.map(t => {
+    const id = `${t.schema}.${t.table}`, sel = state.selected[id];
+    const key = sel ? sel.key : t.primary_key.join(', ');
+    const bad = sel && state.mode === 'upsert' && !key.trim();
+    return `<tr><td><input type="checkbox" data-id="${esc(id)}" ${sel ? 'checked' : ''}></td>
+      <td>${esc(id)}${t.primary_key.length ? '' : ' <span class="badge">no PK</span>'}</td><td class="mono">${fmt(t.approx_rows)}</td>
+      <td><input type="text" data-key="${esc(id)}" value="${esc(key)}" class="${bad ? 'bad' : ''}" placeholder="${state.mode === 'upsert' ? 'required' : 'optional (enables resume)'}"></td></tr>`;
+  }).join('');
+  $('tBody').querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = () => {
+    const t = state.discovered.find(x => `${x.schema}.${x.table}` === cb.dataset.id);
+    if (cb.checked) state.selected[cb.dataset.id] = { schema: t.schema, table: t.table, key: t.primary_key.join(', ') };
+    else delete state.selected[cb.dataset.id];
+    renderTables();
+  });
+  $('tBody').querySelectorAll('input[data-key]').forEach(inp => inp.oninput = () => {
+    const id = inp.dataset.key, t = state.discovered.find(x => `${x.schema}.${x.table}` === id);
+    state.selected[id] = { ...(state.selected[id] || { schema: t.schema, table: t.table }), key: inp.value };
+    inp.classList.toggle('bad', state.mode === 'upsert' && !inp.value.trim());
+    $('tBody').querySelector(`input[data-id="${CSS.escape(id)}"]`).checked = true;
+    updateSelCount();
+  });
+  updateSelCount();
+}
+function updateSelCount() { const n = Object.keys(state.selected).length; $('selCount').textContent = `${n} table(s) selected`; }
+const saveProject = guard(async () => {
+  const tables = Object.values(state.selected).map(s => {
+    const d = state.discovered.find(x => x.schema === s.schema && x.table === s.table);
+    return { schema: s.schema, table: s.table, key_columns: s.key.split(',').map(x => x.trim()).filter(Boolean), approx_rows: d ? d.approx_rows : null };
+  });
+  if (!tables.length) return toast('Select at least one table.');
+  const body = { name: $('fName').value.trim(), source_conn_id: $('fSource').value, target_conn_id: $('fTarget').value, mode: state.mode,
+    batch_size: +$('fBatch').value, max_retries: +$('fRetries').value, log_size: +$('fLog').value,
+    stop_on_failure: $('fStopFail').checked, truncate_target: state.mode === 'copy' && $('fTrunc').checked, tables };
+  if (!body.name) return toast('Give the project a name.');
+  if (state.editing) { await api(`projects/${state.editing.project.id}`, { method: 'PUT', body }); await openRun(state.editing.project.id); }
+  else { const r = await api('projects', { method: 'POST', body }); await openRun(r.id); }
+});
+
+/* ---------------- run ---------------- */
+async function openRun(pid) {
+  show('run'); state.pid = pid; $('preBox').classList.add('hidden'); $('preBox').innerHTML = '';
+  const d = await api(`projects/${pid}`); state.project = d;
+  $('runName').textContent = d.project.name; $('runMode').textContent = d.project.mode;
+  $('runSrc').textContent = d.source; $('runTgt').textContent = d.target;
+  render(d); schedulePoll();
+}
+function schedulePoll() {
+  clearInterval(state.poll);
+  state.poll = setInterval(guard(async () => { if (state.view !== 'run') return; render(await api(`projects/${state.pid}/status`)); }), 1500);
+}
+function render(d) {
+  const run = d.run, tables = d.tables, prog = d.progress;
+  state.lastTables = tables;
+  const running = run.running;
+  $('runState').textContent = running ? (run.stopping ? 'stopping…' : 'running') : 'idle';
+  $('runState').className = 'badge ' + (running ? 'st-running' : '');
+  $('btnStart').disabled = running; $('btnStop').disabled = !running || run.stopping;
+  const startable = tables.some(t => ['pending', 'failed', 'interrupted', 'stopped'].includes(t.status));
+  $('btnStart').textContent = tables.some(t => t.rows_done > 0 || t.status !== 'pending') ? 'Resume' : 'Start';
+  if (!running && !startable) { $('btnStart').disabled = true; $('btnStart').textContent = 'All done'; }
+  for (const id of ['btnEdit', 'btnResetAll', 'btnDelete', 'btnPre']) $(id).disabled = running;
+  const pct = prog.tables_total ? Math.round(prog.tables_done * 100 / prog.tables_total) : 0;
+  $('overallBar').firstElementChild.style.width = pct + '%';
+  $('overallTxt').textContent = `${prog.tables_done}/${prog.tables_total} tables · ${fmt(prog.rows_done)} rows` + (prog.failed ? ` · ${prog.failed} failed` : '');
+  $('runErr').classList.toggle('hidden', !run.error); $('runErr').textContent = run.error || '';
+
+  $('runTables').innerHTML = tables.map(t => {
+    const p = t.approx_total > 0 ? Math.min(100, Math.floor(t.rows_done * 100 / t.approx_total)) : (t.status === 'done' ? 100 : 0);
+    const barp = t.status === 'done' ? 100 : p;
+    return `<tr><td><b>${esc(t.source)}</b><div class="hint" style="margin:0">key: ${t.key_columns.length ? esc(t.key_columns.join(', ')) : '<i>none (whole-table)</i>'}</div>
+      ${t.error ? `<div class="err-line">${esc(t.error)}</div>` : ''}</td>
+      <td><span class="badge st-${t.status}">${t.status}</span></td>
+      <td><div class="bar ${t.status === 'done' ? 'done' : ''}"><i style="width:${barp}%"></i></div><div class="mono muted">${fmt(t.rows_done)} / ~${fmt(t.approx_total)}</div></td>
+      <td class="mono">${t.last_key ? esc(t.last_key.join(', ')) : '—'}</td>
+      <td style="white-space:nowrap">${running ? '' : `
+        <button class="small" data-act="pos" data-id="${t.id}">Set position</button>
+        <button class="small" data-act="reset" data-id="${t.id}">Reset</button>
+        <button class="small" data-act="skip" data-id="${t.id}" data-st="${t.status}">${t.status === 'skipped' ? 'Unskip' : 'Skip'}</button>`}</td></tr>`;
+  }).join('');
+  $('runTables').querySelectorAll('button').forEach(b => b.onclick = guard(() => tableAction(b, tables)));
+
+  const el = $('log'), atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  el.innerHTML = run.logs.map(l => `<span class="t">${esc(l.ts.slice(11, 19))}</span> <span class="tb">${esc(l.table || '')}</span> <span class="l-${l.level}">${esc(l.msg)}</span>`).join('\n');
+  if (atBottom) el.scrollTop = el.scrollHeight;
+  $('logInfo').textContent = state.project ? `last ${state.project.project.log_size} lines kept · older lines are dropped` : '';
+}
+async function tableAction(b, tables) {
+  const t = tables.find(x => x.id === b.dataset.id), act = b.dataset.act;
+  if (act === 'reset') { if (!confirm(`Reset ${t.source} to the very beginning?\n\nThe TARGET table is not touched — in copy mode it must be empty again (or truncate-first enabled).`)) return; await api(`tables/${t.id}/reset`, { method: 'POST' }); }
+  else if (act === 'skip') { await api(`tables/${t.id}/status`, { method: 'POST', body: { status: t.status === 'skipped' ? 'pending' : 'skipped' } }); }
+  else if (act === 'pos') {
+    if (!t.key_columns.length) return toast('This table has no key, so it has no position to set.');
+    const vals = [];
+    for (const c of t.key_columns) { const v = prompt(`Resume AFTER key value for "${c}" (rows with key greater than this get synced; leave empty + OK on the first column to clear):`, (t.last_key || [])[vals.length] || ''); if (v === null) return; vals.push(v); }
+    await api(`tables/${t.id}/position`, { method: 'POST', body: { key_values: vals[0] === '' ? null : vals } });
+  }
+  render(await api(`projects/${state.pid}/status`));
+}
+$('btnPre').onclick = guard(async () => {
+  const box = $('preBox'); box.classList.remove('hidden'); box.innerHTML = '<div class="box warn">Checking source and target…</div>';
+  const r = await api(`projects/${state.pid}/preflight`, { method: 'POST' });
+  const items = r.tables.map(t => `<li><b>${esc(t.name)}</b>${t.errors.map(e => `<div class="err-line">✖ ${esc(e)}</div>`).join('')}${t.warnings.map(w => `<div style="color:var(--warn);font-size:.76rem">⚠ ${esc(w)}</div>`).join('')}${!t.errors.length && !t.warnings.length ? ' <span class="muted">— ok</span>' : ''}</li>`).join('');
+  box.innerHTML = `<div class="box ${r.ok ? 'ok' : 'err'}"><b>${r.ok ? 'Preflight passed' : 'Preflight found problems'}</b> — ${esc(r.source)} → ${esc(r.target)} (${esc(r.mode)})
+    ${r.order_notes.map(n => `<div>⚠ ${esc(n)}</div>`).join('')}<ul>${items}</ul></div>`;
+});
+$('btnStart').onclick = guard(async () => {
+  const fresh = (state.lastTables || []).every(t => t.rows_done === 0 && t.status === 'pending');
+  if (fresh && !confirm(`WRITE to the target?\n\n${state.project.target}\n\nMode: ${state.project.project.mode}. ${state.project.project.mode === 'copy' ? 'Rows are bulk-loaded into the target tables.' : 'Rows are inserted/updated in the target tables.'}`)) return;
+  await api(`projects/${state.pid}/start`, { method: 'POST' });
+  render(await api(`projects/${state.pid}/status`));
+});
+$('btnStop').onclick = guard(async () => { await api(`projects/${state.pid}/stop`, { method: 'POST' }); render(await api(`projects/${state.pid}/status`)); });
+$('btnEdit').onclick = guard(async () => openEdit(await api(`projects/${state.pid}`)));
+$('btnResetAll').onclick = guard(async () => {
+  if (!confirm('Reset EVERY table to the very beginning? The target data is not touched.')) return;
+  await api(`projects/${state.pid}/reset`, { method: 'POST' }); await openRun(state.pid);
+});
+$('btnDelete').onclick = guard(async () => {
+  if (!confirm('Delete this project and its saved progress? (Target data is not touched.)')) return;
+  await api(`projects/${state.pid}`, { method: 'DELETE' }); await showList();
+});
+
+/* ---------------- wiring ---------------- */
+$('home').onclick = guard(showList);
+$('btnNew').onclick = guard(() => openEdit(null));
+$('btnCancel').onclick = guard(async () => state.editing ? openRun(state.editing.project.id) : showList());
+$('btnSave').onclick = saveProject;
+$('btnLoadTables').onclick = loadTables;
+$('tFilter').oninput = renderTables;
+$('tAll').onchange = e => {
+  const f = $('tFilter').value.toLowerCase();
+  for (const t of state.discovered) { const id = `${t.schema}.${t.table}`; if (f && !id.toLowerCase().includes(f)) continue;
+    if (e.target.checked) state.selected[id] = state.selected[id] || { schema: t.schema, table: t.table, key: t.primary_key.join(', ') }; else delete state.selected[id]; }
+  renderTables();
+};
+document.querySelectorAll('.mode').forEach(el => el.onclick = () => setMode(el.dataset.mode));
+showList().catch(e => toast(e.message));
+</script>
+</body>
+</html>

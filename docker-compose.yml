@@ -65,10 +65,21 @@ services:
     # which would also make any already-encrypted-but-now-orphaned rows
     # permanently undecryptable garbage even if the DB file somehow
     # survived without the key.
+    # Schema Copy's projects, last-run results and generated .sql scripts live
+    # in /app/data/schema-copy/ (see schema-copy/state_store.py) — same reasoning.
+    #
+    # Data Syncer's projects and per-table resume positions live in
+    # /app/data/data-syncer/syncer.db (see data-syncer/state_store.py).
+    # Without this volume a rebuild would erase every project AND the
+    # saved position of every half-finished sync.
     volumes:
       - schema_map_data:/app/data/schema-map
       - vault_data:/app/data/vault
+      - data_syncer_data:/app/data/data-syncer
+      - schema_copy_data:/app/data/schema-copy
 
 volumes:
   schema_map_data:
   vault_data:
+  data_syncer_data:
+  schema_copy_data:
