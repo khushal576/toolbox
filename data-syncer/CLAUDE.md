@@ -77,9 +77,30 @@ timestamp/text/composite keys all survive SQLite with no per-type code.
   sides (the SSH tunnel is reused) and, in upsert mode, recreates the staging table.
 - **Source is opened read-only** (`conn.read_only = True`) and never left in an
   open transaction between chunks.
-- **Foreign keys**: tables are loaded parents-first using the TARGET's FK graph
-  (`order_tables`); a cycle or self-reference is only warned about — needs
-  deferrable constraints on the target. `TRUNCATE` is never `CASCADE`.
+- **Foreign keys / load order**: tables are loaded parents-first using the TARGET's
+  FK graph (`engine.order_tables`, stable: your order is kept wherever there's no
+  dependency). Verified: a 4-table chain + diamond listed child-first loads
+  a → b → c → d in both modes. Only dependencies BETWEEN SELECTED tables are
+  ordered — a parent that is not selected must already be populated in the
+  target. A table referencing ITSELF works only if each parent arrives in the same
+  or an earlier chunk (FK checks run at the end of each COPY statement, so within
+  a chunk any order is fine); a forward reference across chunks, and a true cycle
+  between tables, FAIL with the database's FK message (that table is marked failed,
+  the others continue) — they need the target's constraints added AFTER the load
+  (the two-phase split listed under "Not built" in `../schema-copy/CLAUDE.md`) or
+  deferrable constraints. `TRUNCATE` is never `CASCADE`.
+- **Auto-increment sequences are raised to the table's max id when a table
+  finishes** (project option `fix_sequences`, default ON; `sync_ops.fix_sequences`).
+  Covers serial/bigserial, identity (always/by default) and plain
+  `DEFAULT nextval(...)` columns (found via `pg_depend`, so sequences with odd
+  names, spaces in names, and several sequence columns per table work). The max is
+  the TARGET table's max (target-only rows count). **Raise-only**: a sequence
+  already at/above the max is left alone (lowering could reuse deleted ids); an
+  empty table is untouched; non-integer columns are skipped; one bad sequence (e.g.
+  no UPDATE privilege) is a warning, never a failed table. "Fix sequences now"
+  (`POST /projects/{id}/fix-sequences`) applies the same rule to every finished
+  table (for older syncs); it is idempotent. Databases created before the option
+  existed get it ON via the migration in `state_store.init_db`.
 - **A finished table is not re-run** by Start (status `done`); use Reset (the
   target isn't touched, so copy mode then needs an empty/truncated target).
   New source rows with keys *below* a saved position are never seen — it's a
@@ -126,5 +147,5 @@ Stop; server-side killed connections (`pg_terminate_backend`) with retry;
 misconfigured tables (missing column, NULL key, no unique index, duplicate
 source keys, non-empty copy target, TRUNCATE blocked by FK); FK ordering; a
 full `docker restart` mid-run then resume; the UI driven in headless Chrome.
-Whitespace names: source columns `"id "`, `" name"`, `"val  "` and a table `"spaced table "` with a composite spaced key, in both modes, against a target with the same names and one with trimmed names, with the key given exact or trimmed (8 combinations), copy-mode crash recovery with differing names, an ambiguous name, and the UI in headless Chrome. Not tested: SSH-tunnelled connections, SQL Server/Oracle (unsupported).
+Whitespace names: source columns `"id "`, `" name"`, `"val  "` and a table `"spaced table "` with a composite spaced key, in both modes, against a target with the same names and one with trimmed names, with the key given exact or trimmed (8 combinations), copy-mode crash recovery with differing names, an ambiguous name, and the UI in headless Chrome. Sequences: serial, bigserial, both identity kinds, a non-owned `nextval` default, a spaced column name, two serial columns in one table, target-only rows above the source max, an already-advanced sequence (not lowered), an empty table, a uuid table, option off, the manual button (idempotent), a plain INSERT afterwards in every table, the old-SQLite-file migration, and the UI. Load order: chain+diamond (both modes), self-reference both ways, a real cycle. Not tested: SSH-tunnelled connections, SQL Server/Oracle (unsupported).
 Rough speed on a laptop container: copy ≈ 95k rows/s, upsert ≈ 60k rows/s.

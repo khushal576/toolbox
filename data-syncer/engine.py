@@ -254,6 +254,50 @@ def sync_table(project: dict, t: dict, ops: Any, src: Endpoint, tgt: Endpoint, s
 
     store.update_table(t["id"], status="done", error=None, finished_at=_now(), inflight=None)
     log("ok", f"done — {rows_done:,} rows", name)
+    if project.get("fix_sequences", True):
+        _fix_sequences(ops, tgt, target, name, log)
+
+
+def _fix_sequences(ops: Any, tgt: Endpoint, target: tuple[str, str], name: str, log: LogFn) -> list[dict]:
+    """Move the target table's auto-increment sequences up to its max id (see
+    sync_ops.fix_sequences). The DATA is already safely synced and the table is
+    already 'done': nothing here may fail the table, so problems are logged as
+    warnings only."""
+    try:
+        results = ops.fix_sequences(tgt.conn, target)
+    except Exception as exc:  # noqa: BLE001
+        log("warn", f"could not check auto-increment sequences ({_msg(exc)}) — use 'Fix sequences' to retry", name)
+        return []
+    for r in results:
+        if r["action"] == "advanced":
+            log("info", f"sequence {r['sequence']} ({r['column']}): {r['before'] if r['before'] is not None else 'unused'}"
+                        f" → {r['after']:,} (table's max id)", name)
+        elif r["action"] == "error":
+            log("warn", f"sequence {r['sequence']} could not be moved: {r['note']}", name)
+        elif r["action"] == "skipped":
+            log("info", f"sequence {r['sequence']} left alone: {r['note']}", name)
+    return results
+
+
+def fix_sequences_project(project_id: str, log: LogFn) -> list[dict]:
+    """On demand ('Fix sequences' button): apply the same rule to the TARGET table of
+    every finished table — for syncs that ran before this existed, or after the
+    target was changed by hand. Never touches data."""
+    project = store.get_project(project_id)
+    if project is None:
+        raise KeyError(project_id)
+    ops, _src, tgt, _sd, _td = open_endpoints(project)
+    out: list[dict] = []
+    try:
+        tgt.open()
+        for t in _decorate(store.list_tables(project_id)):
+            if t["status"] != "done":
+                continue
+            results = _fix_sequences(ops, tgt, (t["target_schema"], t["target_table"]), t["name"], log)
+            out.append({"table": t["name"], "sequences": results})
+    finally:
+        tgt.close()
+    return out
 
 
 # ------------------------------------------------------------------ one run

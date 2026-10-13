@@ -57,6 +57,11 @@ def _safe_rollback(conn: psycopg.Connection) -> None:
         pass
 
 
+def _quote(name: str) -> str:
+    """Quote one SQL identifier (for a regclass string)."""
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _n(name: str) -> str:
     """A column name for a MESSAGE: quoted, so leading/trailing spaces are visible
     (a column really can be called 'id ')."""
@@ -350,6 +355,94 @@ class PostgresSyncOps:
         with tgt.cursor() as cur:
             cur.execute(sql.SQL("TRUNCATE TABLE {}").format(_ident(*target)))
         tgt.commit()
+
+    # ------------------------------------------------------------------ sequences
+
+    _SEQUENCES_SQL = """
+        SELECT a.attname::text, a.atttypid::regtype::text, sn.nspname::text, s.relname::text
+          FROM pg_attribute a
+          JOIN pg_depend d ON d.classid = 'pg_class'::regclass AND d.refclassid = 'pg_class'::regclass
+                          AND d.refobjid = a.attrelid AND d.refobjsubid = a.attnum AND d.deptype IN ('a', 'i')
+          JOIN pg_class s ON s.oid = d.objid AND s.relkind = 'S'
+          JOIN pg_namespace sn ON sn.oid = s.relnamespace
+         WHERE a.attrelid = %(t)s AND a.attnum > 0 AND NOT a.attisdropped
+        UNION
+        SELECT a.attname::text, a.atttypid::regtype::text, sn.nspname::text, s.relname::text
+          FROM pg_attrdef ad
+          JOIN pg_attribute a ON a.attrelid = ad.adrelid AND a.attnum = ad.adnum
+          JOIN pg_depend d ON d.classid = 'pg_attrdef'::regclass AND d.objid = ad.oid
+                          AND d.refclassid = 'pg_class'::regclass AND d.deptype = 'n'
+          JOIN pg_class s ON s.oid = d.refobjid AND s.relkind = 'S'
+          JOIN pg_namespace sn ON sn.oid = s.relnamespace
+         WHERE ad.adrelid = %(t)s AND NOT a.attisdropped
+        ORDER BY 1, 3, 4
+    """
+
+    def fix_sequences(self, tgt: psycopg.Connection, target: tuple[str, str]) -> list[dict]:
+        """Move every auto-increment sequence of a TARGET table up to the table's
+        highest value, so the next plain INSERT cannot collide with rows that were
+        just synced in. Covers serial/bigserial, identity columns (always and by
+        default) and plain `DEFAULT nextval('seq')` columns.
+
+        RAISE-ONLY, by design: a sequence already at or above the table's max is left
+        alone (lowering one could hand out ids that were used and deleted). An empty
+        table is left alone. Non-integer columns are skipped. Returns one dict per
+        sequence: {column, sequence, max, before, after, action, note} — action is
+        'advanced' | 'ok' | 'skipped' | 'error'. Never raises for one bad sequence."""
+        with tgt.cursor() as cur:
+            cur.execute(
+                "SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = %s AND c.relname = %s AND c.relkind IN ('r', 'p')", target)
+            row = cur.fetchone()
+            if row is None:
+                tgt.rollback()
+                return []
+            cur.execute(self._SEQUENCES_SQL, {"t": row[0]})
+            found = cur.fetchall()
+        tgt.rollback()
+
+        results: list[dict] = []
+        for column, ctype, seq_schema, seq_name in found:
+            res: dict[str, Any] = {
+                "column": column, "sequence": f"{seq_schema}.{seq_name}", "max": None, "before": None,
+                "after": None, "action": "ok", "note": "",
+            }
+            results.append(res)
+            try:
+                if ctype not in ("smallint", "integer", "bigint"):
+                    res.update(action="skipped", note=f"column type is {ctype}, not an integer")
+                    continue
+                with tgt.cursor() as cur:
+                    cur.execute(sql.SQL("SELECT max({}) FROM {}").format(sql.Identifier(column), _ident(*target)))
+                    top = cur.fetchone()[0]
+                    cur.execute(
+                        "SELECT last_value, increment_by, min_value, max_value FROM pg_sequences "
+                        "WHERE schemaname = %s AND sequencename = %s", (seq_schema, seq_name))
+                    info = cur.fetchone()
+                    if info is None:
+                        res.update(action="skipped", note="sequence not visible to this role")
+                        tgt.rollback()
+                        continue
+                    last, step, lo, hi = info
+                    res.update(max=top, before=last)
+                    if top is None:
+                        res.update(note="table is empty")
+                    elif step is not None and step < 0:
+                        res.update(action="skipped", note="descending sequence")
+                    elif top > hi:
+                        res.update(action="skipped", note=f"max id {top} is above the sequence's maximum {hi}")
+                    elif top < lo or (last is not None and last >= top):
+                        res.update(note="already at or above the table's max id")
+                    else:
+                        cur.execute(
+                            "SELECT pg_catalog.setval(%s::regclass, %s, true)",
+                            (f'{_quote(seq_schema)}.{_quote(seq_name)}', top))
+                        res.update(action="advanced", after=top)
+                tgt.commit()
+            except Exception as exc:  # noqa: BLE001 — one bad sequence (e.g. no UPDATE privilege) must not hide the rest
+                _safe_rollback(tgt)
+                res.update(action="error", note=" ".join(str(exc).split())[:200])
+        return results
 
     # ------------------------------------------------------------------ chunking
 

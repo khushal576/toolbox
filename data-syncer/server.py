@@ -24,6 +24,7 @@ POST   /projects/{id}/preflight   — read-only checks of every table (moves no 
 POST   /projects/{id}/start       — start/resume the run
 POST   /projects/{id}/stop        — graceful stop (position saved)
 GET    /projects/{id}/status      — the poll endpoint: running?, table progress, log tail
+POST   /projects/{id}/fix-sequences — raise auto-increment sequences of finished tables to their max id (raise-only)
 POST   /projects/{id}/reset       — every table back to position zero
 POST   /tables/{table_id}/reset   — one table back to position zero
 POST   /tables/{table_id}/position — {key_values: [...] | null} move the resume point
@@ -84,6 +85,7 @@ class ProjectBody(BaseModel):
     batch_size: int = Field(50_000, ge=100, le=5_000_000)
     truncate_target: bool = False
     stop_on_failure: bool = False
+    fix_sequences: bool = True
     max_retries: int = Field(3, ge=0, le=20)
     log_size: int = Field(100, ge=10, le=2000)
     tables: list[TableSpec] = []
@@ -233,7 +235,7 @@ def create_project(body: ProjectBody) -> dict[str, Any]:
     pid = store.create_project(
         name=body.name, source_conn_id=body.source_conn_id, source_conn_name=_conn_name(body.source_conn_id),
         target_conn_id=body.target_conn_id, target_conn_name=_conn_name(body.target_conn_id), mode=body.mode,
-        batch_size=body.batch_size, truncate_target=body.truncate_target, stop_on_failure=body.stop_on_failure,
+        batch_size=body.batch_size, truncate_target=body.truncate_target, stop_on_failure=body.stop_on_failure, fix_sequences=body.fix_sequences,
         max_retries=body.max_retries, log_size=body.log_size,
     )
     store.set_tables(pid, _table_rows(body.tables))
@@ -268,7 +270,7 @@ def update_project(project_id: str, body: ProjectBody) -> dict[str, Any]:
     store.update_project(
         project_id, name=body.name, source_conn_id=body.source_conn_id, source_conn_name=_conn_name(body.source_conn_id),
         target_conn_id=body.target_conn_id, target_conn_name=_conn_name(body.target_conn_id), mode=body.mode,
-        batch_size=body.batch_size, truncate_target=body.truncate_target, stop_on_failure=body.stop_on_failure,
+        batch_size=body.batch_size, truncate_target=body.truncate_target, stop_on_failure=body.stop_on_failure, fix_sequences=body.fix_sequences,
         max_retries=body.max_retries, log_size=body.log_size,
     )
     store.set_tables(project_id, _table_rows(body.tables))
@@ -317,6 +319,22 @@ def status(project_id: str) -> dict[str, Any]:
     _require_project(project_id)
     tables = _view_tables(project_id)
     return {"tables": tables, "progress": _progress(tables), "run": _run_state(project_id)}
+
+
+@app.post("/projects/{project_id}/fix-sequences")
+def fix_sequences(project_id: str) -> dict[str, Any]:
+    """Raise every auto-increment sequence of the finished tables' TARGET tables to the
+    table's max id (never lowers one, never touches data). Synchronous: a handful of
+    cheap queries per table."""
+    _require_project(project_id)
+    _require_idle(project_id)
+    try:
+        tables = engine.fix_sequences_project(project_id, lambda level, msg, table=None: None)
+    except (connections.ConnectionError_, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, scrub_password(str(exc))) from exc
+    return {"tables": tables, "advanced": sum(1 for t in tables for r in t["sequences"] if r["action"] == "advanced")}
 
 
 @app.post("/projects/{project_id}/reset")

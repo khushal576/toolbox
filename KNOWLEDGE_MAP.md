@@ -1480,6 +1480,7 @@ what is deliberately not built).
 | What "Preflight" checks | `data-syncer/sync_ops.py` (`preflight_table`) + `data-syncer/engine.py` (`preflight_project`) — the engine runs the same checks before every table |
 | Where progress/positions/projects are stored, manual position edits, reset | `data-syncer/state_store.py` (SQLite, `data_syncer_data` volume) |
 | Starting/stopping a run, the log ring buffer (last N lines) | `data-syncer/runner.py` |
+| Moving auto-increment sequences up to the max id after a sync (raise-only), the "Fix sequences now" button | `data-syncer/sync_ops.py` (`fix_sequences`), `data-syncer/engine.py` (`_fix_sequences`, `fix_sequences_project`), `POST /projects/{id}/fix-sequences` in `data-syncer/server.py`; option `fix_sequences` in `state_store.py` |
 | API endpoints, input validation, "can't edit while running" guards | `data-syncer/server.py` |
 | The page (project list/editor/run view, polling, log box) | `data-syncer/ui/index.html` |
 
@@ -1519,7 +1520,7 @@ copies user-mapping passwords in cleartext).
 | If you need to change...                                          | Go to |
 |-----------------------------------------------------------------------|-------|
 | Which `pg_dump` flags are used, how credentials/cancel are passed to the child process | `schema-copy/pgtools.py` |
-| Where the `pg_dump`/`psql` binaries come from (and their shared libs) | `Dockerfile` stage `pgclient` (`FROM postgres:17-bookworm`) → `/opt/pgclient`; env override `PGCLIENT_BIN_DIR`/`PGCLIENT_LIB_DIR` |
+| Where the `pg_dump`/`psql` binaries come from (and their shared libs) | `Dockerfile` stage `pgclient` (`FROM postgres:${PG_CLIENT_MAJOR}-bookworm`, default 18 — must be ≥ the newest source server you copy from) → `/opt/pgclient`; env override `PGCLIENT_BIN_DIR`/`PGCLIENT_LIB_DIR` |
 | What the script contains beyond pg_dump's output (extensions, `IF NOT EXISTS` schemas, sequence values, header) | `schema-copy/engine.py` (`build_script`) |
 | What Preflight checks (empty target, same-or-newer server, extensions available, client version, foreign tables) | `schema-copy/engine.py` (`preflight`) + `schema-copy/catalog.py` |
 | How a failed apply is reported (failing line + context) | `schema-copy/engine.py` (`_explain_failure`) |
@@ -1535,8 +1536,8 @@ copies user-mapping passwords in cleartext).
 - **Never run an unfiltered `pg_dump` here** — it emits foreign servers, publications
   and USER MAPPINGS WITH PASSWORDS. Every schema is passed with `-n`; that in turn
   drops `CREATE EXTENSION`, which `build_script` re-adds from the catalog.
-- **The toolbox image is Debian 12, the stock `postgres:17` image is Debian 13** —
-  the `pgclient` Docker stage deliberately uses `postgres:17-bookworm`.
+- **The toolbox image is Debian 12, the stock `postgres:N` image is Debian 13** —
+  the `pgclient` Docker stage deliberately uses `postgres:N-bookworm`.
 - Postgres → Postgres only; target must be empty; roles/owners/grants stripped by
   default; matviews created empty; sequences fresh unless opted in.
 - **Stateful, `--workers 1`**: the run registry/log tail is in-process (fifth entry

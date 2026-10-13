@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS projects (
     batch_size INTEGER NOT NULL,
     truncate_target INTEGER NOT NULL DEFAULT 0,
     stop_on_failure INTEGER NOT NULL DEFAULT 0,
+    fix_sequences INTEGER NOT NULL DEFAULT 1,
     max_retries INTEGER NOT NULL DEFAULT 3,
     log_size INTEGER NOT NULL DEFAULT 100,
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -74,7 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_pt_project ON project_tables(project_id, ord);
 
 _PROJECT_FIELDS = {
     "name", "source_conn_id", "source_conn_name", "target_conn_id", "target_conn_name", "mode",
-    "batch_size", "truncate_target", "stop_on_failure", "max_retries", "log_size",
+    "batch_size", "truncate_target", "stop_on_failure", "fix_sequences", "max_retries", "log_size",
 }
 _TABLE_FIELDS = {
     "ord", "target_schema", "target_table", "key_columns", "status", "last_key", "inflight",
@@ -105,6 +106,9 @@ def init_db() -> None:
     with _connect() as con:
         con.execute("PRAGMA journal_mode = WAL")
         con.executescript(_SCHEMA)
+        # migration: databases created before this option existed get it ON (the default)
+        if "fix_sequences" not in {r[1] for r in con.execute("PRAGMA table_info(projects)")}:
+            con.execute("ALTER TABLE projects ADD COLUMN fix_sequences INTEGER NOT NULL DEFAULT 1")
 
 
 def recover_interrupted() -> int:
@@ -128,7 +132,7 @@ def mark_running_interrupted(project_id: str) -> None:
 
 def _project(row: sqlite3.Row) -> dict[str, Any]:
     d = dict(row)
-    for f in ("truncate_target", "stop_on_failure"):
+    for f in ("truncate_target", "stop_on_failure", "fix_sequences"):
         d[f] = bool(d[f])
     return d
 
@@ -147,7 +151,7 @@ def _table(row: sqlite3.Row) -> dict[str, Any]:
 def create_project(
     *, name: str, source_conn_id: str, source_conn_name: Optional[str], target_conn_id: str,
     target_conn_name: Optional[str], mode: str, batch_size: int = 50_000, truncate_target: bool = False,
-    stop_on_failure: bool = False, max_retries: int = 3, log_size: int = 100,
+    stop_on_failure: bool = False, max_retries: int = 3, log_size: int = 100, fix_sequences: bool = True,
 ) -> str:
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
@@ -155,10 +159,10 @@ def create_project(
     with _connect() as con:
         con.execute(
             "INSERT INTO projects (id, name, source_conn_id, source_conn_name, target_conn_id, target_conn_name, "
-            "mode, batch_size, truncate_target, stop_on_failure, max_retries, log_size, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "mode, batch_size, truncate_target, stop_on_failure, max_retries, log_size, fix_sequences, "
+            "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (pid, name, source_conn_id, source_conn_name, target_conn_id, target_conn_name, mode, batch_size,
-             int(truncate_target), int(stop_on_failure), max_retries, log_size, now, now),
+             int(truncate_target), int(stop_on_failure), max_retries, log_size, int(fix_sequences), now, now),
         )
     return pid
 
@@ -169,7 +173,7 @@ def update_project(project_id: str, **fields: Any) -> None:
         raise ValueError(f"unknown project field(s): {sorted(bad)}")
     if "mode" in fields and fields["mode"] not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
-    for f in ("truncate_target", "stop_on_failure"):
+    for f in ("truncate_target", "stop_on_failure", "fix_sequences"):
         if f in fields:
             fields[f] = int(bool(fields[f]))
     if not fields:

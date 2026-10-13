@@ -134,6 +134,9 @@
         <div class="full">
           <label class="check"><input type="checkbox" id="fStopFail" /> Stop the whole run at the first failed table (default: skip the failed table and continue)</label>
         </div>
+        <div class="full">
+          <label class="check"><input type="checkbox" id="fSeq" checked /> <span>Fix auto-increment sequences when a table finishes. <span class="muted">Any column fed by a sequence (serial, identity, <code>DEFAULT nextval(...)</code>) gets its sequence moved up to the table's highest id in the target, so the next insert doesn't collide. It only ever raises a sequence, never lowers one, and never touches data.</span></span></label>
+        </div>
         <div class="full" id="truncWrap">
           <label class="check"><input type="checkbox" id="fTrunc" /> <span><b style="color:var(--err)">Truncate each target table</b> when it starts from the beginning (copy mode). Deletes existing rows in the target tables — won't work if other tables reference them by foreign key.</span></label>
         </div>
@@ -168,6 +171,7 @@
       <div id="preBox" class="hidden"></div>
       <div class="row" style="margin-top:10px">
         <button class="small" id="btnEdit">Edit project</button>
+        <button class="small" id="btnSeq" title="Raise auto-increment sequences of finished tables to their max id in the target">Fix sequences now</button>
         <button class="small danger" id="btnResetAll">Reset all to start</button>
         <button class="small danger" id="btnDelete">Delete project</button>
       </div>
@@ -244,7 +248,7 @@ async function openEdit(project) {
   if (p) { $('fSource').value = p.source_conn_id; $('fTarget').value = p.target_conn_id; }
   else if (connections.length > 1) $('fTarget').selectedIndex = 1;
   $('fBatch').value = p ? p.batch_size : 50000; $('fRetries').value = p ? p.max_retries : 3; $('fLog').value = p ? p.log_size : 100;
-  $('fStopFail').checked = !!(p && p.stop_on_failure); $('fTrunc').checked = !!(p && p.truncate_target);
+  $('fStopFail').checked = !!(p && p.stop_on_failure); $('fSeq').checked = p ? !!p.fix_sequences : true; $('fTrunc').checked = !!(p && p.truncate_target);
   const locked = project && project.has_progress;
   for (const id of ['fSource', 'fTarget']) $(id).disabled = !!locked;
   document.querySelectorAll('.mode').forEach(el => el.style.pointerEvents = locked ? 'none' : '');
@@ -297,7 +301,7 @@ const saveProject = guard(async () => {
   if (!tables.length) return toast('Select at least one table.');
   const body = { name: $('fName').value.trim(), source_conn_id: $('fSource').value, target_conn_id: $('fTarget').value, mode: state.mode,
     batch_size: +$('fBatch').value, max_retries: +$('fRetries').value, log_size: +$('fLog').value,
-    stop_on_failure: $('fStopFail').checked, truncate_target: state.mode === 'copy' && $('fTrunc').checked, tables };
+    stop_on_failure: $('fStopFail').checked, fix_sequences: $('fSeq').checked, truncate_target: state.mode === 'copy' && $('fTrunc').checked, tables };
   if (!body.name) return toast('Give the project a name.');
   if (state.editing) { await api(`projects/${state.editing.project.id}`, { method: 'PUT', body }); await openRun(state.editing.project.id); }
   else { const r = await api('projects', { method: 'POST', body }); await openRun(r.id); }
@@ -325,7 +329,7 @@ function render(d) {
   const startable = tables.some(t => ['pending', 'failed', 'interrupted', 'stopped'].includes(t.status));
   $('btnStart').textContent = tables.some(t => t.rows_done > 0 || t.status !== 'pending') ? 'Resume' : 'Start';
   if (!running && !startable) { $('btnStart').disabled = true; $('btnStart').textContent = 'All done'; }
-  for (const id of ['btnEdit', 'btnResetAll', 'btnDelete', 'btnPre']) $(id).disabled = running;
+  for (const id of ['btnEdit', 'btnResetAll', 'btnDelete', 'btnPre', 'btnSeq']) $(id).disabled = running;
   const pct = prog.tables_total ? Math.round(prog.tables_done * 100 / prog.tables_total) : 0;
   $('overallBar').firstElementChild.style.width = pct + '%';
   $('overallTxt').textContent = `${prog.tables_done}/${prog.tables_total} tables · ${fmt(prog.rows_done)} rows` + (prog.failed ? ` · ${prog.failed} failed` : '');
@@ -369,6 +373,15 @@ $('btnPre').onclick = guard(async () => {
   const items = r.tables.map(t => `<li><b>${esc(t.name)}</b>${t.errors.map(e => `<div class="err-line">✖ ${esc(e)}</div>`).join('')}${t.warnings.map(w => `<div style="color:var(--warn);font-size:.76rem">⚠ ${esc(w)}</div>`).join('')}${!t.errors.length && !t.warnings.length ? ' <span class="muted">— ok</span>' : ''}</li>`).join('');
   box.innerHTML = `<div class="box ${r.ok ? 'ok' : 'err'}"><b>${r.ok ? 'Preflight passed' : 'Preflight found problems'}</b> — ${esc(r.source)} → ${esc(r.target)} (${esc(r.mode)})
     ${r.order_notes.map(n => `<div>⚠ ${esc(n)}</div>`).join('')}<ul>${items}</ul></div>`;
+});
+$('btnSeq').onclick = guard(async () => {
+  const box = $('preBox'); box.classList.remove('hidden'); box.innerHTML = '<div class="box warn">Checking auto-increment sequences in the target…</div>';
+  const r = await api(`projects/${state.pid}/fix-sequences`, { method: 'POST' });
+  const rows = r.tables.flatMap(t => t.sequences.map(q => `<li><b>${esc(t.table)}</b> · ${esc(q.sequence)} (${esc(q.column)}): ${
+    q.action === 'advanced' ? `<b>raised to ${Number(q.after).toLocaleString()}</b> (was ${q.before === null ? 'unused' : Number(q.before).toLocaleString()})`
+    : q.action === 'error' ? `<span class="err-line">could not move: ${esc(q.note)}</span>`
+    : `<span class="muted">${q.action === 'skipped' ? 'left alone — ' : 'already fine — '}${esc(q.note || 'at or above the max id')}</span>`}</li>`));
+  box.innerHTML = `<div class="box ok"><b>${r.advanced} sequence(s) raised</b>${rows.length ? `<ul>${rows.join('')}</ul>` : ' — none of the finished tables has an auto-increment column.'}</div>`;
 });
 $('btnStart').onclick = guard(async () => {
   const fresh = (state.lastTables || []).every(t => t.rows_done === 0 && t.status === 'pending');
