@@ -131,3 +131,9 @@ tools:
     description: "Browse, upload, download and run commands on servers saved in the Vault — host keys are pinned, uploads are verified and resumable and never overwrite unless you say so, and a server can be saved read-only"
     icon: "🔐"
     category: tool
+
+  - name: latex-pdf
+    title: "LaTeX to PDF"
+    description: "Paste LaTeX (like a resume), compile it to PDF fully offline, preview it side by side and download the PDF — no internet, nothing leaves your machine"
+    icon: "📄"
+    category: tool

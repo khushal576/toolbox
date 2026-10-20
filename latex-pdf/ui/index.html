@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LaTeX to PDF</title>
+<style>
+:root{
+  --bg:#f4f6fb;--surface:#ffffff;--border:#dde1ef;--text:#1c2035;--muted:#6b7180;--accent:#4f5ef0;
+  --err:#c0392b;--ok:#1e8e5a;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,sans-serif}
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border)}
+header h1{font-size:16px;margin:0 8px 0 0}
+button,label.btn{font:inherit;padding:6px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button:disabled{opacity:.5;cursor:default}
+.auto{display:flex;align-items:center;gap:6px;color:var(--muted)}
+#status{margin-left:auto;color:var(--muted)}
+#status.ok{color:var(--ok)}#status.err{color:var(--err)}
+main{flex:1;display:flex;min-height:0}
+.pane{flex:1;display:flex;flex-direction:column;min-width:0}
+.pane+.pane{border-left:1px solid var(--border)}
+textarea{flex:1;width:100%;resize:none;border:0;padding:14px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;background:var(--surface);color:var(--text);tab-size:2;outline:none}
+#viewer{flex:1;border:0;width:100%;background:#fff}
+#empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:20px}
+#note{padding:8px 16px;background:#fff6e0;color:#6b4e00;border-bottom:1px solid #f0dca8;font-size:13px}
+#errbox{display:none;max-height:40%;overflow:auto;margin:0;padding:12px 14px;background:#fdecea;color:var(--err);border-top:1px solid #f5c6c0;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap}
+#errbox details{margin-top:8px;color:var(--muted)}
+@media(max-width:800px){main{flex-direction:column}.pane+.pane{border-left:0;border-top:1px solid var(--border)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>LaTeX to PDF</h1>
+  <button class="primary" id="compile">Compile (Ctrl+Enter)</button>
+  <button id="download" disabled>Download PDF</button>
+  <label class="btn">Open .tex<input id="file" type="file" accept=".tex,.txt" hidden></label>
+  <button id="saveTex">Save .tex</button>
+  <button id="sample">Sample resume</button>
+  <label class="auto"><input type="checkbox" id="auto"> Auto-compile</label>
+  <span id="status"></span>
+</header>
+<div id="note" hidden></div>
+<main>
+  <div class="pane"><textarea id="src" spellcheck="false" placeholder="Paste your LaTeX here…"></textarea></div>
+  <div class="pane">
+    <div id="empty">Press <b>&nbsp;Compile&nbsp;</b> to see your PDF here.</div>
+    <iframe id="viewer" title="PDF preview" hidden></iframe>
+    <pre id="errbox"></pre>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const SAMPLE = String.raw`\documentclass[11pt]{article}
+\usepackage[margin=0.8in]{geometry}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{titlesec}
+\pagestyle{empty}
+\titleformat{\section}{\large\bfseries}{}{0em}{}[\titlerule]
+\titlespacing*{\section}{0pt}{10pt}{6pt}
+\begin{document}
+\begin{center}
+  {\LARGE \textbf{Your Name}}\\[2pt]
+  City, Country \,|\, \href{mailto:you@example.com}{you@example.com} \,|\, +00 00000 00000
+\end{center}
+
+\section{Experience}
+\textbf{Data Engineer} \hfill 2023 -- Present\\
+\textit{Company Name}
+\begin{itemize}[leftmargin=*,nosep]
+  \item Built batch pipelines that cut report time from 6 hours to 20 minutes.
+  \item Modelled the warehouse layer used by 12 analytics teams.
+\end{itemize}
+
+\section{Education}
+\textbf{B.Tech, Computer Science} \hfill 2019 -- 2023\\
+University Name
+
+\section{Skills}
+Python, SQL, Spark, Airflow, Docker
+\end{document}
+`;
+const KEY = 'latex-pdf.source';
+let pdfUrl = null, timer = null, seq = 0;
+
+function get(){ try { return localStorage.getItem(KEY); } catch { return null; } }
+function put(v){ try { localStorage.setItem(KEY, v); } catch {} }
+
+$('src').value = get() || SAMPLE;
+
+// Remove fontawesome5 from \usepackage / \RequirePackage anywhere on a line, incl. comma lists.
+function removeFa5(src) {
+  return src
+    .replace(/\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\{\s*fontawesome5\s*\}[ \t]*/g, '')
+    .replace(/(\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\{[^}]*?)\s*,\s*fontawesome5\s*(?=[,}])/g, '$1')
+    .replace(/(\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\{)\s*fontawesome5\s*,\s*/g, '$1')
+    .replace(/^[ \t]*\r?\n/gm, m => m);   // keep blank lines as they were
+}
+function status(msg, cls){ const s = $('status'); s.textContent = msg; s.className = cls || ''; }
+
+async function compile(){
+  const mine = ++seq;
+  $('compile').disabled = true;
+  status('Compiling…');
+  const t0 = performance.now();
+  try {
+    const post = src => fetch('compile', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({source: src})});
+    let r = await post($('src').value);
+    let note = '';
+    if (!r.ok) {
+      // fontawesome5 + fontawesome in one document is a hard LaTeX error: retry with the fontawesome5 load
+      // ignored (the editor text is left untouched) instead of making the user fix it by hand.
+      const j0 = await r.clone().json().catch(() => ({}));
+      if (/Incompatible version of Font Awesome/.test(j0.error || '')) {
+        const fixed = removeFa5($('src').value);
+        if (fixed !== $('src').value) {
+          const r2 = await post(fixed);
+          if (r2.ok) { r = r2; note = 'Compiled with \\usepackage{fontawesome5} ignored — it conflicts with fontawesome, which your document also loads. Your text is unchanged; delete that line to make this permanent.'; }
+        }
+      }
+    }
+    if (mine !== seq) return;
+    $('note').textContent = note; $('note').hidden = !note;
+    if (r.ok) {
+      const blob = await r.blob();
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      pdfUrl = URL.createObjectURL(blob);
+      $('viewer').src = pdfUrl;
+      $('viewer').hidden = false; $('empty').hidden = true; $('errbox').style.display = 'none';
+      $('download').disabled = false;
+      status('Compiled in ' + ((performance.now()-t0)/1000).toFixed(1) + 's', 'ok');
+    } else {
+      const j = await r.json().catch(() => ({error:'Server error ' + r.status, log:''}));
+      const box = $('errbox');
+      box.textContent = j.error;
+      if (j.log) { const d = document.createElement('details'); d.innerHTML = '<summary>Full log</summary>'; const p = document.createElement('div'); p.textContent = j.log; d.append(p); box.append(d); }
+      if (/Incompatible version of Font Awesome/.test(j.error)) {
+        const fix = document.createElement('div');
+        fix.style.cssText = 'margin:10px 0;font-family:system-ui,sans-serif;color:var(--text)';
+        fix.innerHTML = 'Your document loads both <code>fontawesome5</code> and <code>fontawesome</code>, and LaTeX allows only one. ';
+        const hits = $('src').value.split('\n').map((t, i) => [i + 1, t]).filter(([, t]) => /fontawesome5/.test(t));
+        if (hits.length) {
+          const where = document.createElement('div');
+          where.style.cssText = 'margin:6px 0;font:12px ui-monospace,Menlo,Consolas,monospace;color:var(--text)';
+          where.textContent = 'Found in your source: ' + hits.map(([n, t]) => 'line ' + n + ': ' + t.trim()).join('  |  ');
+          fix.append(where);
+        }
+        const b = document.createElement('button');
+        b.textContent = 'Remove fontawesome5 and recompile';
+        b.onclick = () => {
+          $('src').value = removeFa5($('src').value);
+          put($('src').value);
+          if (/fontawesome5/.test($('src').value.replace(/^\s*%.*$/gm, ''))) {
+            status('"fontawesome5" is still in your source — remove it by hand', 'err');
+          } else compile();
+        };
+        fix.append(b);
+        box.prepend(fix);
+      }
+      box.style.display = 'block';
+      $('viewer').hidden = true; $('empty').hidden = true;   // don't leave the previous PDF looking current
+      $('download').disabled = true;
+      status('Failed', 'err');
+    }
+  } catch (e) { status('Request failed: ' + e.message, 'err'); }
+  finally { if (mine === seq) $('compile').disabled = false; }
+}
+
+$('compile').onclick = compile;
+$('src').addEventListener('input', () => {
+  put($('src').value);
+  if ($('auto').checked) { clearTimeout(timer); timer = setTimeout(compile, 1200); }
+});
+$('src').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); compile(); }
+  if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); }
+});
+$('sample').onclick = () => { if (!$('src').value.trim() || confirm('Replace the editor with the sample?')) { $('src').value = SAMPLE; put(SAMPLE); } };
+$('file').onchange = async e => { const f = e.target.files[0]; if (f) { $('src').value = await f.text(); put($('src').value); compile(); } e.target.value = ''; };
+
+function save(blob, name){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+$('download').onclick = () => pdfUrl && fetch(pdfUrl).then(r => r.blob()).then(b => save(b, 'document.pdf'));
+$('saveTex').onclick = () => save(new Blob([$('src').value], {type:'text/plain'}), 'document.tex');
+
+fetch('health').then(r => r.json()).then(h => { if (!h.engine) status('pdflatex not found in this environment', 'err'); }).catch(() => {});
+</script>
+</body>
+</html>

@@ -34,6 +34,28 @@ FROM python:3.11-slim
 # Set a working directory inside the container.
 WORKDIR /app
 
+# --- TeX Live (LaTeX to PDF tool) --------------------------------------------
+# Offline pdflatex for latex-pdf/. Kept before the pip layer so rebuilds that only change app code
+# reuse it. texlive-fonts-extra (fontawesome5, marvosym, ...) is a 624 MB download / ~1.7 GB on disk,
+# so it is opt-in:
+#   docker compose build --build-arg TEX_FONTS_EXTRA=1
+ARG TEX_FONTS_EXTRA=0
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends texlive-latex-base texlive-latex-recommended \
+        texlive-latex-extra texlive-fonts-recommended texlive-plain-generic lmodern \
+ && if [ "$TEX_FONTS_EXTRA" = "1" ]; then apt-get install -y --no-install-recommends texlive-fonts-extra; fi \
+ && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
+
+# Font Awesome for LaTeX resumes: the CTAN `fontawesome` and `fontawesome5` packages (~2 MB together,
+# vendored in latex-pdf/texmf/) instead of the ~1.7 GB texlive-fonts-extra. Installed into TEXMFLOCAL
+# and registered with updmap. Note LaTeX itself refuses to load both in one document (fontawesome5
+# errors) — a resume must pick one.
+COPY latex-pdf/texmf/ /tmp/texmf/
+RUN python /tmp/texmf/install_fontawesome.py /usr/local/share/texmf /tmp/texmf/fontawesome5.zip /tmp/texmf/fontawesome.zip \
+ && mktexlsr \
+ && updmap-sys --enable Map=fontawesome5.map --enable Map=fontawesome.map \
+ && rm -rf /tmp/texmf
+
 # --- Install dependencies first (separate layer for better caching) ----------
 # Copy only the requirements file first so Docker can cache this layer.
 # If requirements.txt doesn't change, this layer is reused on every rebuild.
@@ -161,11 +183,16 @@ COPY data-dumper/ ./data_dumper/
 # staged uploads live on the ssh_sftp_data volume.
 COPY ssh-sftp/ ./ssh_sftp/
 
+# LaTeX to PDF (tool #20) — same namespacing pattern. Shells out to pdflatex from the TeX Live
+# layer above; fully offline.
+COPY latex-pdf/server.py ./latex_pdf/server.py
+COPY latex-pdf/ui/       ./latex_pdf/ui/
+
 COPY main.py .
 COPY registry.yaml .
 
 # Create empty __init__.py files so Python treats these as packages.
-RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py
+RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py
 
 # --- Runtime config ----------------------------------------------------------
 # Tell Python not to write .pyc files and not to buffer stdout/stderr.
