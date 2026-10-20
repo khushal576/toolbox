@@ -7,13 +7,13 @@
 # Run:     docker-compose up
 # =============================================================================
 
-# --- Stage 1: the PostgreSQL client bundle (pg_dump + psql) ------------------
-# Schema Copy shells out to the REAL pg_dump/psql. The toolbox image below is
+# --- Stage 1: the PostgreSQL client bundle (pg_dump + pg_restore + psql) -----
+# Schema Copy and Data Dumper shell out to the REAL pg_dump/pg_restore/psql. The toolbox image below is
 # Debian 12 (bookworm); the stock `postgres:N` image is Debian 13 and its
 # binaries do not run here, so this stage uses the `-bookworm` variant and
 # copies the two binaries plus exactly the shared libraries they need
 # (everything but glibc) into /opt/pgclient. They are put on LD_LIBRARY_PATH
-# only for the child processes schema-copy/pgtools.py spawns.
+# only for the child processes core/pgclient.py spawns.
 # A pg_dump can dump any server up to its OWN major version, so keep this at
 # (or above) the newest server you will copy FROM — preflight says so when a
 # source is newer. Bump with: docker build --build-arg PG_CLIENT_MAJOR=19 …
@@ -22,8 +22,8 @@ ARG PG_CLIENT_MAJOR=18
 FROM postgres:${PG_CLIENT_MAJOR}-bookworm AS pgclient
 ARG PG_CLIENT_MAJOR
 RUN mkdir -p /opt/pgclient/bin /opt/pgclient/lib \
- && cp /usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/pg_dump /usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/psql /opt/pgclient/bin/ \
- && for b in pg_dump psql; do ldd /usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/$b | awk '/=> \//{print $3}'; done | sort -u \
+ && for b in pg_dump pg_restore psql; do cp /usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/$b /opt/pgclient/bin/; done \
+ && for b in pg_dump pg_restore psql; do ldd /usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/$b | awk '/=> \//{print $3}'; done | sort -u \
     | grep -Ev '/(libc|libm|libdl|libpthread|librt|libresolv)\.so' | xargs -I{} cp -L {} /opt/pgclient/lib/
 
 # --- Stage 2: the toolbox ------------------------------------------------------
@@ -149,11 +149,23 @@ COPY data-syncer/ ./data_syncer/
 COPY --from=pgclient /opt/pgclient /opt/pgclient
 COPY schema-copy/ ./schema_copy/
 
+# Data Dumper (tool #18) — whole-folder copy. Takes Postgres dumps (downloadable) and restores
+# them selectively, using the bundled pg_dump/pg_restore/psql above via core/pgclient.py. Its
+# job registry is in-process state like data-syncer's/schema-copy's; dumps live on the
+# data_dumper_data volume.
+COPY data-dumper/ ./data_dumper/
+
+# SSH & SFTP (tool #19) — whole-folder copy. Browse/upload/download files and run commands on servers saved
+# in the Vault (kind "ssh_server"), via paramiko (already a dependency) and core/ssh_client.py (host-key
+# pinning). Its connection cache and job registry are in-process state like the other long-running tools;
+# staged uploads live on the ssh_sftp_data volume.
+COPY ssh-sftp/ ./ssh_sftp/
+
 COPY main.py .
 COPY registry.yaml .
 
 # Create empty __init__.py files so Python treats these as packages.
-RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py
+RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py
 
 # --- Runtime config ----------------------------------------------------------
 # Tell Python not to write .pyc files and not to buffer stdout/stderr.
@@ -202,7 +214,13 @@ EXPOSE 8080
 #                 - Schema Copy keeps its run registry + log tail in memory
 #                   the same way (schema-copy/runner.py); the last run's result
 #                   is in SQLite. See schema-copy/CLAUDE.md.
+#                 - Data Dumper keeps its dump/restore job registry + log tail in
+#                   memory the same way (data-dumper/runner.py); the dump catalogue
+#                   and run history are in SQLite. See data-dumper/CLAUDE.md.
+#                 - SSH & SFTP keeps a per-server connection cache and its
+#                   upload/command job registry in memory (ssh-sftp/sessions.py,
+#                   runner.py); transfer/command history is in SQLite.
 #                 Every other tool here is stateless/client-side and
-#                 wouldn't care, but these five do. Don't raise this without
-#                 giving ALL FIVE a real shared store first.
+#                 wouldn't care, but these seven do. Don't raise this without
+#                 giving ALL SEVEN a real shared store first.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

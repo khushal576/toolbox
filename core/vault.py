@@ -144,6 +144,20 @@ def save_secret(name: str, kind: str, data: dict[str, Any]) -> str:
     return secret_id
 
 
+def update_secret(secret_id: str, data: dict[str, Any]) -> None:
+    """Replace the encrypted data of an existing CREDENTIAL in place, keeping its id (so every tool that
+    stored the id keeps working). Used to PIN an SSH server's host key after the user has confirmed it.
+    Datasets (blob-backed rows) are never updated this way."""
+    ciphertext = _fernet().encrypt(json.dumps(data).encode("utf-8"))
+    with _connect() as con:
+        cur = con.execute(
+            "UPDATE secrets SET ciphertext = ?, updated_at = ? WHERE id = ? AND blob_path IS NULL",
+            (ciphertext, _now(), secret_id),
+        )
+        if cur.rowcount == 0:
+            raise SecretNotFound(secret_id)
+
+
 def _encrypt_file_chunked(source_path: Path, dest_path: Path) -> None:
     fernet = _fernet()
     with source_path.open("rb") as src, dest_path.open("wb") as dst:

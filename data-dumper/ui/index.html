@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Data Dumper</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef; --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --ok: #15803d; --ok-bg: rgba(22,163,74,0.10); --warn: #b45309; --warn-bg: rgba(217,119,6,0.12);
+    --err: #b91c1c; --err-bg: rgba(220,38,38,0.08); --err-border: rgba(220,38,38,0.3); --run-bg: rgba(79,94,240,0.10);
+    --mono: ui-monospace, Menlo, Consolas, monospace;
+  }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 24px 20px 70px; }
+  header, .wrap { max-width: 1040px; margin: 0 auto; }
+  header { margin-bottom: 18px; }
+  header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; cursor: pointer; } header h1 span { color: var(--accent); }
+  header p { color: var(--muted); font-size: .85rem; margin-top: 2px; max-width: 720px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 1rem; font-weight: 700; margin-bottom: 4px; } .card h3 { font-size: .86rem; margin: 12px 0 6px; }
+  .hint { font-size: .78rem; color: var(--muted); line-height: 1.5; margin-bottom: 8px; } .muted { color: var(--muted); } .mono { font-family: var(--mono); font-size: .76rem; }
+  button { cursor: pointer; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font-weight: 600; font-size: .82rem; padding: 7px 14px; font-family: inherit; }
+  button:hover:not(:disabled) { border-color: var(--accent); } button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; } button.danger { color: var(--err); } button.small { padding: 3px 9px; font-size: .72rem; }
+  a.btn { text-decoration: none; display: inline-block; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .spacer { flex: 1; }
+  .badge { background: var(--bg); color: var(--muted); border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+  .b-ok { background: var(--ok-bg); color: var(--ok); border-color: transparent; } .b-failed { background: var(--err-bg); color: var(--err); border-color: transparent; }
+  .b-run { background: var(--run-bg); color: var(--accent); border-color: transparent; } .b-warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+  .dump { display: flex; gap: 12px; align-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 11px 14px; margin-bottom: 8px; }
+  .dump .name { font-weight: 700; cursor: pointer; } .dump .name:hover { color: var(--accent); } .dump .meta { font-size: .76rem; color: var(--muted); margin-top: 2px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; } .grid .full { grid-column: 1 / -1; }
+  label.f { display: block; font-size: .7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 3px; }
+  input[type=text], select { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: .85rem; font-family: inherit; }
+  .check { display: flex; align-items: flex-start; gap: 7px; font-size: .84rem; line-height: 1.4; } .check input { margin-top: 3px; }
+  .opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+  .opt { border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; cursor: pointer; font-size: .82rem; } .opt b { display: block; margin-bottom: 2px; }
+  .opt .d { font-size: .72rem; color: var(--muted); line-height: 1.4; } .opt.sel { border-color: var(--accent); background: var(--run-bg); } .opt.off { opacity: .4; pointer-events: none; }
+  .scroll { max-height: 340px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+  table.t { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  table.t th { text-align: left; font-size: .66rem; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+  table.t td { padding: 5px 8px; border-bottom: 1px solid var(--border); } table.t tr:last-child td { border-bottom: none; }
+  .bar { height: 7px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; min-width: 120px; } .bar > i { display: block; height: 100%; background: var(--accent); }
+  .box { border-radius: 8px; padding: 10px 12px; font-size: .82rem; margin: 10px 0; line-height: 1.5; }
+  .box.err { background: var(--err-bg); color: var(--err); border: 1px solid var(--err-border); } .box.warn { background: var(--warn-bg); color: var(--warn); } .box.ok { background: var(--ok-bg); color: var(--ok); }
+  .box ul { margin: 4px 0 0 18px; }
+  pre.ctx { background: rgba(220,38,38,.06); border: 1px solid var(--err-border); border-radius: 8px; padding: 8px 10px; font-family: var(--mono); font-size: .72rem; overflow: auto; margin-top: 6px; white-space: pre-wrap; color: var(--text); }
+  .log { background: #11142a; color: #d7dbef; border-radius: 8px; padding: 10px 12px; font-family: var(--mono); font-size: .74rem; height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
+  .log .l-warn { color: #fbbf24; } .log .l-error { color: #f87171; } .log .l-ok { color: #4ade80; } .log .t { color: #7c86b8; }
+  .kinds { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; } .hidden { display: none !important; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="home">Data Dumper<span>.</span></h1>
+  <p>Take a Postgres dump you can download, and restore a dump into any database — all of it, or just the part you choose: structure, data, a phase, some schemas, some tables, or single objects. Connections come from the Vault.</p>
+</header>
+<div class="wrap">
+  <div id="toast" class="box err hidden"></div>
+  <div id="toolWarn" class="box err hidden"></div>
+
+  <!-- ===== home ===== -->
+  <section id="v-home">
+    <div class="card">
+      <div class="row"><h2>Dumps</h2><span class="muted mono" id="disk"></span><span class="spacer"></span>
+        <button id="btnUpBtn">Upload a dump…</button><button class="primary" id="btnNew">+ Take a dump</button></div>
+      <p class="hint">Each dump is a file kept on this server until you delete it. Download it, or restore it into any database.</p>
+      <div id="dumpList"></div>
+    </div>
+    <div class="card hidden" id="newCard">
+      <h2>Take a dump</h2>
+      <p class="hint">A consistent snapshot of the whole database (other work can continue meanwhile). Nothing is changed in the source.</p>
+      <div class="grid">
+        <div><label class="f">Source database (Vault connection)</label><select id="nSource"></select></div>
+        <div><label class="f">Label (optional)</label><input type="text" id="nLabel" placeholder="e.g. before the October release" /></div>
+        <div class="full"><label class="f">Format</label><div class="opts" id="nFmt">
+          <div class="opt sel" data-v="custom"><b>Custom (.dump) — recommended</b><span class="d">Compressed. Restores with pg_restore and lets you restore only part of it.</span></div>
+          <div class="opt" data-v="plain"><b>Plain SQL (.sql.gz)</b><span class="d">Readable SQL, gzip-compressed. Runs anywhere with psql, but restores whole only.</span></div></div></div>
+        <div class="full"><label class="f">What to include</label><div class="opts" id="nScope">
+          <div class="opt sel" data-v="all"><b>Everything</b><span class="d">Structure and data.</span></div>
+          <div class="opt" data-v="schema"><b>Structure only</b><span class="d">Tables, indexes, views, functions… no rows.</span></div>
+          <div class="opt" data-v="data"><b>Data only</b><span class="d">Rows only. Restores into a target that already has the tables.</span></div></div></div>
+        <div class="full"><label class="check"><input type="checkbox" id="nOwner" /> <span>Keep owners and GRANTs. <span class="muted">Off by default so the dump restores on any server (roles are never part of a dump).</span></span></label></div>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="primary" id="btnGo">Start the dump</button><button id="btnNewCancel">Cancel</button></div>
+    </div>
+    <div class="card hidden" id="upCard">
+      <h2>Upload a dump</h2>
+      <p class="hint">A custom-format <b>.dump</b>, a <b>.sql</b> or a <b>.sql.gz</b> file made by pg_dump anywhere. It is checked and added to the list above.</p>
+      <div class="row"><input type="file" id="upFile" /><button class="primary" id="btnUp">Upload</button><button id="btnUpCancel">Cancel</button><span class="hint" id="upMsg" style="margin:0"></span></div>
+    </div>
+  </section>
+
+  <!-- ===== one dump ===== -->
+  <section id="v-dump" class="hidden">
+    <div class="card">
+      <div class="row"><h2 id="dName"></h2><span class="badge" id="dFmt"></span><span class="badge" id="dState"></span><span class="spacer"></span>
+        <a class="btn" id="dDl" href="#"><button class="primary" id="btnDl">⬇ Download</button></a><button id="btnAgain">Dump again</button><button class="danger" id="btnDel">Delete</button><button id="btnStop" class="danger">Stop</button></div>
+      <p class="hint" id="dMeta" style="margin-top:6px"></p>
+      <div id="dProg" class="hidden"><div class="bar"><i style="width:0"></i></div><div class="mono muted" id="dProgTxt"></div></div>
+      <div id="dErr" class="box err hidden"></div>
+    </div>
+
+    <div class="card" id="rCard">
+      <h2>Restore</h2>
+      <p class="hint">Into which database, and what to restore. Nothing runs until you press Restore, and everything runs in one transaction: any error rolls it all back.</p>
+      <div class="grid"><div class="full"><label class="f">Target database (Vault connection)</label><select id="rTarget"></select></div></div>
+      <h3>What to restore</h3>
+      <div class="opts" id="rMode">
+        <div class="opt sel" data-v="all"><b>Everything</b><span class="d">Structure and data. The target must be empty.</span></div>
+        <div class="opt" data-v="schema_only"><b>Structure only</b><span class="d">All definitions, no rows.</span></div>
+        <div class="opt" data-v="data_only"><b>Data only</b><span class="d">Rows into tables that already exist.</span></div>
+        <div class="opt" data-v="pre_data"><b>Phase 1 · before data</b><span class="d">Tables, types, functions, sequences.</span></div>
+        <div class="opt" data-v="data"><b>Phase 2 · data</b><span class="d">The rows (into the phase-1 structure).</span></div>
+        <div class="opt" data-v="post_data"><b>Phase 3 · after data</b><span class="d">Indexes, constraints, triggers. Loading data before indexes is much faster.</span></div>
+        <div class="opt" data-v="schemas"><b>Choose schemas</b><span class="d">Everything inside the schemas you tick.</span></div>
+        <div class="opt" data-v="tables"><b>Choose tables</b><span class="d">Tables with their indexes, constraints, sequences, partitions.</span></div>
+        <div class="opt" data-v="objects"><b>Choose objects</b><span class="d">Any single item: one index, one view, one function…</span></div>
+      </div>
+      <p class="hint hidden" id="rPlainNote">This is a plain-SQL dump: it can only be restored whole. Take or upload a custom-format dump for partial restores.</p>
+
+      <div id="rPick" class="hidden">
+        <div class="row" style="margin-top:12px"><h3 id="rPickTitle" style="margin:0"></h3><span class="spacer"></span><input type="text" id="rFilter" placeholder="filter…" style="width:200px" /><button class="small" id="rAll">Tick shown</button><button class="small" id="rNone">Clear</button><span class="muted mono" id="rCount"></span></div>
+        <div class="scroll" style="margin-top:6px"><table class="t"><thead id="rHead"></thead><tbody id="rBody"></tbody></table></div>
+        <div id="rTblOpts" class="row hidden" style="margin-top:8px">
+          <label class="check"><input type="checkbox" id="oStruct" checked /> Structure</label>
+          <label class="check"><input type="checkbox" id="oData" checked /> Data</label>
+          <label class="check" title="Extensions, the schemas, and the types/domains/functions the selection needs"><input type="checkbox" id="oShared" checked /> Shared objects (extensions, types, functions)</label>
+          <label class="check" title="A foreign key is included only when the table it points at is restored too"><input type="checkbox" id="oFk" checked /> Foreign keys between chosen tables</label>
+        </div>
+      </div>
+
+      <h3>Options</h3>
+      <div class="grid">
+        <div class="full"><label class="check"><input type="checkbox" id="oSingle" checked /> <span>One transaction, stop at the first error. <span class="muted">A failed or stopped restore leaves the target untouched.</span></span></label></div>
+        <div class="full"><label class="check"><input type="checkbox" id="oOwner" /> <span>Keep owners and GRANTs from the dump <span class="muted">(the roles must exist on the target).</span></span></label></div>
+        <div class="full"><label class="check"><input type="checkbox" id="oReplace" /> <span><b style="color:var(--err)">Replace existing.</b> <span class="muted">Drops what is in the way first — whole schemas, or the chosen objects — then restores, all in the same transaction. Destroys data in those objects. Custom-format dumps only.</span></span></label></div>
+      </div>
+      <div class="row" style="margin-top:12px"><button id="btnPre">Preflight</button><button class="primary" id="btnRestore">Restore</button><span class="hint" id="rMsg" style="margin:0"></span></div>
+      <div id="preBox" class="hidden"></div>
+    </div>
+
+    <div class="card hidden" id="resCard"><h2>Last restore</h2><div id="resBody"></div></div>
+    <div class="card"><h2>Log</h2><div class="log" id="log"></div></div>
+    <div class="card"><h2>History</h2><table class="t"><thead><tr><th>When</th><th>What</th><th>Result</th></tr></thead><tbody id="hist"></tbody></table></div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtB = n => { n = Number(n || 0); const u = ['B','KB','MB','GB','TB']; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + ' ' + u[i]; };
+const when = s => s ? new Date(s).toLocaleString() : '';
+let st = { view: 'home', id: null, dump: null, mode: 'all', contents: null, picked: new Set(), poll: null, conns: [], fmt: 'custom', scope: 'all', restoreSig: null };
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: opts.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }, ...opts, body: opts.body && !(opts.body instanceof FormData) ? JSON.stringify(opts.body) : opts.body });
+  let data = null; try { data = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error((data && data.detail) ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : `HTTP ${r.status}`);
+  return data;
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add('hidden'), 9000); }
+const guard = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
+function show(v) { st.view = v; $('v-home').classList.toggle('hidden', v !== 'home'); $('v-dump').classList.toggle('hidden', v !== 'dump'); clearInterval(st.poll); st.poll = null; }
+async function loadConns() {
+  st.conns = (await api('connections')).connections;
+  const opts = st.conns.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  $('nSource').innerHTML = opts; $('rTarget').innerHTML = opts;
+  if (!st.conns.length) toast('No saved connections — add some on the Vault page first.');
+}
+function pickOpt(boxId, key) { document.querySelectorAll(`#${boxId} .opt`).forEach(o => o.onclick = () => { st[key] = o.dataset.v; document.querySelectorAll(`#${boxId} .opt`).forEach(x => x.classList.toggle('sel', x === o)); }); }
+
+/* ---------------- home ---------------- */
+async function showHome() {
+  show('home'); await loadConns();
+  const d = await api('dumps');
+  $('disk').textContent = `${fmtB(d.disk.dumps_bytes)} of dumps · ${fmtB(d.disk.free_bytes)} free`;
+  $('dumpList').innerHTML = d.dumps.length ? d.dumps.map(x => {
+    const b = x.running ? '<span class="badge b-run">running</span>' : x.status === 'ready' ? '<span class="badge b-ok">ready</span>' : '<span class="badge b-failed">failed</span>';
+    return `<div class="dump"><div style="flex:1"><div class="name" data-id="${esc(x.id)}">${esc(x.label)}</div>
+      <div class="meta">${esc(x.source_db || x.source_desc || '')} · ${x.status === 'ready' ? fmtB(x.size_bytes) : (x.error ? esc(x.error.slice(0, 80)) : '')} · ${when(x.created_at)}${x.server_version ? ' · PG ' + esc(x.server_version.split(' ')[0]) : ''}</div></div>
+      <span class="badge">${x.fmt === 'plain' ? 'sql.gz' : 'custom'}</span>${x.scope !== 'all' ? `<span class="badge b-warn">${x.scope === 'schema' ? 'structure only' : 'data only'}</span>` : ''}${x.origin === 'upload' ? '<span class="badge">uploaded</span>' : ''}${b}
+      ${x.status === 'ready' ? `<a class="btn" href="dumps/${esc(x.id)}/file"><button class="small">⬇ Download</button></a><button class="small" data-open="${esc(x.id)}">Restore…</button>` : ''}</div>`;
+  }).join('') : '<p class="hint">No dumps yet — take one, or upload a dump file.</p>';
+  $('dumpList').querySelectorAll('[data-id],[data-open]').forEach(el => el.onclick = guard(() => openDump(el.dataset.id || el.dataset.open)));
+}
+$('btnNew').onclick = () => { $('newCard').classList.remove('hidden'); $('upCard').classList.add('hidden'); };
+$('btnNewCancel').onclick = () => $('newCard').classList.add('hidden');
+$('btnUpBtn').onclick = () => { $('upCard').classList.remove('hidden'); $('newCard').classList.add('hidden'); };
+$('btnUpCancel').onclick = () => $('upCard').classList.add('hidden');
+pickOpt('nFmt', 'fmt'); pickOpt('nScope', 'scope');
+$('btnGo').onclick = guard(async () => {
+  const r = await api('dumps', { method: 'POST', body: { source_conn_id: $('nSource').value, label: $('nLabel').value.trim() || null, fmt: st.fmt, scope: st.scope, keep_owner: $('nOwner').checked } });
+  $('newCard').classList.add('hidden'); await openDump(r.id);
+});
+$('btnUp').onclick = guard(async () => {
+  const f = $('upFile').files[0]; if (!f) return toast('Choose a file first.');
+  $('upMsg').textContent = `Uploading ${f.name} (${fmtB(f.size)})…`; const fd = new FormData(); fd.append('file', f);
+  try { const r = await api('dumps/upload', { method: 'POST', body: fd }); $('upMsg').textContent = ''; $('upCard').classList.add('hidden'); await openDump(r.id); }
+  finally { $('upMsg').textContent = ''; }
+});
+
+/* ---------------- one dump ---------------- */
+async function openDump(id) {
+  show('dump'); st.id = id; st.contents = null; st.picked = new Set(); st.restoreSig = null; $('preBox').classList.add('hidden'); $('rPick').classList.add('hidden');
+  await loadConns(); setMode('all');
+  const d = await api(`dumps/${id}`); render(d); $('dDl').href = `dumps/${id}/file`;
+  st.poll = setInterval(guard(async () => { if (st.view === 'dump') render(await api(`dumps/${st.id}/status`)); }), 1200);
+}
+function render(d) {
+  const x = d.dump, run = d.run; st.dump = x;
+  $('dName').textContent = x.label; $('dFmt').textContent = x.fmt === 'plain' ? 'sql.gz' : 'custom';
+  $('dState').textContent = run.running ? run.kind + '…' : x.status; $('dState').className = 'badge ' + (run.running ? 'b-run' : x.status === 'ready' ? 'b-ok' : 'b-failed');
+  $('dMeta').textContent = [x.source_db && `database ${x.source_db}`, x.status === 'ready' && fmtB(x.size_bytes), x.server_version && `PostgreSQL ${x.server_version.split(' ')[0]}`, when(x.created_at), x.origin === 'upload' && 'uploaded', x.scope !== 'all' && (x.scope === 'schema' ? 'structure only' : 'data only')].filter(Boolean).join(' · ');
+  const ready = x.status === 'ready';
+  $('btnDl').disabled = !ready; $('btnAgain').disabled = run.running || x.origin !== 'dump'; $('btnDel').disabled = run.running; $('btnStop').disabled = !run.running || run.stopping;
+  $('btnRestore').disabled = run.running || !ready; $('btnPre').disabled = run.running || !ready;
+  $('dErr').classList.toggle('hidden', !(x.status === 'failed' && x.error)); $('dErr').textContent = x.error || '';
+  const p = run.progress || {};
+  $('dProg').classList.toggle('hidden', !(run.running && run.kind === 'dump') && !(run.running && run.kind === 'restore' && p.total));
+  if (run.running) {
+    if (run.kind === 'dump') { const pct = p.db_size ? Math.min(99, Math.round(100 * (p.bytes || 0) / (p.db_size * 0.5))) : 0; $('dProg').querySelector('i').style.width = pct + '%'; $('dProgTxt').textContent = `${fmtB(p.bytes || 0)} written · database is ${fmtB(p.db_size || 0)} · ${p.tables || 0} table(s) dumped`; }
+    else { const pct = p.total ? Math.min(100, Math.round(100 * (p.done || 0) / p.total)) : 0; $('dProg').querySelector('i').style.width = pct + '%'; $('dProgTxt').textContent = `restoring: ${(p.done || 0).toLocaleString()} of ${(p.total || 0).toLocaleString()} items`; }
+  }
+  const el = $('log'), atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  el.innerHTML = run.logs.map(l => `<span class="t">${esc(l.ts.slice(11, 19))}</span> <span class="l-${l.level}">${esc(l.msg)}</span>`).join('\n'); if (atBottom) el.scrollTop = el.scrollHeight;
+  const plain = x.fmt === 'plain';
+  document.querySelectorAll('#rMode .opt').forEach(o => o.classList.toggle('off', plain && o.dataset.v !== 'all')); $('rPlainNote').classList.toggle('hidden', !plain);
+  if (plain && st.mode !== 'all') setMode('all'); $('oReplace').disabled = plain;
+  $('rCard').classList.toggle('hidden', !ready && !run.running);
+  const runs = d.runs || []; $('hist').innerHTML = runs.map(r => `<tr><td>${when(r.started_at)}</td><td>${esc(r.kind)}${r.result && r.result.options ? ' · ' + esc((r.result.options.selection || {}).mode || 'all') : ''}</td><td><span class="badge ${r.status === 'ok' ? 'b-ok' : r.status === 'running' ? 'b-run' : r.status === 'cancelled' ? 'b-warn' : 'b-failed'}">${esc(r.status)}</span></td></tr>`).join('');
+  const lr = runs.find(r => r.kind === 'restore' && r.status !== 'running'); const sig = lr ? lr.id + lr.status : null;
+  $('resCard').classList.toggle('hidden', !lr); if (lr && sig !== st.restoreSig) { st.restoreSig = sig; showResult(lr); }
+}
+function showResult(r) {
+  const res = r.result || {}, f = res.failure; let h = `<div class="row"><span class="badge ${r.status === 'ok' ? 'b-ok' : r.status === 'cancelled' ? 'b-warn' : 'b-failed'}">${esc(r.status)}</span><span class="muted" style="font-size:.76rem">${when(r.finished_at)}${res.seconds ? ' · ' + res.seconds + 's' : ''} · ${esc((res.info || {}).target || '')}</span></div>`;
+  if ((res.errors || []).length) h += `<div class="box err"><ul>${res.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>`;
+  if (f) h += `<div class="box err"><b>Restore failed${f.line ? ' at line ' + f.line : ''}:</b> ${esc(f.message)}${f.command ? `<pre class="ctx">${esc(f.command)}</pre>` : ''}<div>It ran in one transaction, so <b>nothing was applied</b> — the target is exactly as it was.</div></div>`;
+  if (r.status === 'ok' && res.preview) h += `<div class="box ok">Restored ${res.preview.entries.toLocaleString()} item(s): ${Object.entries(res.preview.by_type).map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>`;
+  else if (r.status === 'ok') h += '<div class="box ok">Restore finished.</div>';
+  $('resBody').innerHTML = h;
+}
+$('btnAgain').onclick = guard(async () => { const r = await api(`dumps/${st.id}/again`, { method: 'POST' }); await openDump(r.id); });
+$('btnStop').onclick = guard(async () => { await api(`dumps/${st.id}/stop`, { method: 'POST' }); });
+$('btnDel').onclick = guard(async () => { if (!confirm('Delete this dump file and its record? This cannot be undone.')) return; await api(`dumps/${st.id}`, { method: 'DELETE' }); await showHome(); });
+
+/* ---------------- restore options ---------------- */
+function setMode(m) {
+  st.mode = m; st.picked = new Set(); st.contents = null;
+  document.querySelectorAll('#rMode .opt').forEach(o => o.classList.toggle('sel', o.dataset.v === m));
+  const picking = ['schemas', 'tables', 'objects'].includes(m); $('rPick').classList.toggle('hidden', !picking); $('rTblOpts').classList.toggle('hidden', m !== 'tables' && m !== 'schemas');
+  if (picking) loadPick().catch(e => toast(e.message));
+}
+document.querySelectorAll('#rMode .opt').forEach(o => o.onclick = () => setMode(o.dataset.v));
+async function loadPick() {
+  $('rPickTitle').textContent = 'Loading the dump’s contents…'; $('rBody').innerHTML = '';
+  st.contents = await api(`dumps/${st.id}/contents`); renderPick();
+}
+function renderPick() {
+  const c = st.contents, f = $('rFilter').value.toLowerCase(), m = st.mode;
+  let rows = [], head = '';
+  if (m === 'schemas') { $('rPickTitle').textContent = 'Schemas'; head = '<tr><th></th><th>Schema</th><th>Objects</th></tr>'; rows = c.schemas.filter(s => !f || s.name.toLowerCase().includes(f)).map(s => ({ key: s.name, html: `<td><b>${esc(s.name)}</b></td><td class="muted">${Object.entries(s.counts).map(([k, n]) => k + ' ' + n).join(', ')}</td>` })); }
+  else if (m === 'tables') { $('rPickTitle').textContent = 'Tables, views and materialized views'; head = '<tr><th></th><th>Name</th><th>Kind</th><th>Data</th><th>Indexes</th><th>Constraints</th><th>Triggers</th></tr>';
+    rows = c.relations.filter(r => !f || `${r.schema}.${r.name}`.toLowerCase().includes(f)).map(r => ({ key: `${r.schema}.${r.name}`, html: `<td><b>${esc(r.schema)}.${esc(r.name)}</b>${r.partition_of ? ` <span class="badge">partition of ${esc(r.partition_of)}</span>` : ''}</td><td>${esc(r.kind)}</td><td>${r.has_data ? '✓' : '–'}</td><td>${r.indexes}</td><td>${r.constraints}</td><td>${r.triggers}</td>` })); }
+  else { $('rPickTitle').textContent = `Every object (${c.objects.length.toLocaleString()})`; head = '<tr><th></th><th>Type</th><th>Schema</th><th>Name</th></tr>';
+    rows = c.objects.filter(o => !f || `${o.type} ${o.schema} ${o.name}`.toLowerCase().includes(f)).slice(0, 600).map(o => ({ key: String(o.id), html: `<td class="muted">${esc(o.type)}</td><td>${esc(o.schema || '')}</td><td>${esc(o.name)}</td>` })); }
+  $('rHead').innerHTML = head; st.shown = rows.map(r => r.key);
+  $('rBody').innerHTML = rows.map(r => `<tr><td style="width:28px"><input type="checkbox" data-k="${esc(r.key)}" ${st.picked.has(r.key) ? 'checked' : ''}></td>${r.html}</tr>`).join('') + (m === 'objects' && rows.length === 600 ? '<tr><td></td><td colspan="3" class="muted">Showing the first 600 — use the filter to narrow down.</td></tr>' : '');
+  $('rBody').querySelectorAll('input').forEach(cb => cb.onchange = () => { cb.checked ? st.picked.add(cb.dataset.k) : st.picked.delete(cb.dataset.k); $('rCount').textContent = `${st.picked.size} selected`; });
+  $('rCount').textContent = `${st.picked.size} selected`;
+}
+$('rFilter').oninput = () => st.contents && renderPick();
+$('rAll').onclick = () => { (st.shown || []).forEach(k => st.picked.add(k)); renderPick(); };
+$('rNone').onclick = () => { st.picked = new Set(); renderPick(); };
+function buildBody() {
+  const m = st.mode, sel = { mode: m };
+  if (m === 'schemas') { sel.schemas = [...st.picked]; sel.structure = $('oStruct').checked; sel.data = $('oData').checked; sel.shared = $('oShared').checked; }
+  if (m === 'tables') { sel.tables = [...st.picked]; sel.structure = $('oStruct').checked; sel.data = $('oData').checked; sel.shared = $('oShared').checked; sel.foreign_keys = $('oFk').checked; }
+  if (m === 'objects') sel.object_ids = [...st.picked].map(Number);
+  if (['schemas', 'tables', 'objects'].includes(m) && !st.picked.size) throw new Error('Tick at least one item to restore.');
+  return { target_conn_id: $('rTarget').value, selection: sel, single_transaction: $('oSingle').checked, replace_existing: $('oReplace').checked, keep_owner: $('oOwner').checked };
+}
+$('oReplace').onchange = () => { if ($('oReplace').checked) $('oSingle').checked = true; $('oSingle').disabled = $('oReplace').checked; };
+$('btnPre').onclick = guard(async () => {
+  const body = buildBody(), box = $('preBox'); box.classList.remove('hidden'); box.innerHTML = '<div class="box warn">Checking the target…</div>';
+  const r = await api(`dumps/${st.id}/restore/preflight`, { method: 'POST', body });
+  const pv = r.preview ? `<div style="margin-top:6px">Would restore ${r.preview.entries.toLocaleString()} item(s): ${Object.entries(r.preview.by_type).map(([k, n]) => `${esc(k)} ${n}`).join(', ')}</div>` : '';
+  box.innerHTML = `<div class="box ${r.errors.length ? 'err' : 'ok'}"><b>${r.errors.length ? 'Preflight found problems' : 'Preflight passed'}</b>${r.info.target ? ' — ' + esc(r.info.target) : ''}
+    ${r.errors.length ? `<ul>${r.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}${r.warnings.length ? `<div class="box warn"><ul>${r.warnings.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}${pv}</div>`;
+});
+$('btnRestore').onclick = guard(async () => {
+  const body = buildBody(), tgt = $('rTarget').selectedOptions[0].text;
+  const what = { all: 'EVERYTHING', schema_only: 'the STRUCTURE', data_only: 'the DATA', pre_data: 'phase 1 (before data)', data: 'phase 2 (data)', post_data: 'phase 3 (after data)', schemas: `${st.picked.size} schema(s)`, tables: `${st.picked.size} table(s)`, objects: `${st.picked.size} object(s)` }[st.mode];
+  if (!confirm(`Restore ${what} into “${tgt}”?\n\n${body.replace_existing ? '⚠ REPLACE EXISTING is on: objects in the way are DROPPED first.\n\n' : ''}It runs in one transaction; any error rolls everything back.`)) return;
+  await api(`dumps/${st.id}/restore`, { method: 'POST', body }); $('preBox').classList.add('hidden'); st.restoreSig = null; render(await api(`dumps/${st.id}/status`));
+});
+$('home').onclick = guard(showHome);
+api('tools').then(t => { if (!t.ok) { const w = $('toolWarn'); w.textContent = t.error; w.classList.remove('hidden'); } }).catch(() => {});
+showHome().catch(e => toast(e.message));
+</script>
+</body>
+</html>

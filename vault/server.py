@@ -90,6 +90,42 @@ async def test_connection(body: TestConnectionRequest) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+class TestSshRequest(BaseModel):
+    host: str
+    port: int = 22
+    username: str
+    auth: str = "password"
+    password: str | None = None
+    private_key: str | None = None
+    passphrase: str | None = None
+    host_key: dict | None = None
+
+
+def _test_ssh_sync(body: TestSshRequest) -> dict:
+    """Two steps, so no credential is ever sent to an unverified host: (1) with no host_key, fetch the
+    server's key WITHOUT logging in and hand its fingerprint back for the user to confirm; (2) with the
+    confirmed host_key, do a real login using that pinned key. Nothing is stored here."""
+    from core import ssh_client
+
+    if not body.host_key:
+        return {"ok": False, "stage": "confirm", "host_key": ssh_client.probe_host_key(body.host, body.port)}
+    data = body.model_dump()
+    client = ssh_client.open_client(data)
+    try:
+        return {"ok": True, "banner": client.get_transport().remote_version}
+    finally:
+        client.close()
+
+
+@app.post("/test-ssh-server")
+async def test_ssh_server(body: TestSshRequest) -> JSONResponse:
+    """Used by the "Add SSH server" form. Always answers 200: a failed test is a normal result."""
+    try:
+        return JSONResponse(await asyncio.to_thread(_test_ssh_sync, body))
+    except Exception as exc:  # noqa: BLE001 — ssh_client maps its failures to plain messages
+        return JSONResponse({"ok": False, "error": scrub_password(str(exc)) or exc.__class__.__name__})
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home() -> HTMLResponse:
     return HTMLResponse(_UI_PATH.read_text(), headers={"Cache-Control": "no-cache"})

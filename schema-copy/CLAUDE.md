@@ -47,7 +47,7 @@ rolls back.
 
 | Concern | File |
 |---|---|
-| Spawning `pg_dump`/`psql` (bundled binaries, env, cancel, argv) | `pgtools.py` |
+| Spawning `pg_dump`/`psql` (bundled binaries, env, cancel, argv) | `pgtools.py` (thin re-export of `../core/pgclient.py`, shared with data-dumper) |
 | Read-only catalog queries: schemas, extensions, foreign tables, target-emptiness, the per-category object-name sets used for verification | `catalog.py` |
 | Preflight, script building, applying, verification, one run end to end | `engine.py` |
 | Projects + last-run result (SQLite, `schema_copy_data` volume) and the script files | `state_store.py` |

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SSH &amp; SFTP</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef; --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --ok: #15803d; --ok-bg: rgba(22,163,74,0.10); --warn: #b45309; --warn-bg: rgba(217,119,6,0.12);
+    --err: #b91c1c; --err-bg: rgba(220,38,38,0.08); --err-border: rgba(220,38,38,0.3); --run-bg: rgba(79,94,240,0.10);
+    --mono: ui-monospace, Menlo, Consolas, monospace;
+  }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 24px 20px 70px; }
+  header, .wrap { max-width: 1040px; margin: 0 auto; }
+  header { margin-bottom: 16px; } header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; } header h1 span { color: var(--accent); }
+  header p { color: var(--muted); font-size: .85rem; margin-top: 2px; max-width: 740px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  .hint { font-size: .78rem; color: var(--muted); line-height: 1.5; } .muted { color: var(--muted); } .mono { font-family: var(--mono); font-size: .76rem; }
+  button { cursor: pointer; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font-weight: 600; font-size: .82rem; padding: 7px 13px; font-family: inherit; }
+  button:hover:not(:disabled) { border-color: var(--accent); } button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; } button.danger { color: var(--err); } button.small { padding: 3px 9px; font-size: .72rem; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .spacer { flex: 1; }
+  .badge { background: var(--bg); color: var(--muted); border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+  .b-ok { background: var(--ok-bg); color: var(--ok); border-color: transparent; } .b-failed { background: var(--err-bg); color: var(--err); border-color: transparent; }
+  .b-run { background: var(--run-bg); color: var(--accent); border-color: transparent; } .b-warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+  input[type=text], select, textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: .85rem; font-family: inherit; }
+  textarea { font-family: var(--mono); font-size: .8rem; resize: vertical; }
+  .check { display: flex; align-items: center; gap: 6px; font-size: .82rem; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .tab { padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: .85rem; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab.sel { color: var(--accent); border-bottom-color: var(--accent); }
+  table.t { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  table.t th { text-align: left; font-size: .66rem; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  table.t td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; } table.t tr:last-child td { border-bottom: none; }
+  table.t tr.dir td.n { cursor: pointer; font-weight: 600; } table.t tr.dir td.n:hover { color: var(--accent); }
+  .scroll { max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+  .drop { border: 2px dashed var(--border); border-radius: 10px; padding: 12px; text-align: center; font-size: .82rem; color: var(--muted); margin-bottom: 10px; }
+  .drop.over { border-color: var(--accent); background: var(--run-bg); color: var(--accent); }
+  .bar { height: 7px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; min-width: 110px; } .bar > i { display: block; height: 100%; background: var(--accent); }
+  .box { border-radius: 8px; padding: 10px 12px; font-size: .82rem; margin: 10px 0; line-height: 1.5; }
+  .box.err { background: var(--err-bg); color: var(--err); border: 1px solid var(--err-border); } .box.warn { background: var(--warn-bg); color: var(--warn); } .box.ok { background: var(--ok-bg); color: var(--ok); }
+  .log { background: #11142a; color: #d7dbef; border-radius: 8px; padding: 10px 12px; font-family: var(--mono); font-size: .76rem; height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+  .log .l-warn { color: #fbbf24; } .log .l-error { color: #f87171; } .log .l-ok { color: #4ade80; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SSH &amp; SFTP<span>.</span></h1>
+  <p>Browse files, upload and download, and run commands on servers saved in the Vault. Uploads are checked, resumable and never overwrite unless you say so. Add or remove servers on the Vault page.</p>
+</header>
+<div class="wrap">
+  <div id="toast" class="box err hidden"></div>
+
+  <div class="card">
+    <div class="row">
+      <div style="min-width:260px;flex:1;max-width:420px"><select id="srv"></select></div>
+      <button class="primary" id="btnConnect">Connect</button>
+      <span class="badge" id="srvState"></span><span class="badge b-warn hidden" id="srvRo">read-only</span>
+      <span class="spacer"></span><span class="mono muted" id="srvInfo"></span>
+    </div>
+    <div id="trustBox" class="box warn hidden">
+      <b>New server — confirm its fingerprint before trusting it.</b>
+      <div class="mono" id="trustFp" style="margin:6px 0;word-break:break-all"></div>
+      <div class="hint" style="color:inherit">Compare with the fingerprint from the server's administrator (<span class="mono">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</span>). Once trusted, this tool refuses any server that presents a different key.</div>
+      <div class="row" style="margin-top:8px"><button class="primary" id="btnTrust">The fingerprint matches — trust this server</button></div>
+    </div>
+    <div id="mismatchBox" class="box err hidden"></div>
+  </div>
+
+  <div class="tabs"><div class="tab sel" data-tab="files">Files</div><div class="tab" data-tab="cmd">Commands</div><div class="tab" data-tab="xfer">Transfers <span class="badge hidden" id="xferN"></span></div></div>
+
+  <!-- ===== files ===== -->
+  <section id="t-files">
+    <div class="card">
+      <div class="row">
+        <button class="small" id="btnUp">↑ Up</button>
+        <input type="text" id="path" style="flex:1;min-width:240px;font-family:var(--mono)" placeholder="/path/on/server" />
+        <button class="small" id="btnGo">Go</button><button class="small" id="btnRefresh">Refresh</button><button class="small" id="btnMkdir">New folder</button>
+      </div>
+      <div class="drop" id="drop" style="margin-top:10px">Drop files here to upload into this folder, or <button class="small" id="btnPick">choose files…</button><input type="file" id="pick" multiple class="hidden" />
+        <label class="check" style="justify-content:center;margin-top:6px"><input type="checkbox" id="overwrite" /> Replace files that already exist (otherwise they are refused)</label></div>
+      <div class="scroll"><table class="t"><thead><tr><th>Name</th><th style="width:90px">Size</th><th style="width:150px">Modified</th><th style="width:90px">Mode</th><th style="width:210px"></th></tr></thead><tbody id="list"></tbody></table></div>
+      <div class="hint" id="listNote" style="margin-top:6px"></div>
+    </div>
+  </section>
+
+  <!-- ===== commands ===== -->
+  <section id="t-cmd" class="hidden">
+    <div class="card">
+      <textarea id="cmd" rows="3" placeholder="one command, e.g.  df -h   or   tail -n 50 /var/log/syslog"></textarea>
+      <div class="row" style="margin-top:8px"><button class="primary" id="btnRun">Run</button><button class="danger" id="btnStopCmd" disabled>Stop</button>
+        <label class="muted" style="font-size:.78rem">Time limit</label><select id="timeout" style="width:auto"><option value="30">30 s</option><option value="60" selected>1 min</option><option value="300">5 min</option><option value="900">15 min</option><option value="1800">30 min</option></select>
+        <span class="badge" id="cmdState"></span><span class="spacer"></span><span class="hint">Runs one non-interactive command. Don't put passwords in it — the command text is saved in the history and visible in the server's process list.</span></div>
+      <div class="log" id="out" style="margin-top:10px"></div>
+    </div>
+    <div class="card"><b style="font-size:.9rem">Recent commands</b><table class="t" style="margin-top:6px"><tbody id="hist"></tbody></table></div>
+  </section>
+
+  <!-- ===== transfers ===== -->
+  <section id="t-xfer" class="hidden">
+    <div class="card"><b style="font-size:.9rem">Uploads</b>
+      <p class="hint">Each upload is received here first, then sent to the server. If the connection drops it reconnects and resumes; a failed upload keeps its staged copy so Retry costs nothing.</p>
+      <table class="t"><thead><tr><th>File</th><th>Server → folder</th><th style="width:150px">Progress</th><th>Status</th><th style="width:190px"></th></tr></thead><tbody id="xfers"></tbody></table></div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtB = n => { n = Number(n || 0); const u = ['B','KB','MB','GB','TB']; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + ' ' + u[i]; };
+const when = t => t ? new Date(t * 1000).toLocaleString() : '';
+let st = { servers: [], id: null, path: null, connected: false, readOnly: false, cmdId: null, cmdSince: 0, poll: null };
+
+class ApiError extends Error { constructor(status, detail) { super(typeof detail === 'string' ? detail : (detail && detail.message) || 'Request failed'); this.status = status; this.detail = detail; } }
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: opts.body ? { 'Content-Type': 'application/json' } : {}, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  let data = null; try { data = await r.json(); } catch (e) {}
+  if (!r.ok) throw new ApiError(r.status, data ? data.detail : null);
+  return data;
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add('hidden'), 9000); }
+const guard = fn => async (...a) => { try { await fn(...a); } catch (e) { handle(e); } };
+function handle(e) {
+  if (e instanceof ApiError && e.status === 412 && e.detail && e.detail.code === 'host_key_unverified') return showTrust(e.detail.fingerprint, e.detail.key_type);
+  if (e instanceof ApiError && e.status === 409 && e.detail && e.detail.code === 'host_key_changed') return showMismatch(e.message);
+  toast(e.message);
+}
+function showTrust(fp, type) { $('trustFp').textContent = `${type || ''}  ${fp}`; $('trustBox').classList.remove('hidden'); $('trustBox').dataset.fp = fp; setState('not trusted yet', 'b-warn'); }
+function showMismatch(msg) { $('mismatchBox').textContent = msg; $('mismatchBox').classList.remove('hidden'); setState('HOST KEY CHANGED', 'b-failed'); }
+function setState(text, cls) { $('srvState').textContent = text; $('srvState').className = 'badge ' + (cls || ''); }
+const srv = () => st.servers.find(s => s.id === st.id);
+
+/* ---------------- servers ---------------- */
+async function loadServers() {
+  st.servers = (await api('servers')).servers;
+  $('srv').innerHTML = st.servers.length ? st.servers.map(s => `<option value="${esc(s.id)}">${esc(s.name)} — ${esc(s.username)}@${esc(s.host)}</option>`).join('') : '<option>No SSH servers saved — add one on the Vault page</option>';
+  $('btnConnect').disabled = !st.servers.length;
+  if (st.servers.length) { st.id = st.servers[0].id; selectServer(); }
+}
+function selectServer() {
+  st.id = $('srv').value || st.id; st.connected = false; const s = srv(); if (!s) return;
+  $('trustBox').classList.add('hidden'); $('mismatchBox').classList.add('hidden'); $('list').innerHTML = ''; st.path = null;
+  $('srvRo').classList.toggle('hidden', !s.read_only); st.readOnly = s.read_only;
+  setState(s.pinned ? 'key trusted' : 'not connected', s.pinned ? 'b-ok' : ''); $('srvInfo').textContent = s.pinned ? s.fingerprint : '';
+  applyReadOnly();
+}
+$('srv').onchange = selectServer;
+function applyReadOnly() { for (const id of ['btnMkdir', 'btnRun']) $(id).disabled = st.readOnly; $('drop').classList.toggle('hidden', st.readOnly); }
+$('btnConnect').onclick = guard(async () => {
+  setState('connecting…', 'b-run'); const r = await api(`servers/${st.id}/check`, { method: 'POST' });
+  if (r.ok) { $('trustBox').classList.add('hidden'); $('mismatchBox').classList.add('hidden'); $('srvInfo').textContent = r.banner || ''; await loadServers.keep(); await browse(st.path); setState('connected', 'b-ok'); }
+  else if (r.needs_trust) showTrust(r.needs_trust.fingerprint, r.needs_trust.key_type);
+  else if (r.mismatch) showMismatch(r.error);
+  else { setState('failed', 'b-failed'); toast(r.error || 'Could not connect.'); }
+});
+loadServers.keep = async () => { const keep = st.id; st.servers = (await api('servers')).servers; st.id = keep; };
+$('btnTrust').onclick = guard(async () => { await api(`servers/${st.id}/trust`, { method: 'POST', body: { fingerprint: $('trustBox').dataset.fp } }); $('trustBox').classList.add('hidden'); await loadServers.keep(); $('btnConnect').click(); });
+
+/* ---------------- files ---------------- */
+async function browse(path) {
+  const r = await api(`servers/${st.id}/ls` + (path ? `?path=${encodeURIComponent(path)}` : '')); st.path = r.path; $('path').value = r.path; st.parent = r.parent; st.connected = true;
+  $('list').innerHTML = r.entries.map(e => `<tr class="${e.is_dir ? 'dir' : ''}"><td class="n" data-n="${esc(e.name)}">${e.is_dir ? '📁' : '📄'} ${esc(e.name)}${e.is_link ? ' <span class="badge">link</span>' : ''}</td><td class="mono muted">${e.is_dir ? '' : fmtB(e.size)}</td><td class="muted">${when(e.mtime)}</td><td class="mono muted">${esc(e.mode)}</td>
+    <td style="text-align:right">${e.is_dir ? '' : `<button class="small" data-act="dl" data-n="${esc(e.name)}">Download</button> `}${st.readOnly ? '' : `<button class="small" data-act="mv" data-n="${esc(e.name)}">Rename</button> <button class="small danger" data-act="rm" data-n="${esc(e.name)}" data-d="${e.is_dir ? 1 : 0}">Delete</button>`}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Empty folder.</td></tr>';
+  $('listNote').textContent = r.truncated ? 'Only the first 5,000 entries are shown.' : `${r.entries.length} item(s)`;
+}
+const join = (d, n) => (d.endsWith('/') ? d : d + '/') + n;
+$('list').onclick = guard(async e => {
+  const b = e.target.closest('button'), td = e.target.closest('td.n');
+  if (td && td.parentElement.classList.contains('dir')) return browse(join(st.path, td.dataset.n));
+  if (!b) return; const full = join(st.path, b.dataset.n);
+  if (b.dataset.act === 'dl') { window.location = `servers/${st.id}/download?path=${encodeURIComponent(full)}`; }
+  else if (b.dataset.act === 'mv') { const nn = prompt('New name:', b.dataset.n); if (!nn || nn === b.dataset.n) return; await api(`servers/${st.id}/rename`, { method: 'POST', body: { src: full, dst: join(st.path, nn) } }); await browse(st.path); }
+  else if (b.dataset.act === 'rm') { if (!confirm(`Delete ${b.dataset.d === '1' ? 'the empty folder' : 'the file'} “${b.dataset.n}” on the server?\n\nThis cannot be undone.`)) return; await api(`servers/${st.id}/delete`, { method: 'POST', body: { path: full } }); await browse(st.path); }
+});
+$('btnGo').onclick = guard(() => browse($('path').value.trim()));
+$('path').onkeydown = e => { if (e.key === 'Enter') $('btnGo').click(); };
+$('btnUp').onclick = guard(() => st.parent ? browse(st.parent) : null);
+$('btnRefresh').onclick = guard(() => browse(st.path));
+$('btnMkdir').onclick = guard(async () => { const n = prompt('New folder name:'); if (!n) return; await api(`servers/${st.id}/mkdir`, { method: 'POST', body: { path: join(st.path, n) } }); await browse(st.path); });
+$('btnPick').onclick = () => $('pick').click();
+$('pick').onchange = () => uploadFiles([...$('pick').files]);
+const drop = $('drop'); ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); })); ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => uploadFiles([...e.dataTransfer.files]));
+async function uploadFiles(files) {
+  if (!st.connected || !st.path) return toast('Connect and open a folder first.');
+  for (const f of files) {
+    $('listNote').textContent = `Sending ${f.name} to the toolbox… 0%`;
+    try {
+      await new Promise((res, rej) => {
+        const x = new XMLHttpRequest(), fd = new FormData(); fd.append('file', f);
+        x.open('POST', `servers/${st.id}/upload?dir=${encodeURIComponent(st.path)}&overwrite=${$('overwrite').checked}`);
+        x.upload.onprogress = ev => { if (ev.lengthComputable) $('listNote').textContent = `Sending ${f.name} to the toolbox… ${Math.round(100 * ev.loaded / ev.total)}%`; };
+        x.onload = () => { let d = null; try { d = JSON.parse(x.responseText); } catch (e) {} x.status < 300 ? res(d) : rej(new ApiError(x.status, d ? d.detail : null)); };
+        x.onerror = () => rej(new Error('The upload to the toolbox failed (network).')); x.send(fd);
+      });
+    } catch (e) { handle(e); }
+  }
+  $('pick').value = ''; $('listNote').textContent = 'Upload started — follow it in the Transfers tab.'; showTab('xfer'); refreshXfers();
+}
+
+/* ---------------- commands ---------------- */
+$('btnRun').onclick = guard(async () => {
+  const command = $('cmd').value.trim(); if (!command) return;
+  let body = { command, timeout: +$('timeout').value, confirm_danger: false}, r;
+  try { r = await api(`servers/${st.id}/exec`, { method: 'POST', body }); }
+  catch (e) { if (e instanceof ApiError && e.status === 428) { if (!confirm(`⚠ ${e.message}\n\nRun it anyway?`)) return; body.confirm_danger = true; r = await api(`servers/${st.id}/exec`, { method: 'POST', body }); } else throw e; }
+  st.cmdId = r.command_id; st.cmdSince = 0; $('out').textContent = ''; pollCmd();
+});
+$('btnStopCmd').onclick = guard(async () => { if (st.cmdId) await api(`commands/${st.cmdId}/stop`, { method: 'POST' }); });
+async function pollCmd() {
+  if (!st.cmdId) return; const r = await api(`commands/${st.cmdId}?since=${st.cmdSince}`), out = $('out'), bottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+  for (const l of r.logs) { const s = document.createElement('span'); s.className = 'l-' + l.level; s.textContent = l.msg + '\n'; out.appendChild(s); st.cmdSince = l.seq; }
+  if (bottom) out.scrollTop = out.scrollHeight;
+  const c = r.command; $('cmdState').textContent = c.running ? 'running…' : `${c.status}${c.exit_code !== null && c.exit_code !== undefined ? ' · exit ' + c.exit_code : ''}`; $('cmdState').className = 'badge ' + (c.running ? 'b-run' : c.status === 'ok' ? 'b-ok' : 'b-failed');
+  $('btnStopCmd').disabled = !c.running; if (!st.readOnly) $('btnRun').disabled = c.running;
+  if (c.running) setTimeout(() => pollCmd().catch(() => {}), 500); else { loadHist(); st.cmdId = null; }
+}
+async function loadHist() { const r = await api('commands'); $('hist').innerHTML = r.commands.map(c => `<tr><td class="mono" style="cursor:pointer" data-c="${esc(c.command)}">${esc(c.command.slice(0, 110))}</td><td class="muted">${esc(c.server_name || '')}</td><td><span class="badge ${c.status === 'ok' ? 'b-ok' : c.running ? 'b-run' : 'b-failed'}">${esc(c.status)}${c.exit_code != null ? ' ' + c.exit_code : ''}</span></td></tr>`).join('') || '<tr><td class="muted">No commands yet.</td></tr>'; }
+$('hist').onclick = e => { const td = e.target.closest('td[data-c]'); if (td) $('cmd').value = td.dataset.c; };
+
+/* ---------------- transfers ---------------- */
+async function refreshXfers() {
+  const r = await api('transfers'), active = r.transfers.filter(t => t.running).length; $('xferN').textContent = active; $('xferN').classList.toggle('hidden', !active);
+  $('xfers').innerHTML = r.transfers.map(t => { const pct = t.size ? Math.min(100, Math.round(100 * t.bytes_done / t.size)) : 100; const cls = t.status === 'done' ? 'b-ok' : t.status === 'running' ? 'b-run' : t.status === 'cancelled' ? 'b-warn' : t.status === 'staged' ? '' : 'b-failed';
+    return `<tr><td><b>${esc(t.name)}</b><div class="mono muted">${fmtB(t.size)}</div></td><td class="muted">${esc(t.server_name || '')} → <span class="mono">${esc(t.remote_dir)}</span></td>
+      <td><div class="bar"><i style="width:${pct}%"></i></div><div class="mono muted">${fmtB(t.bytes_done)} / ${fmtB(t.size)}</div></td>
+      <td><span class="badge ${cls}">${esc(t.status)}</span>${t.attempts ? `<div class="mono muted">${t.attempts} reconnect(s)</div>` : ''}${t.note ? `<div class="hint" style="color:var(--ok)">${esc(t.note)}</div>` : ''}${t.error ? `<div class="hint" style="color:var(--err)">${esc(t.error)}</div>` : ''}</td>
+      <td style="text-align:right">${t.running ? `<button class="small danger" data-x="stop" data-id="${t.id}">Stop</button>` : (['failed', 'cancelled', 'staged'].includes(t.status) ? (/already exists/.test(t.error || '') ? `<button class="small" data-x="replace" data-id="${t.id}">Replace &amp; retry</button> ` : `<button class="small" data-x="retry" data-id="${t.id}">Retry</button> `) : '') + `<button class="small" data-x="del" data-id="${t.id}">${t.status === 'done' ? 'Clear' : 'Discard'}</button>`}</td></tr>`; }).join('') || '<tr><td colspan="5" class="muted">No uploads yet.</td></tr>';
+}
+$('xfers').onclick = guard(async e => { const b = e.target.closest('button'); if (!b) return; const id = b.dataset.id;
+  if (b.dataset.x === 'stop') await api(`transfers/${id}/stop`, { method: 'POST' }); else if (b.dataset.x === 'retry') await api(`transfers/${id}/retry`, { method: 'POST' });
+  else if (b.dataset.x === 'replace') { if (!confirm('Replace the existing file on the server with this one?')) return; await api(`transfers/${id}/retry?overwrite=true`, { method: 'POST' }); }
+  else if (b.dataset.x === 'del') { if (b.textContent === 'Discard' && !confirm('Discard this upload and its staged copy? The partial file on the server (if any) stays.')) return; await api(`transfers/${id}`, { method: 'DELETE' }); }
+  await refreshXfers(); });
+
+/* ---------------- tabs ---------------- */
+function showTab(t) { document.querySelectorAll('.tab').forEach(x => x.classList.toggle('sel', x.dataset.tab === t)); for (const k of ['files', 'cmd', 'xfer']) $('t-' + k).classList.toggle('hidden', k !== t); if (t === 'cmd') loadHist().catch(() => {}); if (t === 'xfer') refreshXfers().catch(() => {}); }
+document.querySelectorAll('.tab').forEach(x => x.onclick = () => showTab(x.dataset.tab));
+setInterval(() => { if (!$('t-xfer').classList.contains('hidden') || !$('xferN').classList.contains('hidden')) refreshXfers().catch(() => {}); }, 1200);
+loadServers().then(refreshXfers).catch(e => toast(e.message));
+</script>
+</body>
+</html>

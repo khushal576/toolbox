@@ -106,6 +106,16 @@ real SSH bastion: empty form, bad password, good plain, SSH wrong/right
 passphrase, save-anyway, and loading the saved entries into SQL Studio and
 connecting (plain and via tunnel). SQL Server/Oracle test path untested.
 
+## SSH servers (second saved shape: kind `ssh_server`)
+
+The page also has an "Add SSH server" form for the SSH & SFTP tool (`../ssh-sftp/CLAUDE.md`): host, port,
+username, a private key (+ passphrase) or a password, and a read-only switch. It is a TWO-STEP test
+(`POST /test-ssh-server`): first it fetches the server's host key WITHOUT logging in and shows the
+fingerprint for the user to confirm; only after that does it log in (using the pinned key) and allow
+Save. The confirmed key is stored in the entry (`host_key`), and every later connection must match it
+(`core/ssh_client.py`). `core/vault.update_secret()` exists so a key can be pinned later without changing
+the entry's id.
+
 ## Security posture — read this before touching `core/vault.py`
 
 **No vault master password**, by explicit owner choice. The encryption

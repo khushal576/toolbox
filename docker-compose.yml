@@ -65,6 +65,12 @@ services:
     # which would also make any already-encrypted-but-now-orphaned rows
     # permanently undecryptable garbage even if the DB file somehow
     # survived without the key.
+    # SSH & SFTP's transfer/command history and STAGED uploads live in /app/data/ssh-sftp/
+    # (see ssh-sftp/state_store.py); staging is what lets a dropped upload resume.
+    #
+    # Data Dumper's dump FILES (can be large) and its catalogue live in /app/data/data-dumper/
+    # (see data-dumper/state_store.py). Without this volume a rebuild would delete every dump.
+    #
     # Schema Copy's projects, last-run results and generated .sql scripts live
     # in /app/data/schema-copy/ (see schema-copy/state_store.py) — same reasoning.
     #
@@ -77,9 +83,13 @@ services:
       - vault_data:/app/data/vault
       - data_syncer_data:/app/data/data-syncer
       - schema_copy_data:/app/data/schema-copy
+      - data_dumper_data:/app/data/data-dumper
+      - ssh_sftp_data:/app/data/ssh-sftp
 
 volumes:
   schema_map_data:
   vault_data:
   data_syncer_data:
   schema_copy_data:
+  data_dumper_data:
+  ssh_sftp_data:

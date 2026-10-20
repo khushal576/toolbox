@@ -141,6 +141,17 @@ it was extracted from `data-syncer/connections.py` (now a thin re-export)
 when the second consumer appeared, per this section's "don't add another
 independent implementation" rule.
 
+`core/pgclient.py` runs the **bundled `pg_dump`/`pg_restore`/`psql`** (Dockerfile stage `pgclient`)
+as subprocesses — cancel-aware, streaming stderr, credentials via `PGPASSWORD` only — and
+`core/pg_inspect.py` holds the small shared catalog helpers (server version, empty-target check,
+available extensions). Both were extracted from Schema Copy when Data Dumper became the second
+consumer (`schema-copy/pgtools.py` is a thin re-export), per this section's rule.
+
+`core/ssh_client.py` opens **host-key-pinned SSH/SFTP connections from a Vault `ssh_server` entry** (no agent,
+no ~/.ssh, timeouts + keepalives, plain scrubbed errors) for the SSH & SFTP tool and the Vault's "Add SSH
+server" form. The DB tools' SSH *tunnels* (`core/postgres_conn.py`) are a different, older path and are
+deliberately untouched.
+
 `core/vault.py` is the shared, generic encrypted secret store (Fernet,
 no master password by deliberate owner choice — see `vault/CLAUDE.md`
 for the full trust-model writeup) behind the "Vault" tool's management
@@ -240,6 +251,14 @@ invisible to the status poll on another. See `data-syncer/CLAUDE.md`.
 Schema Copy (`schema-copy/runner.py`) is a **fifth**, same shape as Data
 Syncer: a background thread plus an in-process job registry/log tail; the last
 run's result is durable in SQLite. See `schema-copy/CLAUDE.md`.
+
+Data Dumper (`data-dumper/runner.py`) is a **sixth**, same shape: a background thread plus an
+in-process job registry/log tail; the dump catalogue and run history are durable in SQLite and the
+dump files on a volume. See `data-dumper/CLAUDE.md`.
+
+SSH & SFTP (`ssh-sftp/sessions.py`, `runner.py`) is a **seventh**: a per-server connection cache and an
+upload/command job registry live in memory; transfer/command history is in SQLite and staged uploads on a
+volume. See `ssh-sftp/CLAUDE.md`.
 
 **Decided now, before it comes up again:** any future tool that needs
 multi-step or multi-request state (not just "read a form, compute an

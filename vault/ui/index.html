@@ -134,6 +134,38 @@
     </div>
   </div>
   <div class="card">
+    <h2>Add SSH server</h2>
+    <p class="hint">For the <b>SSH &amp; SFTP</b> tool: browse files, upload and run commands. A <b>private key</b> is safer than a password. First you confirm the server's fingerprint, so your login is never sent to an impostor; after that the tool refuses any server that presents a different key. Stored encrypted.</p>
+    <div class="form-grid">
+      <div class="full"><label>Name</label><input type="text" id="sName" placeholder="e.g. web-1 (prod)" /></div>
+      <div><label>Host</label><input type="text" id="sHost" placeholder="server.example.com" /></div>
+      <div><label>Port</label><input type="number" id="sPort" value="22" /></div>
+      <div class="full"><label>Username</label><input type="text" id="sUser" autocomplete="off" /></div>
+      <div class="full"><label>Login with</label>
+        <select id="sAuth"><option value="key">Private key (recommended)</option><option value="password">Password</option></select></div>
+      <div class="full" id="sPwBox" style="display:none;"><label>Password</label><input type="password" id="sPw" autocomplete="new-password" /></div>
+      <div class="full" id="sKeyBox">
+        <label>Private key</label>
+        <input type="file" id="sKeyFile" style="margin-bottom:6px;" />
+        <textarea id="sKey" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+        <label style="margin-top:6px;">Key passphrase (if encrypted)</label>
+        <input type="password" id="sPass" autocomplete="new-password" />
+      </div>
+      <div class="full"><label class="check"><input type="checkbox" id="sRo" /> Read-only: browse and download only — no uploads, changes or commands</label></div>
+    </div>
+    <div class="ok-box" id="sFpBox" style="background:rgba(217,119,6,0.10);color:#b45309;border-color:rgba(217,119,6,0.3);">
+      <b>Confirm this server's fingerprint</b><br><code id="sFp" style="font-size:.85rem;word-break:break-all;"></code>
+      <div style="font-size:.78rem;margin-top:4px;">Compare it with the one the server's administrator gives you (or run <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code> on the server). Only continue if they match.</div>
+      <label class="check" style="margin-top:6px;"><input type="checkbox" id="sTrust" /> The fingerprint matches — trust this server</label>
+    </div>
+    <div class="error-box" id="sErr"></div>
+    <div class="ok-box" id="sOk"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+      <button class="action" id="btnSshTest">Test connection</button>
+      <button class="action small" id="btnSshSave" style="display:none;">Save server</button>
+    </div>
+  </div>
+  <div class="card">
     <h2>Backup &amp; restore</h2>
     <p class="hint">The Docker volume this data lives on already survives an ordinary rebuild/restart — this is a REAL, portable copy you can keep somewhere else entirely (another disk, cloud storage, a different machine), for the one case that doesn't survive: an explicit volume deletion.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -404,6 +436,51 @@ $("btnSaveAnyway").addEventListener("click", async () => {
 });
 
 refresh();
+
+/* ---------- Add SSH server ---------- */
+(function () {
+  const $ = (id) => document.getElementById(id);
+  let pin = null;       // the host key the user is confirming
+  let tested = false;   // a real login with that pin succeeded
+  const show = (el, msg) => { el.textContent = msg || ""; el.classList.toggle("show", !!msg); };
+  const reset = () => { pin = null; tested = false; $("sFpBox").classList.remove("show"); $("sTrust").checked = false; $("btnSshSave").style.display = "none"; show($("sOk"), ""); };
+  const body = () => ({
+    host: $("sHost").value.trim(), port: +$("sPort").value || 22, username: $("sUser").value.trim(), auth: $("sAuth").value,
+    password: $("sAuth").value === "password" ? $("sPw").value : null, private_key: $("sAuth").value === "key" ? $("sKey").value : null,
+    passphrase: $("sAuth").value === "key" ? ($("sPass").value || null) : null,
+  });
+  $("sAuth").onchange = () => { const k = $("sAuth").value === "key"; $("sKeyBox").style.display = k ? "" : "none"; $("sPwBox").style.display = k ? "none" : ""; reset(); };
+  for (const id of ["sHost", "sPort", "sUser", "sPw", "sKey", "sPass"]) $(id).addEventListener("input", reset);
+  $("sKeyFile").onchange = async (e) => { const f = e.target.files[0]; if (f) { $("sKey").value = await f.text(); reset(); } };
+  $("btnSshTest").onclick = async () => {
+    show($("sErr"), ""); show($("sOk"), "");
+    const b = body();
+    if (!b.host || !b.username) return show($("sErr"), "Enter the host and the username.");
+    if (b.auth === "password" ? !b.password : !b.private_key) return show($("sErr"), b.auth === "password" ? "Enter the password." : "Paste or choose the private key.");
+    if (pin && !$("sTrust").checked) return show($("sErr"), "Tick the box to confirm the fingerprint first.");
+    $("btnSshTest").disabled = true;
+    try {
+      const res = await (await fetch("test-ssh-server", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...b, host_key: pin }) })).json();
+      if (res.stage === "confirm") { pin = res.host_key; $("sFp").textContent = `${pin.type}  ${pin.fingerprint}`; $("sFpBox").classList.add("show"); show($("sOk"), "Step 1 of 2: confirm the fingerprint above, then press Test connection again to log in."); }
+      else if (res.ok) { tested = true; show($("sOk"), `Logged in successfully (${res.banner || "SSH"}). You can save it now.`); $("btnSshSave").style.display = ""; }
+      else show($("sErr"), res.error || "The test failed.");
+    } catch (e) { show($("sErr"), e.message); }
+    finally { $("btnSshTest").disabled = false; }
+  };
+  $("btnSshSave").onclick = async () => {
+    show($("sErr"), "");
+    const name = $("sName").value.trim(); if (!name) return show($("sErr"), "Give the server a name.");
+    if (!pin || !tested) return show($("sErr"), "Test the connection first.");
+    const b = body(); const data = { host: b.host, port: b.port, username: b.username, auth: b.auth, read_only: $("sRo").checked, host_key: pin };
+    if (b.auth === "password") data.password = b.password; else { data.private_key = b.private_key; if (b.passphrase) data.passphrase = b.passphrase; }
+    try {
+      const res = await fetch("secrets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, kind: "ssh_server", data }) });
+      if (!res.ok) throw new Error("Save failed");
+      for (const id of ["sName", "sHost", "sUser", "sPw", "sKey", "sPass"]) $(id).value = ""; $("sKeyFile").value = ""; reset();
+      show($("sOk"), `Saved “${name}”. It now appears in the SSH & SFTP tool.`); await refresh();
+    } catch (e) { show($("sErr"), e.message); }
+  };
+})();
 </script>
 </body>
 </html>

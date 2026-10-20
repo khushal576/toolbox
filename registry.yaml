@@ -119,3 +119,15 @@ tools:
     description: "Copy a Postgres database's whole structure — tables, partitions, indexes, constraints, views, materialized views, functions, procedures, triggers, types, extensions — into a new empty database (no rows), with preflight, one-transaction apply and a source-vs-target verification report"
     icon: "🧬"
     category: tool
+
+  - name: data-dumper
+    title: "Data Dumper"
+    description: "Take a Postgres dump you can download, and restore a dump into any database — all of it, or only what you pick: structure, data, a phase (before data / data / after data), some schemas, some tables, or single objects. Restores run in one transaction, so a failure rolls back cleanly"
+    icon: "💾"
+    category: tool
+
+  - name: ssh-sftp
+    title: "SSH & SFTP"
+    description: "Browse, upload, download and run commands on servers saved in the Vault — host keys are pinned, uploads are verified and resumable and never overwrite unless you say so, and a server can be saved read-only"
+    icon: "🔐"
+    category: tool

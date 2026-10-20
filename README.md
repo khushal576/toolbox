@@ -50,6 +50,8 @@ docker-compose down
 | 🔒 | **Vault** (`vault`) | Shared encrypted secret store — save DB connections (and anything else) from any tool so you stop retyping credentials after every disconnect |
 | 🔄 | **Data Syncer** (`data-syncer`) | Copy or upsert whole tables between Vault-saved Postgres databases in resumable chunks — progress saved after every chunk, stop/restart any time, shows only progress and a short log |
 | 🧬 | **Schema Copy** (`schema-copy`) | Copy a Postgres database's whole structure (tables, partitions, indexes, views, materialized views, functions, triggers…) into a new empty database — no rows; preflight, one-transaction apply, verification report |
+| 💾 | **Data Dumper** (`data-dumper`) | Take a Postgres dump you can download, and restore a dump into any database — whole, or only what you pick (structure, data, a phase, schemas, tables, single objects); one-transaction restores |
+| 🔐 | **SSH & SFTP** (`ssh-sftp`) | Browse, upload, download and run commands on servers saved in the Vault — pinned host keys, verified and resumable uploads, read-only option |
 
 `category: tool` entries (practical, act on real data) show on the home page
 by default; `category: learn` entries (educational/reference) are shown via
