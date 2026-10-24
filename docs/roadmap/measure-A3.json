@@ -1,0 +1,217 @@
+{
+  "when": "2026-10-24T20:57:32",
+  "git_sha": "9811175",
+  "host": {
+    "cpus": 8,
+    "mem_total_gb": 7.5
+  },
+  "cold_start_seconds": 0.77,
+  "image_size_gb": 1.31,
+  "idle": {
+    "docker_mem": "32.36MiB / 7.498GiB",
+    "cpu": "0.25%",
+    "pids": 5,
+    "server_rss_mb": 48.7,
+    "server_processes": 1
+  },
+  "imports": {
+    "fastapi_floor_mb": 39.8,
+    "all_tools_extra_mb": 130.9,
+    "all_tools_import_s": 1.22,
+    "all_error": null,
+    "per_tool": [
+      {
+        "tool": "duck-lab",
+        "module": "duck_lab.server",
+        "extra_mb": 100.7,
+        "import_s": 0.56,
+        "error": null
+      },
+      {
+        "tool": "df-studio",
+        "module": "df_studio.server",
+        "extra_mb": 79.2,
+        "import_s": 0.56,
+        "error": null
+      },
+      {
+        "tool": "sql-studio",
+        "module": "sql_studio.server",
+        "extra_mb": 43.4,
+        "import_s": 0.29,
+        "error": null
+      },
+      {
+        "tool": "vault",
+        "module": "vault.server",
+        "extra_mb": 29.5,
+        "import_s": 0.25,
+        "error": null
+      },
+      {
+        "tool": "data-syncer",
+        "module": "data_syncer.server",
+        "extra_mb": 24.1,
+        "import_s": 0.24,
+        "error": null
+      },
+      {
+        "tool": "data-dumper",
+        "module": "data_dumper.server",
+        "extra_mb": 23.4,
+        "import_s": 0.24,
+        "error": null
+      },
+      {
+        "tool": "ssh-sftp",
+        "module": "ssh_sftp.server",
+        "extra_mb": 23.0,
+        "import_s": 0.23,
+        "error": null
+      },
+      {
+        "tool": "schema-map",
+        "module": "schema_map.server",
+        "extra_mb": 22.7,
+        "import_s": 0.22,
+        "error": null
+      },
+      {
+        "tool": "schema-copy",
+        "module": "schema_copy.server",
+        "extra_mb": 22.7,
+        "import_s": 0.23,
+        "error": null
+      },
+      {
+        "tool": "curl-builder",
+        "module": "curl_builder.server",
+        "extra_mb": 6.5,
+        "import_s": 0.11,
+        "error": null
+      },
+      {
+        "tool": "datadiff-pro",
+        "module": "api.app",
+        "extra_mb": 3.0,
+        "import_s": 0.08,
+        "error": null
+      },
+      {
+        "tool": "latex-pdf",
+        "module": "latex_pdf.server",
+        "extra_mb": 0.2,
+        "import_s": 0.0,
+        "error": null
+      },
+      {
+        "tool": "encode-decode",
+        "module": "encode_decode.server",
+        "extra_mb": 0.0,
+        "import_s": 0.0,
+        "error": null
+      },
+      {
+        "tool": "subnet-calc",
+        "module": "subnet_calc.server",
+        "extra_mb": 0.0,
+        "import_s": 0.0,
+        "error": null
+      },
+      {
+        "tool": "dns-lookup",
+        "module": "dns_lookup.server",
+        "extra_mb": 0.0,
+        "import_s": 0.0,
+        "error": null
+      },
+      {
+        "tool": "vlan-designer",
+        "module": "vlan_designer.server",
+        "extra_mb": 0.0,
+        "import_s": 0.0,
+        "error": null
+      },
+      {
+        "tool": "packet-journey",
+        "module": "packet_journey.server",
+        "extra_mb": 0.0,
+        "import_s": 0.0,
+        "error": null
+      },
+      {
+        "tool": "header-reference",
+        "module": "header_reference.server",
+        "extra_mb": 0.0,
+        "import_s": 0.0,
+        "error": null
+      },
+      {
+        "tool": "http-methods-status",
+        "module": "http_methods_status.server",
+        "extra_mb": 0.0,
+        "import_s": 0.0,
+        "error": null
+      },
+      {
+        "tool": "cookie-lab",
+        "module": "cookie_lab.server",
+        "extra_mb": 0.0,
+        "import_s": 0.0,
+        "error": null
+      }
+    ]
+  },
+  "latency": [
+    {
+      "case": "GET /  (home page)",
+      "n": 30,
+      "codes": [
+        200
+      ],
+      "p50_ms": 1.3,
+      "p95_ms": 1.6,
+      "mean_ms": 1.3
+    },
+    {
+      "case": "GET /tools/encode-decode/  (static page)",
+      "n": 30,
+      "codes": [
+        200
+      ],
+      "p50_ms": 1.2,
+      "p95_ms": 1.3,
+      "mean_ms": 1.2
+    },
+    {
+      "case": "POST datadiff /compare  (100 records)",
+      "n": 30,
+      "codes": [
+        200
+      ],
+      "p50_ms": 5.2,
+      "p95_ms": 7.2,
+      "mean_ms": 5.9
+    },
+    {
+      "case": "POST datadiff /compare  (5,000 records)",
+      "n": 5,
+      "codes": [
+        200
+      ],
+      "p50_ms": 217.5,
+      "p95_ms": 232.3,
+      "mean_ms": 215.4
+    },
+    {
+      "case": "POST latex-pdf /compile  (1 page)",
+      "n": 5,
+      "codes": [
+        200
+      ],
+      "p50_ms": 1006.3,
+      "p95_ms": 1074.6,
+      "mean_ms": 988.3
+    }
+  ]
+}

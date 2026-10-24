@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Client-side.
+schema_version: 1
+name: subnet-calc
+title: Subnet Calculator
+description: Interactive IPv4 subnetting — binary bit visualization and a worked explanation for every answer
+icon: 🧮
+category: tool
+kind: python
+entry: subnet_calc.server:app
+runtime: light
+tier: 1
+state: []
+depends_on: []
+requires: []
+order: 30

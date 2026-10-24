@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Client-side: queries DNS-over-HTTPS from the browser.
+schema_version: 1
+name: dns-lookup
+title: DNS Lookup
+description: Live DNS records for any domain — 14 record types (A through SSHFP), with a plain-language explanation of what each one means
+icon: 🌐
+category: tool
+kind: python
+entry: dns_lookup.server:app
+runtime: light
+tier: 1
+state: []
+depends_on: []
+requires: []
+order: 40

@@ -44,6 +44,7 @@ services:
     # Add any future config here (e.g. LOG_LEVEL, MAX_PAYLOAD_MB).
     environment:
       - PYTHONUNBUFFERED=1
+      - TOOLBOX_PLUGINS_DIR=/app/plugins
 
     # Optional: mount the ui/ folder so you can edit the frontend
     # without rebuilding the image.  Uncomment during development:
@@ -85,6 +86,10 @@ services:
       - schema_copy_data:/app/data/schema-copy
       - data_dumper_data:/app/data/data-dumper
       - ssh_sftp_data:/app/data/ssh-sftp
+      # Workspace settings (which tools are on) — core_plugins/workspace.py, roadmap A3/A4.
+      - workspace_data:/app/data/workspace
+      # Custom apps (roadmap A5): static/external plugins, read-only; edit on the host, then restart.
+      - ./plugins:/app/plugins:ro
 
 volumes:
   schema_map_data:
@@ -93,3 +98,4 @@ volumes:
   schema_copy_data:
   data_dumper_data:
   ssh_sftp_data:
+  workspace_data:

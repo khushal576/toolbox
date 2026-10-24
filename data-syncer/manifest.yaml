@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Background thread runner + SQLite (data_syncer_data volume).
+schema_version: 1
+name: data-syncer
+title: Data Syncer
+description: Copy or upsert whole tables between databases saved in the Vault, in resumable key-ranged chunks — progress is saved after every chunk, so stop and restart any time; shows only progress and a short log, never table data
+icon: 🔄
+category: tool
+kind: python
+entry: data_syncer.server:app
+runtime: data
+tier: 3
+state: [durable, jobs]
+depends_on: [vault]
+requires: []
+order: 160

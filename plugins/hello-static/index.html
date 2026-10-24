@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hello (sample custom app)</title>
+  <style>
+    :root { --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef; --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 40px 20px; }
+    main { max-width: 640px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+    h1 { margin: 0 0 6px; font-size: 1.4rem; } p { color: var(--muted); line-height: 1.55; }
+    button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
+    code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+    .ok { color: #1e8e5a; font-weight: 600; } .bad { color: #c0392b; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>👋 Hello from a custom app</h1>
+    <p>This page lives in <code>plugins/hello-static/</code>. It was added without rebuilding the image.</p>
+    <p><button id="count">Clicked 0 times</button></p>
+    <p>Sandbox check — trying to read Toolbox's settings API from this page:
+      <span id="sandbox">checking…</span></p>
+  </main>
+  <script>
+    var n = 0, b = document.getElementById("count");
+    b.addEventListener("click", function () { n += 1; b.textContent = "Clicked " + n + " time" + (n === 1 ? "" : "s"); });
+    var out = document.getElementById("sandbox");
+    fetch("/api/workspace/status").then(function (r) { return r.json(); })
+      .then(function () { out.textContent = "NOT blocked — the sandbox is not active!"; out.className = "bad"; })
+      .catch(function () { out.textContent = "blocked ✔ (custom apps cannot reach Toolbox APIs)"; out.className = "ok"; });
+  </script>
+</body>
+</html>

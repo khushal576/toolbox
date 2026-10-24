@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Toolbox</title>
+  <!-- Workspace shell (roadmap A4). Served by main.py: {{CARDS}} = home-tab cards, {{DATA}} = plugin JSON.
+       Self-contained on purpose: no CDN, works offline. -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+      --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+      --ok: #1e8e5a; --err: #c0392b; --idle: #b7bccb;
+      --side: 248px;
+    }
+    html, body { height: 100%; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text);
+           display: flex; overflow: hidden; }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+    /* ---- sidebar ---- */
+    #side { width: var(--side); flex: none; background: var(--surface); border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; min-height: 0; }
+    .brand { padding: 16px 16px 10px; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.4px; }
+    .brand span { color: var(--accent); }
+    .search { margin: 0 12px 8px; position: relative; }
+    .search input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+                    padding: 8px 10px; font: inherit; font-size: 0.85rem; color: var(--text); }
+    .search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--surface); }
+    .search kbd { position: absolute; right: 8px; top: 7px; font-size: 0.68rem; color: var(--muted);
+                  border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; background: var(--surface); }
+    nav { overflow-y: auto; flex: 1; padding: 4px 8px 12px; }
+    .nav-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 6px 8px;
+                border-radius: 7px; font-size: 0.86rem; color: var(--text); text-decoration: none; }
+    .nav-item:hover { background: var(--bg); }
+    .nav-item.active { background: rgba(79,94,240,0.10); color: var(--accent); font-weight: 600; }
+    .nav-item .ic { width: 20px; text-align: center; flex: none; }
+    .nav-item .tt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--idle); flex: none; }
+    .dot.loaded { background: var(--ok); } .dot.failed { background: var(--err); }
+    .group { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+             color: var(--muted); padding: 14px 8px 4px; }
+    .side-foot { border-top: 1px solid var(--border); padding: 10px 14px; font-size: 0.8rem; color: var(--muted); }
+    .side-foot label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .empty-nav { color: var(--muted); font-size: 0.82rem; padding: 6px 8px; }
+
+    /* ---- main ---- */
+    #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    #tabs { display: flex; align-items: stretch; background: var(--surface); border-bottom: 1px solid var(--border);
+            overflow-x: auto; flex: none; scrollbar-width: thin; }
+    .tab { display: flex; align-items: center; gap: 7px; padding: 0 10px 0 12px; height: 40px; font-size: 0.84rem;
+           border-right: 1px solid var(--border); white-space: nowrap; color: var(--muted); cursor: pointer;
+           max-width: 220px; user-select: none; }
+    .tab .tt { overflow: hidden; text-overflow: ellipsis; }
+    .tab:hover { background: var(--bg); }
+    .tab.active { color: var(--text); background: var(--bg); box-shadow: inset 0 -2px 0 var(--accent); font-weight: 600; }
+    .tab .x { width: 18px; height: 18px; border-radius: 4px; line-height: 18px; text-align: center; color: var(--muted); }
+    .tab .x:hover { background: var(--border); color: var(--text); }
+    .tab-tools { margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 0 8px; flex: none; }
+    .tab-tools button { padding: 5px 8px; border-radius: 6px; font-size: 0.8rem; color: var(--muted); }
+    .tab-tools button:hover { background: var(--bg); color: var(--text); }
+    #menuBtn { display: none; padding: 0 12px; font-size: 1.1rem; border-right: 1px solid var(--border); }
+    #panes { flex: 1; position: relative; min-height: 0; }
+    .pane { position: absolute; inset: 0; overflow: auto; display: none; }
+    .pane.active { display: block; }
+    .pane iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--surface); }
+
+    /* ---- home tab (cards) ---- */
+    .home { padding: 32px 24px; }
+    .home h1 { font-size: 1.6rem; letter-spacing: -0.5px; max-width: 960px; margin: 0 auto 4px; }
+    .home h1 span { color: var(--accent); }
+    .home .sub { color: var(--muted); font-size: 0.9rem; max-width: 960px; margin: 0 auto 20px; }
+    .grid { max-width: 960px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+            text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 6px;
+            transition: border-color 0.15s, transform 0.1s; }
+    .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .card.hidden { display: none; }
+    .card .icon { font-size: 1.8rem; }
+    .card .title { font-weight: 700; font-size: 1.05rem; display: flex; align-items: center; gap: 8px; }
+    .card .badge { background: var(--bg); color: var(--muted); border: 1px solid var(--border); border-radius: 5px;
+                   padding: 1px 7px; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+    .card .desc { font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+    .card-unavailable { opacity: 0.6; cursor: not-allowed; }
+    .card-unavailable:hover { border-color: var(--border); transform: none; }
+    .badge-error { background: rgba(220,38,38,0.08); color: #b91c1c; border: 1px solid rgba(220,38,38,0.3);
+                   border-radius: 5px; padding: 1px 7px; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; }
+    .empty { color: var(--muted); font-size: 0.9rem; max-width: 960px; margin: 0 auto; }
+
+    /* ---- settings tab ---- */
+    .settings { padding: 28px 24px; max-width: 1040px; margin: 0 auto; }
+    .settings h2 { font-size: 1.3rem; margin-bottom: 4px; }
+    .settings .sub { color: var(--muted); font-size: 0.86rem; margin-bottom: 16px; line-height: 1.5; }
+    .summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .pill { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px;
+            font-size: 0.8rem; color: var(--muted); }
+    .pill b { color: var(--text); }
+    .note { background: #fff7e6; border: 1px solid #f3dca7; color: #6b4e00; border-radius: 8px; padding: 9px 12px;
+            font-size: 0.83rem; margin-bottom: 14px; display: none; }
+    .note.show { display: block; }
+    .note.err { background: #fdecea; border-color: #f5c6c0; color: var(--err); }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border);
+            border-radius: 10px; overflow: hidden; font-size: 0.84rem; }
+    th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); background: #fafbfe; }
+    tr:last-child td { border-bottom: 0; }
+    td .name { font-weight: 600; } td .mono { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--muted); font-size: 0.78rem; }
+    .state { display: inline-flex; align-items: center; gap: 6px; }
+    .switch { position: relative; width: 36px; height: 20px; flex: none; display: inline-block; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch span { position: absolute; inset: 0; background: var(--idle); border-radius: 999px; transition: background 0.15s; cursor: pointer; }
+    .switch span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px;
+                           background: #fff; border-radius: 50%; transition: transform 0.15s; }
+    .switch input:checked + span { background: var(--accent); }
+    .switch input:checked + span::before { transform: translateX(16px); }
+    .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .switch input:disabled + span { opacity: 0.5; cursor: wait; }
+    .foot-note { color: var(--muted); font-size: 0.78rem; margin-top: 12px; line-height: 1.5; }
+
+    @media (max-width: 760px) {
+      #side { position: fixed; z-index: 20; inset: 0 auto 0 0; transform: translateX(-100%); transition: transform 0.2s;
+              box-shadow: 4px 0 24px rgba(0,0,0,0.12); }
+      body.side-open #side { transform: none; }
+      #menuBtn { display: block; }
+      .hide-sm { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <aside id="side">
+    <div class="brand">Tool<span>box</span></div>
+    <div class="search"><input id="q" type="search" placeholder="Search tools…" autocomplete="off" /><kbd>Ctrl K</kbd></div>
+    <nav id="nav"></nav>
+    <div class="side-foot">
+      <label><input type="checkbox" id="showLearning" /> Show learning tools</label>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="tabs">
+      <button id="menuBtn" title="Menu" aria-label="Open menu">☰</button>
+      <div id="tabList" style="display:flex"></div>
+      <div class="tab-tools">
+        <button id="reloadBtn" title="Reload this tool">⟳ Reload</button>
+        <button id="popBtn" title="Open this tool in a new browser tab">↗ New window</button>
+      </div>
+    </div>
+    <div id="panes">
+      <section class="pane home" id="pane-home">
+        <h1>Tool<span>box</span></h1>
+        <p class="sub">Pick a tool from the sidebar or a card below. Tools open in tabs and load on first use.</p>
+        <div class="grid" id="toolGrid">{{CARDS}}</div>
+      </section>
+      <section class="pane" id="pane-settings">
+        <div class="settings">
+          <h2>Workspace settings</h2>
+          <p class="sub">Turn tools on or off. A tool that is off is never loaded and uses no memory.
+            Changes apply right away — no restart needed.</p>
+          <div class="summary" id="summary"></div>
+          <div class="note" id="note"></div>
+          <table>
+            <thead><tr><th>Tool</th><th class="hide-sm">Kind</th><th class="hide-sm">Runtime / tier</th><th>State</th>
+              <th class="hide-sm">First load</th><th>On</th></tr></thead>
+            <tbody id="rows"><tr><td colspan="6">Loading…</td></tr></tbody>
+          </table>
+          <p class="foot-note" id="wsFile"></p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script id="ws-data" type="application/json">{{DATA}}</script>
+  <script>
+  (function () {
+    "use strict";
+    var DATA = JSON.parse(document.getElementById("ws-data").textContent);
+    var tools = DATA.plugins;                       // enabled plugins, display order
+    var byName = {}; tools.forEach(function (t) { byName[t.name] = t; });
+    var $ = function (id) { return document.getElementById(id); };
+    var store = {                                   // per-viewer conveniences only; must never break the page
+      get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+      set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+    };
+    var TABS_KEY = "toolbox_tabs_v1", LEARN_KEY = "toolbox_show_learning";
+    var state = { open: [], active: "home", status: {} };   // open = tool names (home/settings are fixed tabs)
+
+    function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+
+    // ---------- sidebar ----------
+    function renderNav() {
+      var q = $("q").value.trim().toLowerCase(), learn = $("showLearning").checked;
+      var html = navLink("home", "🏠", "Home") + navLink("settings", "⚙️", "Settings"), shown = 0;
+      ["tool", "learn"].forEach(function (cat) {
+        if (cat === "learn" && !learn && !q) return;
+        var list = tools.filter(function (t) {
+          return t.category === cat && (!q || (t.title + " " + t.description + " " + t.name).toLowerCase().indexOf(q) !== -1);
+        });
+        if (!list.length) return;
+        shown += list.length;
+        html += '<div class="group">' + (cat === "tool" ? "Tools" : "Learning") + "</div>";
+        list.forEach(function (t) {
+          var st = (state.status[t.name] || {}).state || "not_loaded";
+          html += '<a class="nav-item' + (state.active === t.name ? " active" : "") + '" href="#/tool/' + esc(t.name) +
+            '" data-open="' + esc(t.name) + '" title="' + esc(t.description) + '"><span class="ic">' + esc(t.icon || "🧰") +
+            '</span><span class="tt">' + esc(t.title) + '</span><span class="dot ' + esc(st) + '" title="' + esc(st.replace("_", " ")) + '"></span></a>';
+        });
+      });
+      if (q && !shown) {
+        html += '<div class="empty-nav">No tool matches “' + esc(q) + '”.</div>';
+      }
+      $("nav").innerHTML = html;
+    }
+    function navLink(id, ic, label) {
+      return '<a class="nav-item' + (state.active === id ? " active" : "") + '" href="#/' + (id === "home" ? "" : id) +
+        '" data-open="' + id + '"><span class="ic">' + ic + '</span><span class="tt">' + label + "</span></a>";
+    }
+
+    // ---------- tabs ----------
+    function paneFor(name) {
+      var id = "pane-tool-" + name, el = $(id);
+      if (!el) {
+        el = document.createElement("section");
+        el.className = "pane"; el.id = id;
+        var f = document.createElement("iframe");
+        f.src = "/tools/" + encodeURIComponent(name) + "/";
+        f.title = (byName[name] || {}).title || name;
+        f.addEventListener("load", function () { setTimeout(refreshStatus, 300); });
+        el.appendChild(f);
+        $("panes").appendChild(el);
+      }
+      return el;
+    }
+    function open(name) {
+      if (name !== "home" && name !== "settings" && !byName[name]) name = "home";
+      if (byName[name] && state.open.indexOf(name) === -1) state.open.push(name);
+      state.active = name;
+      Array.prototype.forEach.call(document.querySelectorAll(".pane"), function (p) { p.classList.remove("active"); });
+      (name === "home" ? $("pane-home") : name === "settings" ? $("pane-settings") : paneFor(name)).classList.add("active");
+      if (name === "settings") loadSettings();
+      var hash = name === "home" ? "#/" : name === "settings" ? "#/settings" : "#/tool/" + name;
+      if (location.hash !== hash) history.replaceState(null, "", hash);
+      document.title = (name === "home" ? "" : ((byName[name] || {}).title || "Settings") + " · ") + "Toolbox";
+      document.body.classList.remove("side-open");
+      persist(); renderTabs(); renderNav();
+    }
+    function close(name) {
+      var i = state.open.indexOf(name);
+      if (i === -1) return;
+      state.open.splice(i, 1);
+      var p = $("pane-tool-" + name); if (p) p.remove();       // frees the tool page in the browser
+      if (state.active === name) open(state.open[i] || state.open[i - 1] || "home"); else { persist(); renderTabs(); }
+    }
+    function renderTabs() {
+      var html = tab("home", "🏠", "Home", false);
+      state.open.forEach(function (n) { var t = byName[n]; html += tab(n, t.icon || "🧰", t.title, true); });
+      if (state.active === "settings") html += tab("settings", "⚙️", "Settings", false);
+      $("tabList").innerHTML = html;
+      var isTool = !!byName[state.active];
+      $("reloadBtn").style.visibility = $("popBtn").style.visibility = isTool ? "visible" : "hidden";
+    }
+    function tab(id, ic, label, closable) {
+      return '<div class="tab' + (state.active === id ? " active" : "") + '" data-tab="' + esc(id) + '" title="' + esc(label) + '">' +
+        "<span>" + esc(ic) + '</span><span class="tt">' + esc(label) + "</span>" +
+        (closable ? '<span class="x" data-close="' + esc(id) + '" title="Close tab" aria-label="Close ' + esc(label) + '">×</span>' : "") + "</div>";
+    }
+    function persist() { store.set(TABS_KEY, JSON.stringify({ open: state.open, active: state.active })); }
+
+    // ---------- status (dots, settings) ----------
+    function refreshStatus() {
+      return fetch("/api/workspace/status").then(function (r) { return r.json(); }).then(function (s) {
+        state.status = {}; s.plugins.forEach(function (p) { state.status[p.name] = p; });
+        renderNav(); return s;
+      }).catch(function () {});
+    }
+
+    // ---------- settings ----------
+    function loadSettings() { refreshStatus().then(function (s) { if (s) renderSettings(s); }); }
+    function renderSettings(s) {
+      var c = s.counts, on = s.plugins.filter(function (p) { return p.enabled; }).length;
+      $("summary").innerHTML = pill("Tools", s.plugins.length) + pill("On", on) + pill("Off", s.plugins.length - on) +
+        pill("Loaded now", c.loaded || 0) + pill("Not loaded", c.not_loaded || 0) + (c.failed ? pill("Failed", c.failed) : "");
+      $("rows").innerHTML = s.plugins.map(function (p) {
+        var st = p.state === "disabled" ? (p.restart_to_free_memory ? "off · restart frees memory" : "off") : p.state.replace("_", " ");
+        var dot = p.state === "loaded" ? "loaded" : p.state === "failed" ? "failed" : "";
+        return "<tr><td><div class='name'>" + esc(p.title) + "</div><div class='mono'>" + esc(p.name) + "</div></td>" +
+          "<td class='hide-sm'>" + esc(p.kind) + "</td><td class='hide-sm'>" + esc(p.runtime || "–") + " · tier " + esc(p.tier) + "</td>" +
+          "<td><span class='state'><span class='dot " + dot + "'></span>" + esc(st) + "</span>" +
+          (p.error ? "<div class='mono' style='color:var(--err)'>" + esc(p.error) + "</div>" : "") + "</td>" +
+          "<td class='hide-sm'>" + (p.load_seconds != null ? esc(p.load_seconds.toFixed(2)) + " s" : "–") + "</td>" +
+          "<td><label class='switch' title='Turn " + esc(p.title) + (p.enabled ? " off" : " on") + "'><input type='checkbox' data-toggle='" +
+          esc(p.name) + "'" + (p.enabled ? " checked" : "") + (p.kind === "service" ? " disabled" : "") +
+          " aria-label='" + esc(p.title) + " enabled'><span></span></label></td></tr>";
+      }).join("");
+      $("wsFile").textContent = "Saved in " + s.workspace_file + " (survives restarts and rebuilds).";
+      var errs = (s.manifest_errors || []).concat(s.workspace_errors || []);
+      note(errs.length ? errs.join(" · ") : "", true);
+    }
+    function pill(label, n) { return '<span class="pill">' + esc(label) + " <b>" + esc(n) + "</b></span>"; }
+    function note(text, isErr) { var n = $("note"); n.textContent = text; n.className = "note" + (text ? " show" : "") + (isErr ? " err" : ""); }
+    function toggle(name, enabled, input) {
+      input.disabled = true;
+      fetch("/api/workspace/plugins/" + encodeURIComponent(name), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: enabled })
+      }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.detail || r.status); return j; }); })
+        .then(function (j) {
+          if (j.enabled) { if (!byName[name]) { tools.push(j.plugin); tools.sort(function (a, b) { return a.order - b.order || a.title.localeCompare(b.title); }); byName[name] = j.plugin; } }
+          else { close(name); tools = tools.filter(function (t) { return t.name !== name; }); delete byName[name]; }
+          note(j.message, false);
+          setCard(name, j.enabled);
+          loadSettings(); renderTabs();
+        })
+        .catch(function (e) { input.checked = !enabled; note("Could not change " + name + ": " + e.message, true); })
+        .finally(function () { input.disabled = false; });
+    }
+    function setCard(name, enabled) {
+      var card = document.querySelector('#toolGrid [data-name="' + CSS.escape(name) + '"]');
+      if (card) card.style.display = enabled ? "" : "none";
+      else if (enabled) note("Turned on. Reload the page to see its card on Home.", false);
+    }
+
+    // ---------- home cards: open in a tab instead of a new window ----------
+    function filterCards() {
+      var learn = $("showLearning").checked;
+      Array.prototype.forEach.call(document.querySelectorAll("#toolGrid .card"), function (c) {
+        c.classList.toggle("hidden", !learn && c.dataset.category === "learn");
+      });
+    }
+
+    // ---------- events ----------
+    document.addEventListener("click", function (e) {
+      var x = e.target.closest("[data-close]");
+      if (x) { e.preventDefault(); e.stopPropagation(); close(x.dataset.close); return; }
+      var t = e.target.closest("[data-tab]");
+      if (t) { open(t.dataset.tab); return; }
+      var o = e.target.closest("[data-open]");
+      if (o && !(e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1)) { e.preventDefault(); open(o.dataset.open); return; }
+      var card = e.target.closest("#toolGrid a.card");
+      if (card && !(e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1)) { e.preventDefault(); open(card.dataset.name); }
+    });
+    document.addEventListener("auxclick", function (e) {           // middle-click closes a tab
+      var t = e.target.closest("[data-tab]");
+      if (t && e.button === 1 && byName[t.dataset.tab]) { e.preventDefault(); close(t.dataset.tab); }
+    });
+    document.addEventListener("change", function (e) {
+      var tg = e.target.closest("[data-toggle]");
+      if (tg) toggle(tg.dataset.toggle, tg.checked, tg);
+    });
+    $("q").addEventListener("input", renderNav);
+    $("q").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { var first = document.querySelector('#nav [data-open]:not([data-open="home"]):not([data-open="settings"])');
+        if (first) { open(first.dataset.open); $("q").value = ""; renderNav(); } }
+      if (e.key === "Escape") { $("q").value = ""; renderNav(); $("q").blur(); }
+    });
+    document.addEventListener("keydown", function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); $("q").focus(); $("q").select(); }
+    });
+    $("showLearning").addEventListener("change", function () {
+      store.set(LEARN_KEY, $("showLearning").checked ? "true" : "false"); renderNav(); filterCards();
+    });
+    $("reloadBtn").addEventListener("click", function () {
+      var p = $("pane-tool-" + state.active); if (p) p.querySelector("iframe").src = "/tools/" + encodeURIComponent(state.active) + "/";
+    });
+    $("popBtn").addEventListener("click", function () { if (byName[state.active]) window.open("/tools/" + state.active + "/", "_blank", "noopener"); });
+    $("menuBtn").addEventListener("click", function () { document.body.classList.toggle("side-open"); });
+    window.addEventListener("hashchange", fromHash);
+
+    function fromHash() {
+      var h = location.hash.replace(/^#\/?/, "");
+      if (h.indexOf("tool/") === 0) open(decodeURIComponent(h.slice(5)));
+      else if (h === "settings") open("settings");
+      else if (h === "" && state.active !== "home" && location.hash) open("home");
+    }
+
+    // ---------- start ----------
+    $("showLearning").checked = store.get(LEARN_KEY) === "true";
+    try {
+      var saved = JSON.parse(store.get(TABS_KEY) || "null");
+      if (saved && Array.isArray(saved.open)) state.open = saved.open.filter(function (n) { return byName[n]; });
+      if (saved && saved.active) state.active = saved.active;
+    } catch (e) {}
+    state.open.forEach(paneFor);                 // restore tabs (each loads its tool)
+    filterCards();
+    if (location.hash && location.hash !== "#/") fromHash(); else open(byName[state.active] || state.active === "settings" ? state.active : "home");
+    refreshStatus();
+  })();
+  </script>
+</body>
+</html>

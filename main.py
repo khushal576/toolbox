@@ -8,61 +8,80 @@ hop, no reverse proxy — just an in-process ASGI mount).
 
 Adding a tool
 -------------
-1. Add one `_try_mount("<name>", "<module_path>")` call in the mounting
-   section at the bottom — module_path is what you'd write after `from` in
-   `from <module_path> import app`. This is a deferred import (see
-   `_try_mount`'s docstring for why): don't add a top-level
-   `from X import Y` for a new tool, it defeats the fault isolation.
-2. Add one entry to registry.yaml so it gets a card on the home page,
-   including `category: tool` or `category: learn` (see registry.yaml's own
-   header comment for which one — this decides whether the card is shown by
-   default or only after the home page's "Show learning tools" toggle).
-That's it — no Dockerfile, no docker-compose, no network changes needed;
-it's all baked into this one image.
+Tools are plugins described by a `manifest.yaml` in their folder (spec:
+docs/architecture/plugin-manifest.md, roadmap A1/A2). At startup this file
+calls `core_plugins.discover()` once; every valid manifest becomes a home-page
+card (ordered by `order`, then title).
+
+Lazy loading (roadmap A3): every enabled `kind: python` plugin is mounted as a
+`LazyApp` — its module is imported on the tool's FIRST request, not at
+startup, so unused tools cost no memory. A failed import still only breaks
+that one tool (503 page + "Unavailable" card). Tools turned off in
+`workspace.yaml` (core_plugins/workspace.py) are mounted as `DisabledApp`:
+never imported, hidden from the home page. Never add a top-level
+`from <tool> import app` here. A broken manifest is skipped and logged.
+
+Workspace UI (roadmap A4): "/" serves core_plugins/ui/workspace.html (sidebar,
+tools in tabs, settings). Each tool is mounted through a `Slot`, so
+POST /api/workspace/plugins/<name> {"enabled": bool} turns a tool on/off
+immediately (and saves workspace.yaml) without a restart.
+State per tool: GET /api/workspace/status.
 """
 
 from __future__ import annotations
 
-import importlib
+import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
-import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+
+from pydantic import BaseModel
+
+from core_plugins import (DisabledApp, ExternalApp, LazyApp, Slot, StaticApp, default_path, discover,
+                          load_workspace)
 
 logger = logging.getLogger("toolbox")
 
 app = FastAPI(title="Toolbox", description="One-stop access to internal tools.")
 
-_REGISTRY_PATH = Path(__file__).resolve().parent / "registry.yaml"
+_REPO = Path(__file__).resolve().parent
 
-# Populated by _try_mount() below — name -> error message, for any tool whose
+# Discovered once at startup: mounting happens at startup too, so a manifest
+# change needs a restart either way. Errors/warnings are logged, never raised.
+# Custom apps (roadmap A5): folders with a manifest.yaml of kind static/external, bind-mounted in compose so a new
+# app needs no image rebuild. Python plugins are refused there (see core_plugins/loader.py EXTRA_DIR_KINDS).
+_PLUGINS_DIR = Path(os.environ.get("TOOLBOX_PLUGINS_DIR") or _REPO / "plugins")
+_registry = discover(_REPO, extra_dirs=[_PLUGINS_DIR] if _PLUGINS_DIR.is_dir() else [])
+for _err in _registry.errors:
+    logger.error("Plugin manifest problem — plugin skipped: %s", _err)
+for _warn in _registry.warnings:
+    logger.warning("Plugin manifest warning: %s", _warn)
+
+_workspace = load_workspace(default_path(_REPO), known=set(_registry.plugins))
+for _err in _workspace.errors:
+    logger.error("Workspace settings problem: %s", _err)
+for _warn in _workspace.warnings:
+    logger.warning("Workspace settings warning: %s", _warn)
+
+# Populated by _record_failure() (a LazyApp whose first-request import failed) — name -> error, for any tool whose
 # import/mount failed. Read by the home page to show those cards as
 # "temporarily unavailable" instead of pretending they don't exist.
 _failed_tools: dict[str, str] = {}
 
 
-def _try_mount(name: str, module_path: str) -> None:
-    """Import one tool's module and mount its `app`, in isolation.
+def _record_failure(name: str, error: str) -> None:
+    """Called by a LazyApp whose import failed, so the home page shows its card as unavailable."""
+    _failed_tools[name] = error
 
-    The import happens HERE, inside the try, not as a top-level `from X
-    import Y` — that's the whole point. A top-level import failing would
-    crash main.py itself before the FastAPI app object even exists, taking
-    every other tool down with it (this is a real single-process risk: one
-    tool's bad code shouldn't be able to break tools that have nothing to
-    do with it). If this tool fails, it's recorded in _failed_tools and
-    simply isn't mounted — the rest of the site comes up normally.
-    """
-    try:
-        module = importlib.import_module(module_path)
-        tool_app = module.app
-    except Exception as exc:  # noqa: BLE001 - deliberately broad: ANY failure in one tool must not crash the rest
-        logger.exception("Tool '%s' (%s) failed to load — mounting skipped", name, module_path)
-        _failed_tools[name] = str(exc)
-        return
-    app.mount(f"/tools/{name}", tool_app)
+
+# name -> Slot (holding a LazyApp or DisabledApp), filled by the mount loop at the bottom.
+_slots: dict[str, Slot] = {}
+# name -> LazyApp, kept even while a tool is off so turning it back on reuses an already-imported module.
+_lazy: dict[str, LazyApp] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -70,10 +89,12 @@ def _try_mount(name: str, module_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 def _load_registry() -> list[dict[str, Any]]:
-    if not _REGISTRY_PATH.exists():
-        return []
-    data = yaml.safe_load(_REGISTRY_PATH.read_text()) or {}
-    return data.get("tools", []) or []
+    """Home-page card data for every discovered plugin, in display order."""
+    return [
+        {"name": m.name, "title": m.title, "description": m.description, "icon": m.icon, "category": m.category}
+        for m in _registry.ordered()
+        if _workspace.is_enabled(m)
+    ]
 
 
 def _esc(s: str) -> str:
@@ -90,7 +111,7 @@ def _render_card(tool: dict[str, Any]) -> str:
 
     if name in _failed_tools:
         return f"""
-    <div class="card card-unavailable" data-category="{category}" data-search="{search_text}">
+    <div class="card card-unavailable" data-name="{name}" data-category="{category}" data-search="{search_text}">
       <div class="icon">{icon}</div>
       <div class="title">{title}<span class="badge badge-error">Unavailable</span></div>
       <div class="desc">Failed to load — check the container logs (docker-compose logs toolbox).</div>
@@ -99,169 +120,116 @@ def _render_card(tool: dict[str, Any]) -> str:
     badge = '<span class="badge">Learn</span>' if category == "learn" else ""
     href = f"/tools/{name}/"
     return f"""
-    <a class="card" href="{href}" target="_blank" rel="noopener noreferrer" data-category="{category}" data-search="{search_text}">
+    <a class="card" href="{href}" target="_blank" rel="noopener noreferrer" data-name="{name}" data-category="{category}" data-search="{search_text}">
       <div class="icon">{icon}</div>
       <div class="title">{title}{badge}</div>
       <div class="desc">{desc}</div>
     </a>"""
 
 
+_WORKSPACE_HTML = (_REPO / "core_plugins" / "ui" / "workspace.html").read_text(encoding="utf-8")
+
+
+def _card_data(m) -> dict[str, Any]:
+    return {"name": m.name, "title": m.title, "description": m.description, "icon": m.icon,
+            "category": m.category, "order": m.order}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home() -> HTMLResponse:
     tools = _load_registry()
     cards = "".join(_render_card(t) for t in tools) or (
-        '<p class="empty">No tools registered yet — add one to registry.yaml.</p>'
+        '<p class="empty">No tools registered yet — add a plugin folder with a manifest.yaml.</p>'
     )
-    return HTMLResponse(_HOME_TEMPLATE.replace("{{CARDS}}", cards))
+    data = {"plugins": [_card_data(m) for m in _registry.ordered() if _workspace.is_enabled(m)]}
+    # "</" must not appear raw inside <script>; JSON stays valid with the escaped slash.
+    payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    return HTMLResponse(_WORKSPACE_HTML.replace("{{CARDS}}", cards).replace("{{DATA}}", payload))
 
 
-_HOME_TEMPLATE = """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Toolbox</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
-      --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
-    }
-    body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      background: var(--bg); color: var(--text);
-      min-height: 100vh; padding: 40px 20px;
-    }
-    header { max-width: 900px; margin: 0 auto 20px; }
-    header h1 { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.5px; }
-    header h1 span { color: var(--accent); }
-    header p { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
-
-    .controls {
-      max-width: 900px; margin: 0 auto 20px;
-      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-    }
-    .controls input[type="search"] {
-      flex: 1; min-width: 200px; background: var(--surface); color: var(--text);
-      border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px;
-      font-size: 0.9rem; font-family: inherit;
-    }
-    .controls input[type="search"]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-    .toggle-label {
-      display: flex; align-items: center; gap: 6px; font-size: 0.85rem;
-      color: var(--muted); white-space: nowrap; cursor: pointer;
-    }
-    .toggle-label input { width: auto; cursor: pointer; }
-
-    .grid {
-      max-width: 900px; margin: 0 auto;
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 16px;
-    }
-    .card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; padding: 20px; text-decoration: none; color: inherit;
-      display: flex; flex-direction: column; gap: 6px;
-      transition: border-color 0.15s, transform 0.1s;
-    }
-    .card:hover { border-color: var(--accent); transform: translateY(-2px); }
-    .card.hidden { display: none; }
-    .card .icon { font-size: 1.8rem; }
-    .card .title { font-weight: 700; font-size: 1.05rem; display: flex; align-items: center; gap: 8px; }
-    .card .badge {
-      background: var(--bg); color: var(--muted); border: 1px solid var(--border);
-      border-radius: 5px; padding: 1px 7px; font-size: 0.68rem; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.4px;
-    }
-    .card .desc { font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
-    .card-unavailable { opacity: 0.6; cursor: not-allowed; }
-    .card-unavailable:hover { border-color: var(--border); transform: none; }
-    .badge-error {
-      background: rgba(220,38,38,0.08); color: #b91c1c;
-      border: 1px solid rgba(220,38,38,0.3); border-radius: 5px;
-      padding: 1px 7px; font-size: 0.68rem; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.4px;
-    }
-    .empty { color: var(--muted); font-size: 0.9rem; max-width: 900px; margin: 0 auto; }
-  </style>
-</head>
-<body>
-  <header>
-    <h1>Tool<span>box</span></h1>
-    <p>One-stop access to internal tools</p>
-  </header>
-  <div class="controls">
-    <input type="search" id="toolSearch" placeholder="Search tools by name or word…" />
-    <label class="toggle-label">
-      <input type="checkbox" id="showLearning" /> Show learning tools too
-    </label>
-  </div>
-  <div class="grid" id="toolGrid">{{CARDS}}</div>
-  <script>
-  (function () {
-    "use strict";
-    var search = document.getElementById("toolSearch");
-    var showLearning = document.getElementById("showLearning");
-    var cards = Array.prototype.slice.call(document.querySelectorAll("#toolGrid .card"));
-    if (!search || !showLearning || !cards.length) return;
-
-    var STORAGE_KEY = "toolbox_show_learning";
-    try {
-      showLearning.checked = localStorage.getItem(STORAGE_KEY) === "true";
-    } catch (e) {
-      // private browsing / blocked storage — default (unchecked) is fine
-    }
-
-    function applyFilter() {
-      var query = search.value.trim().toLowerCase();
-      var includeLearning = showLearning.checked;
-      cards.forEach(function (card) {
-        var matchesSearch = !query || card.dataset.search.indexOf(query) !== -1;
-        var matchesCategory = includeLearning || card.dataset.category !== "learn";
-        card.classList.toggle("hidden", !(matchesSearch && matchesCategory));
-      });
-    }
-
-    search.addEventListener("input", applyFilter);
-    showLearning.addEventListener("change", function () {
-      try {
-        localStorage.setItem(STORAGE_KEY, showLearning.checked ? "true" : "false");
-      } catch (e) {
-        // ignore — filtering still works for this page view either way
-      }
-      applyFilter();
-    });
-
-    applyFilter();
-  })();
-  </script>
-</body>
-</html>
-"""
+@app.get("/api/workspace/status")
+async def workspace_status() -> dict[str, Any]:
+    """Per-plugin state for the workspace UI (A4) and status page (E2). Never imports a tool."""
+    plugins = []
+    for m in _registry.ordered():
+        slot = _slots.get(m.name)
+        mount = slot.app if slot else None
+        lazy = _lazy.get(m.name)
+        if isinstance(mount, DisabledApp):
+            state = "disabled"
+        elif isinstance(mount, LazyApp):
+            state = mount.state
+        elif isinstance(mount, (StaticApp, ExternalApp)):
+            state = "ready"  # no server code to load
+        else:
+            state = "not_mounted"  # kind: service — routed by the gateway from roadmap C2/D1
+        plugins.append({
+            "name": m.name, "title": m.title, "kind": m.kind, "runtime": m.runtime, "tier": m.tier,
+            "enabled": _workspace.is_enabled(m), "state": state,
+            "load_seconds": round(lazy.load_seconds, 3) if lazy and lazy.load_seconds else None,
+            # turned off after it was already imported: memory is only freed by a restart
+            "restart_to_free_memory": state == "disabled" and bool(lazy and lazy.state == "loaded"),
+            "error": _failed_tools.get(m.name),
+        })
+    counts: dict[str, int] = {}
+    for p in plugins:
+        counts[p["state"]] = counts.get(p["state"], 0) + 1
+    return {"plugins": plugins, "counts": counts, "workspace_file": str(_workspace.path),
+            "manifest_errors": _registry.errors, "workspace_errors": _workspace.errors}
 
 
-# ---------------------------------------------------------------------------
-# Mount every tool's own app under /tools/<name> — each in isolation, via
-# _try_mount() above, so one tool's broken import can't take the rest down.
-# ---------------------------------------------------------------------------
+class _ToggleBody(BaseModel):
+    enabled: bool
 
-_try_mount("datadiff-pro", "api.app")
-_try_mount("encode-decode", "encode_decode.server")
-_try_mount("subnet-calc", "subnet_calc.server")
-_try_mount("dns-lookup", "dns_lookup.server")
-_try_mount("vlan-designer", "vlan_designer.server")
-_try_mount("packet-journey", "packet_journey.server")
-_try_mount("curl-builder", "curl_builder.server")
-_try_mount("header-reference", "header_reference.server")
-_try_mount("http-methods-status", "http_methods_status.server")
-_try_mount("cookie-lab", "cookie_lab.server")
-_try_mount("df-studio", "df_studio.server")
-_try_mount("sql-studio", "sql_studio.server")
-_try_mount("schema-map", "schema_map.server")
-_try_mount("duck-lab", "duck_lab.server")
-_try_mount("vault", "vault.server")
-_try_mount("data-syncer", "data_syncer.server")
-_try_mount("schema-copy", "schema_copy.server")
-_try_mount("data-dumper", "data_dumper.server")
-_try_mount("ssh-sftp", "ssh_sftp.server")
-_try_mount("latex-pdf", "latex_pdf.server")
+
+def _app_for(m, enabled: bool):
+    """The ASGI app to put in a tool's Slot for its kind and on/off state (None = not mountable here)."""
+    if m.kind == "service":
+        return None  # separately running service: routed by the gateway (roadmap C2/D1)
+    if not enabled:
+        return DisabledApp(m.name, m.title)
+    if m.kind == "static":
+        return StaticApp(m.name, Path(m.source).parent, m.entry)
+    if m.kind == "external":
+        return ExternalApp(m.name, m.entry)
+    if m.name not in _lazy:
+        _lazy[m.name] = LazyApp(m.name, m.module, on_failure=_record_failure)
+    return _lazy[m.name]
+
+
+@app.post("/api/workspace/plugins/{name}")
+async def set_plugin_enabled(name: str, body: _ToggleBody) -> dict[str, Any]:
+    """Turn a tool on/off right now (no restart) and save the choice to workspace.yaml."""
+    m = _registry.plugins.get(name)
+    if m is None:
+        raise HTTPException(404, f"unknown tool '{name}'")
+    if name not in _slots:
+        raise HTTPException(400, f"'{name}' (kind {m.kind}) has no switchable mount yet")
+    previous = _workspace.enabled.get(name)
+    _workspace.set_enabled(name, body.enabled)
+    try:
+        _workspace.save()
+    except OSError as exc:
+        if previous is None:
+            _workspace.enabled.pop(name, None)
+        else:
+            _workspace.enabled[name] = previous
+        raise HTTPException(500, f"could not save {_workspace.path}: {exc}") from exc
+    _slots[name].app = _app_for(m, body.enabled)
+    lazy = _lazy.get(name)
+    if body.enabled:
+        message = f"{m.title} is on." + ("" if lazy and lazy.state == "loaded" else " It loads when you first open it.")
+    elif lazy and lazy.state == "loaded":
+        message = f"{m.title} is off. It was already loaded, so its memory is freed after the next restart."
+    else:
+        message = f"{m.title} is off and uses no memory."
+    logger.info("Workspace: %s turned %s", name, "on" if body.enabled else "off")
+    return {"name": name, "enabled": body.enabled, "message": message, "plugin": _card_data(m)}
+
+
+for _plugin in _registry.ordered():
+    _initial = _app_for(_plugin, _workspace.is_enabled(_plugin))
+    if _initial is None:
+        continue
+    _slots[_plugin.name] = Slot(_initial)
+    app.mount(_plugin.mount_path, _slots[_plugin.name])

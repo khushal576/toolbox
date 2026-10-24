@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Run button makes real outbound HTTP calls (core/http_exec.py).
+schema_version: 1
+name: curl-builder
+title: cURL Builder
+description: Build complex curl commands from a form — method, auth, headers, body, cookies, flags — copy-pasteable for bash, cmd.exe, or PowerShell
+icon: ⌨️
+category: tool
+kind: python
+entry: curl_builder.server:app
+runtime: light
+tier: 2
+state: []
+depends_on: []
+requires: []
+order: 70

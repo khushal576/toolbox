@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Connection pool + SQLite projects (schema_map_data volume).
+schema_version: 1
+name: schema-map
+title: Schema Map
+description: Connect to a Postgres database (optionally via SSH tunnel) and see its tables and foreign-key structure as an explorable graph — built for large, poorly-documented legacy schemas
+icon: 🗺️
+category: tool
+kind: python
+entry: schema_map.server:app
+runtime: data
+tier: 3
+state: [session, durable]
+depends_on: [vault]
+requires: []
+order: 130

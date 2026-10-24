@@ -55,7 +55,7 @@ docker-compose down
 
 `category: tool` entries (practical, act on real data) show on the home page
 by default; `category: learn` entries (educational/reference) are shown via
-the "Show learning tools" toggle. See `registry.yaml`.
+the "Show learning tools" toggle. Set by `category:` in each tool's `manifest.yaml`.
 
 ---
 
@@ -81,7 +81,7 @@ toolbox/
 ├── environments/          DataDiff Pro's example YAML config
 ├── notebook/
 ├── main.py                 THE entrypoint — home page + mounts every tool
-├── registry.yaml            home-page card metadata (display only)
+├── core_plugins/            plugin manifest model + discovery (each tool has a manifest.yaml)
 ├── theme-tokens.css          canonical color palette — copy-source only
 ├── KNOWLEDGE_MAP.md           symptom → file lookup table, per tool
 ├── CLAUDE.md                  architecture, conventions, how to add a tool

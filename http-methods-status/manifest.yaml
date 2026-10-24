@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Client-side reference.
+schema_version: 1
+name: http-methods-status
+title: HTTP Methods & Status Codes
+description: Every HTTP method and status code — plain-word meaning, multiple real examples, edge cases, and an architect's decision guide for which one to return
+icon: 🧭
+category: learn
+kind: python
+entry: http_methods_status.server:app
+runtime: light
+tier: 1
+state: []
+depends_on: []
+requires: []
+order: 90

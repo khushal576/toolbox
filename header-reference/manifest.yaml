@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Client-side reference.
+schema_version: 1
+name: header-reference
+title: HTTP Header Reference
+description: Browsable, categorized glossary of ~90 widely-used HTTP headers — what each one means, an example, and which category it belongs to
+icon: 📖
+category: learn
+kind: python
+entry: header_reference.server:app
+runtime: light
+tier: 1
+state: []
+depends_on: []
+requires: []
+order: 80

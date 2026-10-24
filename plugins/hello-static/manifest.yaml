@@ -1,0 +1,12 @@
+# Sample custom app (roadmap A5). Off by default: switch it on in Settings.
+schema_version: 1
+name: hello-static
+title: Hello (sample custom app)
+description: Sample static plugin from plugins/ — shows how custom apps work and that they are sandboxed
+icon: "👋"
+category: tool
+kind: static
+entry: index.html
+tier: 1
+order: 900
+enabled_by_default: false

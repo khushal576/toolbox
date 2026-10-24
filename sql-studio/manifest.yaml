@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Live DB pool in db_engine.STATE until roadmap B3.
+schema_version: 1
+name: sql-studio
+title: SQL Studio
+description: Paste, edit, and pretty-print Postgres SQL — 125+ templates, live Run (optionally via SSH tunnel) against a real database, save/load connections via Vault, and psql-style show commands
+icon: 🗄️
+category: tool
+kind: python
+entry: sql_studio.server:app
+runtime: data
+tier: 3
+state: [session]
+depends_on: [vault]
+requires: []
+order: 120

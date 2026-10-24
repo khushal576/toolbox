@@ -6,12 +6,21 @@ page — potentially many tools over time, all served as **one bundled website
 from one Dockerfile / one container**. This file exists so that as the repo
 grows, future work stays consistent instead of drifting tool-by-tool.
 
-**Decision: one repo, one Dockerfile, one container.** No separate repo per
-tool, no separate container per tool, no reverse proxy, no inter-container
-network. An earlier iteration of this plan used separate containers per tool
-behind a proxying gateway — the owner explicitly rejected that in favor of
-one bundled process. Do not reintroduce multi-container/gateway architecture
-without the owner asking for it again.
+**Direction changed 2026-10-24 — read `docs/roadmap/ROADMAP.md` and
+`docs/architecture/ADR-001-workspace-plugins.md` first.** The owner asked for
+Toolbox to become a **plugin workspace** for 1000+ tools: tools described by
+manifests and loaded lazily, state moved out of process (Redis/Postgres/MinIO),
+heavy tools in runtime images started on demand behind a gateway, shared tools
+(DataDiff) scaled as APIs, multiple nodes later. Work happens in small numbered
+sessions ("Roadmap: do session `<ID>`"); do only the named session and update
+its status + handoff log.
+
+**Until phase C of the roadmap lands, the old rule still describes the running
+system:** one repo, one Dockerfile, one container, no reverse proxy, no
+inter-container network. (An earlier per-tool-container idea was rejected by
+the owner; the roadmap's runtime pools are deliberately different — a few
+shared runtime images, not one container per tool.) Do not introduce
+containers/gateway pieces outside the roadmap session that owns them.
 
 ## How it actually works
 
@@ -22,12 +31,49 @@ without the owner asking for it again.
 - Each tool still lives in its own folder (`core/`, `api/`, `ui/` today for
   DataDiff) and keeps its own FastAPI `app` object fully self-contained and
   functional on its own — `main.py` just imports and mounts it.
-- `registry.yaml` is display-only metadata for the home page cards (name,
-  title, description, icon). It does **not** wire up routing — adding a
-  tool still requires one `app.mount(...)` line in `main.py`. Don't confuse
-  "registered in registry.yaml" with "actually wired up."
-- One `Dockerfile` copies every tool's code plus `main.py` and
-  `registry.yaml` into one image. One `docker-compose.yml`, one service,
+- Each tool folder has a **`manifest.yaml`** (spec:
+  `docs/architecture/plugin-manifest.md`). `main.py` calls
+  `core_plugins.discover()` at startup: every valid manifest becomes a home
+  card (ordered by `order`, then title) and every `kind: python` plugin is
+  mounted from its `entry` (`module:app`). There is no hand-written mount
+  list and no `registry.yaml` any more (removed in roadmap A2). A broken
+  manifest is logged and skipped, never fatal.
+- **Lazy loading (roadmap A3):** each tool is mounted as a `LazyApp`
+  (`core_plugins/lazy.py`) and its module is imported on the tool's **first
+  request**, not at startup — idle memory went from ~174 MB to ~32 MB
+  (`docs/roadmap/measure-A3.md`). A failed import still breaks only that tool
+  (503 page + "Unavailable" card). Consequence: anything a tool does at
+  import time (e.g. `recover_interrupted()` in data-syncer/data-dumper/
+  ssh-sftp, the ssh-sftp reaper thread) now runs on its first request — never
+  put work in a tool's import that must happen before anyone opens it.
+- **On/off switches:** `workspace.yaml` on the `workspace_data` volume
+  (`/app/data/workspace/`, override with `TOOLBOX_WORKSPACE_FILE`;
+  `core_plugins/workspace.py`). A tool set to `false` is never imported,
+  hidden from the home page and answers a 404 "turned off" page. Missing file
+  = every tool at its manifest's `enabled_by_default`; a broken file is
+  logged and ignored.
+- **Workspace UI (roadmap A4):** `/` serves `core_plugins/ui/workspace.html`
+  — sidebar (search, Ctrl+K, Tools/Learning groups, load-state dots), tools
+  open in **tabs** (iframes of `/tools/<name>/`, kept alive while open,
+  restored from localStorage, deep links `/#/tool/<name>`), Home tab = the
+  card grid, Settings tab = on/off switches. Each tool is mounted through a
+  `Slot` (`core_plugins/lazy.py`), so `POST /api/workspace/plugins/<name>`
+  `{"enabled": bool}` turns it on/off **immediately** and saves
+  `workspace.yaml` — no restart. Only freeing the memory of a tool that was
+  already loaded needs a restart (Python can't unload modules); the UI says
+  so. These endpoints have no auth, like every other Toolbox route (local,
+  single-owner tool).
+- **Custom apps (roadmap A5):** `plugins/` (bind-mounted read-only at
+  `/app/plugins`, `TOOLBOX_PLUGINS_DIR`) holds `kind: static` / `kind:
+  external` plugins — added with a restart, no rebuild (`plugins/README.md`).
+  Python plugins are **refused** there by the loader. Static apps are served
+  sandboxed (CSP `sandbox` without `allow-same-origin`): their JS runs but
+  cannot call Toolbox APIs/Vault. The two samples ship `enabled_by_default:
+  false`.
+- `GET /api/workspace/status` — per-tool state (`not_loaded`, `loaded`,
+  `failed`, `disabled`), load time, errors. Never imports a tool.
+- One `Dockerfile` copies every tool's code (including its `manifest.yaml`),
+  `core_plugins/` and `main.py` into one image. One `docker-compose.yml`, one service,
   one port (`8000` on the host — deliberately not `8080`, which is commonly
   taken locally by other tools such as Jenkins).
 - Each tool's frontend still calls its own API with **relative paths**
@@ -49,7 +95,6 @@ datadiff-pro/                (repo root)
 │                               browser, size-capped — see vault/CLAUDE.md
 ├── environments/  notebook/
 ├── main.py                    THE entrypoint — home page + mounts every tool
-├── registry.yaml               home-page card metadata (display only)
 ├── theme-tokens.css             canonical color palette — COPY-SOURCE only,
 │                                  never served/linked, see its own header
 ├── Dockerfile                  builds the one image (copies every tool)
@@ -57,7 +102,17 @@ datadiff-pro/                (repo root)
 ├── requirements.txt             shared dependency set for the whole image
 ├── README.md
 ├── CLAUDE.md                   (this file)
-└── GITHUB_AUTH.md
+├── GITHUB_AUTH.md
+├── tools/bench/baseline.py     roadmap benchmark (host-side): writes docs/roadmap/baseline.{md,json}
+├── core_plugins/               plugin manifest model + discovery (spec: docs/architecture/plugin-manifest.md)
+├── plugins/                    custom apps (static/external only), bind-mounted — see plugins/README.md
+├── tests/unit/                 unit tests (no server needed) — `python3 -m pytest tests/unit -q`
+├── tests/smoke/                smoke tests against the live server — run `scripts/smoke.sh`
+│                                 (add every new tool to tests/smoke/test_api.py: API check or PAGE_ONLY)
+├── scripts/smoke.sh            runner (`--no-browser` for the fast HTTP-only subset)
+└── docs/
+    ├── roadmap/ROADMAP.md      workspace roadmap: sessions, status, handoff log
+    └── architecture/           decision records (ADR-001) and specs
 ```
 
 Runtime: `docker-compose up --build -d` from the repo root. Open
@@ -79,7 +134,7 @@ misleads, which is worse than no map.
 
 Not everything that calls into a tool's engine needs a web UI. `orchestrator/`
 (see `orchestrator/CLAUDE.md`) is a plain Python package + CLI — no
-`server.py`, no `ui/`, no `registry.yaml` entry, no `main.py` mount — for
+`server.py`, no `ui/`, no `manifest.yaml`, no `main.py` mount — for
 composing existing engines (`core.pipeline`, duck-lab-style DuckDB reads, a
 one-shot Postgres connector) directly, invoked as `docker compose exec
 toolbox python -m orchestrator.cli ...`. Use it when the real need is "call
@@ -168,6 +223,11 @@ credential (or any other secret) should save it here under its own
 (Followed twice already — Encode/Decode and Subnet Calculator — this is the
 tested checklist, not a guess.)
 
+> Updated in roadmap **A2**: tools are plugins with a `manifest.yaml`; there is
+> no mount list in `main.py` and no `registry.yaml`. Prefer **client-side
+> (tier 1)** designs when a tool can run in the browser — they cost the server
+> nothing.
+
 1. New top-level folder for the tool's own code (its own `core`/`api`/`ui`
    equivalent — organize however fits that tool, doesn't need to mirror
    DataDiff's shape, doesn't need to be FastAPI, but it must expose an ASGI
@@ -189,12 +249,17 @@ tested checklist, not a guess.)
    actually breaks silently if skipped — two tools both exposing a top-level
    `core` package means whichever gets imported second in `main.py` wins,
    and the other tool's real code never runs.
-5. In `main.py`: `from <tool_package>.<module> import app as <name>_app`,
-   then `app.mount("/tools/<name>", <name>_app)`.
-6. One entry in `registry.yaml` so it gets a home-page card, including
-   `category: tool` or `category: learn` (see `registry.yaml`'s own header
-   comment — decides whether the card is shown by default on the home page
-   or only after the "Show learning tools" toggle).
+5. Add **`<tool>/manifest.yaml`** (spec: `docs/architecture/plugin-manifest.md`):
+   `name`, `title`, `description`, `icon`, `category` (`tool` or `learn` —
+   `learn` cards are hidden until the home page's "Show learning tools"
+   toggle), `kind: python`, `entry: <tool_package>.server:app`, `runtime`,
+   `tier`, `state`, `depends_on`, `requires`, `order`. `main.py` mounts it
+   automatically — **do not edit `main.py`**. If the Dockerfile copies the tool
+   file-by-file, also `COPY <tool>/manifest.yaml ./<tool_package>/manifest.yaml`
+   (`tests/unit` checks this).
+6. Add it to `tests/smoke/test_api.py` — an `API_CHECKS` entry (read-only, no
+   outside systems) or `PAGE_ONLY` — then run `python3 -m pytest tests/unit -q`
+   and `scripts/smoke.sh`.
 7. Add its dependencies to the root `requirements.txt` (watch for version
    conflicts with existing tools' dependencies — since everything now
    shares one Python environment, this is the real cost of the "one
@@ -272,10 +337,18 @@ processes) first. Don't raise `--workers` without checking this against
 every stateful tool that exists at the time, not just the one you're
 adding.
 
+**Roadmap:** phase B moves all seven stateful tools' state out of process
+(B2–B8: Redis sessions, Postgres records, MinIO files, RQ jobs) and **B9** lifts
+the `--workers 1` pin. Until B9 is ticked in `docs/roadmap/ROADMAP.md`, keep
+`--workers 1`. New stateful tools added after B1 must use `core/state/`
+(Redis/Postgres/MinIO), not a new in-memory dict.
+
 ## Operating notes (the owner is not a developer)
 
 - One thing to start/stop: `docker-compose up --build -d` / `docker-compose
   down` from the repo root. No network setup, no per-tool containers.
+  (Phase B adds Redis/Postgres/MinIO services to the same compose file and
+  phase C adds runtimes; the start/stop commands stay the same.)
 - Only commit when explicitly asked. Only push when explicitly asked. This
   has been the working agreement all along — it does not change as the repo
   grows.

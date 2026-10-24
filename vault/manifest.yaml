@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Encrypted secret store (vault_data volume); becomes a service in B7.
+schema_version: 1
+name: vault
+title: Vault
+description: Shared encrypted secret store — save DB connections (and anything else) from any tool so you stop retyping credentials after every disconnect
+icon: 🔒
+category: tool
+kind: python
+entry: vault.server:app
+runtime: light
+tier: 2
+state: [durable]
+depends_on: []
+requires: []
+order: 150

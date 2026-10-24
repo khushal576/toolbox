@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Needs the TeX Live layer (~most of the image size).
+schema_version: 1
+name: latex-pdf
+title: LaTeX to PDF
+description: Paste LaTeX (like a resume), compile it to PDF fully offline, preview it side by side and download the PDF — no internet, nothing leaves your machine
+icon: 📄
+category: tool
+kind: python
+entry: latex_pdf.server:app
+runtime: latex
+tier: 4
+state: []
+depends_on: []
+requires: [texlive, fontawesome]
+order: 200

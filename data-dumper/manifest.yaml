@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Dump files on data_dumper_data volume.
+schema_version: 1
+name: data-dumper
+title: Data Dumper
+description: 'Take a Postgres dump you can download, and restore a dump into any database — all of it, or only what you pick: structure, data, a phase (before data / data / after data), some schemas, some tables, or single objects. Restores run in one transaction, so a failure rolls back cleanly'
+icon: 💾
+category: tool
+kind: python
+entry: data_dumper.server:app
+runtime: pgtools
+tier: 4
+state: [durable, jobs]
+depends_on: [vault]
+requires: [pg_client]
+order: 180

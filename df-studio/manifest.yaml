@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# In-memory SESSIONS dict (engine.py) until roadmap B2.
+schema_version: 1
+name: df-studio
+title: DataFrame Studio
+description: Click-driven pandas — load CSV/JSON/XML/Parquet, transform with UI steps or custom Python, export as a file or a standalone script, save reusable templates
+icon: 🐼
+category: tool
+kind: python
+entry: df_studio.server:app
+runtime: data
+tier: 3
+state: [session]
+depends_on: [vault]
+requires: []
+order: 110

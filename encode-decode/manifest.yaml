@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Client-side: all work happens in the browser.
+schema_version: 1
+name: encode-decode
+title: Encode/Decode
+description: Base64, URL, Hex, HTML entities, Gzip, AES, RSA, JWT, hashing — all client-side, nothing leaves your browser
+icon: 🔐
+category: tool
+kind: python
+entry: encode_decode.server:app
+runtime: light
+tier: 1
+state: []
+depends_on: []
+requires: []
+order: 20

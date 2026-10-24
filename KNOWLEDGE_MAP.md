@@ -17,16 +17,19 @@ misleads. If a file's job changes, update its row here in the same commit.
 | If you need to change...                                    | Go to |
 |---------------------------------------------------------------|-------|
 | The home page layout / card styling                           | `main.py` (`_HOME_TEMPLATE`, `_render_card`) |
-| Which tools show up as cards, their title/description/icon    | `registry.yaml` |
-| Whether a tool defaults to shown or hidden (Tool vs Learn), the search box, the "Show learning tools" toggle | `registry.yaml` (`category:` field per tool) + `main.py`'s home page `<script>` block |
-| Actually wiring a tool's app into the site (routing)           | `main.py` (`app.mount(...)` calls, bottom of file) |
+| Which tools show up as cards, their title/description/icon/order, and how they are mounted | each tool's `manifest.yaml` (spec `docs/architecture/plugin-manifest.md`), loaded by `core_plugins/loader.py` in `main.py` |
+| Whether a tool defaults to shown or hidden (Tool vs Learn), the search box, the "Show learning tools" toggle | `category:` in each tool's `manifest.yaml` + `main.py`'s home page `<script>` block |
+| Turning a tool on/off, seeing which tools are loaded             | Settings tab of the workspace UI → `POST /api/workspace/plugins/<name>` in `main.py` (live swap via `Slot`); saved in `workspace.yaml` (volume `workspace_data`, `core_plugins/workspace.py`); `GET /api/workspace/status`; lazy import in `core_plugins/lazy.py` |
+| Adding a custom app without rebuilding (own HTML page or external link), its sandbox | `plugins/<name>/manifest.yaml` (+ files) — `plugins/README.md`; served by `StaticApp` / `ExternalApp` in `core_plugins/lazy.py`; only static/external allowed (`EXTRA_DIR_KINDS` in `core_plugins/loader.py`) |
+| The workspace page itself: sidebar, tabs, settings, search, keyboard shortcuts | `core_plugins/ui/workspace.html` (self-contained; `main.py` injects `{{CARDS}}` and `{{DATA}}`) |
+| Actually wiring a tool's app into the site (routing)           | automatic: `main.py` loops over `kind: python` manifests and mounts each as a lazy `LazyApp` (bottom of file) — set `entry:` in the tool's `manifest.yaml`, don't edit `main.py` |
 | The Docker image / what gets copied into the container         | `Dockerfile` |
 | Ports, restart policy, env vars for the whole site              | `docker-compose.yml` |
 | Why the container runs `--workers 1` (not more)                 | `Dockerfile` (CMD comment) + `CLAUDE.md`'s "Standing rule: stateful tools and --workers" — check every stateful tool, not just df-studio, before ever raising this |
 | The canonical color palette every new tool's `:root` should start from | `theme-tokens.css` — copy-source only, never served; see its own header for why |
 | Architecture decisions, conventions, "why is it built this way" | `CLAUDE.md` |
 | GitHub auth setup for this device                               | `GITHUB_AUTH.md` |
-| Calling a tool's engine directly without a browser (headless), chaining two tools together | `orchestrator/` — see its own `CLAUDE.md`; not a mounted tool, no entry here or in `registry.yaml` |
+| Calling a tool's engine directly without a browser (headless), chaining two tools together | `orchestrator/` — see its own `CLAUDE.md`; not a mounted tool, no entry here and no `manifest.yaml` |
 | DataDiff Pro's mapping/equivalence/diff logic shared between the web UI and the orchestrator | `core/pipeline.py` (`run_compare`) |
 | Connecting to Postgres safely (conninfo, credential pre-validation, SSH tunneling, password scrubbing) — shared by schema-map and the orchestrator's Postgres connector (Postgres-only consumers) | `core/postgres_conn.py` (`build_conninfo`, `verify_connection`, `open_ssh_tunnel`, `scrub_password`) |
 | Connecting to Postgres **or** SQL Server **or** Oracle — the `Dialect` abstraction SQL Studio uses to pick a database type per connection | `core/db/dialect.py` (the `Dialect` protocol), `core/db/dialect_postgres.py`/`dialect_mssql.py`/`dialect_oracle.py` (the three implementations), `core/db/registry.py` (`get_dialect(db_type)`) |

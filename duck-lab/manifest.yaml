@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# In-memory SESSIONS dict (engine.py) until roadmap B3.
+schema_version: 1
+name: duck-lab
+title: Duck Lab
+description: Load CSV/JSON/Parquet/XML files and join or analyze them with SQL (DuckDB) — schema-aware autocomplete, table preview, paginated results so a big join never floods the page
+icon: 🦆
+category: tool
+kind: python
+entry: duck_lab.server:app
+runtime: data
+tier: 3
+state: [session]
+depends_on: [vault]
+requires: [duckdb]
+order: 140

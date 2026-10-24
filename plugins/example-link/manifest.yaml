@@ -1,0 +1,12 @@
+# Sample external link (roadmap A5). Off by default: switch it on in Settings.
+schema_version: 1
+name: example-link
+title: Example link (sample)
+description: Sample external plugin — opens another site or app; replace entry with your own URL
+icon: "🔗"
+category: tool
+kind: external
+entry: https://example.com/
+tier: 1
+order: 910
+enabled_by_default: false

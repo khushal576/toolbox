@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Client-side (learning tool).
+schema_version: 1
+name: packet-journey
+title: Packet Journey
+description: One real HTTP request, traced layer by layer — what gets added, what it's called, and what it actually looks like
+icon: 📦
+category: learn
+kind: python
+entry: packet_journey.server:app
+runtime: light
+tier: 1
+state: []
+depends_on: []
+requires: []
+order: 60

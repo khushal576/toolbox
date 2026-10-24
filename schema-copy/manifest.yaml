@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Shells out to bundled pg_dump/psql (/opt/pgclient).
+schema_version: 1
+name: schema-copy
+title: Schema Copy
+description: Copy a Postgres database's whole structure — tables, partitions, indexes, constraints, views, materialized views, functions, procedures, triggers, types, extensions — into a new empty database (no rows), with preflight, one-transaction apply and a source-vs-target verification report
+icon: 🧬
+category: tool
+kind: python
+entry: schema_copy.server:app
+runtime: pgtools
+tier: 4
+state: [durable, jobs]
+depends_on: [vault]
+requires: [pg_client]
+order: 170

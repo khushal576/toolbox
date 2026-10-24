@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# UI and engine live in core/, api/, ui/ (grandfathered layout).
+schema_version: 1
+name: datadiff-pro
+title: DataDiff Pro
+description: Deep smart diff for JSON, XML & CSV — nested objects, list keys, equivalence rules
+icon: 🔍
+category: tool
+kind: python
+entry: api.app:app
+runtime: data
+tier: 3
+state: []
+depends_on: [vault]
+requires: []
+order: 10

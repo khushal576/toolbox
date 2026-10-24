@@ -10,7 +10,7 @@ without a browser. **Not a workflow/DAG engine, not a plugin registry, not
 an HTTP dispatch service.** Every tool already runs in one container, one
 Python process (`PYTHONPATH=/app`) — composing them is just importing two
 modules and calling functions in sequence. This package has no `server.py`,
-no `ui/`, no `registry.yaml` entry, no `main.py` mount — it's a plain Python
+no `ui/`, no `manifest.yaml`, no `main.py` mount — it's a plain Python
 package + CLI, invoked as a one-shot process:
 
 ```

@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Client-side.
+schema_version: 1
+name: vlan-designer
+title: VLAN Designer
+description: Design VLANs, switch ports, and inter-VLAN routing — see exactly why two devices can or can't reach each other
+icon: 🧩
+category: learn
+kind: python
+entry: vlan_designer.server:app
+runtime: light
+tier: 1
+state: []
+depends_on: []
+requires: []
+order: 50

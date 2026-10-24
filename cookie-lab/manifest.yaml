@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Client-side.
+schema_version: 1
+name: cookie-lab
+title: Cookie Lab
+description: A live document.cookie playground plus full theory — design, set, inspect, and delete real cookies while seeing every attribute, edge case, and browser rejection explained
+icon: 🍪
+category: learn
+kind: python
+entry: cookie_lab.server:app
+runtime: light
+tier: 1
+state: []
+depends_on: []
+requires: []
+order: 100
