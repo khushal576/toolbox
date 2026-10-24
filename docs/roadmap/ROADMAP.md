@@ -25,7 +25,16 @@ Size: **S** = small session, **M** = medium session. No session should be large;
   1000 containers.
 - **Plugins talk over HTTP, never by importing each other** (DataDiff becomes an API).
 - **State**: sessions/queues → **Redis**; durable records → **Postgres**; files/uploads/dumps →
-  **MinIO** (S3 API, swap for S3 later). No important state in process memory or on local disk.
+  **S3-compatible storage** — bundled **SeaweedFS** (decided in B1: S3 storage's community Docker images were
+  discontinued in 2025), reached only through the S3 API (boto3) so Garage or AWS S3 is a config swap.
+  No important state in process memory or on local disk.
+- **Where the state services run (owner, 2026-10-24):** every service is reached only through env URLs
+  (`TOOLBOX_DATABASE_URL`, `TOOLBOX_REDIS_URL`, `TOOLBOX_S3_ENDPOINT` + keys), never hard-coded.
+  **Redis and S3 storage (SeaweedFS) are bundled** in `docker-compose.yml` with named volumes (Redis with AOF persistence so
+  restarts keep queued jobs). **Postgres: bundled by default, but may point at an existing server** (e.g. the
+  owner's `postgres_lab` via `host.docker.internal:5432`) — then Toolbox uses its **own `toolbox` database and
+  user** there, never the lab databases, and that server must be backed up because Toolbox records and (after
+  B7) Vault secrets live in it. Owner to confirm the Postgres choice at the start of B1.
 - **Queue**: **RQ** on Redis (fork-per-job suits CPU-heavy pandas work). Confirm at B4.
 - **Gateway**: Python (FastAPI + `httpx`, already a dependency). **Supervisor** for on-demand
   containers: Docker SDK through a **docker-socket-proxy** (limits what the socket allows).
@@ -48,11 +57,11 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | A3 | Lazy loading + enable/disable | M | A2 ⚡ | ☑ |
 | A4 | Workspace UI shell | M | A2 ⚡ | ☑ |
 | A5 | Custom apps: static + external plugins | S | A3 | ☑ |
-| B1 | Redis, Postgres, MinIO + shared clients | M | A3 | ☐ |
+| B1 | Redis, Postgres, S3 storage + shared clients | M | A3 | ☑ |
 | B2 | DataFrame Studio state out of memory | M | B1 ⚡ | ☐ |
 | B3 | DuckLab + SQL Studio state out of memory | M | B1 ⚡ | ☐ |
 | B4 | Job queue (RQ) + Data Syncer on it | M | B1 | ☐ |
-| B5 | Schema Copy + Data Dumper on the queue, files to MinIO | M | B4 | ☐ |
+| B5 | Schema Copy + Data Dumper on the queue, files to S3 storage | M | B4 | ☐ |
 | B6 | SQLite → Postgres for durable stores | M | B1 ⚡ | ☐ |
 | B7 | Vault as a service with scoped API | M | B6 | ☐ |
 | B8 | SSH & SFTP state out of memory | M | B1 ⚡ | ☐ |
@@ -62,7 +71,7 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | C3 | On-demand supervisor (start/stop, idle, limits) | M | C2 | ☐ |
 | C4 | Move tier-4 tools to on-demand containers | S | C3 | ☐ |
 | D1 | DataDiff as a shared API + client | M | C2 ⚡ | ☐ |
-| D2 | Generic job API + results in MinIO | M | D1 | ☐ |
+| D2 | Generic job API + results in S3 storage | M | D1 | ☐ |
 | D3 | Replica autoscaling on one node | M | C3, D2 | ☐ |
 | E1 | Metrics + Grafana dashboards + JSON logs | M | C2 ⚡ | ☐ |
 | E2 | Health/status page + alerts | S | E1 | ☐ |
@@ -136,20 +145,20 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
 
 ## Phase B – State out of process (multi-node ready)
 
-### B1 Redis, Postgres, MinIO + shared clients (M)
+### B1 Redis, Postgres, S3 storage + shared clients (M)
 - Add the three services to `docker-compose.yml` with volumes and health checks.
 - `core/state/`: `sessions.py` (Redis session store with TTL), `db.py` (Postgres engine/pool),
-  `objects.py` (MinIO/S3 client). Config only from env vars. Add deps + wheelhouse.
+  `objects.py` (S3 storage/S3 client). Config only from env vars. Add deps + wheelhouse.
 - **Done when**: services healthy; a tiny test writes/reads each; no tool migrated yet.
 
 ### B2 DataFrame Studio state out of memory ⚡ (M)
 - Today: `df-studio/engine.py` `SESSIONS` dict holds the DataFrame + step pipeline.
-- New: pipeline/metadata in Redis; the DataFrame snapshot as Parquet in MinIO (reload on demand,
+- New: pipeline/metadata in Redis; the DataFrame snapshot as Parquet in S3 storage (reload on demand,
   small LRU cache per worker).
 - **Done when**: session survives a container restart and works with 2 workers; smoke passes.
 
 ### B3 DuckLab + SQL Studio state out of memory ⚡ (M)
-- DuckLab `duck-lab/engine.py` `SESSIONS`: loaded-file list in Redis, files in MinIO, DuckDB
+- DuckLab `duck-lab/engine.py` `SESSIONS`: loaded-file list in Redis, files in S3 storage, DuckDB
   connection re-created per worker lazily.
 - SQL Studio `sql-studio/db_engine.py` `STATE`: store connection **settings** (Vault ref) per
   session in Redis; each worker opens its own pool lazily; idle pools closed (reaper).
@@ -161,9 +170,9 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
 - Move `data-syncer/runner.py` background thread → RQ job; keep resume positions durable.
 - **Done when**: a sync runs in the worker container; status/log visible from any web worker.
 
-### B5 Schema Copy + Data Dumper on the queue, files to MinIO (M)
+### B5 Schema Copy + Data Dumper on the queue, files to S3 storage (M)
 - Same pattern for `schema-copy/runner.py` and `data-dumper/runner.py`; dump files and generated
-  `.sql` scripts stored in MinIO (download via presigned URL or streamed through the API).
+  `.sql` scripts stored in S3 storage (download via presigned URL or streamed through the API).
 - **Done when**: both run as jobs; files no longer depend on `data_dumper_data`/`schema_copy_data`.
 
 ### B6 SQLite → Postgres for durable stores ⚡ (M)
@@ -181,7 +190,7 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
 
 ### B8 SSH & SFTP state out of memory ⚡ (M)
 - `ssh-sftp/sessions.py` connection cache stays per worker (recreated on demand); upload/command
-  jobs via RQ; staged uploads in MinIO (resume still works).
+  jobs via RQ; staged uploads in S3 storage (resume still works).
 - **Done when**: works with 2 workers; resumable upload survives restart.
 
 ### B9 Multiple workers + full regression (S)
@@ -218,8 +227,8 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
   DataDiff UI and orchestrator use the client instead of importing `core.pipeline` directly.
 - **Done when**: DataDiff runs as its own stateless service; two replicas behind the gateway work.
 
-### D2 Generic job API + results in MinIO (M)
-- `POST /jobs`, `GET /jobs/{id}`, cancel; large compares run as RQ jobs; results stored in MinIO.
+### D2 Generic job API + results in S3 storage (M)
+- `POST /jobs`, `GET /jobs/{id}`, cancel; large compares run as RQ jobs; results stored in S3 storage.
 - **Done when**: a large DataDiff compare runs async and any replica can return the result.
 
 ### D3 Replica autoscaling on one node (M)
@@ -246,7 +255,7 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
   plugin manifests (resources, replicas, health checks). Secrets via k8s Secrets.
 
 ### F2 k3s single-node deploy (M)
-- k3s on one machine: ingress, Postgres/Redis/MinIO (in-cluster or external), gateway, runtimes.
+- k3s on one machine: ingress, Postgres/Redis/S3 storage (in-cluster or external), gateway, runtimes.
   Same smoke suite passes against the cluster.
 
 ### F3 KEDA scale-to-zero + queue scaling (M)
@@ -255,7 +264,7 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
 
 ### F4 Second node, failover, runbook (M)
 - Join a second node; kill a node during load; confirm recovery. Write `docs/runbook.md`
-  (backup/restore Postgres/MinIO, upgrades, scaling knobs).
+  (backup/restore Postgres/S3 storage, upgrades, scaling knobs).
 - Cloud alternative: replace F2–F4 with an **ECS Fargate** track (same images and state services).
 
 ## Phase G – Desktop app (optional, any time after A4)
@@ -266,6 +275,17 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+- 2026-10-24 – **B1 done.** Compose: `redis:7.4-alpine` (AOF, noeviction, 256 MB cap), `postgres:18-bookworm`
+  (db/user `toolbox`), `chrislusf/seaweedfs:4.48` (S3 on :8333, creds via inline compose `configs:`) — all with
+  named volumes + health checks, none published on host ports. **MinIO dropped** (`minio/minio` no longer
+  pullable). `core/state/`: `config.py` (env only), `db.py` (psycopg pool, min 0, `ensure_schema`), `sessions.py`
+  (`SessionStore` JSON+TTL), `objects.py` (boto3, path-style, `key()` validation), `selftest.py`
+  (`docker compose exec toolbox python -m core.state.selftest`), `health()`; `GET /api/state/health`.
+  Verified: round trips ok; markers survive `docker compose down` + `up`; 65 unit + 87 smoke pass. Idle memory:
+  toolbox 33 / postgres 30 / redis 5 / seaweedfs 144 MiB. Gotchas: SeaweedFS needs ~20 s after start and binds the
+  container IP (health check uses `hostname -i`); presigned URLs point at the internal endpoint → stream downloads
+  through tool APIs. Postgres is still the bundled one — switch with `TOOLBOX_DATABASE_URL` in `.env`.
+  **Next:** B2, B3, B6, B8 can run in parallel; B4 then B5.
 - 2026-10-24 – **A5 done → Phase A complete.** `plugins/` (bind-mounted ro at `/app/plugins`, `TOOLBOX_PLUGINS_DIR`)
   for custom apps: loader accepts only `static`/`external` there (python refused). `StaticApp` serves folder files
   (no `..`/hidden/manifest, GET/HEAD) with CSP `sandbox` (no `allow-same-origin` → can't reach Toolbox APIs —
@@ -273,7 +293,7 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
   later). Samples `hello-static`, `example-link` ship off. 53 unit + 86 smoke pass. Note: `Slot` mounts strip the
   prefix via `scope["root_path"]` (Starlette keeps the full path in `scope["path"]`).
   **Phase A result:** tools = plugins with manifests, lazy-loaded (idle 174 → 32 MiB), live on/off, VS-Code-like
-  workspace UI, custom apps without rebuild. **Next: B1** (Redis/Postgres/MinIO). Optional any time: G1 (desktop app).
+  workspace UI, custom apps without rebuild. **Next: B1** (Redis/Postgres/S3 storage). Optional any time: G1 (desktop app).
 - 2026-10-24 – **A4 done.** `/` is now the workspace: `core_plugins/ui/workspace.html` (sidebar with search/Ctrl+K,
   Tools/Learning groups, load-state dots; tools in tabs as kept-alive iframes, restored from localStorage, deep links
   `#/tool/<name>`; Home tab = old card grid; Settings tab = table + switches). Tools mounted via `Slot` →

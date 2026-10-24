@@ -15,3 +15,7 @@ cryptography==42.0.5
 paramiko==3.4.0
 sshtunnel==0.4.0
 httpx==0.28.1
+
+# Roadmap B1: shared state clients (core/state) — Redis sessions/queue, S3-compatible object storage.
+redis==5.2.1
+boto3==1.35.99

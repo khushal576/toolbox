@@ -147,6 +147,16 @@ async def home() -> HTMLResponse:
     return HTMLResponse(_WORKSPACE_HTML.replace("{{CARDS}}", cards).replace("{{DATA}}", payload))
 
 
+@app.get("/api/state/health")
+async def state_health() -> dict[str, Any]:
+    """Postgres / Redis / object storage status (roadmap B1). Imported lazily so idle memory stays low."""
+    from starlette.concurrency import run_in_threadpool
+
+    from core.state import health
+
+    return await run_in_threadpool(health)
+
+
 @app.get("/api/workspace/status")
 async def workspace_status() -> dict[str, Any]:
     """Per-plugin state for the workspace UI (A4) and status page (E2). Never imports a tool."""

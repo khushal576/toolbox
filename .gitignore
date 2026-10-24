@@ -38,3 +38,6 @@ duck-lab/data/
 
 # Pre-downloaded wheels for offline/slow-network Docker builds — not source
 wheelhouse/
+
+# Local secrets for docker compose (TOOLBOX_DB_PASSWORD, TOOLBOX_S3_* keys, TOOLBOX_DATABASE_URL) — never commit
+.env

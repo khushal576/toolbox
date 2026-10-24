@@ -25,7 +25,7 @@
      (LaTeX, SSH, Postgres client tools: own runtime, started on demand).
    - A handful of runtime images host all tools. 1000 tools ≠ 1000 containers.
 4. **No state in process memory or on local disk:** sessions and queues in **Redis**, durable records
-   in **Postgres**, files in **MinIO** (S3 API). This is what makes multiple workers and multiple
+   in **Postgres**, files in **S3-compatible storage** (bundled SeaweedFS since B1 — MinIO community images were discontinued in 2025). This is what makes multiple workers and multiple
    nodes possible.
 5. **Plugins talk over HTTP, not by importing each other.** Shared heavy logic (DataDiff) becomes a
    versioned API with replicas; long work goes through an **RQ** job queue.

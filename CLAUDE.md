@@ -70,6 +70,16 @@ containers/gateway pieces outside the roadmap session that owns them.
   sandboxed (CSP `sandbox` without `allow-same-origin`): their JS runs but
   cannot call Toolbox APIs/Vault. The two samples ship `enabled_by_default:
   false`.
+- **State services (roadmap B1):** compose also runs `redis`, `postgres`
+  (Toolbox's OWN records, db/user `toolbox`) and `seaweedfs` (S3-compatible
+  files) with named volumes, not published on host ports. Code reaches them
+  only through `core/state/` (`db`, `sessions`, `objects`, `health()`) and the
+  `TOOLBOX_*` env vars in `core/state/config.py` — to use an existing Postgres,
+  set `TOOLBOX_DATABASE_URL` in a `.env` file (dedicated `toolbox` database).
+  Check with `GET /api/state/health` or
+  `docker compose exec toolbox python -m core.state.selftest`. Defaults are
+  local-only passwords; override `TOOLBOX_DB_PASSWORD`,
+  `TOOLBOX_S3_ACCESS_KEY`, `TOOLBOX_S3_SECRET_KEY` in `.env`.
 - `GET /api/workspace/status` — per-tool state (`not_loaded`, `loaded`,
   `failed`, `disabled`), load time, errors. Never imports a tool.
 - One `Dockerfile` copies every tool's code (including its `manifest.yaml`),

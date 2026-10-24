@@ -40,11 +40,29 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+    # Start order only — Toolbox still starts if a state service is down (tools that don't use state keep
+    # working; GET /api/state/health reports the problem).
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_started
+      seaweedfs:
+        condition: service_started
+
     # Environment variables available inside the container.
     # Add any future config here (e.g. LOG_LEVEL, MAX_PAYLOAD_MB).
     environment:
       - PYTHONUNBUFFERED=1
       - TOOLBOX_PLUGINS_DIR=/app/plugins
+      # State services (roadmap B1, core/state/config.py). Defaults point at the bundled services below;
+      # set TOOLBOX_DATABASE_URL in a .env file to use an existing Postgres instead (own `toolbox` DB + user).
+      - TOOLBOX_DATABASE_URL=${TOOLBOX_DATABASE_URL:-postgresql://toolbox:${TOOLBOX_DB_PASSWORD:-toolbox-local-only}@postgres:5432/toolbox}
+      - TOOLBOX_REDIS_URL=${TOOLBOX_REDIS_URL:-redis://redis:6379/0}
+      - TOOLBOX_S3_ENDPOINT=${TOOLBOX_S3_ENDPOINT:-http://seaweedfs:8333}
+      - TOOLBOX_S3_ACCESS_KEY=${TOOLBOX_S3_ACCESS_KEY:-toolbox}
+      - TOOLBOX_S3_SECRET_KEY=${TOOLBOX_S3_SECRET_KEY:-toolbox-local-only-secret}
+      - TOOLBOX_S3_BUCKET=${TOOLBOX_S3_BUCKET:-toolbox}
 
     # Optional: mount the ui/ folder so you can edit the frontend
     # without rebuilding the image.  Uncomment during development:
@@ -91,6 +109,68 @@ services:
       # Custom apps (roadmap A5): static/external plugins, read-only; edit on the host, then restart.
       - ./plugins:/app/plugins:ro
 
+  # ---------------------------------------------------------------------------
+  # State services (roadmap B1 — ADR-001). Not published on host ports: reachable only from the toolbox
+  # container over the compose network. Data lives in named volumes (survive rebuilds; only `down -v` deletes).
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    # AOF persistence so a restart keeps queued jobs; noeviction so queues are never silently dropped.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec",
+              "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    # Same major as the bundled pg_dump/psql (Dockerfile stage `pgclient`). Toolbox's OWN records only.
+    image: postgres:18-bookworm
+    environment:
+      - POSTGRES_DB=toolbox
+      - POSTGRES_USER=toolbox
+      - POSTGRES_PASSWORD=${TOOLBOX_DB_PASSWORD:-toolbox-local-only}
+    volumes:
+      - postgres_data:/var/lib/postgresql   # PG 18 images keep data under /var/lib/postgresql/18/docker
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U toolbox -d toolbox"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  seaweedfs:
+    # S3-compatible object storage (MinIO community images were discontinued in 2025). One process:
+    # master + volume + filer + S3 gateway. Swappable for Garage/AWS S3 via TOOLBOX_S3_* only.
+    image: chrislusf/seaweedfs:4.48
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-s3.config=/etc/seaweedfs/s3.json",
+              "-master.volumeSizeLimitMB=1024", "-volume.max=0"]
+    configs:
+      - source: seaweedfs_s3
+        target: /etc/seaweedfs/s3.json
+    volumes:
+      - seaweedfs_data:/data
+    restart: unless-stopped
+    # The S3 gateway binds the container IP (not localhost) and needs ~20 s to start (raft leader election).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -o /dev/null http://$$(hostname -i | cut -d' ' -f1):8333/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+
+configs:
+  seaweedfs_s3:
+    content: |
+      {"identities": [{"name": "toolbox",
+        "credentials": [{"accessKey": "${TOOLBOX_S3_ACCESS_KEY:-toolbox}",
+                         "secretKey": "${TOOLBOX_S3_SECRET_KEY:-toolbox-local-only-secret}"}],
+        "actions": ["Admin", "Read", "Write", "List", "Tagging"]}]}
+
 volumes:
   schema_map_data:
   vault_data:
@@ -99,3 +179,6 @@ volumes:
   data_dumper_data:
   ssh_sftp_data:
   workspace_data:
+  redis_data:
+  postgres_data:
+  seaweedfs_data:
