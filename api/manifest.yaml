@@ -8,9 +8,10 @@ icon: 🔍
 category: tool
 kind: python
 entry: api.app:app
-runtime: data
+runtime: datadiff   # roadmap D1: its own stateless service image (rt-datadiff, 2 replicas)
 tier: 3
 state: []
 depends_on: [vault]
 requires: []
 order: 10
+scaling: {min: 2, max: 4}   # roadmap D3: rt-datadiff replicas, autoscaled by CPU between 2 and 4

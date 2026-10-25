@@ -2,9 +2,9 @@
 orchestrator/recipes/compare.py
 
 The first real recipe: fetch two "sources" (each either a Postgres query
-or a file) and diff them via core.pipeline.run_compare — the exact same
-function DataDiff Pro's web UI calls, just skipping normalize() entirely
-since DB/file rows are already structured Python objects. This is what
+or a file) and diff them with DataDiff Pro — since roadmap D1 through its API client
+(core/clients/datadiff.py → POST /api/v1/compare/structured on the rt-datadiff service, or in-process when
+TOOLBOX_DATADIFF_URL is unset), skipping normalize() since DB/file rows are already structured Python objects. This is what
 proves the "plug and play" idea: one recipe, two independent connectors,
 one unchanged diff engine.
 """
@@ -18,7 +18,7 @@ from core import vault as vault_store
 
 # Trusted host code, not a plugin: an explicit scope instead of a manifest (roadmap B7).
 vault = vault_store.ScopedVault(vault_store.Scope("orchestrator", read=["postgres_connection"], datasets="write"))
-from core.pipeline import run_compare
+from core.clients.datadiff import DataDiffClient
 from core.postgres_conn import ssh_tunnel_from_dict
 from orchestrator.connectors import file as file_connector
 from orchestrator.connectors import postgres as postgres_connector
@@ -79,9 +79,12 @@ def _fetch(source: Source) -> list[dict]:
     raise ValueError(f"Unknown source kind '{kind}' — use 'postgres', 'file', or 'vault_dataset'")
 
 
-def compare(left: Source, right: Source, **diff_kwargs: Any) -> dict:
+def compare(left: Source, right: Source, background: bool = False, **diff_kwargs: Any) -> dict:
     """Fetch both sides and diff them. diff_kwargs are passed straight
-    through to run_compare (mapper_csv, environment_yaml, deep_mode, ...).
+    through to DataDiff (mapper_csv, environment_yaml, deep_mode, ...);
+    a bad option or input raises core.clients.datadiff.DataDiffError.
+    background=True submits a DataDiff job (roadmap D2: input → S3 storage, diffed by the worker, any replica
+    returns the result) and waits for it — for inputs too big for one request.
 
     The two fetches run concurrently (a thread each) — each is a
     blocking call dominated by network/SSH-tunnel-setup latency (the
@@ -94,4 +97,11 @@ def compare(left: Source, right: Source, **diff_kwargs: Any) -> dict:
         right_future = pool.submit(_fetch, right)
         left_rows = left_future.result()
         right_rows = right_future.result()
-    return run_compare(left_rows, right_rows, **diff_kwargs)
+    client = DataDiffClient()
+    if background:
+        job_id = client.submit_data(left_rows, right_rows, **diff_kwargs)
+        result = client.wait(job_id)
+    else:
+        result = client.compare_data(left_rows, right_rows, **diff_kwargs)
+    result.pop("ok", None)  # same shape as run_compare() returned before D1
+    return result

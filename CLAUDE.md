@@ -18,9 +18,10 @@ its status + handoff log.
 **Since roadmap C2:** one repo, one Dockerfile, several images (build
 targets). Compose runs `toolbox` = the **gateway** (workspace UI + proxy, no
 tool code, the only host port), one container per runtime (`rt-light`,
-`rt-data`, `rt-pgtools`, `rt-ssh`, `rt-latex` — each serving only the tools
-of its manifest `runtime:`), `singletons` (sql-studio + schema-map, one
-process, data image), `worker` (jobs, full image) and the state services. (An earlier per-tool-container idea was rejected by
+`rt-data`, `rt-pgtools`, `rt-ssh`, `rt-latex`, `rt-datadiff` ×2 — each
+serving only the tools of its manifest `runtime:`), `singletons` (sql-studio
++ schema-map, one process, data image), `worker` (jobs, worker image),
+`docker-proxy` (C3) and the state services. (An earlier per-tool-container idea was rejected by
 the owner; the roadmap's runtime pools are deliberately different — a few
 shared runtime images, not one container per tool.) Do not introduce
 containers/gateway pieces outside the roadmap session that owns them.
@@ -95,6 +96,35 @@ containers/gateway pieces outside the roadmap session that owns them.
   worker ~25 MB). No tool uses WebSockets; the proxy refuses them. The
   headless CLI now runs in the worker: `docker compose exec worker python -m
   orchestrator.cli …`.
+- **DataDiff as a shared service (roadmap D1):** runtime `datadiff` (own
+  188 MB image, `rt-datadiff` with 2 replicas behind the gateway — one can be
+  stopped or killed and every request still succeeds). Versioned API
+  `/api/v1/compare`, `/api/v1/compare/structured`, `/api/v1/health` (names
+  the replica), OpenAPI at `/tools/datadiff-pro/docs`; `/compare` stays as an
+  alias. Other code calls it through `core/clients/datadiff.py` — never
+  `core.pipeline` directly (unit test). The worker's orchestrator uses it via
+  `TOOLBOX_DATADIFF_URL`. **Background compares (roadmap D2):** `POST
+  /api/v1/jobs` stores the input in S3 storage and queues `api.jobs.run_job`
+  for the `worker`; status in the job's Redis channel, gzipped result in S3
+  (`datadiff/<id>/…`, kept 7 days) — any replica answers `GET
+  /api/v1/jobs/{id}` and `/result`; `DELETE` cancels (a running diff can't be
+  interrupted, its result is discarded). The page uses it automatically for
+  > 2 MB of input; client `submit_*`/`wait`; CLI `--background`.
+- **Autoscaling + balancing (roadmap D3):** compose creates a POOL
+  (`deploy.replicas` = max: rt-datadiff 4, worker 3); the supervisor leader
+  keeps between min and max running by starting/stopping pool members
+  (`core_plugins/autoscale.py`): rt-datadiff by CPU (Docker stats; > 60 % →
+  +1, < 15 % for 45 s → −1; manifest `scaling: {min: 2, max: 4}`), workers by
+  queue length (`TOOLBOX_WORKER_SCALING=1:3`; only IDLE workers are stopped).
+  20 s cooldown after each change. The gateway round-robins each request over
+  running + healthy replicas (`core_plugins/balancer.py`, refreshed every 3 s)
+  and retries another replica on a refused connection. State in
+  `/api/workspace/runtimes` → `scaled`. **Gotchas:** compose does NOT recreate
+  `docker-proxy` when only its inline `docker_proxy_rules` change — run
+  `docker compose up -d --force-recreate docker-proxy`; recreating the gateway
+  with plain `up -d toolbox` starts every pool member again (depends_on) —
+  use `--no-deps`, or let the autoscaler bring them back down; a recreated
+  gateway waits up to 45 s for the old leader lock to expire.
 - **On-demand runtimes (roadmap C3):** `rt-latex`, `rt-pgtools`, `rt-ssh`
   (all-tier-4 runtimes) sleep when idle: the gateway's supervisor
   (`core_plugins/supervisor.py`) stops a container after its manifests'
@@ -215,9 +245,9 @@ misleads, which is worse than no map.
 Not everything that calls into a tool's engine needs a web UI. `orchestrator/`
 (see `orchestrator/CLAUDE.md`) is a plain Python package + CLI — no
 `server.py`, no `ui/`, no `manifest.yaml`, no `main.py` mount — for
-composing existing engines (`core.pipeline`, duck-lab-style DuckDB reads, a
-one-shot Postgres connector) directly, invoked as `docker compose exec
-toolbox python -m orchestrator.cli ...`. Use it when the real need is "call
+composing existing engines (DataDiff through its client since D1,
+duck-lab-style DuckDB reads, a one-shot Postgres connector), invoked as
+`docker compose exec worker python -m orchestrator.cli ...` (since C2). Use it when the real need is "call
 this logic without a browser" (e.g. diffing data that lives in a database,
 not pasted text) — not a workflow engine, not a plugin system, just direct
 function calls between modules that already run in the same process. If a

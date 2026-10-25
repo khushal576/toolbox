@@ -118,6 +118,8 @@ def main(argv: list[str] | None = None) -> int:
     compare_parser.add_argument("--deep-mode", action="store_true",
                                  help="Parse string-encoded JSON/XML values before diffing")
     compare_parser.add_argument("--output", help="Write JSON result here instead of stdout")
+    compare_parser.add_argument("--background", action="store_true",
+                                 help="Run the diff as a DataDiff background job (big inputs; roadmap D2) and wait for it")
 
     args = parser.parse_args(argv)
 
@@ -133,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
                 _source_from_args(args, "right"),
                 environment_yaml=environment_yaml,
                 deep_mode=args.deep_mode,
+                background=args.background,
             )
         except Exception as exc:  # connector errors, PipelineError, etc. all land here
             print(f"Error: {exc}", file=sys.stderr)

@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO))
 
 from core_plugins import discover  # noqa: E402
 
-RUNTIMES = ("light", "data", "pgtools", "ssh", "latex")
+RUNTIMES = ("light", "data", "pgtools", "ssh", "latex", "datadiff")
 
 
 def _pins(path: Path, seen: set | None = None) -> dict[str, str]:
@@ -104,7 +104,8 @@ def test_docker_proxy_allows_only_list_inspect_and_rt_start_stop():
     cfg = yaml.safe_load((REPO / "docker-compose.yml").read_text())["configs"]["docker_proxy_rules"]["content"]
     rules = [line.strip() for line in cfg.splitlines() if line.strip().startswith("http-request")]
     assert rules[-1] == "http-request deny"
-    assert all("METH_GET" in r or "-rt-[a-z]+-[0-9]+/(start|stop)" in r for r in rules[:-1]), rules
+    assert all("METH_GET" in r or "-rt-[a-z]+-[0-9]+/(start|stop)" in r or "-worker-[0-9]+/(start|stop)" in r
+               for r in rules[:-1]), rules
     assert not any(w in cfg for w in ("exec", "create", "update", "/images", "/volumes")), "keep the proxy minimal"
 
 

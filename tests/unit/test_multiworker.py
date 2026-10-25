@@ -152,7 +152,7 @@ def test_proxy_shows_a_clear_page_when_the_singleton_process_is_down():
 
 def test_gateway_mode_proxies_every_python_tool_and_imports_none(monkeypatch, tmp_path):
     """Roadmap C2: with TOOLBOX_RUNTIME_URLS the web role is a pure gateway."""
-    urls = ",".join(f"{r}=http://rt-{r}:8080" for r in ("light", "data", "pgtools", "ssh", "latex"))
+    urls = ",".join(f"{r}=http://rt-{r}:8080" for r in ("light", "data", "pgtools", "ssh", "latex", "datadiff"))
     main = _fresh_main(monkeypatch, tmp_path, TOOLBOX_RUNTIME_URLS=urls, TOOLBOX_SINGLETON_URL="http://singletons:8080")
     for m in main._registry.ordered():
         app = main._slots[m.name].app if m.name in main._slots else None

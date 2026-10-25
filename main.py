@@ -54,6 +54,8 @@ from pydantic import BaseModel
 
 from core_plugins import (DisabledApp, ExternalApp, LazyApp, ProxyApp, Slot, StaticApp, default_path, discover,
                           load_workspace)
+from core_plugins.autoscale import ScaledService, scaled_runtimes
+from core_plugins.balancer import Balancer
 from core_plugins.supervisor import RuntimeSupervisor, Supervisor, on_demand_runtimes
 
 logger = logging.getLogger("toolbox")
@@ -74,8 +76,8 @@ RUNTIME_URLS = {k.strip(): v.strip() for k, v in
                 (p.split("=", 1) for p in (os.environ.get("TOOLBOX_RUNTIME_URLS") or "").split(",") if "=" in p)}
 if ROLE not in ("web", "singletons", "runtime"):
     raise SystemExit(f"TOOLBOX_ROLE must be 'web', 'singletons' or 'runtime', not {ROLE!r}")
-if ROLE == "runtime" and RUNTIME not in ("light", "data", "pgtools", "latex", "ssh"):
-    raise SystemExit(f"TOOLBOX_ROLE=runtime needs TOOLBOX_RUNTIME=light|data|pgtools|latex|ssh, not {RUNTIME!r}")
+if ROLE == "runtime" and RUNTIME not in ("light", "data", "pgtools", "latex", "ssh", "datadiff"):
+    raise SystemExit(f"TOOLBOX_ROLE=runtime needs TOOLBOX_RUNTIME=light|data|pgtools|latex|ssh|datadiff, not {RUNTIME!r}")
 
 # Discovered once at startup: mounting happens at startup too, so a manifest
 # change needs a restart either way. Errors/warnings are logged, never raised.
@@ -91,10 +93,22 @@ for _warn in _registry.warnings:
 # On-demand runtimes (roadmap C3): only in gateway mode, and only with the docker-proxy configured.
 DOCKER_URL = (os.environ.get("TOOLBOX_DOCKER_URL") or "").strip()
 _supervisors: dict[str, RuntimeSupervisor] = {}
+# Replicas (roadmap D3): runtimes whose plugins allow scaling.max > 1 get a health-aware balancer + autoscaler; the
+# worker pool is scaled by queue length when TOOLBOX_WORKER_SCALING="min:max" is set.
+_balancers: dict[str, Balancer] = {}
+_scalers: list[ScaledService] = []
 if ROLE == "web" and DOCKER_URL and RUNTIME_URLS:
     for _rt, _idle in on_demand_runtimes(_registry.ordered()).items():
         if _rt in RUNTIME_URLS:
             _supervisors[_rt] = RuntimeSupervisor(_rt, RUNTIME_URLS[_rt], DOCKER_URL, _idle)
+    for _rt, (_lo, _hi) in scaled_runtimes(_registry.ordered()).items():
+        if _rt in RUNTIME_URLS and _rt not in _supervisors:
+            _balancers[_rt] = Balancer(f"rt-{_rt}", RUNTIME_URLS[_rt], DOCKER_URL)
+            _scalers.append(ScaledService(f"rt-{_rt}", "cpu", _lo, _hi, DOCKER_URL))
+    _ws = (os.environ.get("TOOLBOX_WORKER_SCALING") or "").strip()
+    if _ws:
+        _lo, _hi = (int(x) for x in _ws.split(":", 1))
+        _scalers.append(ScaledService("worker", "queue", _lo, _hi, DOCKER_URL))
 
 _workspace = load_workspace(default_path(_REPO), known=set(_registry.plugins))
 for _err in _workspace.errors:
@@ -335,7 +349,8 @@ def _app_for(m, enabled: bool):
     if target:
         if m.name not in _proxies:
             _proxies[m.name] = ProxyApp(m.name, m.title, target,
-                                        supervisor=None if m.singleton else _supervisors.get(m.runtime or ""))
+                                        supervisor=None if m.singleton else _supervisors.get(m.runtime or ""),
+                                        balancer=None if m.singleton else _balancers.get(m.runtime or ""))
         return _proxies[m.name]
     if m.name not in _lazy:
         _lazy[m.name] = LazyApp(m.name, m.module, on_failure=_record_failure, on_loaded=_publish_soon)
@@ -383,7 +398,12 @@ async def runtimes_status() -> dict[str, Any]:
         idle = await run_in_threadpool(sup.idle_for)
         out[rt] = {"state": await sup.refresh(), "idle_timeout_s": sup.idle_s,
                    "idle_s": round(idle, 1) if idle is not None else None}
-    return {"on_demand": out, "always_on": sorted(set(RUNTIME_URLS) - set(_supervisors))}
+    scaled = {s.service: {"min": s.min, "max": s.max, "metric": s.kind, **await run_in_threadpool(s.shared_state)}
+              for s in _scalers}
+    for rt, b in _balancers.items():
+        scaled.setdefault(f"rt-{rt}", {})["routing"] = [
+            {"replica": t["name"], "healthy": t["healthy"]} for t in b.targets]
+    return {"on_demand": out, "always_on": sorted(set(RUNTIME_URLS) - set(_supervisors)), "scaled": scaled}
 
 
 _sweeper_started = False
@@ -392,11 +412,14 @@ _sweeper_started = False
 def _start_supervisor() -> None:
     """Start the idle sweep on this process's event loop (first request — no deprecated startup hook needed)."""
     global _sweeper_started
-    if _supervisors and not _sweeper_started:
+    if (_supervisors or _scalers or _balancers) and not _sweeper_started:
         import asyncio
 
         _sweeper_started = True
-        asyncio.get_running_loop().create_task(Supervisor(_supervisors).run())
+        loop = asyncio.get_running_loop()
+        loop.create_task(Supervisor(_supervisors, _scalers).run())
+        for b in _balancers.values():  # every gateway process routes, so every process keeps its replica list
+            loop.create_task(b.run())
         logger.info("On-demand runtimes: %s", {rt: s.idle_s for rt, s in _supervisors.items()})
 
 

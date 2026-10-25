@@ -176,10 +176,12 @@ class RuntimeSupervisor:
 
 
 class Supervisor:
-    """All on-demand runtimes + the idle sweep (one leader among the gateway's worker processes)."""
+    """All on-demand runtimes + the idle sweep + replica autoscaling (roadmap D3) — one leader among the gateway's
+    worker processes does the sweeping/scaling; every process routes."""
 
-    def __init__(self, runtimes: dict[str, RuntimeSupervisor]):
+    def __init__(self, runtimes: dict[str, RuntimeSupervisor], scalers: list | None = None):
         self.runtimes = runtimes
+        self.scalers = scalers or []
         self._me = f"{os.uname().nodename}:{os.getpid()}"
 
     def _lead(self) -> bool:
@@ -203,13 +205,28 @@ class Supervisor:
             if idle is not None and idle > sup.idle_s:
                 await sup.stop()
 
+    async def scale_once(self) -> None:
+        if not self.scalers or not await asyncio.to_thread(self._lead):
+            return
+        for s in self.scalers:
+            try:
+                await s.tick()
+            except Exception:  # noqa: BLE001 - one service's problem must not stop the others
+                logger.exception("autoscale of %s failed", s.service)
+
     async def run(self) -> None:
+        from core_plugins.autoscale import TICK
+
+        last_sweep = 0.0
         while True:
             try:
-                await self.sweep_once()
+                if time.monotonic() - last_sweep >= SWEEP_EVERY:
+                    last_sweep = time.monotonic()
+                    await self.sweep_once()
+                await self.scale_once()
             except Exception:  # noqa: BLE001 - keep sweeping
-                logger.exception("idle sweep failed")
-            await asyncio.sleep(SWEEP_EVERY)
+                logger.exception("supervisor loop failed")
+            await asyncio.sleep(TICK if self.scalers else SWEEP_EVERY)
 
 
 def on_demand_runtimes(manifests) -> dict[str, int]:

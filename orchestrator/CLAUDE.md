@@ -59,10 +59,16 @@ already lives in a database. If you ever need to trigger a recipe from
 - `recipes/compare.py` — `compare(left: Source, right: Source,
   **diff_kwargs) -> dict`. Fetches both sides via whichever connector
   matches each `Source`'s `kind` ("postgres", "file", or
-  "vault_dataset"), then passes the two row-lists straight into
-  `core.pipeline.run_compare()` — **skipping `normalize()` entirely**,
-  since DB/file rows are already structured Python objects, not pasted
-  text that needs parsing first.
+  "vault_dataset"), then passes the two row-lists to DataDiff —
+  **skipping `normalize()` entirely**, since DB/file rows are already
+  structured Python objects, not pasted text that needs parsing first.
+  **Since roadmap D1** that goes through `core/clients/datadiff.py`
+  (`DataDiffClient().compare_data`) → `POST /api/v1/compare/structured` on
+  the `rt-datadiff` service (`TOOLBOX_DATADIFF_URL`, set for the worker);
+  Decimal/date/UUID/bytes values travel tagged and arrive as the same Python
+  objects. Without that variable the client runs `core.pipeline` in-process
+  (standalone/dev). Errors are `DataDiffError`. `--background` (roadmap
+  D2) submits a DataDiff job instead and waits for it (big inputs).
   **`"vault_dataset"`** (`_read_vault_dataset()`) is the real cross-tool
   hand-off this orchestrator was built for: `core.vault.load_dataset_file_by_name()`
   decrypts a dataset saved by duck-lab's or sql-studio's "Save/Export to

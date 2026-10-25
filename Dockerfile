@@ -11,6 +11,7 @@
 #   pgtools  + bundled pg_dump/pg_restore/psql            TOOLBOX_RUNTIME=pgtools
 #   ssh      paramiko (SSH & SFTP)                        TOOLBOX_RUNTIME=ssh
 #   latex    TeX Live (LaTeX → PDF)                       TOOLBOX_RUNTIME=latex
+#   datadiff DataDiff Pro as a shared service (roadmap D1) TOOLBOX_RUNTIME=datadiff
 # A plugin's `runtime:` in its manifest.yaml decides which image serves it; requirements/<runtime>.txt lists
 # that image's Python packages (pins identical to requirements.txt — tests/unit/test_runtimes.py).
 # Build:   docker build -t toolbox .                  (full)
@@ -204,6 +205,17 @@ FROM pyslim AS light
 COPY --from=deps-light /install /usr/local
 COPY --from=code /app /app
 ENV TOOLBOX_ROLE=runtime TOOLBOX_RUNTIME=light
+EXPOSE 8080
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers ${TOOLBOX_WEB_WORKERS:-1}"]
+
+# --- datadiff (roadmap D1): DataDiff Pro as a shared stateless service (light + xmltodict) ------------------------
+FROM wheels AS deps-datadiff
+RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/install -r requirements/datadiff.txt
+
+FROM pyslim AS datadiff
+COPY --from=deps-datadiff /install /usr/local
+COPY --from=code /app /app
+ENV TOOLBOX_ROLE=runtime TOOLBOX_RUNTIME=datadiff
 EXPOSE 8080
 CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers ${TOOLBOX_WEB_WORKERS:-1}"]
 

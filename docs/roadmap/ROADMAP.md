@@ -70,9 +70,9 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | C2 | Gateway service + routing from manifests | M | C1 | ☑ |
 | C3 | On-demand supervisor (start/stop, idle, limits) | M | C2 | ☑ |
 | C4 | Move tier-4 tools to on-demand containers | S | C3 | ☑ |
-| D1 | DataDiff as a shared API + client | M | C2 ⚡ | ☐ |
-| D2 | Generic job API + results in S3 storage | M | D1 | ☐ |
-| D3 | Replica autoscaling on one node | M | C3, D2 | ☐ |
+| D1 | DataDiff as a shared API + client | M | C2 ⚡ | ☑ |
+| D2 | Generic job API + results in S3 storage | M | D1 | ☑ |
+| D3 | Replica autoscaling on one node | M | C3, D2 | ☑ |
 | E1 | Metrics + Grafana dashboards + JSON logs | M | C2 ⚡ | ☐ |
 | E2 | Health/status page + alerts | S | E1 | ☐ |
 | F1 | Image versioning, registry, k8s manifests from plugin manifests | M | D3, E1 | ☐ |
@@ -279,6 +279,48 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+- 2026-10-25 – **D3 done — phase D complete.** Scaling without "create" rights: compose makes a POOL of `max`
+  containers and the supervisor leader starts/stops pool members (`core_plugins/autoscale.py`, `ScaledService`,
+  tick 5 s, cooldown 20 s): rt-datadiff by average CPU from Docker stats (> 60 % up, < 15 % for 45 s down; manifest
+  `scaling: {min: 2, max: 4}`, pool 4), worker by RQ queue (`TOOLBOX_WORKER_SCALING=1:3`, pool 3; stops only workers
+  RQ reports idle, matched by container hostname, 120 s warm shutdown). Leader publishes state to Redis
+  (`toolbox:scale:*`) so any gateway process shows it. `core_plugins/balancer.py`: per-process replica list from
+  Docker (running + "(healthy)"), round robin, refused replica skipped 10 s, fallback = service DNS name; ProxyApp
+  retries the next replica on ConnectError, and on a dropped reused connection when there's no body. Proxy keep-alive
+  now 2 s (< uvicorn's 5 s) — the keep-alive race gave 1–3 × 503 per load run before (found by logging the error
+  type). docker-proxy: + GET stats, + start/stop `*-worker-<n>`. Load test (12 clients × 20k-record compares):
+  2 → 3 → 4 replicas within ~40 s, back to 2 about 3 min after the load (45 s low per step); 282 compares, 0 errors
+  after the keep-alive fix; requests spread 88/84/61/49 (3 and 4 joined later). 6 background jobs: workers 1 → 2,
+  back to 1. Gotchas (in CLAUDE.md): inline config change doesn't recreate docker-proxy; `up -d toolbox` restarts
+  pool members (use `--no-deps`); new gateway waits ≤ 45 s for the old leader lock. 146 unit + 91 smoke.
+  **Checkpoint (owner):** E (status page/metrics) and F (multi-node) remain; both optional.
+- 2026-10-25 – **D2 done.** `api/jobs.py`: compares as jobs on the shared queue (`JobRunner("datadiff")`, body
+  `run_job` runs in the `worker`, which has the engine), input + gzipped result in S3 via `FileCache("datadiff")`
+  (input deleted at the end, results swept after 7 days on submit — `FileCache.sweep(None, age)` now means "age
+  only"), status from the job channel (phase loading/parsing/comparing/saving/done in progress → Redis meta).
+  API `POST /api/v1/jobs` (202, `{"type": "compare"|"compare_structured", …}`, cheap checks first), `GET
+  /jobs/{id}` (queued/running/done/failed/cancelled + summary/error), `GET /jobs/{id}/result` (FileResponse of the
+  .gz with `Content-Encoding: gzip`; 409 not done, 410 gone), `DELETE` (cancel queued → recorded as cancelled;
+  running → result discarded; finished → result deleted). datadiff image + rq/boto3. Client `submit_text`,
+  `submit_data`, `job`, `result`, `wait`, `cancel` (local mode via api.jobs); CLI `--background`; page switches to
+  a job above 2 MB of input (`#bg-status` shows the phase). Verified live: a 15 MB / 100k-records-per-side compare
+  answered 202 in 1 s, ran 17 s in the worker, 250/250 mismatches; status + full result (400k records) returned
+  by EACH replica directly; queued and running jobs cancelled; browser smoke test of the > 2 MB path (it leaves a
+  small result per run — expires in 7 days). 138 unit + 91 smoke. Note: the CLI's `--background` waits on the
+  queue — fine from `docker compose exec`, but a JOB that waited on another job with one worker would deadlock.
+- 2026-10-25 – **D1 done.** DataDiff Pro = shared stateless service: new runtime `datadiff` (manifest Runtime literal,
+  Dockerfile target, `requirements/datadiff.txt` = light + xmltodict → 188 MB image), compose `rt-datadiff` with
+  `deploy.replicas: 2`, gateway URL. `api/app.py`: `APIRouter` `/api/v1` — `compare` (text), `compare/structured`
+  (parsed values), `health` (replica = hostname; pid is 1 in every container), shared `CompareOptions` model,
+  results passed through `to_json_safe`; `/compare` kept as a hidden alias; OpenAPI under the mount works through
+  the gateway (`/tools/datadiff-pro/docs`). `core/clients/datadiff.py`: `DataDiffClient` (`compare_text`,
+  `compare_data`, `health`; HTTP with `TOOLBOX_DATADIFF_URL`, in-process fallback), `DataDiffError`, value codec
+  tagging Decimal/datetime/date/time/timedelta/UUID/bytes so HTTP compares see the same Python values. UI →
+  `api/v1/compare`; orchestrator → client (worker env `TOOLBOX_DATADIFF_URL`). Unit test: only DataDiff imports
+  `core.pipeline`. Verified: 40 health calls through the gateway hit both replicas (30/10 — Docker DNS spreads
+  connections); 60 compares while one replica was stopped → 60 × 200, and again while one was `docker kill`ed →
+  60 × 200; orchestrator CLI in the worker → `POST …/compare/structured` on a replica, mismatch found; smoke 90 × 2
+  (new v1 check). 134 unit. **Next:** D2 (async compares as jobs, results in S3) — the client is where it plugs in.
 - 2026-10-25 – **C4 done — phase C complete.** The tier-4 tools (LaTeX, SSH & SFTP, Schema Copy, Data Dumper) were
   already on-demand since C3; what was left: the `worker` ran the 1.2 GB `full` image with TeX Live it never uses →
   new Dockerfile target `worker` (all packages + pg_dump, no TeX, 647 MB); `full` is no longer run by compose (kept

@@ -70,10 +70,12 @@ services:
       TOOLBOX_PLUGINS_DIR: /app/plugins
       TOOLBOX_WEB_WORKERS: ${TOOLBOX_WEB_WORKERS:-4}
       # where each manifest `runtime:` is served (roadmap C2); singletons separately (roadmap B9)
-      TOOLBOX_RUNTIME_URLS: light=http://rt-light:8080,data=http://rt-data:8080,pgtools=http://rt-pgtools:8080,ssh=http://rt-ssh:8080,latex=http://rt-latex:8080
+      TOOLBOX_RUNTIME_URLS: light=http://rt-light:8080,data=http://rt-data:8080,pgtools=http://rt-pgtools:8080,ssh=http://rt-ssh:8080,latex=http://rt-latex:8080,datadiff=http://rt-datadiff:8080
       TOOLBOX_SINGLETON_URL: http://singletons:8080
       # roadmap C3: start/stop on-demand runtimes (tier-4 ones: latex, pgtools, ssh) through the docker-proxy
       TOOLBOX_DOCKER_URL: http://docker-proxy:2375
+      # roadmap D3: keep 1..3 of the worker pool running, by job-queue length (empty = no worker autoscaling)
+      TOOLBOX_WORKER_SCALING: ${TOOLBOX_WORKER_SCALING:-1:3}
       # empty = each runtime's manifest scaling.idle_timeout_s (900 s); set it in .env/shell to override (testing)
       TOOLBOX_IDLE_TIMEOUT_S: ${TOOLBOX_IDLE_TIMEOUT_S:-}
     volumes:
@@ -95,6 +97,8 @@ services:
         condition: service_started
       rt-latex:
         condition: service_started
+      rt-datadiff:
+        condition: service_started
       singletons:
         condition: service_started
       docker-proxy:
@@ -103,9 +107,9 @@ services:
   # ---------------------------------------------------------------------------
   # Docker access for the gateway's on-demand supervisor (roadmap C3) — and NOTHING else. docker-socket-proxy
   # (HAProxy) with our own rule set instead of its env switches: those can only allow start/stop together with
-  # ALL container POSTs (create, exec, update…). Allowed: GET /_ping, /version, /containers/json, /containers/<x>/json;
-  # POST start/stop ONLY of containers named `<project>-rt-<runtime>-<n>`. The socket is mounted read-only here
-  # and nowhere else. Not published.
+  # ALL container POSTs (create, exec, update…). Allowed: GET /_ping, /version, /containers/json, /containers/<x>/json
+  # and /stats (read-only, D3 autoscaling); POST start/stop ONLY of containers named `<project>-rt-<runtime>-<n>`
+  # or `<project>-worker-<n>`. The socket is mounted read-only here and nowhere else. Not published.
   # ---------------------------------------------------------------------------
   docker-proxy:
     image: tecnativa/docker-socket-proxy:0.3.0
@@ -180,6 +184,20 @@ services:
     volumes:
       - workspace_data:/app/data/workspace:ro
 
+  # DataDiff Pro as a shared, stateless service (roadmap D1): its own small image. Roadmap D3: a POOL of 4 replicas
+  # (= manifest scaling.max); the gateway's autoscaler keeps 2..4 of them running by CPU and balances requests over
+  # the running + healthy ones (core_plugins/balancer.py). Clients outside the gateway (the worker's orchestrator)
+  # use the service name, i.e. Docker DNS over the running ones.
+  rt-datadiff:
+    <<: *tool-service
+    build: {context: ., target: datadiff}
+    image: toolbox-rt-datadiff
+    deploy:
+      replicas: 4
+    environment: *state-env
+    volumes:
+      - workspace_data:/app/data/workspace:ro
+
   # ---------------------------------------------------------------------------
   # Singleton tools (roadmap B9): SQL Studio and Schema Map each hold ONE live database pool and never store the
   # password (owner decision, B3), so they run in exactly one process — the data image with
@@ -216,11 +234,18 @@ services:
       dockerfile: Dockerfile
       target: worker       # all packages + pg_dump, no TeX Live (roadmap C4)
     image: toolbox-worker
+    # roadmap D3: a pool of 3; the gateway keeps 1..3 running by queue length (TOOLBOX_WORKER_SCALING) and only
+    # ever stops an IDLE one
+    deploy:
+      replicas: 3
     command: ["python", "-m", "core.jobs.worker"]
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    environment: *state-env
+    environment:
+      <<: *state-env
+      # the orchestrator CLI (and future jobs) compare through DataDiff's API, not its code (roadmap D1)
+      TOOLBOX_DATADIFF_URL: http://rt-datadiff:8080/tools/datadiff-pro
     volumes:
       # Legacy SQLite files/key (one-time migration sources since B6/B7) and local file caches.
       - vault_data:/app/data/vault
@@ -310,7 +335,9 @@ configs:
           http-request allow if METH_GET { path,url_dec -m reg -i ^(/v[0-9.]+)?/(_ping|version)$$ }
           http-request allow if METH_GET { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/json$$ }
           http-request allow if METH_GET { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/json$$ }
+          http-request allow if METH_GET { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/stats$$ }
           http-request allow if METH_POST { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+-rt-[a-z]+-[0-9]+/(start|stop)$$ }
+          http-request allow if METH_POST { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+-worker-[0-9]+/(start|stop)$$ }
           http-request deny
           default_backend dockerbackend
   seaweedfs_s3:

@@ -38,16 +38,21 @@ def _http():
 
         # read=900 s: a long SQL statement or export can take minutes; the tool enforces its own limits.
         _client = httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=900.0, write=900.0),
-                                    limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+                                    # keepalive 2 s < uvicorn's 5 s: never reuse a connection the tool is closing
+                                    # (that race showed up as a rare 503 under load in D3)
+                                    limits=httpx.Limits(max_connections=100, max_keepalive_connections=20,
+                                                        keepalive_expiry=2.0),
                                     follow_redirects=False)
         _client_loop = loop
     return _client
 
 
 class ProxyApp:
-    def __init__(self, name: str, title: str, base_url: str, supervisor: Any = None):
+    def __init__(self, name: str, title: str, base_url: str, supervisor: Any = None, balancer: Any = None):
         self.name, self.title, self.base_url = name, title, base_url.rstrip("/")
         self.state = "remote"
+        # roadmap D3: several replicas → each request to the next healthy one (core_plugins/balancer.py)
+        self.balancer = balancer
         # roadmap C3: an on-demand runtime's container is started here if it sleeps (the request waits for it)
         self.supervisor = supervisor
 
@@ -67,9 +72,9 @@ class ProxyApp:
                 return
 
         path = scope.get("raw_path") or scope["path"].encode()  # the ORIGINAL path, incl. /tools/<name>
-        url = self.base_url + path.decode("latin-1")
+        tail = path.decode("latin-1")
         if scope.get("query_string"):
-            url += "?" + scope["query_string"].decode("latin-1")
+            tail += "?" + scope["query_string"].decode("latin-1")
         headers = [(k, v) for k, v in scope["headers"] if k.lower() not in _HOP]
         client = scope.get("client")
         if client:
@@ -92,11 +97,30 @@ class ProxyApp:
         has_body = scope["method"] not in ("GET", "HEAD", "OPTIONS", "DELETE") or any(
             k.lower() in (b"content-length", b"transfer-encoding") for k, _ in scope["headers"])
         http = _http()
-        req = http.build_request(scope["method"], url, headers=headers, content=body() if has_body else None)
+        content = body() if has_body else None
+        bal = self.balancer
+        tries = max(2, len(bal.healthy())) if bal is not None else 2
+        resp = None
+        base = self.base_url
         try:
-            resp = await http.send(req, stream=True)
+            for attempt in range(tries):
+                base = bal.pick() if bal is not None else self.base_url
+                req = http.build_request(scope["method"], base + tail, headers=headers, content=content)
+                try:
+                    resp = await http.send(req, stream=True)
+                    break
+                except httpx.ConnectError:
+                    # nothing was sent yet (no connection), so another replica may take the same request
+                    if attempt == tries - 1:
+                        raise
+                    if bal is not None:
+                        bal.mark_failed(base)
+                except (httpx.RemoteProtocolError, httpx.ReadError):
+                    # the upstream dropped a reused connection: safe to repeat only if there was no body to resend
+                    if content is not None or attempt == tries - 1:
+                        raise
         except httpx.HTTPError as exc:
-            logger.warning("proxy %s → %s failed: %s", self.name, self.base_url, exc)
+            logger.warning("proxy %s → %s failed: %s %s", self.name, base, type(exc).__name__, exc)
             import html
             from urllib.parse import urlsplit
 

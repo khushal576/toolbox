@@ -67,3 +67,13 @@ def test_latex_engine_present():
 def test_datadiff_finds_the_change():
     out = request("POST", "/tools/datadiff-pro/compare", SMALL_DIFF).json()
     assert "B" in str(out), "compare result should mention the changed value"
+
+
+def test_datadiff_v1_api_and_replicas():
+    """Roadmap D1: the versioned API answers like the old path; health names the replica that answered."""
+    v1 = request("POST", "/tools/datadiff-pro/api/v1/compare", SMALL_DIFF).json()
+    old = request("POST", "/tools/datadiff-pro/compare", SMALL_DIFF).json()
+    assert v1["ok"] and v1["summary"] == old["summary"]
+    h = request("GET", "/tools/datadiff-pro/api/v1/health").json()
+    assert h["ok"] and h["service"] == "datadiff" and h["replica"]
+    assert "/api/v1/compare/structured" in request("GET", "/tools/datadiff-pro/openapi.json").json()["paths"]

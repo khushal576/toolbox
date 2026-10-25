@@ -24,6 +24,7 @@ misleads. If a file's job changes, update its row here in the same commit.
 | Which image a tool runs in (incl. the worker's own `worker` target, C4), its Python packages, building the images, sizes/memory (`docs/roadmap/measure-C4.md`) | manifest `runtime:` → Dockerfile target of the same name + `requirements/<runtime>.txt`; `TOOLBOX_ROLE=runtime`/`TOOLBOX_RUNTIME` in `main.py` `_app_for`; compose `rt-*` services (behind the gateway since C2); `tests/unit/test_runtimes.py` (roadmap C1) |
 | Which container answers /tools/<name>, the gateway proxy, a "starting or unavailable" page | `TOOLBOX_RUNTIME_URLS` + `_app_for` in `main.py` (gateway = web role in the `gateway` image); `core_plugins/proxy.py`; `toolbox` + `rt-*` services in `docker-compose.yml` (roadmap C2) |
 | A tool "asleep"/slow first open, idle timeout, which runtimes are on-demand, container limits, what the gateway may do to Docker | `core_plugins/supervisor.py` (`on_demand_runtimes`, `RuntimeSupervisor`, `Supervisor` sweep); `_supervisors` + `/api/workspace/runtimes` in `main.py`; manifest `tier`/`scaling`/`resources`; compose `docker-proxy` + `configs.docker_proxy_rules`, `mem_limit`/`cpus` on rt-* (roadmap C3) |
+| Replicas: how many run, why it scaled up/down, which replica got a request, worker pool size | `core_plugins/autoscale.py` (`ScaledService.tick`, thresholds `UP_CPU`/`DOWN_CPU`/`DOWN_AFTER`/`COOLDOWN`), `core_plugins/balancer.py` (`Balancer.pick`, `mark_failed`), wiring + `scaled` in `/api/workspace/runtimes` in `main.py`, retry loop in `core_plugins/proxy.py`; compose `deploy.replicas` + `TOOLBOX_WORKER_SCALING` (roadmap D3) |
 | Several web workers: worker count, singleton routing, switches/load state shared between processes | `TOOLBOX_WEB_WORKERS` (compose `toolbox.command`, Dockerfile `CMD`); `TOOLBOX_ROLE` / `TOOLBOX_SINGLETON_URL` + `_app_for` in `main.py`; `core_plugins/proxy.py` (`ProxyApp`); `_sync_workspace` / `_WorkspaceSync` and `_publish_now` / `_all_processes` in `main.py`; `singletons` service in `docker-compose.yml` (roadmap B9) |
 | Adding a custom app without rebuilding (own HTML page or external link), its sandbox | `plugins/<name>/manifest.yaml` (+ files) — `plugins/README.md`; served by `StaticApp` / `ExternalApp` in `core_plugins/lazy.py`; only static/external allowed (`EXTRA_DIR_KINDS` in `core_plugins/loader.py`) |
 | The workspace page itself: sidebar, tabs, settings, search, keyboard shortcuts | `core_plugins/ui/workspace.html` (self-contained; `main.py` injects `{{CARDS}}` and `{{DATA}}`) |
@@ -525,7 +526,10 @@ rationale; don't mistake this for a "no backend processing" violation).
 | "Deep Mode" — parsing string-encoded JSON/XML found inside fields      | `core/deep_expander.py` |
 | Post-mapping check for silently dropped fields                         | `core/validator.py` |
 | The mapping → deep-expand → equivalence/list-resolver → diff sequence itself (shared with the headless orchestrator, see `orchestrator/CLAUDE.md`) | `core/pipeline.py` (`run_compare`) |
-| The `/compare` API contract (request/response shape, error format) — now just validates raw text, calls `normalize()`, then `core.pipeline.run_compare()` | `api/app.py` |
+| The API contract: `POST /api/v1/compare` (text), `/api/v1/compare/structured` (parsed values, tagged Decimal/date/UUID/bytes), `/api/v1/health`, OpenAPI at `/tools/datadiff-pro/docs`; `/compare` = old alias | `api/app.py` (roadmap D1) |
+| Background compares: submit/status/result/cancel, input + result storage, the worker-side job body, the page's > 2 MB switch | `api/jobs.py` (`submit`, `status`, `result_path`, `cancel`, `run_job`, `FILES`, `JOBS`), `/api/v1/jobs*` in `api/app.py`, `compareInBackground` in `ui/index.html`, client `submit_text/submit_data/job/result/wait/cancel` (roadmap D2) |
+| Calling DataDiff from other code (never import `core.pipeline` outside DataDiff — a unit test enforces it) | `core/clients/datadiff.py` (`DataDiffClient`, `DataDiffError`, value codec) |
+| DataDiff's own service: image `datadiff` (188 MB), `rt-datadiff` × 2 replicas behind the gateway | Dockerfile target `datadiff`, `requirements/datadiff.txt`, compose `rt-datadiff` (`deploy.replicas`) |
 | The FastAPI app object that `main.py` mounts                           | `api/app.py` (`app = FastAPI(...)`) |
 | The frontend: layout, results table, filters, export (JSON/CSV/Excel)  | `ui/index.html` (single file, no build step) |
 | "Load from Vault" (per side, size-capped at 2000 rows by default)     | `ui/index.html`'s `refreshVaultDatasetSelects()`/`loadVaultDataset()` — calls `vault/server.py`'s `GET /datasets/{id}/preview`, same-origin, no proxy |
@@ -535,7 +539,7 @@ rationale; don't mistake this for a "no backend processing" violation).
 ### Data flow (in call order)
 
 ```
-ui/index.html --POST /compare--> api/app.py
+ui/index.html --POST api/v1/compare--> gateway --> rt-datadiff (×2) --> api/app.py
   -> core/normalizer.py     (parse both sides)
   -> core/deep_expander.py  (only if deep_mode)
   -> core/mapper.py         (only if a field mapping was supplied)

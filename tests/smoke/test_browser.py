@@ -76,3 +76,28 @@ def test_workspace_opens_tool_in_tab_and_lists_settings(driver):
     assert "latex-pdf" in names and "encode-decode" not in names
     errors = [e["message"] for e in driver.get_log("browser") if e["level"] == "SEVERE" and "favicon" not in e["message"]]
     assert not errors, errors
+
+
+def test_datadiff_large_input_runs_as_a_background_job(driver):
+    """Roadmap D2: > 2 MB of input → the page submits a job, polls it, renders the stored result."""
+    driver.get(f"{BASE_URL}/tools/datadiff-pro/")
+    driver.execute_script("""
+        const rows = n => Array.from({length: n}, (_, i) => ({id: i, name: 'name-' + i, amount: i * 1.5, note: 'x'.repeat(30)}));
+        const left = rows(25000), right = rows(25000);
+        for (const i of [3, 777, 24999]) right[i].amount += 1;
+        document.getElementById('left-data').value = JSON.stringify(left);
+        document.getElementById('right-data').value = JSON.stringify(right);
+        document.getElementById('left-format').value = 'json';
+        document.getElementById('right-format').value = 'json';
+        window.__sawBackground = false;
+        new MutationObserver(() => { if (document.getElementById('bg-status').textContent) window.__sawBackground = true; })
+          .observe(document.getElementById('bg-status'), {childList: true, characterData: true, subtree: true});
+        document.getElementById('btn-compare').click();
+    """)
+    deadline = time.time() + 120
+    while time.time() < deadline:
+        if driver.find_element("id", "count-mismatch").text == "3":
+            break
+        time.sleep(0.5)
+    assert driver.find_element("id", "count-mismatch").text == "3", "background compare result not rendered"
+    assert driver.execute_script("return window.__sawBackground"), "the background status never showed"

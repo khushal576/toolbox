@@ -549,6 +549,7 @@ list_keys:
       <span id="spinner"></span>
       Compare
     </button>
+    <span id="bg-status" style="font-size:0.8rem;opacity:0.8;margin-left:8px;"></span>
     <button id="btn-export">⬇ Export JSON</button>
     <button id="btn-export-csv">⬇ Export CSV</button>
     <button id="btn-export-excel">⬇ Export Excel</button>
@@ -691,12 +692,13 @@ list_keys:
     hideResults();
 
     try {
-      const res  = await fetch('compare', {
+      // Big inputs run as a background job (roadmap D2): queued, diffed by the worker, result kept 7 days.
+      const big = payload.left_data.length + payload.right_data.length > BACKGROUND_THRESHOLD;
+      const data = big ? await compareInBackground(payload) : await (await fetch('api/v1/compare', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(payload),
-      });
-      const data = await res.json();
+      })).json();
 
       if (!data.ok) {
         showError(data.error || 'An unknown error occurred.');
@@ -715,6 +717,31 @@ list_keys:
     } finally {
       btn.disabled = false;
       spinner.style.display = 'none';
+    }
+  }
+
+  // ── Background compare (roadmap D2) ─────────────────────────────────
+  const BACKGROUND_THRESHOLD = 2 * 1024 * 1024;  // characters of input on both sides together
+
+  async function compareInBackground(payload) {
+    const status = document.getElementById('bg-status');
+    const sub = await (await fetch('api/v1/jobs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ type: 'compare' }, payload)),
+    })).json();
+    if (!sub.ok) return sub;
+    try {
+      for (;;) {
+        await new Promise(r => setTimeout(r, 1000));
+        const st = await (await fetch(sub.status_url)).json();
+        if (!st.ok) return st;
+        if (status) status.textContent = `Large input — running in the background: ${st.phase || st.status}…`;
+        if (st.status === 'done') return await (await fetch(sub.result_url)).json();
+        if (st.status === 'failed' || st.status === 'cancelled')
+          return { ok: false, error: st.error || `The compare job was ${st.status}.` };
+      }
+    } finally {
+      if (status) status.textContent = '';
     }
   }
 

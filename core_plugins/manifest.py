@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Kind = Literal["static", "python", "external", "service"]
-Runtime = Literal["light", "data", "pgtools", "latex", "ssh"]
+Runtime = Literal["light", "data", "pgtools", "latex", "ssh", "datadiff"]
 StateKind = Literal["session", "durable", "jobs"]
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
@@ -102,7 +102,7 @@ class Manifest(_Strict):
             if re.match(r"^\w+://", self.entry) or self.entry.startswith("/") or ".." in self.entry.split("/"):
                 raise ValueError("kind 'static' needs entry as a relative path inside the plugin folder")
         if k in ("python", "service") and self.runtime is None:
-            raise ValueError(f"kind '{k}' needs a runtime (light | data | pgtools | latex | ssh)")
+            raise ValueError(f"kind '{k}' needs a runtime (light | data | pgtools | latex | ssh | datadiff)")
         if k in ("static", "external"):
             if self.runtime is not None:
                 raise ValueError(f"kind '{k}' runs no server code, so runtime must be empty")

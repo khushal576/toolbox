@@ -1,0 +1,7 @@
+# Image "datadiff" (roadmap D1): DataDiff Pro as a shared stateless service — the diff engine needs only YAML
+# (already in light.txt) and xmltodict. Pins match ../requirements.txt.
+-r light.txt
+xmltodict==0.13.0
+# roadmap D2: background compare jobs — enqueue on the Redis queue (rq), inputs/results in S3 storage (boto3)
+rq==2.1.0
+boto3==1.35.99
