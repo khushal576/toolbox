@@ -455,7 +455,13 @@
         svcCard("Redis", st.redis, function (v) { return v.used_memory + " used · AOF " + (v.aof_enabled ? "on" : "off"); }) +
         svcCard("File storage (S3)", st.objects, function (v) { return v.bucket + " @ " + v.endpoint; }) +
         svcCard("Job queue", st.jobs, function (v) { return v.workers + " worker(s) listening · " + v.waiting + " waiting"; }) +
-        svcCard("Vault", st.vault, function (v) { return v.secrets + " secret(s) · key: " + v.key_source + (v.warning ? " · " + v.warning : ""); });
+        svcCard("Vault", st.vault, function (v) { return v.secrets + " secret(s) · key: " + v.key_source + (v.warning ? " · " + v.warning : ""); }) +
+        (function (b) {  // Ops session: last run of scripts/backup.sh
+          var old = b && (Date.now() / 1000 - b.at) > 7 * 86400;
+          return '<div class="svc"><b><span class="dot ' + (!b || old ? "warn" : "ok") + '"></span>Backups</b><div class="mono">' +
+            (b ? "last: " + esc(since(new Date(b.at * 1000).toISOString())) + " · " + esc(bytes(b.bytes)) + " · " + esc(b.file)
+               : "none yet — run scripts/backup.sh") + "</div></div>";
+        })(o.backup);
 
       var cs = (o.containers || {}).containers || [], od = o.on_demand_services || [], pools = o.pool_services || [];
       if ((o.containers || {}).error) $("stContainers").innerHTML = '<tr><td colspan="7">' + esc(o.containers.error) + "</td></tr>";

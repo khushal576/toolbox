@@ -77,6 +77,7 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | E2 | Per-tool request/error/slow counters (1 h / 24 h, Redis) | S | E1 | ☑ |
 | E3 | Recent errors + log peek + in-page alerts | S | E1 | ☑ |
 | E4 | (later, optional) `/metrics` export → Prometheus/Grafana, stored logs | M | E2 | ☐ |
+| O1 | Ops: backup/restore scripts, tested restore, runbook, last backup on Status | S | E1 | ☑ |
 | F1 | Image versioning, registry, k8s manifests from plugin manifests | M | D3, E1 | ⏸ deferred |
 | F2 | k3s single-node deploy (lab) | M | F1 | ⏸ deferred |
 | F3 | KEDA scale-to-zero + queue scaling | M | F2 | ⏸ deferred |
@@ -306,6 +307,19 @@ the workspace status) and shows it on ONE page in the workspace. Nothing runs or
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+- 2026-10-25 – **O1 (Ops session) done.** `scripts/backup.sh` (pg_dump via a one-off `docker compose run --no-deps
+  worker`, S3 → tar via `python -m core.state.backup objects-export`, .env, workspace.yaml, manifest.json → one
+  `backups/toolbox-<stamp>.tar.gz`, mode 600, keep 7, records Redis `toolbox:backup:last`); `scripts/restore.sh`
+  (asks "restore" unless `--yes`; .env first (old one kept if different), state services up, tool containers
+  stopped, `pg_restore --clean --if-exists --single-transaction`, bucket replaced, workspace.yaml via a one-off of
+  the gateway, `up -d`). Status page: Backups card + attention after 7 days / none. `docs/runbook.md` for the owner.
+  Hardening found on the way: Docker filters now include THIS compose project and exclude one-off containers
+  (`core_plugins/dockerapi.py`) — otherwise a second stack's / a `compose run`'s containers would be started,
+  stopped or routed to. `TOOLBOX_HOST_PORT`. Bug caught by the restore test: tarfile stream members have no
+  `seekable()` → boto3 crashed → `_Unseekable` wrapper. Verified: real stack backup (32 s, 80 MB, 63 objects) →
+  fresh second project on :8001 restored in 14 s → vault/schema-map/files/all 19 tables' row counts/workspace.yaml
+  identical, a marker secret decrypted with the restored key, one file's sha256 identical; test project + volumes
+  removed, marker secret deleted, a clean backup left in `backups/`. 157 unit tests.
 - 2026-10-25 – **Phase F deferred** (owner: skip now, do in future). F1–F4 marked "⏸ deferred" in the status
   table; plan unchanged. Suggested meanwhile (not started, owner to confirm): a small Ops session — backup/restore
   scripts (Postgres dump + S3 files + .env + workspace.yaml), tested restore, `docs/runbook.md`, "last backup" on

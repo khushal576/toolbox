@@ -63,7 +63,7 @@ services:
       target: gateway
     image: toolbox-gateway
     ports:
-      - "8000:8080"
+      - "${TOOLBOX_HOST_PORT:-8000}:8080"   # host port; a second copy of the stack (restore test) uses another
     command: ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers $${TOOLBOX_WEB_WORKERS:-4}"]
     environment:
       <<: *state-env

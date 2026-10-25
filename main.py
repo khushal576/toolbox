@@ -305,8 +305,12 @@ async def state_overview() -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001 - one broken section must not blank the page
             return {"error": f"{type(exc).__name__}: {exc}"[:300]}
 
-    state, jobs, storage = await asyncio.gather(safe(health), safe(overview.jobs_summary), safe(overview.storage_summary))
-    return {"state": state, "jobs": jobs, "storage": storage}
+    from core.state import backup as backups
+
+    state, jobs, storage, last = await asyncio.gather(safe(health), safe(overview.jobs_summary),
+                                                      safe(overview.storage_summary), safe(backups.last))
+    return {"state": state, "jobs": jobs, "storage": storage, "backup": last if not isinstance(last, dict) or
+            "error" not in last else None}
 
 
 @app.get("/api/workspace/metrics")
@@ -384,7 +388,7 @@ async def workspace_overview() -> dict[str, Any]:
         run_in_threadpool(metrics.read), run_in_threadpool(metrics.recent_errors, 50))
     out = {"generated_at": time.time(), "containers": cont, "tools": tools, "runtimes": rts,
            "state": st.get("state") or {}, "jobs": st.get("jobs") or {}, "storage": st.get("storage") or {},
-           "traffic": traffic, "errors": errs,
+           "traffic": traffic, "errors": errs, "backup": st.get("backup"),
            "on_demand_services": [f"rt-{r}" for r in _supervisors],
            "pool_services": [s.service for s in _scalers]}
     out["attention"] = overview.attention(out)

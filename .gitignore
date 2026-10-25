@@ -41,3 +41,7 @@ wheelhouse/
 
 # Local secrets for docker compose (TOOLBOX_DB_PASSWORD, TOOLBOX_S3_* keys, TOOLBOX_DATABASE_URL) — never commit
 .env
+
+# Ops session: backup archives (contain the Vault key!)
+backups/
+.env.before-restore-*

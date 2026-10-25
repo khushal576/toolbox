@@ -67,8 +67,9 @@ async def containers(docker_url: str) -> dict[str, Any]:
     import httpx
 
     async with httpx.AsyncClient(base_url=docker_url, timeout=httpx.Timeout(10.0, read=20.0)) as client:
-        me = await client.get(f"/containers/{socket.gethostname()}/json")  # the gateway's own container
-        project = me.json()["Config"]["Labels"].get("com.docker.compose.project") if me.status_code == 200 else None
+        from core_plugins import dockerapi
+
+        project = await dockerapi.own_project(client)
         filters = json.dumps({"label": [f"com.docker.compose.project={project}"]}) if project else None
         lst = (await client.get("/containers/json", params={"all": "1", **({"filters": filters} if filters else {})})).json()
 
@@ -100,8 +101,9 @@ async def containers(docker_url: str) -> dict[str, Any]:
 
 
 async def _project_names(client) -> set[str]:
-    me = await client.get(f"/containers/{socket.gethostname()}/json")
-    project = me.json()["Config"]["Labels"].get("com.docker.compose.project") if me.status_code == 200 else None
+    from core_plugins import dockerapi
+
+    project = await dockerapi.own_project(client)
     if not project:
         return set()
     filters = json.dumps({"label": [f"com.docker.compose.project={project}"]})
@@ -262,6 +264,13 @@ def attention(overview: dict[str, Any]) -> list[dict[str, str]]:
             by_tool[e["tool"]] = by_tool.get(e["tool"], 0) + 1
     for tool, n in sorted(by_tool.items(), key=lambda kv: -kv[1]):
         items.append({"level": "warn", "text": f"{tool}: {n} server error(s) in the last hour — see Recent errors"})
+    if "backup" in overview:  # Ops session: scripts/backup.sh records each run
+        b = overview.get("backup")
+        if not b:
+            items.append({"level": "warn", "text": "No backup yet — run scripts/backup.sh (see docs/runbook.md)"})
+        elif time.time() - b.get("at", 0) > 7 * 86400:
+            days = int((time.time() - b["at"]) // 86400)
+            items.append({"level": "warn", "text": f"Last backup was {days} days ago — run scripts/backup.sh"})
     day_ago = time.time() - 86400
     fresh = [f for f in jobs.get("recent_failures") or []
              if f.get("ended_at") and _ts(f["ended_at"]) > day_ago]

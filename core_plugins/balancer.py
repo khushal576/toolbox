@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import asyncio
 import itertools
-import json
 import logging
 import time
 from typing import Any
+
+from core_plugins import dockerapi
 
 logger = logging.getLogger("toolbox.balancer")
 
@@ -37,9 +38,9 @@ class Balancer:
     async def refresh(self) -> None:
         import httpx
 
-        filters = json.dumps({"label": [f"com.docker.compose.service={self.service}"]})
         try:
             async with httpx.AsyncClient(base_url=self.docker_url, timeout=5.0) as client:
+                filters = await dockerapi.service_filter(client, self.service)  # this project only
                 r = await client.get("/containers/json", params={"filters": filters})  # running only
                 r.raise_for_status()
         except Exception as exc:  # noqa: BLE001 - keep the last known list; fall back to DNS if empty

@@ -47,3 +47,11 @@ def test_job_ids_map_to_tools():
     assert _tool_of("data-syncer-abc123-1f2e3d4c") == "data-syncer"
     assert _tool_of("ssh-sftp-0123456789abcdef-deadbeef") == "ssh-sftp"
     assert _tool_of("datadiff-xyz-00ff00ff") == "datadiff"
+
+
+def test_backup_reminders():
+    assert attention({"backup": None})[0]["text"].startswith("No backup yet")
+    old = {"backup": {"at": time.time() - 9 * 86400, "file": "x", "bytes": 1}}
+    assert attention(old)[0]["text"] == "Last backup was 9 days ago — run scripts/backup.sh"
+    assert attention({"backup": {"at": time.time() - 3600, "file": "x", "bytes": 1}}) == []
+    assert attention({}) == []  # no backup info at all (e.g. rt-data down) → no nagging

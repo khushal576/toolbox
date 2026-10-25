@@ -110,6 +110,18 @@ containers/gateway pieces outside the roadmap session that owns them.
   /api/v1/jobs/{id}` and `/result`; `DELETE` cancels (a running diff can't be
   interrupted, its result is discarded). The page uses it automatically for
   > 2 MB of input; client `submit_*`/`wait`; CLI `--background`.
+- **Backups (Ops session):** `scripts/backup.sh` → one dated archive in
+  `backups/` (git-ignored, mode 600): Postgres dump (pg_dump in a one-off
+  `docker compose run` of the worker), every S3 object (`core/state/backup.py`
+  streams a tar), `.env` (Vault key!), `workspace.yaml`; keeps the last 7.
+  `scripts/restore.sh <file>` stops the tool containers, `pg_restore --clean
+  --single-transaction`, replaces the bucket, puts `.env`/settings back,
+  starts everything. Tested by restoring into a second compose project
+  (`COMPOSE_PROJECT_NAME=toolbox-restoretest TOOLBOX_HOST_PORT=8001`). The
+  Status page shows the last backup (Redis `toolbox:backup:last`) and nags
+  after 7 days. Owner how-to: **`docs/runbook.md`**. Two copies of the stack can
+  run side by side: supervisor/autoscaler/balancer filter Docker by THIS
+  project and ignore `docker compose run` one-offs (`core_plugins/dockerapi.py`).
 - **Status page (roadmap E1):** workspace tab **📊 Status** (`#/status`) —
   containers (state, health, CPU, memory vs limit, uptime, restarts), state
   services, scaling/on-demand, tools, background jobs per tool (+ recent
@@ -492,6 +504,10 @@ pin** (ticked in `docs/roadmap/ROADMAP.md`). The rule at the top of this section
 now" paragraph.
 
 ## Operating notes (the owner is not a developer)
+
+- **The owner's how-to is `docs/runbook.md`** (start/stop/update, backups,
+  restore, troubleshooting, `.env` settings) — keep it current when operations
+  change.
 
 - One thing to start/stop: `docker-compose up --build -d` / `docker-compose
   down` from the repo root. No network setup, no per-tool containers (one

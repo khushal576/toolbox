@@ -24,6 +24,8 @@ import logging
 import time
 from typing import Any
 
+from core_plugins import dockerapi
+
 logger = logging.getLogger("toolbox.autoscale")
 
 TICK = 5.0
@@ -57,7 +59,7 @@ class ScaledService:
         return httpx.AsyncClient(base_url=self.docker_url, timeout=httpx.Timeout(10.0, read=30.0))
 
     async def containers(self, client) -> list[dict[str, Any]]:
-        filters = json.dumps({"label": [f"com.docker.compose.service={self.service}"]})
+        filters = await dockerapi.service_filter(client, self.service)  # this project only
         r = await client.get("/containers/json", params={"all": "1", "filters": filters})
         r.raise_for_status()
         out = [{"name": c["Names"][0].lstrip("/"), "id": c["Id"], "running": c["State"] == "running",
