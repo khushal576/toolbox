@@ -110,6 +110,24 @@ containers/gateway pieces outside the roadmap session that owns them.
   /api/v1/jobs/{id}` and `/result`; `DELETE` cancels (a running diff can't be
   interrupted, its result is discarded). The page uses it automatically for
   > 2 MB of input; client `submit_*`/`wait`; CLI `--background`.
+- **Status page (roadmap E1):** workspace tab **📊 Status** (`#/status`) —
+  containers (state, health, CPU, memory vs limit, uptime, restarts), state
+  services, scaling/on-demand, tools, background jobs per tool (+ recent
+  crashes), storage (S3 per tool, Postgres per schema) and an "attention"
+  list. Data: `GET /api/workspace/overview` (gateway: Docker part via
+  docker-proxy, read-only; `/api/state/overview` = jobs/storage/state answered
+  by rt-data, `core_plugins/overview.py`). Polls every 5 s only while the tab
+  is visible; nothing stored; no new containers (owner chose this over
+  Prometheus/Grafana — revised phase E in the roadmap). **E2:** the gateway
+  wraps every tool mount in `metrics.Metered` (`core_plugins/metrics.py`):
+  requests / 5xx / slow (first byte > `TOOLBOX_SLOW_MS`, 2 s) per tool, summed
+  in-process and flushed to Redis every 5 s (`toolbox:m:*`, minute buckets 2 h,
+  hour buckets 26 h) → "Traffic per tool" with 60-minute sparklines. **E3:**
+  the same wrapper keeps the last 50 5xx answers (`toolbox:errors`, 7 days) →
+  "Recent errors"; a "logs" button per container shows its last 200 lines
+  (`/api/workspace/logs/<name>`, project containers only, docker-proxy
+  read-only `/logs` rule); `/api/workspace/alerts` (cheap: no stats) feeds a
+  red/amber count on the sidebar's Status item every 60 s.
 - **Autoscaling + balancing (roadmap D3):** compose creates a POOL
   (`deploy.replicas` = max: rt-datadiff 4, worker 3); the supervisor leader
   keeps between min and max running by starting/stopping pool members

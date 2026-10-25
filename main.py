@@ -41,9 +41,11 @@ standalone dev run) they are mounted in-process as before, and the app must then
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +56,7 @@ from pydantic import BaseModel
 
 from core_plugins import (DisabledApp, ExternalApp, LazyApp, ProxyApp, Slot, StaticApp, default_path, discover,
                           load_workspace)
+from core_plugins import metrics
 from core_plugins.autoscale import ScaledService, scaled_runtimes
 from core_plugins.balancer import Balancer
 from core_plugins.supervisor import RuntimeSupervisor, Supervisor, on_demand_runtimes
@@ -277,6 +280,117 @@ async def state_health() -> dict[str, Any]:
     return await run_in_threadpool(health)
 
 
+@app.get("/api/state/overview")
+async def state_overview() -> dict[str, Any]:
+    """Status-page data that needs the state libraries (roadmap E1): state health + job queue + storage use.
+    In gateway mode answered by rt-data, like /api/state/health."""
+    data_url = RUNTIME_URLS.get("data") if ROLE == "web" else None
+    if data_url:
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.get(f"{data_url}/api/state/overview")
+            return {**r.json(), "answered_by": "rt-data"}
+        except (httpx.HTTPError, ValueError) as exc:
+            return {"state": {"ok": False, "error": f"the data runtime did not answer: {exc}"}}
+    from starlette.concurrency import run_in_threadpool
+
+    from core.state import health
+    from core_plugins import overview
+
+    async def safe(fn):
+        try:
+            return await run_in_threadpool(fn)
+        except Exception as exc:  # noqa: BLE001 - one broken section must not blank the page
+            return {"error": f"{type(exc).__name__}: {exc}"[:300]}
+
+    state, jobs, storage = await asyncio.gather(safe(health), safe(overview.jobs_summary), safe(overview.storage_summary))
+    return {"state": state, "jobs": jobs, "storage": storage}
+
+
+@app.get("/api/workspace/metrics")
+async def workspace_metrics() -> dict[str, Any]:
+    """Per-tool requests / 5xx errors / slow answers: last hour (+ 60-minute series) and last 24 h (roadmap E2)."""
+    from starlette.concurrency import run_in_threadpool
+
+    return await run_in_threadpool(metrics.read)
+
+
+@app.get("/api/workspace/errors")
+async def workspace_errors(limit: int = 50) -> dict[str, Any]:
+    """The last 5xx answers of any tool, newest first (roadmap E3)."""
+    from starlette.concurrency import run_in_threadpool
+
+    return {"errors": await run_in_threadpool(metrics.recent_errors, max(1, min(limit, metrics.MAX_ERRORS)))}
+
+
+@app.get("/api/workspace/logs/{name}")
+async def container_logs(name: str, lines: int = 200):
+    """Last log lines of one container of this project, for the Status page's "logs" button (roadmap E3)."""
+    from fastapi.responses import PlainTextResponse
+
+    from core_plugins import overview
+
+    if not DOCKER_URL:
+        raise HTTPException(404, "No Docker access configured (TOOLBOX_DOCKER_URL).")
+    try:
+        return PlainTextResponse(await overview.logs(DOCKER_URL, name, lines))
+    except KeyError:
+        raise HTTPException(404, f"'{name}' is not a container of this Toolbox.") from None
+
+
+@app.get("/api/workspace/alerts")
+async def workspace_alerts() -> dict[str, Any]:
+    """Cheap attention list for the sidebar badge (roadmap E3): container states (no stats), tools, state health,
+    recent errors. Polled every 60 s by every open workspace."""
+    from starlette.concurrency import run_in_threadpool
+
+    from core_plugins import overview
+
+    async def conts():
+        try:
+            return await overview.container_states(DOCKER_URL) if DOCKER_URL else {}
+        except Exception:  # noqa: BLE001
+            return {}
+
+    cont, tools, st, errs = await asyncio.gather(conts(), workspace_status(), state_health(),
+                                                 run_in_threadpool(metrics.recent_errors, 50))
+    items = overview.attention({"containers": cont, "tools": tools, "state": st, "errors": errs,
+                                "on_demand_services": [f"rt-{r}" for r in _supervisors],
+                                "pool_services": [s.service for s in _scalers]})
+    return {"items": items, "errors": sum(1 for i in items if i["level"] == "error"),
+            "warnings": sum(1 for i in items if i["level"] == "warn")}
+
+
+@app.get("/api/workspace/overview")
+async def workspace_overview() -> dict[str, Any]:
+    """Everything the Status tab shows (roadmap E1): containers (Docker, read-only), tools, scaling, jobs, storage,
+    state services, and an 'attention' list. Nothing is stored; sections that fail say so instead."""
+    from core_plugins import overview
+
+    async def containers():
+        if not DOCKER_URL:
+            return {"error": "no Docker access configured (TOOLBOX_DOCKER_URL)"}
+        try:
+            return await overview.containers(DOCKER_URL)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"{type(exc).__name__}: {exc}"[:300]}
+
+    from starlette.concurrency import run_in_threadpool
+
+    cont, tools, rts, st, traffic, errs = await asyncio.gather(
+        containers(), workspace_status(), runtimes_status(), state_overview(),
+        run_in_threadpool(metrics.read), run_in_threadpool(metrics.recent_errors, 50))
+    out = {"generated_at": time.time(), "containers": cont, "tools": tools, "runtimes": rts,
+           "state": st.get("state") or {}, "jobs": st.get("jobs") or {}, "storage": st.get("storage") or {},
+           "traffic": traffic, "errors": errs,
+           "on_demand_services": [f"rt-{r}" for r in _supervisors],
+           "pool_services": [s.service for s in _scalers]}
+    out["attention"] = overview.attention(out)
+    return out
+
+
 @app.get("/api/workspace/status")
 async def workspace_status() -> dict[str, Any]:
     """Per-plugin state for the workspace UI (A4) and status page (E2). Never imports a tool. With several
@@ -410,16 +524,19 @@ _sweeper_started = False
 
 
 def _start_supervisor() -> None:
-    """Start the idle sweep on this process's event loop (first request — no deprecated startup hook needed)."""
+    """Start this process's background tasks on its event loop (first request — no deprecated startup hook):
+    the idle sweep/autoscaler, the replica lists, and the request-counter flusher (roadmap E2)."""
     global _sweeper_started
-    if (_supervisors or _scalers or _balancers) and not _sweeper_started:
-        import asyncio
-
-        _sweeper_started = True
-        loop = asyncio.get_running_loop()
+    if _sweeper_started:
+        return
+    _sweeper_started = True
+    loop = asyncio.get_running_loop()
+    if ROLE == "web":
+        loop.create_task(metrics.run_flusher())
+    if _supervisors or _scalers:
         loop.create_task(Supervisor(_supervisors, _scalers).run())
-        for b in _balancers.values():  # every gateway process routes, so every process keeps its replica list
-            loop.create_task(b.run())
+    for b in _balancers.values():  # every gateway process routes, so every process keeps its replica list
+        loop.create_task(b.run())
         logger.info("On-demand runtimes: %s", {rt: s.idle_s for rt, s in _supervisors.items()})
 
 
@@ -497,7 +614,9 @@ for _plugin in _registry.ordered():
     if _initial is None:
         continue
     _slots[_plugin.name] = Slot(_initial)
-    app.mount(_plugin.mount_path, _slots[_plugin.name])
+    # roadmap E2: the web role (gateway) counts requests/errors/slow answers per tool; runtimes don't (no double count)
+    app.mount(_plugin.mount_path, metrics.Metered(_slots[_plugin.name], _plugin.name) if ROLE == "web"
+              else _slots[_plugin.name])
 _remember_mtime()
 if _redis_configured := bool(os.environ.get("TOOLBOX_REDIS_URL")):
     import threading as _threading

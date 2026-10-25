@@ -122,6 +122,43 @@
     .switch input:disabled + span { opacity: 0.5; cursor: wait; }
     .foot-note { color: var(--muted); font-size: 0.78rem; margin-top: 12px; line-height: 1.5; }
 
+    /* ---- status tab (roadmap E1) ---- */
+    .status-page { padding: 24px; max-width: 1180px; margin: 0 auto; }
+    .status-page h2 { font-size: 1.3rem; margin-bottom: 4px; }
+    .status-page h3 { font-size: 0.95rem; margin: 22px 0 8px; }
+    .status-page .sub { color: var(--muted); font-size: 0.84rem; margin-bottom: 14px; }
+    .attn { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+    .attn div { border-radius: 8px; padding: 8px 12px; font-size: 0.84rem; border: 1px solid; }
+    .attn .error { background: #fdecea; border-color: #f5c6c0; color: var(--err); }
+    .attn .warn { background: #fff7e6; border-color: #f3dca7; color: #6b4e00; }
+    .attn .fine { background: #eaf7f0; border-color: #bfe5cf; color: var(--ok); }
+    .svc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+    .svc { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 0.82rem; }
+    .svc b { display: flex; align-items: center; gap: 7px; font-size: 0.88rem; margin-bottom: 4px; }
+    .svc .mono { color: var(--muted); font-size: 0.75rem; font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
+    .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); } .dot.warn { background: #e0a400; }
+    .bar { position: relative; height: 6px; background: var(--bg); border-radius: 3px; min-width: 70px; margin-top: 3px; overflow: hidden; }
+    .bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 3px; }
+    .bar i.hot { background: var(--err); }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .muted { color: var(--muted); }
+    td.num, th.num { text-align: right; white-space: nowrap; }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+    .spark { width: 120px; height: 22px; vertical-align: middle; }
+    .spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+    .spark .e { stroke: var(--err); }
+    .badge-n { margin-left: auto; min-width: 18px; height: 18px; border-radius: 9px; padding: 0 5px; font-size: 0.7rem;
+               font-weight: 700; display: inline-flex; align-items: center; justify-content: center; color: #fff; }
+    .badge-n.error { background: var(--err); } .badge-n.warn { background: #e0a400; }
+    .linkbtn { color: var(--accent); font-size: 0.78rem; text-decoration: underline; }
+    #logBox { position: fixed; inset: 6vh 6vw; z-index: 50; background: var(--surface); border: 1px solid var(--border);
+              border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.25); display: none; flex-direction: column; }
+    #logBox.show { display: flex; }
+    #logBox header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-weight: 600; }
+    #logBox header span { flex: 1; }
+    #logBox pre { flex: 1; overflow: auto; margin: 0; padding: 12px 14px; font: 0.76rem/1.45 ui-monospace, Menlo, Consolas, monospace;
+                  white-space: pre-wrap; word-break: break-all; background: #0f1222; color: #d7dbf0; border-radius: 0 0 12px 12px; }
+
     @media (max-width: 760px) {
       #side { position: fixed; z-index: 20; inset: 0 auto 0 0; transform: translateX(-100%); transition: transform 0.2s;
               box-shadow: 4px 0 24px rgba(0,0,0,0.12); }
@@ -156,6 +193,35 @@
         <p class="sub">Pick a tool from the sidebar or a card below. Tools open in tabs and load on first use.</p>
         <div class="grid" id="toolGrid">{{CARDS}}</div>
       </section>
+      <section class="pane" id="pane-status">
+        <div class="status-page">
+          <h2>Status</h2>
+          <p class="sub" id="stUpdated">Loading…</p>
+          <div class="attn" id="stAttention"></div>
+          <h3>Services</h3>
+          <div class="svc-grid" id="stServices"></div>
+          <h3>Containers</h3>
+          <table>
+            <thead><tr><th>Container</th><th>State</th><th class="num">CPU</th><th>Memory</th><th class="hide-sm">Up since</th>
+              <th class="num hide-sm">Restarts</th><th>Logs</th></tr></thead>
+            <tbody id="stContainers"><tr><td colspan="7">Loading…</td></tr></tbody>
+          </table>
+          <div class="two-col">
+            <div><h3>Scaling &amp; on-demand</h3><div id="stScaling"></div></div>
+            <div><h3>Tools</h3><div id="stTools"></div></div>
+          </div>
+          <h3>Traffic per tool <span class="muted" style="font-weight:400" id="stSlow"></span></h3>
+          <div id="stTraffic"></div>
+          <h3>Recent errors</h3>
+          <div id="stErrors"></div>
+          <h3>Background jobs</h3>
+          <div id="stJobs"></div>
+          <h3>Storage</h3>
+          <div class="two-col"><div id="stObjects"></div><div id="stPostgres"></div></div>
+          <p class="foot-note">Live from Docker, Redis, the job queue and storage — refreshed every 5 s while this tab
+            is open; nothing is recorded. Logs: <code>docker compose logs -f &lt;service&gt;</code>.</p>
+        </div>
+      </section>
       <section class="pane" id="pane-settings">
         <div class="settings">
           <h2>Workspace settings</h2>
@@ -174,6 +240,11 @@
     </div>
   </main>
 
+  <div id="logBox" role="dialog" aria-modal="true" aria-label="Container log">
+    <header><span id="logTitle">Log</span><button class="linkbtn" id="logRefresh">Refresh</button>
+      <button class="linkbtn" id="logClose">Close ✕</button></header>
+    <pre id="logText"></pre>
+  </div>
   <script id="ws-data" type="application/json">{{DATA}}</script>
   <script>
   (function () {
@@ -195,7 +266,7 @@
     // ---------- sidebar ----------
     function renderNav() {
       var q = $("q").value.trim().toLowerCase(), learn = $("showLearning").checked;
-      var html = navLink("home", "🏠", "Home") + navLink("settings", "⚙️", "Settings"), shown = 0;
+      var html = navLink("home", "🏠", "Home") + navLink("status", "📊", "Status", alertBadge()) + navLink("settings", "⚙️", "Settings"), shown = 0;
       ["tool", "learn"].forEach(function (cat) {
         if (cat === "learn" && !learn && !q) return;
         var list = tools.filter(function (t) {
@@ -216,9 +287,23 @@
       }
       $("nav").innerHTML = html;
     }
-    function navLink(id, ic, label) {
+    function navLink(id, ic, label, extra) {
       return '<a class="nav-item' + (state.active === id ? " active" : "") + '" href="#/' + (id === "home" ? "" : id) +
-        '" data-open="' + id + '"><span class="ic">' + ic + '</span><span class="tt">' + label + "</span></a>";
+        '" data-open="' + id + '"><span class="ic">' + ic + '</span><span class="tt">' + label + "</span>" + (extra || "") + "</a>";
+    }
+    // roadmap E3: a red/amber count on "Status" when something needs a look (cheap check every 60 s)
+    var alerts = { errors: 0, warnings: 0, items: [] };
+    function alertBadge() {
+      var n = alerts.errors || alerts.warnings;
+      if (!n) return "";
+      var t = alerts.items.map(function (i) { return i.text; }).join("\n");
+      return '<span class="badge-n ' + (alerts.errors ? "error" : "warn") + '" title="' + esc(t) + '">' + n + "</span>";
+    }
+    function loadAlerts() {
+      if (document.visibilityState === "visible")
+        fetch("/api/workspace/alerts").then(function (r) { return r.json(); })
+          .then(function (a) { alerts = a; renderNav(); }).catch(function () {});
+      setTimeout(loadAlerts, 60000);
     }
 
     // ---------- tabs ----------
@@ -237,15 +322,16 @@
       return el;
     }
     function open(name) {
-      if (name !== "home" && name !== "settings" && !byName[name]) name = "home";
+      if (name !== "home" && name !== "settings" && name !== "status" && !byName[name]) name = "home";
       if (byName[name] && state.open.indexOf(name) === -1) state.open.push(name);
       state.active = name;
       Array.prototype.forEach.call(document.querySelectorAll(".pane"), function (p) { p.classList.remove("active"); });
-      (name === "home" ? $("pane-home") : name === "settings" ? $("pane-settings") : paneFor(name)).classList.add("active");
+      (name === "home" ? $("pane-home") : name === "settings" ? $("pane-settings") : name === "status" ? $("pane-status") : paneFor(name)).classList.add("active");
       if (name === "settings") loadSettings();
-      var hash = name === "home" ? "#/" : name === "settings" ? "#/settings" : "#/tool/" + name;
+      if (name === "status") loadStatus();
+      var hash = name === "home" ? "#/" : name === "settings" ? "#/settings" : name === "status" ? "#/status" : "#/tool/" + name;
       if (location.hash !== hash) history.replaceState(null, "", hash);
-      document.title = (name === "home" ? "" : ((byName[name] || {}).title || "Settings") + " · ") + "Toolbox";
+      document.title = (name === "home" ? "" : ((byName[name] || {}).title || (name === "status" ? "Status" : "Settings")) + " · ") + "Toolbox";
       document.body.classList.remove("side-open");
       persist(); renderTabs(); renderNav();
     }
@@ -260,6 +346,7 @@
       var html = tab("home", "🏠", "Home", false);
       state.open.forEach(function (n) { var t = byName[n]; html += tab(n, t.icon || "🧰", t.title, true); });
       if (state.active === "settings") html += tab("settings", "⚙️", "Settings", false);
+      if (state.active === "status") html += tab("status", "📊", "Status", false);
       $("tabList").innerHTML = html;
       var isTool = !!byName[state.active];
       $("reloadBtn").style.visibility = $("popBtn").style.visibility = isTool ? "visible" : "hidden";
@@ -326,6 +413,153 @@
       else if (enabled) note("Turned on. Reload the page to see its card on Home.", false);
     }
 
+    // ---------- status (roadmap E1) ----------
+    var statusTimer = null;
+    function loadStatus() {
+      if (statusTimer) clearTimeout(statusTimer);
+      if (state.active !== "status") return;
+      if (document.visibilityState !== "visible") { statusTimer = setTimeout(loadStatus, 5000); return; }
+      fetch("/api/workspace/overview").then(function (r) { return r.json(); }).then(renderStatus)
+        .catch(function (e) { $("stUpdated").textContent = "Could not load the status: " + e.message; })
+        .finally(function () { if (state.active === "status") statusTimer = setTimeout(loadStatus, 5000); });
+    }
+    function bytes(n) {
+      if (n == null) return "–";
+      var u = ["B", "KB", "MB", "GB", "TB"], i = 0; n = Number(n);
+      while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+      return (n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)) + " " + u[i];
+    }
+    function since(iso) {
+      if (!iso || iso.indexOf("0001-") === 0) return "–";
+      var s = (Date.now() - Date.parse(iso)) / 1000;
+      if (s < 90) return Math.round(s) + " s ago";
+      if (s < 5400) return Math.round(s / 60) + " min ago";
+      if (s < 172800) return Math.round(s / 3600) + " h ago";
+      return Math.round(s / 86400) + " days ago";
+    }
+    function svcCard(name, v, detail) {
+      var ok = v && v.ok, cls = v == null ? "" : ok ? (v.warning ? "warn" : "ok") : "bad";
+      return '<div class="svc"><b><span class="dot ' + cls + '"></span>' + esc(name) + "</b>" +
+        '<div class="mono">' + esc(v ? (ok ? detail(v) : (v.error || "not ok")) : "unknown") + "</div></div>";
+    }
+    function renderStatus(o) {
+      $("stUpdated").textContent = "Updated " + new Date(o.generated_at * 1000).toLocaleTimeString() +
+        " · refreshes every 5 s while this tab is open";
+      var at = o.attention || [];
+      $("stAttention").innerHTML = at.length ? at.map(function (a) { return '<div class="' + esc(a.level) + '">' + esc(a.text) + "</div>"; }).join("")
+        : '<div class="fine">Everything looks fine.</div>';
+
+      var st = o.state || {};
+      $("stServices").innerHTML =
+        svcCard("Postgres", st.postgres, function (v) { return v.database + " · v" + String(v.version || "").split(" ")[0] + " · " + v.latency_ms + " ms"; }) +
+        svcCard("Redis", st.redis, function (v) { return v.used_memory + " used · AOF " + (v.aof_enabled ? "on" : "off"); }) +
+        svcCard("File storage (S3)", st.objects, function (v) { return v.bucket + " @ " + v.endpoint; }) +
+        svcCard("Job queue", st.jobs, function (v) { return v.workers + " worker(s) listening · " + v.waiting + " waiting"; }) +
+        svcCard("Vault", st.vault, function (v) { return v.secrets + " secret(s) · key: " + v.key_source + (v.warning ? " · " + v.warning : ""); });
+
+      var cs = (o.containers || {}).containers || [], od = o.on_demand_services || [], pools = o.pool_services || [];
+      if ((o.containers || {}).error) $("stContainers").innerHTML = '<tr><td colspan="7">' + esc(o.containers.error) + "</td></tr>";
+      else $("stContainers").innerHTML = cs.map(function (c) {
+        var asleep = c.state !== "running" && od.indexOf(c.service) >= 0, standby = c.state !== "running" && pools.indexOf(c.service) >= 0;
+        var label = c.state === "running" ? (c.health ? "running · " + c.health : "running")
+          : asleep ? "asleep (on demand)" : standby ? "standby (scaled down)" : c.state;
+        var dot = c.state === "running" ? (c.health === "unhealthy" ? "bad" : c.health === "starting" ? "warn" : "ok")
+          : asleep || standby ? "asleep" : "bad";
+        var pct = c.mem && c.mem_limit ? Math.min(100, c.mem * 100 / c.mem_limit) : null;
+        var mem = c.mem == null ? "–" : bytes(c.mem) + (c.mem_limit ? " / " + bytes(c.mem_limit) : "") +
+          (pct != null ? '<div class="bar"><i class="' + (pct > 85 ? "hot" : "") + '" style="width:' + pct.toFixed(0) + '%"></i></div>' : "");
+        return "<tr><td><div class='name'>" + esc(c.name) + "</div><div class='mono'>" + esc(c.service) + "</div></td>" +
+          "<td><span class='state'><span class='dot " + dot + "'></span>" + esc(label) + "</span></td>" +
+          "<td class='num'>" + (c.cpu == null ? "–" : esc(c.cpu.toFixed(1)) + " %") + "</td><td>" + mem + "</td>" +
+          "<td class='hide-sm'>" + esc(c.state === "running" ? since(c.started_at) : "–") + "</td>" +
+          "<td class='num hide-sm'>" + esc(c.restarts == null ? "–" : c.restarts) + "</td>" +
+          "<td><button class='linkbtn' data-logs='" + esc(c.name) + "'>logs</button></td></tr>";
+      }).join("") || '<tr><td colspan="7">No containers found.</td></tr>';
+
+      var rt = o.runtimes || {}, sc = rt.scaled || {}, odr = rt.on_demand || {}, h = "";
+      Object.keys(sc).forEach(function (k) {
+        var v = sc[k];
+        h += '<div class="svc" style="margin-bottom:8px"><b>' + esc(k) + " — " + esc(v.running == null ? "?" : v.running) + " of " +
+          esc(v.pool == null ? v.max : v.pool) + " running</b><div class='mono'>scales " + esc(v.min) + "–" + esc(v.max) + " by " +
+          esc(v.metric === "cpu" ? "CPU (now " + (v.cpu_avg == null ? "?" : v.cpu_avg) + " %)" : "queue (" + (v.waiting == null ? "?" : v.waiting) + " waiting, " + (v.busy == null ? "?" : v.busy) + " busy)") +
+          (v.last_action ? " · last: " + v.last_action : "") + "</div></div>";
+      });
+      Object.keys(odr).forEach(function (k) {
+        var v = odr[k];
+        h += '<div class="svc" style="margin-bottom:8px"><b><span class="dot ' + (v.state === "running" ? "ok" : v.state === "starting" ? "starting" : "asleep") + '"></span>rt-' +
+          esc(k) + " — " + esc(v.state) + "</b><div class='mono'>sleeps after " + esc(Math.round(v.idle_timeout_s / 60)) + " min idle" +
+          (v.state === "running" && v.idle_s != null ? " · idle " + esc(Math.round(v.idle_s)) + " s" : "") + "</div></div>";
+      });
+      $("stScaling").innerHTML = h || '<p class="muted">Nothing scales on this setup.</p>';
+
+      var tl = o.tools || {}, cnt = tl.counts || {};
+      var bad = (tl.plugins || []).filter(function (p) { return p.state === "failed"; });
+      $("stTools").innerHTML = '<div class="summary">' + Object.keys(cnt).sort().map(function (k) { return pill(k.replace("_", " "), cnt[k]); }).join("") + "</div>" +
+        (bad.length ? bad.map(function (p) { return '<div class="attn"><div class="error">' + esc(p.title) + ": " + esc(p.error || "failed") + "</div></div>"; }).join("")
+          : '<p class="muted">No tool failed to load. Details and on/off switches: Settings.</p>');
+
+      var tr = o.traffic || {}, tt = tr.tools || {};
+      $("stSlow").textContent = tr.slow_ms ? "· slow = first byte after " + (tr.slow_ms / 1000) + " s" : "";
+      $("stTraffic").innerHTML = Object.keys(tt).length ? "<table><thead><tr><th>Tool</th><th>Last 60 min</th>" +
+        "<th class='num'>Requests (1 h)</th><th class='num'>Errors</th><th class='num'>Slow</th><th class='num'>Avg</th>" +
+        "<th class='num hide-sm'>Requests (24 h)</th><th class='num hide-sm'>Errors (24 h)</th></tr></thead><tbody>" +
+        Object.keys(tt).sort(function (a, b) { return tt[b].day.req - tt[a].day.req; }).map(function (k) {
+          var v = tt[k], h = v.hour, d = v.day;
+          return "<tr><td>" + esc(k) + "</td><td>" + spark(v.series, v.err_series) + "</td><td class='num'>" + h.req +
+            "</td><td class='num'" + (h.err ? " style='color:var(--err);font-weight:600'" : "") + ">" + h.err + "</td><td class='num'>" + h.slow +
+            "</td><td class='num'>" + (h.avg_ms == null ? "–" : h.avg_ms + " ms") + "</td><td class='num hide-sm'>" + d.req +
+            "</td><td class='num hide-sm'>" + d.err + "</td></tr>"; }).join("") + "</tbody></table>"
+        : '<p class="muted">No tool traffic recorded yet (counted by the gateway from now on, kept 24 h).</p>';
+      var er = o.errors || [];
+      $("stErrors").innerHTML = er.length ? "<table><thead><tr><th>When</th><th>Tool</th><th>Request</th><th>Status</th><th>Message</th></tr></thead><tbody>" +
+        er.slice(0, 20).map(function (e) { return "<tr><td class='mono'>" + esc(since(new Date(e.ts * 1000).toISOString())) + "</td><td>" + esc(e.tool) +
+          "</td><td class='mono'>" + esc(e.method + " " + e.path) + "</td><td class='num'>" + esc(e.status) + "</td><td class='mono'>" +
+          esc(e.message) + "</td></tr>"; }).join("") + "</tbody></table>" +
+          (er.length > 20 ? "<p class='foot-note'>" + er.length + " kept in total (last 50).</p>" : "")
+        : '<p class="muted">No server errors recorded (the last 50 are kept for 7 days).</p>';
+
+      var j = o.jobs || {}, pt = j.per_tool || {};
+      var jh = j.error ? '<p class="muted">' + esc(j.error) + "</p>" :
+        '<div class="summary">' + pill("Waiting", j.waiting || 0) + pill("Workers", j.workers || 0) + pill("Busy", j.busy || 0) + "</div>";
+      if (Object.keys(pt).length) jh += "<table><thead><tr><th>Tool</th><th class='num'>Waiting</th><th class='num'>Running</th>" +
+        "<th class='num'>Finished (1 h)</th><th class='num'>Crashed (7 days)</th></tr></thead><tbody>" +
+        Object.keys(pt).map(function (k) { var v = pt[k]; return "<tr><td>" + esc(k) + "</td><td class='num'>" + v.waiting + "</td><td class='num'>" +
+          v.running + "</td><td class='num'>" + v.finished + "</td><td class='num'>" + v.failed + "</td></tr>"; }).join("") + "</tbody></table>";
+      if ((j.recent_failures || []).length) jh += "<p class='foot-note'>Recent crashes (the job itself died — normal failures are shown in each tool):</p>" +
+        "<table><tbody>" + j.recent_failures.map(function (f) { return "<tr><td class='mono'>" + esc(since(f.ended_at)) + "</td><td>" + esc(f.tool) +
+          "</td><td class='mono'>" + esc(f.error || f.description) + "</td></tr>"; }).join("") + "</tbody></table>";
+      $("stJobs").innerHTML = jh;
+
+      var so = o.storage || {}, ob = so.objects, pg = so.postgres;
+      $("stObjects").innerHTML = "<table><thead><tr><th>File storage (S3)</th><th class='num'>Files</th><th class='num'>Size</th></tr></thead><tbody>" +
+        (ob ? Object.keys(ob).map(function (k) { return "<tr><td>" + esc(k) + "</td><td class='num'>" + ob[k].files + "</td><td class='num'>" + bytes(ob[k].bytes) + "</td></tr>"; }).join("")
+          || "<tr><td colspan='3' class='muted'>empty</td></tr>" : "<tr><td colspan='3' class='muted'>" + esc(so.objects_error || "unknown") + "</td></tr>") + "</tbody></table>";
+      $("stPostgres").innerHTML = "<table><thead><tr><th>Postgres schema</th><th class='num'>Size</th></tr></thead><tbody>" +
+        (pg ? Object.keys(pg.schemas).map(function (k) { return "<tr><td>" + esc(k) + "</td><td class='num'>" + bytes(pg.schemas[k]) + "</td></tr>"; }).join("") +
+          "<tr><td><b>whole database</b></td><td class='num'><b>" + bytes(pg.database_bytes) + "</b></td></tr>"
+          : "<tr><td colspan='2' class='muted'>" + esc(so.postgres_error || "unknown") + "</td></tr>") + "</tbody></table>";
+    }
+    document.addEventListener("visibilitychange", function () { if (state.active === "status" && document.visibilityState === "visible") loadStatus(); });
+    function spark(series, errs) {
+      var max = Math.max(1, Math.max.apply(null, series)), w = 120, hgt = 22;
+      function pts(arr) { return arr.map(function (v, i) { return (i * w / (arr.length - 1)).toFixed(1) + "," + (hgt - 1 - v * (hgt - 2) / max).toFixed(1); }).join(" "); }
+      return '<svg class="spark" viewBox="0 0 ' + w + " " + hgt + '" aria-label="requests per minute, last hour"><polyline points="' + pts(series) + '"/>' +
+        (errs.some(function (v) { return v; }) ? '<polyline class="e" points="' + pts(errs) + '"/>' : "") + "</svg>";
+    }
+    // ---------- log peek (roadmap E3) ----------
+    var logFor = null;
+    function showLog(name) {
+      logFor = name; $("logTitle").textContent = name + " — last 200 lines"; $("logText").textContent = "Loading…";
+      $("logBox").classList.add("show");
+      fetch("/api/workspace/logs/" + encodeURIComponent(name) + "?lines=200").then(function (r) {
+        return r.text().then(function (t) { if (!r.ok) throw new Error(t); return t; }); })
+        .then(function (t) { $("logText").textContent = t || "(no log lines)"; var p = $("logText"); p.scrollTop = p.scrollHeight; })
+        .catch(function (e) { $("logText").textContent = "Could not read the log: " + e.message; });
+    }
+    $("logClose").addEventListener("click", function () { $("logBox").classList.remove("show"); });
+    $("logRefresh").addEventListener("click", function () { if (logFor) showLog(logFor); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") $("logBox").classList.remove("show"); });
+
     // ---------- home cards: open in a tab instead of a new window ----------
     function filterCards() {
       var learn = $("showLearning").checked;
@@ -336,6 +570,8 @@
 
     // ---------- events ----------
     document.addEventListener("click", function (e) {
+      var lg = e.target.closest("[data-logs]");
+      if (lg) { showLog(lg.dataset.logs); return; }
       var x = e.target.closest("[data-close]");
       if (x) { e.preventDefault(); e.stopPropagation(); close(x.dataset.close); return; }
       var t = e.target.closest("[data-tab]");
@@ -355,7 +591,7 @@
     });
     $("q").addEventListener("input", renderNav);
     $("q").addEventListener("keydown", function (e) {
-      if (e.key === "Enter") { var first = document.querySelector('#nav [data-open]:not([data-open="home"]):not([data-open="settings"])');
+      if (e.key === "Enter") { var first = document.querySelector('#nav [data-open]:not([data-open="home"]):not([data-open="settings"]):not([data-open="status"])');
         if (first) { open(first.dataset.open); $("q").value = ""; renderNav(); } }
       if (e.key === "Escape") { $("q").value = ""; renderNav(); $("q").blur(); }
     });
@@ -376,6 +612,7 @@
       var h = location.hash.replace(/^#\/?/, "");
       if (h.indexOf("tool/") === 0) open(decodeURIComponent(h.slice(5)));
       else if (h === "settings") open("settings");
+      else if (h === "status") open("status");
       else if (h === "" && state.active !== "home" && location.hash) open("home");
     }
 
@@ -388,8 +625,9 @@
     } catch (e) {}
     state.open.forEach(paneFor);                 // restore tabs (each loads its tool)
     filterCards();
-    if (location.hash && location.hash !== "#/") fromHash(); else open(byName[state.active] || state.active === "settings" ? state.active : "home");
+    if (location.hash && location.hash !== "#/") fromHash(); else open(byName[state.active] || state.active === "settings" || state.active === "status" ? state.active : "home");
     refreshStatus();
+    loadAlerts();
   })();
   </script>
 </body>

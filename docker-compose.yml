@@ -107,8 +107,8 @@ services:
   # ---------------------------------------------------------------------------
   # Docker access for the gateway's on-demand supervisor (roadmap C3) — and NOTHING else. docker-socket-proxy
   # (HAProxy) with our own rule set instead of its env switches: those can only allow start/stop together with
-  # ALL container POSTs (create, exec, update…). Allowed: GET /_ping, /version, /containers/json, /containers/<x>/json
-  # and /stats (read-only, D3 autoscaling); POST start/stop ONLY of containers named `<project>-rt-<runtime>-<n>`
+  # ALL container POSTs (create, exec, update…). Allowed: GET /_ping, /version, /containers/json, /containers/<x>/json,
+  # /stats (read-only, D3 autoscaling) and /logs (read-only, E3 log peek); POST start/stop ONLY of containers named `<project>-rt-<runtime>-<n>`
   # or `<project>-worker-<n>`. The socket is mounted read-only here and nowhere else. Not published.
   # ---------------------------------------------------------------------------
   docker-proxy:
@@ -336,6 +336,7 @@ configs:
           http-request allow if METH_GET { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/json$$ }
           http-request allow if METH_GET { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/json$$ }
           http-request allow if METH_GET { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/stats$$ }
+          http-request allow if METH_GET { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/logs$$ }
           http-request allow if METH_POST { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+-rt-[a-z]+-[0-9]+/(start|stop)$$ }
           http-request allow if METH_POST { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+-worker-[0-9]+/(start|stop)$$ }
           http-request deny

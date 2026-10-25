@@ -101,3 +101,14 @@ def test_datadiff_large_input_runs_as_a_background_job(driver):
         time.sleep(0.5)
     assert driver.find_element("id", "count-mismatch").text == "3", "background compare result not rendered"
     assert driver.execute_script("return window.__sawBackground"), "the background status never showed"
+
+
+def test_status_tab_renders(driver):
+    """Roadmap E1: the Status tab fills its tables without JavaScript errors."""
+    driver.get(f"{BASE_URL}/#/status")
+    deadline = time.time() + 30
+    while time.time() < deadline and "Updated" not in driver.find_element("id", "stUpdated").text:
+        time.sleep(0.5)
+    assert len(driver.find_elements("css selector", "#stContainers tr")) >= 5
+    severe = [l for l in driver.get_log("browser") if l["level"] == "SEVERE" and not any(i in l["message"] for i in IGNORE)]
+    assert not severe, severe

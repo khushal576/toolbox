@@ -73,12 +73,14 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | D1 | DataDiff as a shared API + client | M | C2 ⚡ | ☑ |
 | D2 | Generic job API + results in S3 storage | M | D1 | ☑ |
 | D3 | Replica autoscaling on one node | M | C3, D2 | ☑ |
-| E1 | Metrics + Grafana dashboards + JSON logs | M | C2 ⚡ | ☐ |
-| E2 | Health/status page + alerts | S | E1 | ☐ |
-| F1 | Image versioning, registry, k8s manifests from plugin manifests | M | D3, E1 | ☐ |
-| F2 | k3s single-node deploy (lab) | M | F1 | ☐ |
-| F3 | KEDA scale-to-zero + queue scaling | M | F2 | ☐ |
-| F4 | Second node, failover test, runbook | M | F3 | ☐ |
+| E1 | Status page (containers, tools, scaling, jobs, storage, state) — no new services | M | D3 | ☑ |
+| E2 | Per-tool request/error/slow counters (1 h / 24 h, Redis) | S | E1 | ☑ |
+| E3 | Recent errors + log peek + in-page alerts | S | E1 | ☑ |
+| E4 | (later, optional) `/metrics` export → Prometheus/Grafana, stored logs | M | E2 | ☐ |
+| F1 | Image versioning, registry, k8s manifests from plugin manifests | M | D3, E1 | ⏸ deferred |
+| F2 | k3s single-node deploy (lab) | M | F1 | ⏸ deferred |
+| F3 | KEDA scale-to-zero + queue scaling | M | F2 | ⏸ deferred |
+| F4 | Second node, failover test, runbook | M | F3 | ⏸ deferred |
 | G1 | Desktop: PWA install + app-mode shortcut (optional) | S | A4 | ☐ |
 | G2 | Desktop: Electron wrapper (optional) | M | G1 | ☐ |
 
@@ -240,19 +242,44 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
   load-balances (round robin, health-aware).
 - **Done when**: a load test (many compares) adds replicas, then scales back down.
 
-## Phase E – Observability
+## Phase E – Observability (revised 2026-10-25: lightweight, no new containers)
 
-### E1 Metrics + dashboards + JSON logs ⚡ (M)
-- `/metrics` on gateway and runtimes (requests, latency, errors, queue length, container state);
-  Prometheus + Grafana in compose with a saved dashboard; JSON logs with request IDs.
-- **Done when**: dashboard shows per-tool traffic and queue depth.
+Owner decision: Prometheus + Grafana (two always-on containers, ~150–250 MiB, own storage) are too heavy for one
+user on one machine now. Phase E reuses what Toolbox already knows (Docker via docker-proxy, Redis, the job queue,
+the workspace status) and shows it on ONE page in the workspace. Nothing runs or is stored unless the page is open
+(except E2's few-KB counters). History/stored logs stay possible later (E4) without redoing E1–E3.
 
-### E2 Health/status page + alerts (S)
-- Workspace "Status" page: each tool up/stopped/starting, resource use; basic alert rules (tool
-  down, queue backlog, memory high).
-- **Done when**: stopping a runtime shows on the page and fires an alert.
+### E1 Status page (M)
+- Workspace "Status" tab, polling every few seconds only while visible: every container (up / asleep / starting /
+  stopped, health, CPU %, memory vs limit, uptime), tools (loaded / asleep / failed), scaling (replicas, last
+  action), background jobs (waiting / running / failed per tool, recent failures), storage (S3 per tool, Postgres
+  per schema), state services + Vault key source, and an "attention" list for anything wrong.
+- Gateway does the Docker part (httpx only); the job/storage/state part is answered by `rt-data` (its libraries
+  would cost every gateway worker memory). Docker access stays read-only list/inspect/stats.
+- **Done when**: the page shows the whole stack; stopping a runtime / failing a job shows up within one refresh.
+
+### E2 Per-tool counters (S)
+- Gateway counts requests, errors (5xx) and slow requests per tool in Redis buckets (1-minute, kept 24 h);
+  Status page shows last hour / 24 h with tiny sparklines. No per-request overhead worth measuring.
+- **Done when**: traffic to a tool shows up in its counters; Redis keys expire by themselves.
+
+### E3 Recent errors + log peek + in-page alerts (S)
+- Last ~50 errors (time, tool, message) in a Redis list; "last 200 log lines" per container through docker-proxy
+  (one more read-only rule, nothing stored); red banners for failed tool, unhealthy container, job backlog,
+  memory near limit — computed when the page loads.
+- **Done when**: a forced error appears in the list; a container's log tail opens from the page.
+
+### E4 (later, optional) History
+- Expose E2 counters as `/metrics` (Prometheus text format) and, if wanted then, add Prometheus/Grafana and stored
+  logs as a profile that is off by default.
 
 ## Phase F – Multiple nodes (only when needed)
+
+> **Deferred by owner decision (2026-10-25):** skipped for now, definitely planned for later — when a second
+> machine, other users, or "keeps running if a machine dies" becomes a real need. The plan below stays as written;
+> everything from phases A–E (per-runtime images, state outside processes, health checks, manifest-driven
+> scaling/limits) was built so it can be picked up without redesign. Start with F1. Until then: Docker Compose on
+> one machine is the supported setup.
 
 ### F1 Image versioning + manifests to k8s (M)
 - Tag images by git SHA; push to a registry; generate Kubernetes manifests (or a Helm chart) from
@@ -279,6 +306,36 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+- 2026-10-25 – **Phase F deferred** (owner: skip now, do in future). F1–F4 marked "⏸ deferred" in the status
+  table; plan unchanged. Suggested meanwhile (not started, owner to confirm): a small Ops session — backup/restore
+  scripts (Postgres dump + S3 files + .env + workspace.yaml), tested restore, `docs/runbook.md`, "last backup" on
+  the Status page.
+- 2026-10-25 – **E2 + E3 done — phase E complete (E4 stays optional).** `core_plugins/metrics.py`: `Metered` wraps
+  each tool mount in the web role (outside the Slot, so state checks still see LazyApp/ProxyApp) — status + time to
+  first byte per request, summed in-process, flushed every 5 s in one Redis pipeline (`toolbox:m:<tool>:m:<min>` 2 h,
+  `:h:<hour>` 26 h, `toolbox:m:tools`); `/api/workspace/metrics` (hour + day totals, 60-min series; flushes this
+  process first). Status page "Traffic per tool" with SVG sparklines (errors in red). E3: 5xx answers (incl. the
+  gateway's own 503 page) go to `toolbox:errors` (last 50, 7 days) with a readable message (JSON error/detail, or the
+  text of an HTML page minus title/style) → "Recent errors"; attention adds "N server errors in the last hour";
+  `/api/workspace/logs/<name>` (project containers only — others 404; Docker log frames demultiplexed; proxy rule
+  GET /logs; remember `--force-recreate docker-proxy`); log window per container; `/api/workspace/alerts` (container
+  list without stats + tools + state health + errors) → badge on the Status nav item, polled every 60 s while the
+  page is visible. Verified: counts per tool after browsing; rt-light stopped → 503 recorded with message → badge 1;
+  log window showed 82 lines of rt-data; screenshots checked; unit tests (fake Redis) + smoke for every endpoint.
+  Cost: 83 small Redis keys, error list 504 bytes; gateway ~250 MiB (was ~210) across 4 workers. 154 unit + 94 smoke.
+- 2026-10-25 – **E1 done (phase E revised first).** Owner: no Prometheus/Grafana now — phase E rewritten as a
+  lightweight E1–E3 + optional E4. Status tab in the workspace (`#/status`): attention list, services (Postgres,
+  Redis, S3, job queue, Vault key source), every container of the compose project (state incl. "asleep (on demand)"
+  / "standby (scaled down)", health, CPU %, memory vs limit with bar, up since, restarts), scaling + on-demand
+  cards, tools, background jobs per tool (waiting/running/finished 1 h/crashed 7 days + recent crashes), storage (S3
+  per prefix, Postgres per schema + total). `core_plugins/overview.py`; `/api/workspace/overview` (gateway: Docker
+  list + inspect + stats concurrently, cached 4 s, ~2.5 s per call because stats samples CPU twice) +
+  `/api/state/overview` (rt-data: health + rq registries + storage, cached 5/60 s). Polls every 5 s only while the
+  tab is visible. Verified: 18 containers listed; stopping rt-light → "is stopped" in the attention list on the next
+  call; screenshot checked; unit tests for the attention rules; smoke (API + browser). It already surfaced 218 MB
+  of Duck Lab files from the C2 upload test (they expire with the session). **Found:** the D1–D3 commit 471e5b3
+  contained a stray `yes` line in core_plugins/autoscale.py (typed into the open file) — fixed in the working
+  tree, goes into the next commit. 150 unit + 93 smoke.
 - 2026-10-25 – **D3 done — phase D complete.** Scaling without "create" rights: compose makes a POOL of `max`
   containers and the supervisor leader starts/stops pool members (`core_plugins/autoscale.py`, `ScaledService`,
   tick 5 s, cooldown 20 s): rt-datadiff by average CPU from Docker stats (> 60 % up, < 15 % for 45 s down; manifest

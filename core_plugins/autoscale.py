@@ -23,7 +23,7 @@ import json
 import logging
 import time
 from typing import Any
-yes
+
 logger = logging.getLogger("toolbox.autoscale")
 
 TICK = 5.0
