@@ -15,9 +15,10 @@ heavy tools in runtime images started on demand behind a gateway, shared tools
 sessions ("Roadmap: do session `<ID>`"); do only the named session and update
 its status + handoff log.
 
-**Until phase C of the roadmap lands, the old rule still describes the running
-system:** one repo, one Dockerfile, one container, no reverse proxy, no
-inter-container network. (An earlier per-tool-container idea was rejected by
+**Until phase C of the roadmap lands:** one repo, one Dockerfile, one image;
+compose runs it as `toolbox` (web, N workers), `singletons` (sql-studio +
+schema-map, one process, proxied by `toolbox` — B9) and `worker` (jobs, B4),
+plus the state services (B1). (An earlier per-tool-container idea was rejected by
 the owner; the roadmap's runtime pools are deliberately different — a few
 shared runtime images, not one container per tool.) Do not introduce
 containers/gateway pieces outside the roadmap session that owns them.
@@ -27,7 +28,9 @@ containers/gateway pieces outside the roadmap session that owns them.
 - `main.py` at the repo root is the **one entrypoint**. It defines the home
   page (`GET /`) and mounts every tool's own FastAPI `app` object under
   `/tools/<name>` using Starlette's `app.mount(...)` — an in-process ASGI
-  mount, not a network call. No httpx, no proxy, no separate port per tool.
+  mount, not a network call. No httpx, no proxy, no separate port per tool —
+  except the `singleton: true` tools, which the web workers forward to the
+  `singletons` process (`core_plugins/proxy.py`, roadmap B9).
 - Each tool still lives in its own folder (`core/`, `api/`, `ui/` today for
   DataDiff) and keeps its own FastAPI `app` object fully self-contained and
   functional on its own — `main.py` just imports and mounts it.
@@ -80,6 +83,12 @@ containers/gateway pieces outside the roadmap session that owns them.
   `docker compose exec toolbox python -m core.state.selftest`. Defaults are
   local-only passwords; override `TOOLBOX_DB_PASSWORD`,
   `TOOLBOX_S3_ACCESS_KEY`, `TOOLBOX_S3_SECRET_KEY` in `.env`.
+- **Vault (roadmap B7):** secrets in Postgres (schema `vault`), dataset
+  blobs in S3 storage, key from `TOOLBOX_VAULT_KEY` in the git-ignored
+  `.env` (back that file up — without it the Vault can't be decrypted).
+  Tool code reaches secrets only via `vault_store.scoped("<tool>")`, limited
+  to the kinds its manifest declares under `vault:`; a unit test fails if a
+  tool imports `core.vault` unscoped. See `vault/CLAUDE.md`.
 - **Tool records in Postgres (roadmap B6):** schema-map, data-syncer,
   schema-copy, data-dumper and ssh-sftp keep their tables in Toolbox's
   Postgres, one schema each (`schema_map`, `data_syncer`, …), through
@@ -311,6 +320,30 @@ tested checklist, not a guess.)
 
 ## Standing rule: stateful tools and `--workers`
 
+**Since roadmap B9 the web app runs several worker processes** (`TOOLBOX_WEB_WORKERS`, default 4 in compose;
+the image's own default is 1 for a bare `docker run`). That is safe ONLY because every stateful tool keeps its
+state outside the process — and it must stay that way:
+
+- **Rule for every tool, existing or new:** no request may depend on something an earlier request left in
+  this process's memory. Multi-request state goes to `core/state/` (Redis sessions, Postgres via `SqlStore`,
+  S3 via `objects`/`FileCache`), long work goes to the `worker` service (`core/jobs/runner.JobRunner`),
+  secrets to the Vault (`vault_store.scoped(...)`). Per-process *caches* are fine if they can be rebuilt from
+  the shared state (df-studio's LRU, duck-lab's local DuckDB copies, ssh-sftp's browse connections).
+- **Exception: `singleton: true` plugins** (sql-studio, schema-map — one live DB pool, password never stored,
+  owner decision in B3) run in the separate `singletons` service (same image, `TOOLBOX_ROLE=singletons`, one
+  process, never scaled); every web worker forwards their `/tools/<name>/` traffic there through
+  `core_plugins/proxy.py` (`ProxyApp`, streams both ways, 503 page if that process is down). A new tool that truly
+  needs one process gets `singleton: true` — it doesn't pin the whole app to one worker.
+- **Things that are per process by nature, handled in `main.py`:** the on/off switches (every worker re-reads
+  `workspace.yaml` when its mtime changes — at most 1 s behind) and "is this tool loaded" (each process
+  publishes its loaded/failed tools to Redis, `toolbox:procs:*`, TTL 60 s; `/api/workspace/status` combines
+  them). A load-state from a process that just died can show for up to 60 s.
+- Cost: each web worker has its own ~40 MB floor and imports a tool on its own first use (idle container
+  32 → ~170 MiB with 4 workers; `docs/roadmap/measure-B9.md`). Lower `TOOLBOX_WEB_WORKERS` in `.env` on a
+  small machine.
+
+History (why the pin existed, B2–B8 resolved each case):
+
 The container runs uvicorn with **`--workers 1`**, pinned in `Dockerfile`.
 This is because DataFrame Studio keeps its session state (the uploaded
 DataFrame, the pipeline of steps) in a plain in-memory Python dict —
@@ -358,27 +391,14 @@ jobs in the `worker` container through the shared `core/jobs/runner.py`
 local folders as per-process caches (`core/state/filecache.py`). Their
 catalogues/last-run results are in Postgres since B6. See their `CLAUDE.md`s.
 
-SSH & SFTP (`ssh-sftp/sessions.py`, `runner.py`) is a **seventh**: a per-server connection cache and an
-upload/command job registry live in memory; transfer/command history is in Postgres (B6) and staged uploads on a
-volume. See `ssh-sftp/CLAUDE.md`.
+SSH & SFTP (`ssh-sftp/sessions.py`, `runner.py`) was a **seventh** — **resolved in
+roadmap B8**: uploads/commands are worker jobs (`core/jobs/runner.py`), staged uploads
+live in S3 storage, history in Postgres (B6). Its browsing connection cache stays per
+process by design (recreated on demand). See `ssh-sftp/CLAUDE.md`.
 
-**Decided now, before it comes up again:** any future tool that needs
-multi-step or multi-request state (not just "read a form, compute an
-answer, done" — something closer to df-studio's upload-then-edit model)
-must NOT just add another in-memory dict and assume `--workers 1` covers
-it forever. Either it reuses/extends `engine.SESSIONS`'s pattern
-consciously, or — if `--workers` genuinely needs to go up for performance
-reasons someday — that tool needs a real shared session store (Redis,
-SQLite, a session-scoped temp file, anything actually shared across
-processes) first. Don't raise `--workers` without checking this against
-every stateful tool that exists at the time, not just the one you're
-adding.
-
-**Roadmap:** phase B moves all seven stateful tools' state out of process
-(B2–B8: Redis sessions, Postgres records, MinIO files, RQ jobs) and **B9** lifts
-the `--workers 1` pin. Until B9 is ticked in `docs/roadmap/ROADMAP.md`, keep
-`--workers 1`. New stateful tools added after B1 must use `core/state/`
-(Redis/Postgres/MinIO), not a new in-memory dict.
+**Roadmap:** B2–B8 moved all seven stateful tools' state out of process; **B9 lifted the `--workers 1`
+pin** (ticked in `docs/roadmap/ROADMAP.md`). The rule at the top of this section replaces the old "decided
+now" paragraph.
 
 ## Operating notes (the owner is not a developer)
 

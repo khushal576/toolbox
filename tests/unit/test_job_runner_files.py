@@ -180,3 +180,61 @@ def test_trim_evicts_only_stored_and_not_recent_files(tmp_path):
     os.utime(fc.local("c.dump"))
     assert fc.trim() == 1
     assert not fc.local("a.dump").exists() and fc.local("b.dump").exists() and fc.local("c.dump").exists()
+
+
+# ---- B8 additions ---------------------------------------------------------------------------------------------
+
+def test_buffered_log_batches_and_flushes_on_close():
+    from core.jobs.runner import _BufferedLog
+
+    class Ch:
+        def __init__(self):
+            self.batches = []
+
+        def log_many(self, entries):
+            self.batches.append(list(entries))
+
+    ch = Ch()
+    log = _BufferedLog(ch, every=60, max_lines=100)
+    for i in range(250):
+        log("info", f"line {i}")
+    assert [len(b) for b in ch.batches] == [100, 100]  # full batches go out at once
+    log.close()
+    assert [len(b) for b in ch.batches] == [100, 100, 50] and ch.batches[-1][-1] == ("info", "line 249", None)
+
+
+def test_quiet_runner_logs_only_what_the_job_says():
+    r = JobRunner("t-tool", mode="thread", quiet=True)
+
+    def say(ctx):
+        ctx.log("info", "only this")
+
+    r.start("q", "command", say)
+    assert _wait(lambda: not r.is_running("q"))
+    assert [x["msg"] for x in r.view("q")["logs"]] == ["only this"]
+
+
+def test_thread_registry_keeps_a_bounded_number_of_finished_jobs():
+    from core.jobs import runner as runner_mod
+
+    r = JobRunner("t-tool", mode="thread", quiet=True)
+    for i in range(runner_mod.KEEP_THREAD_JOBS + 20):
+        r.start(f"k{i}", "command", lambda ctx: None)
+        assert _wait(lambda: not r.is_running(f"k{i}"))
+    assert len(r._threads) <= runner_mod.KEEP_THREAD_JOBS + 1
+
+
+def test_sweep_removes_finished_and_old_files(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    fc = _cache(tmp_path)
+    for tid in ("keep", "done", "old"):
+        fc.local(f"{tid}.stage").write_bytes(b"x")
+        fc.publish(tid, fc.local(f"{tid}.stage"))
+    old = time.time() - 9 * 86400
+    os.utime(fc.local("old.stage"), (old, old))
+    fake_list = [{"key": k, "last_modified": datetime.now(timezone.utc) - (timedelta(days=9) if "/old/" in k else timedelta(0))}
+                 for k in fc._objects.data]
+    fc._objects.list_objects = lambda prefix: fake_list
+    assert fc.sweep({"keep", "old"}, 7 * 86400) == 4  # done (local + stored) and old (local + stored, too old)
+    assert sorted(fc._objects.data) == ["t-tool/keep/keep.stage"] and [p.name for p in fc.local_dir.iterdir()] == ["keep.stage"]

@@ -52,12 +52,14 @@ except ImportError:  # flat import when run standalone from within this folder
     import templates_store
 
 try:  # core/ is a sibling top-level package in the real image (/app/core)
-    from core import vault
+    from core import vault as vault_store
 except ImportError:  # standalone dev run from inside this folder: core/ is ../core
     import sys as _sys
 
     _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from core import vault
+    from core import vault as vault_store
+
+vault = vault_store.scoped("df-studio")  # Vault scope from manifest.yaml `vault:` (roadmap B7)
 
 app = FastAPI(
     title="DataFrame Studio",

@@ -21,6 +21,7 @@ misleads. If a file's job changes, update its row here in the same commit.
 | Whether a tool defaults to shown or hidden (Tool vs Learn), the search box, the "Show learning tools" toggle | `category:` in each tool's `manifest.yaml` + `main.py`'s home page `<script>` block |
 | Turning a tool on/off, seeing which tools are loaded             | Settings tab of the workspace UI → `POST /api/workspace/plugins/<name>` in `main.py` (live swap via `Slot`); saved in `workspace.yaml` (volume `workspace_data`, `core_plugins/workspace.py`); `GET /api/workspace/status`; lazy import in `core_plugins/lazy.py` |
 | Where Toolbox keeps state outside the web process (Postgres, Redis, S3 files), checking it is up | `core/state/` (`config.py` env vars, `db.py`, `sessions.py`, `objects.py`, `selftest.py`); `GET /api/state/health` in `main.py`; services in `docker-compose.yml` |
+| Several web workers: worker count, singleton routing, switches/load state shared between processes | `TOOLBOX_WEB_WORKERS` (compose `toolbox.command`, Dockerfile `CMD`); `TOOLBOX_ROLE` / `TOOLBOX_SINGLETON_URL` + `_app_for` in `main.py`; `core_plugins/proxy.py` (`ProxyApp`); `_sync_workspace` / `_WorkspaceSync` and `_publish_now` / `_all_processes` in `main.py`; `singletons` service in `docker-compose.yml` (roadmap B9) |
 | Adding a custom app without rebuilding (own HTML page or external link), its sandbox | `plugins/<name>/manifest.yaml` (+ files) — `plugins/README.md`; served by `StaticApp` / `ExternalApp` in `core_plugins/lazy.py`; only static/external allowed (`EXTRA_DIR_KINDS` in `core_plugins/loader.py`) |
 | The workspace page itself: sidebar, tabs, settings, search, keyboard shortcuts | `core_plugins/ui/workspace.html` (self-contained; `main.py` injects `{{CARDS}}` and `{{DATA}}`) |
 | Actually wiring a tool's app into the site (routing)           | automatic: `main.py` loops over `kind: python` manifests and mounts each as a lazy `LazyApp` (bottom of file) — set `entry:` in the tool's `manifest.yaml`, don't edit `main.py` |
@@ -1411,12 +1412,13 @@ right engine here rather than switching to a client-server database).
 
 | If you need to change...                                          | Go to |
 |-----------------------------------------------------------------------|-------|
-| The actual encryption/storage (SQLite + Fernet, on the `vault_data` volume) | `core/vault.py` |
+| The actual encryption/storage (Postgres schema `vault` + S3 blobs since B7; Fernet key from `TOOLBOX_VAULT_KEY`) | `core/vault.py` (`_load_or_create_key`, `_ready_store`, `STORE`, `BLOBS`) |
+| Which plugin may read/write which secret kind (scopes), the HTTP scoped API + tokens | manifest `vault:` → `core/vault.py` (`scoped`, `ScopedVault`, `Scope`, `plugin_token`); `vault/server.py` `/api/v1/*` |
 | Credential save/load (small, whole-value encryption) | `core/vault.py` (`save_secret`, `get_secret`, `get_secret_by_name`) |
 | Dataset save/load (chunked encryption, bounded memory regardless of size) | `core/vault.py` (`save_dataset`, `load_dataset_file`, `load_dataset_file_by_name`, `CHUNK_SIZE`) |
 | API endpoints (`GET /secrets`, `POST /secrets`, `GET /secrets/{id}/reveal`, `DELETE /secrets/{id}`, `POST /clear`, `POST /test-connection`, `GET /backup`, `POST /restore`) | `vault/server.py` |
 | The management page itself (list/delete/clear/add-connection/backup) | `vault/ui/index.html` |
-| Downloading/restoring a full backup of the vault (db + key + every blob) | `vault/server.py`'s `_build_backup_zip_sync()`/`_restore_backup_sync()`; `core/vault.py`'s `invalidate_key_cache()` (MUST be called after a restore — see "Backup & restore" in `vault/CLAUDE.md` for the real bug this avoids, verified with a genuinely different key, not just reasoned about) |
+| Downloading/restoring a full backup of the vault (rows + key + every blob) | `core/vault.py` `export_backup()`/`import_backup()` (format 2, reads format 1, re-encrypts other-key backups); thin wrappers in `vault/server.py` |
 | Producing a dataset to save (Postgres → Vault, DuckDB result → Vault) | `sql-studio/server.py`'s `/export/vault` (streaming cursor), `duck-lab/server.py`'s `/export/vault` (DuckDB `COPY TO`) |
 | Consuming a saved dataset headlessly, any size | `orchestrator/recipes/compare.py`'s `"vault_dataset"` source kind |
 | Consuming a saved dataset in a browser, size-capped (DataDiff Pro only) | `vault/server.py`'s `GET /datasets/{id}/preview`, `core.vault.preview_dataset_as_csv()`, wired up in `ui/index.html`'s "Load from Vault" buttons — the ONE path that enforces a row cap, since DataDiff Pro's textarea is paste-based |
@@ -1607,8 +1609,8 @@ destructive commands need a confirm. See `ssh-sftp/CLAUDE.md`.
 | Pinning a key later without changing the entry's id | `core/vault.py` (`update_secret`) + `ssh-sftp/server.py` (`/trust`) |
 | Cached browsing session, reconnect-on-dead, idle close | `ssh-sftp/sessions.py` |
 | The upload (staging, resume, verify, atomic rename), downloads, commands, dangerous-command list | `ssh-sftp/engine.py` |
-| Transfer/command history, staged-file cleanup | `ssh-sftp/state_store.py` (Postgres schema `ssh_sftp` since B6 + `stage/` on the `ssh_sftp_data` volume) |
-| Background jobs | `ssh-sftp/runner.py` |
+| Transfer/command history, staged-file cleanup, orphan recovery | `ssh-sftp/state_store.py` (Postgres schema `ssh_sftp` since B6; staged uploads in S3 via `STAGE` since B8, `stage/` is a local cache; `fail_orphans`, `sweep_stage`) |
+| Upload/command jobs (worker container, thread fallback), log tail with `since` paging | `ssh-sftp/runner.py` → shared `core/jobs/runner.py` (`JobRunner(quiet=True)`, batched Redis logging `_BufferedLog` → `Channel.log_many`) |
 | API endpoints and error → HTTP mapping | `ssh-sftp/server.py` |
 | The page | `ssh-sftp/ui/index.html` |
 

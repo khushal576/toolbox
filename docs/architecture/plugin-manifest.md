@@ -49,7 +49,8 @@ order: 10                     # display order: lower first, ties by title
 | `requires` | no | list of capability names | e.g. `texlive`, `fontawesome`, `pg_client`, `duckdb`. |
 | `enabled_by_default` | no (true) | bool | Default for `workspace.yaml` (A3). |
 | `order` | no (1000) | int ≥ 0 | Display order (lower first); ties sorted by title. |
-| `singleton` | no (false) | bool | Must run in exactly one process (requires `scaling.max: 1`). Set for sql-studio and schema-map (roadmap B3: one live DB pool, password never stored); from B9 their requests go to one dedicated process. |
+| `vault` | no (none) | `{read: [kinds], write: [kinds], datasets: none\|read\|write}` | What the plugin's server code may do in the Vault (roadmap B7), enforced by `core.vault.scoped(<name>)` and the Vault's `/api/v1` API. `write` implies read. Not allowed on `static`/`external`. No entry = no access. |
+| `singleton` | no (false) | bool | Must run in exactly one process (requires `scaling.max: 1`). Set for sql-studio and schema-map (roadmap B3: one live DB pool, password never stored); since B9 they run in the `singletons` service and every web worker forwards their traffic there (`core_plugins/proxy.py`). |
 
 Unknown keys are **rejected** (typos must not pass silently).
 

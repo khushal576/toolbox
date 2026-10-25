@@ -49,13 +49,19 @@ except ImportError:  # flat import when run standalone from within this folder
     import state_store as store
 
 try:
-    from core import ssh_client, vault
+    from core import ssh_client, vault as vault_store
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from core import ssh_client, vault
+    from core import ssh_client, vault as vault_store
+
+vault = vault_store.scoped("ssh-sftp")  # Vault scope from manifest.yaml `vault:` (roadmap B7)
 
 store.init_db()
-store.recover_interrupted()
+runner.recover_orphans()
+try:
+    store.sweep_stage()
+except Exception:  # noqa: BLE001 - cleanup must never stop the tool from loading
+    pass
 
 app = FastAPI(title="SSH & SFTP", description="Browse, upload and run commands on servers saved in the Vault.")
 _UI_PATH = Path(__file__).resolve().parent / "ui" / "index.html"
@@ -256,33 +262,37 @@ async def upload(server_id: str, request: Request, file: UploadFile, dir: str, o
     try:
         size, sha = await asyncio.to_thread(_stage, file, tmp)
         tmp.replace(store.stage_path(tid))
+        await asyncio.to_thread(store.publish_stage, tid)  # into S3 storage: the worker may run on another disk
     except Exception as exc:  # noqa: BLE001
         tmp.unlink(missing_ok=True)
+        store.delete_stage(tid)
         raise HTTPException(400, f"Could not receive the file: {exc}") from exc
     store.create_transfer(tid=tid, server_id=server_id, server_name=data["_name"], remote_dir=dir, name=name, size=size, sha256=sha, overwrite=overwrite)
     runner.start_upload(tid)
     return {"transfer_id": tid, "size": size}
 
 
-def _transfer_view(t: dict[str, Any]) -> dict[str, Any]:
-    job = runner.get(t["id"])
-    live = job.progress if job is not None and job.running else {}
+def _transfer_view(t: dict[str, Any], v: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    v = v if v is not None else runner.view(t["id"])
+    live = v["progress"] if v["running"] else {}
     done = live.get("done", t["bytes_done"]) if t["status"] == "running" else t["bytes_done"]
-    return {**t, "bytes_done": done, "running": runner.is_running(t["id"])}
+    return {**t, "bytes_done": done, "running": v["running"]}
 
 
 @app.get("/transfers")
 def transfers() -> dict[str, Any]:
+    runner.recover_orphans()  # a job whose worker died → 'failed' (Retry resumes), not 'running' forever
     return {"transfers": [_transfer_view(t) for t in store.list_transfers()]}
 
 
 @app.get("/transfers/{tid}")
 def transfer(tid: str, since: int = 0) -> dict[str, Any]:
+    runner.recover_orphans()
     t = store.get_transfer(tid)
     if t is None:
         raise HTTPException(404, "Unknown transfer.")
-    job = runner.get(tid)
-    return {"transfer": _transfer_view(t), "logs": job.snapshot(since) if job else []}
+    v = runner.view(tid, since)
+    return {"transfer": _transfer_view(t, v), "logs": v["logs"]}
 
 
 @app.post("/transfers/{tid}/retry")
@@ -294,7 +304,7 @@ def retry(tid: str, overwrite: bool = False) -> dict[str, Any]:
         raise HTTPException(404, "Unknown transfer.")
     if t["status"] not in ("failed", "cancelled", "staged"):
         raise HTTPException(409, "Only a failed, stopped or waiting transfer can be retried.")
-    if not store.stage_path(tid).exists():
+    if not store.has_stage(tid):
         raise HTTPException(410, "The staged copy is gone — upload the file again.")
     if overwrite:
         store.update_transfer(tid, overwrite=1)
@@ -333,16 +343,17 @@ def exec_command(server_id: str, body: ExecBody) -> dict[str, Any]:
 
 @app.get("/commands")
 def commands() -> dict[str, Any]:
+    runner.recover_orphans()
     return {"commands": [{**c, "running": runner.is_running(c["id"])} for c in store.list_commands()]}
 
 
 @app.get("/commands/{cid}")
 def command(cid: str, since: int = 0) -> dict[str, Any]:
-    job = runner.get(cid)
+    v = runner.view(cid, since)
     row = next((c for c in store.list_commands(200) if c["id"] == cid), None)
     if row is None:
         raise HTTPException(404, "Unknown command.")
-    return {"command": {**row, "running": runner.is_running(cid)}, "logs": job.snapshot(since) if job else [], "progress": dict(job.progress) if job else {}}
+    return {"command": {**row, "running": v["running"]}, "logs": v["logs"], "progress": v["progress"]}
 
 
 @app.post("/commands/{cid}/stop")

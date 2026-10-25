@@ -14,7 +14,10 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional, TypedDict
 
-from core import vault
+from core import vault as vault_store
+
+# Trusted host code, not a plugin: an explicit scope instead of a manifest (roadmap B7).
+vault = vault_store.ScopedVault(vault_store.Scope("orchestrator", read=["postgres_connection"], datasets="write"))
 from core.pipeline import run_compare
 from core.postgres_conn import ssh_tunnel_from_dict
 from orchestrator.connectors import file as file_connector

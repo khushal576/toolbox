@@ -46,7 +46,8 @@ async def _reject(scope, send, status: int, title: str, body: str) -> None:
 
 class LazyApp:
     def __init__(self, name: str, module: str, attr: str = "app",
-                 on_failure: Callable[[str, str], None] | None = None):
+                 on_failure: Callable[[str, str], None] | None = None,
+                 on_loaded: Callable[[str], None] | None = None):
         self.name, self.module, self.attr = name, module, attr
         self.state = "not_loaded"  # not_loaded | loaded | failed
         self.error: str | None = None
@@ -55,6 +56,7 @@ class LazyApp:
         self._app: ASGIApp | None = None
         self._lock: asyncio.Lock | None = None
         self._on_failure = on_failure
+        self._on_loaded = on_loaded
 
     def _load(self) -> None:
         t0 = time.perf_counter()
@@ -68,6 +70,8 @@ class LazyApp:
             return
         self.state, self.load_seconds, self.loaded_at = "loaded", time.perf_counter() - t0, time.time()
         logger.info("Tool '%s' loaded on first use in %.2fs", self.name, self.load_seconds)
+        if self._on_loaded:
+            self._on_loaded(self.name)
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] == "lifespan":  # Starlette doesn't forward lifespan to mounts; ignore if it ever does

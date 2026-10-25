@@ -109,6 +109,24 @@ class FileCache:
         self.trim(keep=name)
         return dest
 
+    def sweep(self, keep_ids: set[str], max_age_s: float) -> int:
+        """Remove files (storage + local) whose owner id is not in `keep_ids`, or older than `max_age_s`.
+        For staging areas: e.g. uploads of finished transfers. Returns how many files went."""
+        cutoff = time.time() - max_age_s
+        removed = 0
+        if self.local_dir.exists():
+            for p in self.local_dir.iterdir():
+                if p.is_file() and (p.name.split(".", 1)[0] not in keep_ids or p.stat().st_mtime < cutoff):
+                    p.unlink(missing_ok=True)
+                    removed += 1
+        if self._objects is not None:
+            for o in self._objects.list_objects(f"{self.tool}/"):
+                parts = o["key"].split("/")
+                if len(parts) == 3 and (parts[1] not in keep_ids or o["last_modified"].timestamp() < cutoff):
+                    self._objects.delete(o["key"])
+                    removed += 1
+        return removed
+
     # ---- cache budget ------------------------------------------------------------------------------------
     def trim(self, keep: str = "") -> int:
         """Evict least-recently-used local copies above the budget — only ones that are in storage."""

@@ -14,3 +14,4 @@ state: [durable, jobs]
 depends_on: [vault]
 requires: []
 order: 160
+vault: {read: [postgres_connection]}   # Vault scope (roadmap B7): source/target connections

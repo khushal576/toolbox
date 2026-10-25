@@ -2,7 +2,8 @@
 vault/server.py
 
 Management page for core/vault.py's shared encrypted secret store.
-Deliberately minimal: list/delete/clear only. No add-new-secret form
+Deliberately minimal: list/delete/clear, backup/restore, and (roadmap B7)
+a token-guarded, scoped read API under /api/v1 for plugin code outside this process. No add-new-secret form
 here — this page doesn't know the shape of a "postgres_connection" vs.
 an "ssh_credential," so creating a secret always happens from the tool
 that uses it (sql-studio's "Save this connection" button, etc.) via
@@ -17,7 +18,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
@@ -201,18 +202,8 @@ async def clear_all() -> JSONResponse:
 # ---------------------------------------------------------------------
 
 def _build_backup_zip_sync(dest_path: Path) -> None:
-    """Bundles vault.db + vault.key + every file under blobs/ into one
-    zip, written straight to disk (never buffered whole in memory —
-    a dataset's blob file can be sizable)."""
-    with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        if vault.DB_PATH.exists():
-            zf.write(vault.DB_PATH, "vault.db")
-        if vault.KEY_PATH.exists():
-            zf.write(vault.KEY_PATH, "vault.key")
-        if vault.BLOBS_DIR.exists():
-            for f in vault.BLOBS_DIR.iterdir():
-                if f.is_file():
-                    zf.write(f, f"blobs/{f.name}")
+    """Every secret (still encrypted) + the key + every dataset blob in one zip — core.vault.export_backup."""
+    vault.export_backup(dest_path)
 
 
 @app.get("/backup")
@@ -225,24 +216,11 @@ async def backup() -> FileResponse:
     )
 
 
-def _restore_backup_sync(zip_path: Path) -> None:
-    """Extracts a backup zip back into the vault's data directory,
-    OVERWRITING whatever's currently there in full — the frontend's own
-    confirm dialog is what makes this a deliberate action, this function
-    just does it unconditionally once called. Invalidates the cached
-    encryption key afterward so THIS process immediately starts using
-    the restored key instead of whatever it had cached from before —
-    see vault.invalidate_key_cache()'s docstring for the real bug that
-    would otherwise cause (every decrypt silently using the wrong key)."""
-    with zipfile.ZipFile(zip_path) as zf:
-        names = zf.namelist()
-        if "vault.db" not in names or "vault.key" not in names:
-            raise ValueError("This doesn't look like a Vault backup — missing vault.db/vault.key.")
-        vault.DATA_DIR.mkdir(parents=True, exist_ok=True)
-        if vault.BLOBS_DIR.exists():
-            shutil.rmtree(vault.BLOBS_DIR, ignore_errors=True)
-        zf.extractall(vault.DATA_DIR)
-    vault.invalidate_key_cache()
+def _restore_backup_sync(zip_path: Path) -> dict:
+    """Replace the whole vault with a backup (new format, or a pre-B7 vault.db zip). Since roadmap B7 the key
+    comes from the environment, so secrets from a backup made with another key are RE-ENCRYPTED with the current
+    one instead of swapping key files; a damaged backup is refused before anything is replaced."""
+    return vault.import_backup(zip_path)
 
 
 @app.post("/restore")
@@ -255,9 +233,58 @@ async def restore(file: UploadFile) -> JSONResponse:
     try:
         with tmp_path.open("wb") as out:
             await asyncio.to_thread(shutil.copyfileobj, file.file, out)
-        await asyncio.to_thread(_restore_backup_sync, tmp_path)
+        result = await asyncio.to_thread(_restore_backup_sync, tmp_path)
     except (zipfile.BadZipFile, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
     finally:
         tmp_path.unlink(missing_ok=True)
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, **result})
+
+
+# ---------------------------------------------------------------------
+# Scoped read API (roadmap B7) — for plugin code running OUTSIDE this
+# process (phase C runtimes). Each call names the plugin and carries its
+# token (`python -m core.vault token <plugin>`, an HMAC of the Vault key);
+# only the kinds the plugin's manifest `vault:` grants are visible. In-process
+# tools use core.vault.scoped(<name>) with the same rules.
+# ---------------------------------------------------------------------
+
+def _scoped_from_headers(request: Request):
+    plugin = request.headers.get("x-toolbox-plugin", "")
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth.lower().startswith("bearer ") else ""
+    if not vault.verify_token(plugin, token):
+        raise HTTPException(401, "Unknown plugin or wrong token.")
+    return vault.scoped(plugin)
+
+
+@app.get("/api/v1/scope")
+async def api_scope(request: Request) -> JSONResponse:
+    sv = _scoped_from_headers(request)
+    return JSONResponse(sv.scope.as_dict())
+
+
+@app.get("/api/v1/secrets")
+async def api_list(request: Request, kind: str) -> JSONResponse:
+    sv = _scoped_from_headers(request)
+    try:
+        return JSONResponse({"secrets": await asyncio.to_thread(sv.list_secrets, kind)})
+    except vault.ScopeError as exc:
+        raise HTTPException(403, str(exc)) from exc
+
+
+@app.get("/api/v1/secrets/{secret_id}")
+async def api_get(request: Request, secret_id: str) -> JSONResponse:
+    sv = _scoped_from_headers(request)
+    try:
+        return JSONResponse({"data": await asyncio.to_thread(sv.get_secret, secret_id)})
+    except vault.ScopeError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except vault.SecretNotFound as exc:
+        raise HTTPException(404, "No such secret.") from exc
+
+
+@app.get("/api/v1/health")
+async def api_health() -> JSONResponse:
+    """Key source + secret count (no secrets). Also reported in /api/state/health."""
+    return JSONResponse(await asyncio.to_thread(vault.health))

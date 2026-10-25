@@ -14,3 +14,4 @@ state: [session]
 depends_on: [vault]
 requires: []
 order: 110
+vault: {datasets: read}   # Vault scope (roadmap B7): load datasets

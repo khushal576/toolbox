@@ -28,6 +28,9 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 
+KEEP_THREAD_JOBS = 100  # thread mode keeps this many jobs' logs in memory
+
+
 class AlreadyRunning(RuntimeError):
     pass
 
@@ -74,21 +77,63 @@ class _RedisProgress(dict):
         self._sync(force=True)
 
 
-def execute(tool: str, key: str, log_size: int, kind: str, func_path: str, *args: Any) -> None:
-    """Executed by the worker (core.jobs.worker) — never call from a web request."""
+class _BufferedLog:
+    """Collects log lines and writes them in batches (every 0.3 s or 200 lines, and at the end), so a job that
+    logs per output line costs one Redis round trip per batch instead of two per line."""
+
+    def __init__(self, channel: Any, every: float = 0.3, max_lines: int = 200):
+        self._ch, self._every, self._max = channel, every, max_lines
+        self._buf: list[tuple[str, str, Any]] = []
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._t = threading.Thread(target=self._loop, daemon=True, name="job-log-flush")
+        self._t.start()
+
+    def __call__(self, level: str, message: str, table: Any = None, *_: Any) -> None:
+        with self._lock:
+            self._buf.append((level, message, table))
+            full = len(self._buf) >= self._max
+        if full:
+            self.flush()
+
+    def flush(self) -> None:
+        with self._lock:
+            batch, self._buf = self._buf, []
+        if batch:
+            try:
+                self._ch.log_many(batch)
+            except Exception:  # noqa: BLE001 - a lost log batch must never fail the job
+                pass
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self._every):
+            self.flush()
+
+    def close(self) -> None:
+        self._stop.set()
+        self._t.join(timeout=2)
+        self.flush()
+
+
+def execute(tool: str, key: str, opts: dict, func_path: str, *args: Any) -> None:
+    """Executed by the worker (core.jobs.worker) — never call from a web request.
+    opts: {"log_size": int, "kind": str, "quiet": bool}."""
     from core import jobs
 
-    ch = jobs.Channel(tool, key, log_size=log_size)
+    ch = jobs.Channel(tool, key, log_size=opts["log_size"])
     progress = _RedisProgress(ch)
+    log = _BufferedLog(ch)
     with ch.running():
-        ch.update_meta(kind=kind)
-        ch.log("info", f"{kind} started in worker")
+        ch.update_meta(kind=opts["kind"])
+        if not opts.get("quiet"):
+            log("info", f"{opts['kind']} started in worker")
         try:
-            _resolve(func_path)(_Ctx(ch.stop_flag(), lambda level, msg, *_: ch.log(level, msg), progress), *args)
+            _resolve(func_path)(_Ctx(ch.stop_flag(), log, progress), *args)
         except Exception as exc:  # noqa: BLE001 — the engines report expected problems; this is the last resort
             ch.update_meta(error=str(exc))
-            ch.log("error", f"unexpected failure: {exc}")
+            log("error", f"unexpected failure: {exc}")
         finally:
+            log.close()
             progress.flush()
 
 
@@ -121,12 +166,13 @@ def _empty_view() -> dict[str, Any]:
 
 
 class JobRunner:
-    def __init__(self, tool: str, log_size: int = 200, mode: Optional[str] = None):
+    def __init__(self, tool: str, log_size: int = 200, mode: Optional[str] = None, quiet: bool = False):
+        """quiet: don't add "queued/started" lines to the log (e.g. a command's output pane)."""
         try:
             from core import jobs
         except ImportError:  # standalone without core on the path
             jobs = None
-        self.tool, self.log_size = tool, log_size
+        self.tool, self.log_size, self.quiet = tool, log_size, quiet
         self.mode = mode or ("queue" if (jobs is not None and jobs.available()) else "thread")
         self._jobs_mod = jobs
         self._threads: dict[str, _ThreadJob] = {}
@@ -146,8 +192,10 @@ class JobRunner:
                 raise AlreadyRunning("A run is already in progress.")
             try:
                 ch.update_meta(kind=kind, progress={})
-                ch.log("info", f"{kind} queued — waiting for a worker")
-                self._jobs_mod.enqueue("core.jobs.runner.execute", self.tool, key, self.log_size, kind, func_path,
+                if not self.quiet:
+                    ch.log("info", f"{kind} queued — waiting for a worker")
+                self._jobs_mod.enqueue("core.jobs.runner.execute", self.tool, key,
+                                       {"log_size": self.log_size, "kind": kind, "quiet": self.quiet}, func_path,
                                        *args, job_id=rq_id, description=description or f"{self.tool}: {kind} {key}")
             except Exception:
                 ch.release()
@@ -170,7 +218,11 @@ class JobRunner:
 
             job.thread = threading.Thread(target=target, name=f"{self.tool}-{key[:8]}", daemon=True)
             self._threads[key] = job
-            job.log("info", f"{kind} started")
+            if len(self._threads) > KEEP_THREAD_JOBS:  # forget the oldest FINISHED jobs; never a running one
+                for k in [k for k, j in list(self._threads.items()) if not j.running][: len(self._threads) - KEEP_THREAD_JOBS]:
+                    self._threads.pop(k, None)
+            if not self.quiet:
+                job.log("info", f"{kind} started")
             job.thread.start()
 
     def stop(self, key: str) -> bool:

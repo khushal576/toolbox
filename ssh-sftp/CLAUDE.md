@@ -19,8 +19,8 @@ recursive delete, no port forwarding.
 | The Vault "Add SSH server" form + `POST /test-ssh-server` | `../vault/ui/index.html`, `../vault/server.py` |
 | Cached browsing session per server (health-checked, reconnect once, idle reaper) | `sessions.py` |
 | List/mkdir/rename/delete/download, the resumable upload, commands | `engine.py` |
-| Transfer + command history (Postgres schema `ssh_sftp`, B6; SQLite standalone) and the STAGE directory | `state_store.py` |
-| Background jobs + log tail | `runner.py` |
+| Transfer + command history (Postgres schema `ssh_sftp`, B6; SQLite standalone) and staged uploads (S3 storage + local cache, B8) | `state_store.py` |
+| Upload/command jobs in the `worker` container + log tail (shared `../core/jobs/runner.py`) | `runner.py` |
 | API + page | `server.py`, `ui/index.html` |
 
 ## Safety rules (each is tested — see the end)
@@ -55,7 +55,16 @@ holding it in memory — a 400 MB upload peaked at ~125 MiB container memory), T
 5. renames into place (`posix_rename` when overwriting — atomic; falls back with a note if unsupported);
 6. a failure or Stop keeps the staged file and the remote `.part`, so **Retry** continues instead of
    restarting ("Replace & retry" also allows overwriting). Staged files of finished/old (7 days) transfers
-   are removed at startup. A restart marks running transfers failed; Retry resumes.
+   are removed at startup (`state_store.sweep_stage`, storage + local). A transfer whose job died is marked
+   failed; Retry resumes.
+
+**Since roadmap B8** the staged file is uploaded to S3 storage right after it is received
+(`state_store.publish_stage`, keys `ssh-sftp/<id>/<id>.stage`) and the send runs as a job in the `worker`
+container; `engine.run_upload` gets the file via `store.fetch_stage` (downloads it when this process has no
+local copy) and deletes it everywhere on success. Verified: a 300 MB upload with the worker killed at ~83 MB →
+marked failed after the heartbeat expired → local stage deleted → Retry downloaded the stage from storage and
+"resum[ed] from 93,749,248 of 300,000,000 bytes", SHA-256 verified; two 150 MB uploads ran on two workers in
+parallel (`--scale worker=2`) and survived a web restart, both checksums identical.
 
 ## Things that will bite you if you don't know them
 
@@ -65,7 +74,12 @@ holding it in memory — a 400 MB upload peaked at ~125 MiB container memory), T
 - Long jobs (upload, download, command) use their OWN connection; only browsing uses the cached one.
 - `paramiko`'s `known hosts` name for a non-22 port is `[host]:port` (handled in `open_client`).
 - The page's status is "connected" only after the first listing succeeds.
-- **In-process connection cache + job registry → `--workers 1`**, a seventh stateful tool in `../CLAUDE.md`.
+- **Jobs and staged files are out of process since roadmap B8** (worker jobs via `core/jobs/runner.JobRunner`
+  with `quiet=True` — a command's log IS its output pane; Redis log tail with `since` paging, written in batches
+  so 3000 output lines aren't 6000 round trips). The browsing connection cache (`sessions.py`) stays per process
+  on purpose: it is recreated on demand, so several web workers each just open their own. Orphans (job died) are
+  failed by `runner.recover_orphans()` at start and on every list/status read; a just-started command has a 20 s
+  grace so a queued one isn't called an orphan.
 - **Trust model**: anyone who can open the toolbox can use the saved servers to run commands/move files — same
   as the Vault's trust model (one trusted user, trusted machine). Use a key with a passphrase and a read-only
   entry where you only need to look.

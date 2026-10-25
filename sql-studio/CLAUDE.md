@@ -72,7 +72,10 @@ with real document positions instead of re-flowed text) is still sound.
 > **Single process by owner decision (roadmap B3, 2026-10-24).** This tool keeps ONE live database
 > pool in process memory and never stores the password. When the rest of the workspace moves to several
 > workers (roadmap B9), it stays in exactly one dedicated process (`singleton: true` in its
-> `manifest.yaml`) rather than storing credentials or opening a pool per worker.
+> `manifest.yaml`) rather than storing credentials or opening a pool per worker. **Since B9** that process is
+> the `singletons` compose service (`TOOLBOX_ROLE=singletons`); the web workers forward `/tools/<name>/` to it
+> via `../core_plugins/proxy.py`. Verified: Connect once, 40 queries landing on 4 different web workers all
+> used the one pool (one backend in `pg_stat_activity`). Logs: `docker compose logs singletons`.
 
 ## How it's built
 

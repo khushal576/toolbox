@@ -14,3 +14,4 @@ state: [session, durable, jobs]
 depends_on: [vault]
 requires: []
 order: 190
+vault: {read: [ssh_server], write: [ssh_server]}   # Vault scope (roadmap B7): servers; write = pin host keys

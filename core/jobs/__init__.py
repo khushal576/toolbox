@@ -28,6 +28,8 @@ QUEUE_NAME = "toolbox"
 HEARTBEAT_TTL = 30          # seconds a running job stays "alive" without a heartbeat
 HEARTBEAT_EVERY = 10
 QUEUED_TTL = 24 * 3600      # a job waiting for a free worker
+KEEP_TTL = 7 * 24 * 3600    # log/meta of a job slot are kept 7 days after the last write (one slot per upload/command
+                            # in ssh-sftp, per dump in data-dumper — without an expiry Redis would only ever grow)
 _lock = threading.Lock()
 _rq_conn = None
 
@@ -134,7 +136,7 @@ class Channel:
         pipe = r.pipeline()
         pipe.delete(self._k("log"), self._k("stop"), self._k("seq"))
         pipe.set(self._k("meta"), json.dumps({"queued_at": _now(), "started_at": None, "finished_at": None,
-                                              "summary": None, "error": None}))
+                                              "summary": None, "error": None}), ex=KEEP_TTL)
         pipe.execute()
         return True
 
@@ -200,7 +202,7 @@ class Channel:
     def update_meta(self, **fields: Any) -> None:
         m = self.meta()
         m.update(fields)
-        self._r().set(self._k("meta"), json.dumps(m, default=str))
+        self._r().set(self._k("meta"), json.dumps(m, default=str), ex=KEEP_TTL)
 
     # ---- log tail --------------------------------------------------------------------------------------
     def log(self, level: str, message: str, table: str | None = None) -> None:
@@ -210,6 +212,23 @@ class Channel:
         pipe = r.pipeline()
         pipe.rpush(self._k("log"), entry)
         pipe.ltrim(self._k("log"), -self.log_size, -1)
+        pipe.expire(self._k("log"), KEEP_TTL)
+        pipe.expire(self._k("seq"), KEEP_TTL)
+        pipe.execute()
+
+    def log_many(self, entries: list[tuple[str, str, str | None]]) -> None:
+        """Append several (level, message, table) lines in ONE round trip (a command can print thousands)."""
+        if not entries:
+            return
+        r = self._r()
+        last = r.incrby(self._k("seq"), len(entries))
+        first, ts = last - len(entries) + 1, _now()
+        pipe = r.pipeline()
+        pipe.rpush(self._k("log"), *[json.dumps({"seq": first + i, "ts": ts, "level": lv, "table": tb, "msg": msg})
+                                     for i, (lv, msg, tb) in enumerate(entries)])
+        pipe.ltrim(self._k("log"), -self.log_size, -1)
+        pipe.expire(self._k("log"), KEEP_TTL)
+        pipe.expire(self._k("seq"), KEEP_TTL)
         pipe.execute()
 
     def logs(self) -> list[dict[str, Any]]:

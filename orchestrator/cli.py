@@ -37,7 +37,10 @@ import argparse
 import json
 import sys
 
-from core import vault
+from core import vault as vault_store
+
+# Trusted host code, not a plugin: an explicit scope instead of a manifest (roadmap B7).
+vault = vault_store.ScopedVault(vault_store.Scope("orchestrator", read=["postgres_connection"], datasets="write"))
 from orchestrator.recipes.compare import Source, compare
 
 

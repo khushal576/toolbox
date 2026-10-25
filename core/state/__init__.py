@@ -38,5 +38,11 @@ def health() -> dict[str, Any]:
         return jobs.health()
 
     out["jobs"] = _probe(_jobs)  # roadmap B4: at least one worker must be listening
+
+    def _vault() -> dict:
+        from core import vault
+        return vault.health()
+
+    out["vault"] = _probe(_vault)  # roadmap B7: storage reachable + the key matches the stored secrets
     out["ok"] = all(v["ok"] for v in out.values())
     return out

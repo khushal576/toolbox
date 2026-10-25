@@ -41,6 +41,13 @@ class Scaling(_Strict):
         return self
 
 
+class VaultAccess(_Strict):
+    """What a plugin's server code may do in the Vault (roadmap B7; enforced by core.vault.scoped())."""
+    read: list[str] = Field(default_factory=list)       # secret kinds it may decrypt
+    write: list[str] = Field(default_factory=list)      # kinds it may create/update (implies read)
+    datasets: Literal["none", "read", "write"] = "none"  # load any saved dataset / also save datasets
+
+
 class Manifest(_Strict):
     schema_version: Literal[1] = 1
     name: str
@@ -62,6 +69,7 @@ class Manifest(_Strict):
     # Must run in exactly ONE process (e.g. a single live DB pool + "password never stored"): B9 routes all its
     # requests to one dedicated process when the rest of the workspace runs several workers.
     singleton: bool = False
+    vault: VaultAccess | None = None  # no entry = no Vault access from server code
 
     # Filled by the loader, not by authors (excluded from the YAML contract).
     source: str = Field(default="", exclude=True)
@@ -100,6 +108,8 @@ class Manifest(_Strict):
                 raise ValueError(f"kind '{k}' runs no server code, so runtime must be empty")
             if self.state:
                 raise ValueError(f"kind '{k}' cannot keep server state")
+            if self.vault is not None:
+                raise ValueError(f"kind '{k}' runs no server code, so it cannot have Vault access")
         if self.name in self.depends_on:
             raise ValueError("a plugin cannot depend on itself")
         if self.singleton and (self.scaling.max != 1 or self.scaling.min > 1):

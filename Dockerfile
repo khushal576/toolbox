@@ -167,29 +167,27 @@ COPY vault/ ./vault/
 # Data Syncer (tool #16) — whole-folder copy (engine, sync_ops, state_store,
 # runner, connections modules alongside server.py). Resumable table
 # copy/upsert between two Vault-saved Postgres connections; imports
-# core.vault / core.postgres_conn, so must be copied after core/ above. Its
-# run thread and job registry are in-process state — one more reason
-# --workers stays 1 (see CMD comment below).
+# core.vault / core.postgres_conn, so must be copied after core/ above. Runs
+# as a job in the `worker` service (roadmap B4).
 COPY data-syncer/ ./data_syncer/
 
 # Schema Copy (tool #17) — whole-folder copy. Copies a database's STRUCTURE
 # (no rows) into a new empty database via the real pg_dump/psql from the
 # 'pgclient' stage above. Imports core.db_endpoint (Vault -> connection,
-# shared with data-syncer), so must be copied after core/. Its job registry
-# is in-process state, like data-syncer's.
+# shared with data-syncer), so must be copied after core/. Runs as a job in
+# the `worker` service; scripts live in S3 storage (roadmap B5).
 COPY --from=pgclient /opt/pgclient /opt/pgclient
 COPY schema-copy/ ./schema_copy/
 
 # Data Dumper (tool #18) — whole-folder copy. Takes Postgres dumps (downloadable) and restores
-# them selectively, using the bundled pg_dump/pg_restore/psql above via core/pgclient.py. Its
-# job registry is in-process state like data-syncer's/schema-copy's; dumps live on the
-# data_dumper_data volume.
+# them selectively, using the bundled pg_dump/pg_restore/psql above via core/pgclient.py. Dumps and
+# restores run as worker jobs; dump files live in S3 storage (roadmap B5).
 COPY data-dumper/ ./data_dumper/
 
 # SSH & SFTP (tool #19) — whole-folder copy. Browse/upload/download files and run commands on servers saved
 # in the Vault (kind "ssh_server"), via paramiko (already a dependency) and core/ssh_client.py (host-key
-# pinning). Its connection cache and job registry are in-process state like the other long-running tools;
-# staged uploads live on the ssh_sftp_data volume.
+# pinning). Uploads/commands run as worker jobs and staged uploads live in S3 storage (roadmap B8); the
+# browsing connection cache stays per process (recreated on demand).
 COPY ssh-sftp/ ./ssh_sftp/
 
 # LaTeX to PDF (tool #20) — same namespacing pattern. Shells out to pdflatex from the TeX Live
@@ -216,51 +214,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 EXPOSE 8080
 
-# Start the toolbox app (main.py) with uvicorn — this is the one process
-# that serves the home page and every mounted tool.
+# Start the toolbox app (main.py) with uvicorn.
 # --host 0.0.0.0  makes it reachable from outside the container.
-# --workers 1     MUST stay 1, for THREE independent stateful tools now:
-#                 - DataFrame Studio keeps session state (engine.SESSIONS)
-#                   in an in-memory dict inside one process. With >1
-#                   worker, uvicorn runs separate OS processes that don't
-#                   share memory, so a session created by one worker is
-#                   invisible to the other — the /load that created it and
-#                   a later /step can land on different workers and
-#                   produce "No active session" for what looks like no
-#                   reason (this happened for real once, see
-#                   df-studio/CLAUDE.md).
-#                 - SQL Studio keeps its live Postgres connection pool
-#                   (db_engine.STATE) the same way — a single in-process
-#                   global. With >1 worker, "Connect" on one worker would
-#                   be invisible to "Run" landing on another, and worse: an
-#                   orphaned pool here isn't just a lost in-memory value
-#                   like df-studio's case, it's REAL connections held open
-#                   against a REAL external database (visible in
-#                   pg_stat_activity), consuming that database's own
-#                   connection-limit budget until something notices and
-#                   kills it. See sql-studio/CLAUDE.md.
-#                 - Duck Lab keeps its own per-session dict (engine.SESSIONS)
-#                   the same way df-studio does — each browser tab's loaded
-#                   files/DuckDB connection live in one worker's memory.
-#                   Same "No active session"-style failure mode as
-#                   df-studio if split across workers. See
-#                   duck-lab/CLAUDE.md.
-#                 - Data Syncer runs each sync on a background thread and keeps
-#                   the live job registry + log ring buffer in this process's
-#                   memory (data-syncer/runner.py). Its durable progress is in
-#                   SQLite, but "is a run alive" and the log tail are not — a
-#                   Start on one worker would be invisible to the status poll
-#                   on another. See data-syncer/CLAUDE.md.
-#                 - Schema Copy keeps its run registry + log tail in memory
-#                   the same way (schema-copy/runner.py); the last run's result
-#                   is in SQLite. See schema-copy/CLAUDE.md.
-#                 - Data Dumper keeps its dump/restore job registry + log tail in
-#                   memory the same way (data-dumper/runner.py); the dump catalogue
-#                   and run history are in SQLite. See data-dumper/CLAUDE.md.
-#                 - SSH & SFTP keeps a per-server connection cache and its
-#                   upload/command job registry in memory (ssh-sftp/sessions.py,
-#                   runner.py); transfer/command history is in SQLite.
-#                 Every other tool here is stateless/client-side and
-#                 wouldn't care, but these seven do. Don't raise this without
-#                 giving ALL SEVEN a real shared store first.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+# --workers       N processes since roadmap B9 (TOOLBOX_WEB_WORKERS, default 4). Every stateful tool keeps its
+#                 state outside the process (Redis sessions, Postgres records, S3 files, jobs in the `worker`
+#                 service — roadmap B2–B8). The two exceptions, SQL Studio and Schema Map (`singleton: true`:
+#                 one live DB pool, password never stored), run in the separate `singletons` service
+#                 (TOOLBOX_ROLE=singletons, one worker) and this app proxies to them (TOOLBOX_SINGLETON_URL).
+#                 WITHOUT TOOLBOX_SINGLETON_URL (e.g. `docker run` of this image alone) they are mounted
+#                 in-process — then run with TOOLBOX_WEB_WORKERS=1. See ../CLAUDE.md "Standing rule".
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers ${TOOLBOX_WEB_WORKERS:-1}"]

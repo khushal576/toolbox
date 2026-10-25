@@ -23,12 +23,14 @@ from typing import Any, Callable, Optional, TypeVar
 import paramiko
 
 try:
-    from core import ssh_client, vault
+    from core import ssh_client, vault as vault_store
 except ImportError:  # standalone dev run from inside this folder
     import sys as _sys
 
     _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from core import ssh_client, vault
+    from core import ssh_client, vault as vault_store
+
+vault = vault_store.scoped("ssh-sftp")  # Vault scope from manifest.yaml `vault:` (roadmap B7)
 
 T = TypeVar("T")
 IDLE_SECONDS = 120

@@ -34,6 +34,8 @@ from core.postgres_conn import (
 )
 
 CONNECTION_KIND = "postgres_connection"  # the one kind the Vault's "Add connection" form saves
+# Library scope (roadmap B7): whoever calls this module can only ever read database connections through it.
+_VAULT = vault.ScopedVault(vault.Scope("db-endpoint", read=[CONNECTION_KIND]))
 
 
 class ConnectionError_(RuntimeError):
@@ -43,7 +45,7 @@ class ConnectionError_(RuntimeError):
 def list_vault_connections() -> list[dict[str, Any]]:
     """Metadata only (id/name/kind/timestamps) — never decrypted data. The
     syncer UI picks from this list; there is no 'type a host' fallback."""
-    return [s for s in vault.list_secrets(CONNECTION_KIND)]
+    return [s for s in _VAULT.list_secrets(CONNECTION_KIND)]
 
 
 def resolve(conn_id: str, conn_name: Optional[str] = None) -> dict[str, Any]:
@@ -51,12 +53,12 @@ def resolve(conn_id: str, conn_name: Optional[str] = None) -> dict[str, Any]:
     back to looking it up by *conn_name* (covers delete-and-recreate under
     the same name). Raises ConnectionError_ if neither resolves."""
     try:
-        return vault.get_secret(conn_id)
-    except vault.SecretNotFound:
+        return _VAULT.get_secret(conn_id)
+    except (vault.SecretNotFound, vault.ScopeError):
         pass
     if conn_name:
         try:
-            return vault.get_secret_by_name(conn_name, CONNECTION_KIND)
+            return _VAULT.get_secret_by_name(conn_name, CONNECTION_KIND)
         except vault.SecretNotFound:
             pass
     raise ConnectionError_(

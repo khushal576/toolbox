@@ -26,6 +26,13 @@ tools in tabs, settings). Each tool is mounted through a `Slot`, so
 POST /api/workspace/plugins/<name> {"enabled": bool} turns a tool on/off
 immediately (and saves workspace.yaml) without a restart.
 State per tool: GET /api/workspace/status.
+
+Several worker processes (roadmap B9): the web role runs with N uvicorn workers. Every worker re-reads
+workspace.yaml when its mtime changes (`_sync_workspace`), so a switch flipped on one worker reaches all.
+`singleton: true` plugins (sql-studio, schema-map: one live DB pool, password never stored) run in ONE dedicated
+process — the same image started with TOOLBOX_ROLE=singletons, which mounts only them — and every web worker
+forwards their traffic there with a `ProxyApp` when TOOLBOX_SINGLETON_URL is set. Without that variable (a
+standalone dev run) they are mounted in-process as before, and the app must then run with one worker.
 """
 
 from __future__ import annotations
@@ -41,7 +48,7 @@ from fastapi.responses import HTMLResponse
 
 from pydantic import BaseModel
 
-from core_plugins import (DisabledApp, ExternalApp, LazyApp, Slot, StaticApp, default_path, discover,
+from core_plugins import (DisabledApp, ExternalApp, LazyApp, ProxyApp, Slot, StaticApp, default_path, discover,
                           load_workspace)
 
 logger = logging.getLogger("toolbox")
@@ -49,6 +56,12 @@ logger = logging.getLogger("toolbox")
 app = FastAPI(title="Toolbox", description="One-stop access to internal tools.")
 
 _REPO = Path(__file__).resolve().parent
+# "web" (default): every tool, singletons proxied when TOOLBOX_SINGLETON_URL is set.
+# "singletons": only the singleton plugins, in this one process (the `singletons` compose service).
+ROLE = os.environ.get("TOOLBOX_ROLE", "web")
+SINGLETON_URL = (os.environ.get("TOOLBOX_SINGLETON_URL") or "").strip()
+if ROLE not in ("web", "singletons"):
+    raise SystemExit(f"TOOLBOX_ROLE must be 'web' or 'singletons', not {ROLE!r}")
 
 # Discovered once at startup: mounting happens at startup too, so a manifest
 # change needs a restart either way. Errors/warnings are logged, never raised.
@@ -76,12 +89,71 @@ _failed_tools: dict[str, str] = {}
 def _record_failure(name: str, error: str) -> None:
     """Called by a LazyApp whose import failed, so the home page shows its card as unavailable."""
     _failed_tools[name] = error
+    _publish_soon()
+
+
+# ---------------------------------------------------------------------------
+# Load state shared between processes (roadmap B9)
+# ---------------------------------------------------------------------------
+# With several workers (+ the singletons process) "is this tool loaded?" differs per process. Each process
+# publishes its own loaded/failed tools to Redis under toolbox:procs:<host>:<pid> (TTL 60 s, refreshed every 20 s
+# and right after each load), and /api/workspace/status combines every live process. Without Redis: this process only.
+
+_PROC_KEY = f"toolbox:procs:{os.uname().nodename}:{os.getpid()}"
+_PROC_TTL = 60
+
+
+def _redis():
+    try:
+        from core.state import config, sessions
+    except ImportError:
+        return None
+    return sessions.client() if config.load().redis_url else None
+
+
+def _publish_now() -> None:
+    try:
+        r = _redis()
+        if r is None:
+            return
+        state = {"role": ROLE, "loaded": {n: round(l.load_seconds or 0, 3) for n, l in _lazy.items() if l.state == "loaded"},
+                 "failed": dict(_failed_tools)}
+        r.set(_PROC_KEY, json.dumps(state), ex=_PROC_TTL)
+    except Exception:  # noqa: BLE001 - status sharing is cosmetic; never break a request over it
+        logger.debug("could not publish process state", exc_info=True)
+
+
+def _publish_soon(*_: Any) -> None:
+    """Off the event loop: a slow or missing Redis must never delay the request that loaded a tool."""
+    import threading
+
+    threading.Thread(target=_publish_now, daemon=True, name="proc-state").start()
+
+
+def _heartbeat() -> None:
+    import time
+
+    while True:
+        _publish_now()
+        time.sleep(20)
+
+
+def _all_processes() -> list[dict[str, Any]]:
+    try:
+        r = _redis()
+        if r is None:
+            return []
+        keys = list(r.scan_iter("toolbox:procs:*", count=200))
+        return [json.loads(v) for v in r.mget(keys) if v] if keys else []
+    except Exception:  # noqa: BLE001
+        return []
 
 
 # name -> Slot (holding a LazyApp or DisabledApp), filled by the mount loop at the bottom.
 _slots: dict[str, Slot] = {}
 # name -> LazyApp, kept even while a tool is off so turning it back on reuses an already-imported module.
 _lazy: dict[str, LazyApp] = {}
+_proxies: dict[str, ProxyApp] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +231,13 @@ async def state_health() -> dict[str, Any]:
 
 @app.get("/api/workspace/status")
 async def workspace_status() -> dict[str, Any]:
-    """Per-plugin state for the workspace UI (A4) and status page (E2). Never imports a tool."""
+    """Per-plugin state for the workspace UI (A4) and status page (E2). Never imports a tool. With several
+    processes, a tool counts as loaded/failed if it is in ANY live process (see "Load state shared")."""
+    from starlette.concurrency import run_in_threadpool
+
+    procs = await run_in_threadpool(_all_processes)
+    loaded_anywhere = {n: s for p in procs for n, s in p.get("loaded", {}).items()}
+    failed_anywhere = {n: e for p in procs for n, e in p.get("failed", {}).items()}
     plugins = []
     for m in _registry.ordered():
         slot = _slots.get(m.name)
@@ -169,17 +247,25 @@ async def workspace_status() -> dict[str, Any]:
             state = "disabled"
         elif isinstance(mount, LazyApp):
             state = mount.state
+            if state == "not_loaded" and m.name in failed_anywhere:
+                state = "failed"
+            elif state == "not_loaded" and m.name in loaded_anywhere:
+                state = "loaded"
         elif isinstance(mount, (StaticApp, ExternalApp)):
             state = "ready"  # no server code to load
+        elif isinstance(mount, ProxyApp):  # singleton: runs in the `singletons` process (roadmap B9)
+            state = ("failed" if m.name in failed_anywhere else "loaded" if m.name in loaded_anywhere
+                     else "not_loaded" if procs else "remote")
         else:
             state = "not_mounted"  # kind: service — routed by the gateway from roadmap C2/D1
         plugins.append({
             "name": m.name, "title": m.title, "kind": m.kind, "runtime": m.runtime, "tier": m.tier,
             "enabled": _workspace.is_enabled(m), "state": state,
-            "load_seconds": round(lazy.load_seconds, 3) if lazy and lazy.load_seconds else None,
+            "load_seconds": round(lazy.load_seconds, 3) if lazy and lazy.load_seconds else loaded_anywhere.get(m.name),
             # turned off after it was already imported: memory is only freed by a restart
-            "restart_to_free_memory": state == "disabled" and bool(lazy and lazy.state == "loaded"),
-            "error": _failed_tools.get(m.name),
+            "restart_to_free_memory": state == "disabled" and bool((lazy and lazy.state == "loaded")
+                                                                   or m.name in loaded_anywhere),
+            "error": _failed_tools.get(m.name) or failed_anywhere.get(m.name),
         })
     counts: dict[str, int] = {}
     for p in plugins:
@@ -202,8 +288,14 @@ def _app_for(m, enabled: bool):
         return StaticApp(m.name, Path(m.source).parent, m.entry)
     if m.kind == "external":
         return ExternalApp(m.name, m.entry)
+    if ROLE == "singletons" and not m.singleton:
+        return None  # the singleton process hosts only the singletons
+    if ROLE == "web" and m.singleton and SINGLETON_URL:
+        if m.name not in _proxies:
+            _proxies[m.name] = ProxyApp(m.name, m.title, SINGLETON_URL)
+        return _proxies[m.name]
     if m.name not in _lazy:
-        _lazy[m.name] = LazyApp(m.name, m.module, on_failure=_record_failure)
+        _lazy[m.name] = LazyApp(m.name, m.module, on_failure=_record_failure, on_loaded=_publish_soon)
     return _lazy[m.name]
 
 
@@ -226,6 +318,7 @@ async def set_plugin_enabled(name: str, body: _ToggleBody) -> dict[str, Any]:
             _workspace.enabled[name] = previous
         raise HTTPException(500, f"could not save {_workspace.path}: {exc}") from exc
     _slots[name].app = _app_for(m, body.enabled)
+    _remember_mtime()
     lazy = _lazy.get(name)
     if body.enabled:
         message = f"{m.title} is on." + ("" if lazy and lazy.state == "loaded" else " It loads when you first open it.")
@@ -237,9 +330,84 @@ async def set_plugin_enabled(name: str, body: _ToggleBody) -> dict[str, Any]:
     return {"name": name, "enabled": body.enabled, "message": message, "plugin": _card_data(m)}
 
 
+@app.get("/healthz")
+async def healthz() -> dict[str, Any]:
+    """Liveness of THIS process (compose healthchecks). Cheap: touches no state service."""
+    return {"ok": True, "role": ROLE, "pid": os.getpid()}
+
+
+# ---------------------------------------------------------------------------
+# Workspace sync between worker processes (roadmap B9)
+# ---------------------------------------------------------------------------
+
+_ws_mtime: float | None = None
+_ws_checked = 0.0
+
+
+def _file_mtime() -> float | None:
+    try:
+        return _workspace.path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def _remember_mtime() -> None:
+    global _ws_mtime
+    _ws_mtime = _file_mtime()
+
+
+def _sync_workspace() -> None:
+    """At most once a second: if workspace.yaml changed (another worker flipped a switch), reload it and re-point
+    every tool's Slot. Cheap — one stat() per second per process."""
+    global _workspace, _ws_checked
+    import time
+
+    now = time.monotonic()
+    if now - _ws_checked < 1.0:
+        return
+    _ws_checked = now
+    mtime = _file_mtime()
+    if mtime == _ws_mtime:
+        return
+    fresh = load_workspace(default_path(_REPO), known=set(_registry.plugins))
+    if fresh.errors:
+        logger.error("Workspace settings changed but could not be read — keeping the current ones: %s", fresh.errors)
+        _remember_mtime()
+        return
+    _workspace = fresh
+    _remember_mtime()
+    for m in _registry.ordered():
+        if m.name in _slots:
+            new = _app_for(m, _workspace.is_enabled(m))
+            if new is not None:
+                _slots[m.name].app = new
+
+
+class _WorkspaceSync:
+    """Pure ASGI (not @app.middleware, which wraps every streaming response): check workspace.yaml, pass through."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            _sync_workspace()
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(_WorkspaceSync)
+
+
 for _plugin in _registry.ordered():
     _initial = _app_for(_plugin, _workspace.is_enabled(_plugin))
     if _initial is None:
         continue
     _slots[_plugin.name] = Slot(_initial)
     app.mount(_plugin.mount_path, _slots[_plugin.name])
+_remember_mtime()
+if _redis_configured := bool(os.environ.get("TOOLBOX_REDIS_URL")):
+    import threading as _threading
+
+    _threading.Thread(target=_heartbeat, daemon=True, name="proc-heartbeat").start()
+logger.info("Toolbox role=%s, singletons %s", ROLE,
+            f"proxied to {SINGLETON_URL}" if (ROLE == "web" and SINGLETON_URL) else "in this process")

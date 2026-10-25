@@ -49,16 +49,18 @@ except ImportError:  # flat import when run standalone from within this folder
     import query_guard
 
 try:  # core/ is a sibling top-level package in the real image (/app/core)
-    from core import vault
+    from core import vault as vault_store
     from core.db.registry import get_dialect
     from core.postgres_conn import ssh_tunnel_from_dict
 except ImportError:  # standalone dev run from inside this folder: core/ is ../../core
     import sys as _sys
 
     _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from core import vault
+    from core import vault as vault_store
     from core.db.registry import get_dialect
     from core.postgres_conn import ssh_tunnel_from_dict
+
+vault = vault_store.scoped("sql-studio")  # Vault scope from manifest.yaml `vault:` (roadmap B7)
 
 app = FastAPI(
     title="SQL Studio",

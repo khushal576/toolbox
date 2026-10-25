@@ -116,6 +116,37 @@ Save. The confirmed key is stored in the entry (`host_key`), and every later con
 (`core/ssh_client.py`). `core/vault.update_secret()` exists so a key can be pinned later without changing
 the entry's id.
 
+## Since roadmap B7 — storage, key, scopes (read first; older sections below are history where they disagree)
+
+- **Rows in Toolbox's Postgres** (schema `vault`, `../core/state/sqlstore.py`), **dataset blobs in S3 storage**
+  (`vault/<id>/<id>.blob`, `../core/state/filecache.py`; local `blobs/` is a cache of *encrypted* chunks). The old
+  `vault.db` was copied in once on first start and old blob files are uploaded on start; both stay on the
+  `vault_data` volume as a backup. Standalone (no `TOOLBOX_DATABASE_URL`) it is still SQLite + local blobs.
+- **The key comes from `TOOLBOX_VAULT_KEY`** (compose passes it from the git-ignored `.env`), or
+  `TOOLBOX_VAULT_KEY_FILE`; the legacy `/app/data/vault/vault.key` is only a fallback (health then warns
+  "key is on the data volume"). The existing key was moved into `.env` during B7 — **back up `.env`**: without
+  that key the secrets can't be decrypted. `vault._vault_meta.key_check` (a Fernet token of a fixed string)
+  makes a wrong key fail at startup with `VaultKeyMismatch` instead of failing every decrypt later; the first
+  fingerprint is only written after an existing secret decrypts with the key.
+- **Scoped access**: plugin server code uses `vault_store.scoped("<plugin>")` (`ScopedVault`), allowed by its
+  manifest's `vault: {read: [...], write: [...], datasets: none|read|write}`. A database tool can't read an
+  `ssh_server` entry and vice versa; `core/db_endpoint.py` has a fixed library scope (`postgres_connection`
+  only); the orchestrator (trusted host code, no manifest) declares its own `Scope`. Only this tool and `core/`
+  use the unscoped functions — `tests/unit/test_plugins.py::test_tools_never_use_the_unscoped_vault` enforces it.
+- **HTTP scoped read API** for plugin code outside this process (phase C runtimes): `GET /api/v1/scope`,
+  `GET /api/v1/secrets?kind=`, `GET /api/v1/secrets/{id}` with headers `X-Toolbox-Plugin: <name>` and
+  `Authorization: Bearer <token>`; token = HMAC-SHA256(vault key, plugin name) — `python -m core.vault token <name>`
+  (nothing stored; changing the key revokes all tokens). 401 wrong token, 403 kind not in scope. Datasets are not
+  served over HTTP yet. The browser-facing endpoints (`/secrets`, `/reveal`, …) are unchanged (same trust model).
+- **Backup format 2**: `vault.json` (rows, ciphertext base64) + `vault.key` + `blobs/`. Restore reads format 2
+  and the old format 1 (`vault.db` zip). Because the key now comes from the environment, a restore **re-encrypts**
+  secrets (and blobs, chunk by chunk) made with another key instead of swapping key files — the old
+  `invalidate_key_cache()` dance is gone. Every secret is decrypted before anything is replaced, so a damaged
+  backup changes nothing. Verified: unit tests (same key, other-key format-1 backup, damaged backup) and a live
+  backup download; the live wipe-and-restore was not run on the owner's vault (blocked as destructive) — the unit
+  tests cover it on an isolated vault.
+- `/api/state/health` has `vault` (secret count, key source, storage).
+
 ## Security posture — read this before touching `core/vault.py`
 
 **No vault master password**, by explicit owner choice. The encryption

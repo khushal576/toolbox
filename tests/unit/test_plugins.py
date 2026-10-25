@@ -171,3 +171,34 @@ def test_singleton_requires_single_replica():
 
 def test_repo_singletons_are_the_live_db_pool_tools():
     assert sorted(m.name for m in discover(REPO).ordered() if m.singleton) == ["schema-map", "sql-studio"]
+
+
+def test_vault_scope_field():
+    m = mk(kind="python", entry="x:app", runtime="data", vault={"read": ["postgres_connection"], "datasets": "read"})
+    assert m.vault.read == ["postgres_connection"] and m.vault.datasets == "read"
+    with pytest.raises(ValueError, match="Vault access"):
+        mk(kind="static", vault={"read": ["x"]})
+    with pytest.raises(ValueError):
+        mk(kind="python", entry="x:app", runtime="data", vault={"datasets": "all"})
+
+
+def test_repo_vault_scopes():
+    scopes = {m.name: m.vault for m in discover(REPO).ordered() if m.vault}
+    assert scopes["data-syncer"].read == ["postgres_connection"] and scopes["ssh-sftp"].write == ["ssh_server"]
+    assert scopes["df-studio"].datasets == "read" and "vault" not in scopes  # the Vault tool itself is the store
+
+
+def test_tools_never_use_the_unscoped_vault():
+    """Roadmap B7: plugin code reaches secrets only via core.vault.scoped()/ScopedVault."""
+    import re
+
+    allowed = {"vault", "core", "orchestrator", "tests"}
+    for py in REPO.glob("*/**/*.py"):
+        top = py.relative_to(REPO).parts[0]
+        if top in allowed:
+            continue
+        text = py.read_text(encoding="utf-8", errors="replace")
+        if re.search(r"from core import [^\n]*\bvault\b(?! as vault_store)", text):
+            raise AssertionError(f"{py}: import core.vault as vault_store and use vault_store.scoped(...)")
+        bad = set(re.findall(r"vault_store\.(\w+)", text)) - {"scoped", "ScopedVault", "Scope"}
+        assert not bad, f"{py}: unscoped Vault calls {bad}"

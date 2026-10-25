@@ -63,9 +63,9 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | B4 | Job queue (RQ) + Data Syncer on it | M | B1 | ☑ |
 | B5 | Schema Copy + Data Dumper on the queue, files to S3 storage | M | B4 | ☑ |
 | B6 | SQLite → Postgres for durable stores | M | B1 ⚡ | ☑ |
-| B7 | Vault as a service with scoped API | M | B6 | ☐ |
-| B8 | SSH & SFTP state out of memory | M | B1 ⚡ | ☐ |
-| B9 | Multiple workers + full regression | S | B2–B8 | ☐ |
+| B7 | Vault as a service with scoped API | M | B6 | ☑ |
+| B8 | SSH & SFTP state out of memory | M | B1 ⚡ | ☑ |
+| B9 | Multiple workers + full regression | S | B2–B8 | ☑ |
 | C1 | Split into runtime images | M | B9 | ☐ |
 | C2 | Gateway service + routing from manifests | M | C1 | ☐ |
 | C3 | On-demand supervisor (start/stop, idle, limits) | M | C2 | ☐ |
@@ -279,6 +279,46 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+- 2026-10-25 – **B9 done — phase B complete.** Web runs `TOOLBOX_WEB_WORKERS` uvicorn workers (compose default 4;
+  image default 1). New `singletons` service (same image, `TOOLBOX_ROLE=singletons`, one process, healthcheck
+  `/healthz`) hosts sql-studio + schema-map; web workers forward to it with `core_plugins/proxy.py` (`ProxyApp`:
+  httpx streaming both ways, raw path/query/cookies, hop-by-hop headers dropped, X-Forwarded-*, no redirect
+  following, 503 page when down, one client per event loop). Found + fixed for multi-worker: on/off switches only
+  reached the worker that got the POST → every worker re-reads `workspace.yaml` on mtime change (pure ASGI
+  middleware, ≤1 s); "loaded" state was per worker (smoke `test_tool_is_loaded_after_its_first_request` flaked
+  2/3 runs) → each process publishes loaded/failed tools to Redis `toolbox:procs:*` (TTL 60 s, refresh 20 s + on
+  load) and status combines them. Starlette 0.37 (image) passes middleware `app=` by keyword, 1.x (host)
+  positionally — name it `app`. Verified with 4 workers: smoke 89 × 19 runs (incl. 3 cold restarts) green after
+  the fix; sql-studio Connect once + 40 queries over 4 workers → 1 backend; switches (incl. proxied sql-studio)
+  apply on every worker; duck-lab session queries across workers; data-dumper status consistent while polling.
+  Measure (`measure-B9.md` vs `measure-A3.md`): idle web container 32 → 169 MiB (4 workers × ~40 MB floor), +
+  singletons ~70 MiB; 8 parallel 5k-record DataDiff compares 2.89 s (1 worker) → 1.78 s (4). 117 unit + 89 smoke.
+  **Checkpoint (owner):** C–F (runtime pools, on-demand containers, autoscaling, multi-node) are not needed for
+  one user on one machine today; next useful sessions are probably C1/E (status page) or features. Owner decides.
+- 2026-10-25 – **B8 done.** SSH & SFTP: uploads + commands are worker jobs (`ssh-sftp/runner.py` → `JobRunner(quiet=True)`);
+  staged uploads in S3 (`state_store.STAGE`, publish on receive, `fetch_stage` before send, deleted on success,
+  `sweep_stage` for finished/7-day-old); heartbeat-aware `fail_orphans` replaces the blanket `recover_interrupted`;
+  browse connection cache stays per process (by design). Shared improvements: `Channel.log_many` + `_BufferedLog`
+  (batched Redis log writes, 0.3 s / 200 lines), `KEEP_TTL` 7 days on job log/meta/seq keys (one slot per
+  upload/command/dump — Redis would only grow), thread-mode registry capped at 100 finished jobs, `FileCache.sweep`.
+  `execute()` now takes an opts dict (`log_size`, `kind`, `quiet`). Verified live with a real OpenSSH server:
+  trust flow via scoped `update_secret`, 3000-line command + exit code + `since` paging; 300 MB upload, worker
+  killed at 83 MB → failed → local stage deleted → Retry resumed from 93.7 MB using the stored stage, SHA-256 ok;
+  `--scale worker=2`: two uploads ran on both workers in parallel through a web restart, checksums identical.
+  109 unit + 36 in-container + 89 smoke. **Next:** B9 (lift `--workers 1`; route singletons sql-studio/schema-map).
+- 2026-10-25 – **B7 done.** `core/vault.py`: rows → Postgres (schema `vault`, `SqlStore`; old `vault.db` copied once),
+  dataset blobs → S3 (`FileCache`, legacy blobs uploaded on start); key from `TOOLBOX_VAULT_KEY` (env) /
+  `TOOLBOX_VAULT_KEY_FILE`, legacy volume file only as fallback (health warns); `_vault_meta.key_check` →
+  `VaultKeyMismatch` on a wrong key. The existing key was moved into a new git-ignored `.env` (0600; compose passes
+  it to web + worker). **Scopes**: manifest field `vault: {read, write, datasets}`; tools use
+  `vault_store.scoped(name)` (`ScopedVault`); db_endpoint/orchestrator have explicit scopes; a unit test forbids
+  unscoped use in tool folders. **HTTP scoped read API** `/tools/vault/api/v1/{scope,secrets,secrets/{id}}` with
+  per-plugin HMAC tokens (`python -m core.vault token <name>`) for phase C runtimes. Backup format 2 (json + key +
+  blobs); restore reads format 1 too and **re-encrypts** other-key backups. Verified live: worker decrypts a
+  connection and dumps, scoped API 200/403/401, ssh-sftp lists only `ssh_server`, dataset round trip through S3,
+  backup contents. A live wipe+restore of the owner's vault was blocked as destructive — covered by unit tests on an
+  isolated vault. 105 unit (host) + 36 in-container + 89 smoke. `/api/state/health` has `vault`.
+  **Next:** B8.
 - 2026-10-25 – **B6 done.** `core/state/sqlstore.py` (`SqlStore`): sqlite3-shaped API over Toolbox's Postgres (one
   schema per tool, `SET LOCAL search_path` per transaction, `?`→`%s`, `Row` = dict + positional, NUMERIC→int,
   INTEGER→BIGINT/REAL→DOUBLE/BLOB→BYTEA in DDL, `add_columns`), SQLite fallback standalone. The five stores

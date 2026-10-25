@@ -3,8 +3,9 @@ ssh-sftp/state_store.py
 
 History only — never credentials (those stay in the Vault). Since roadmap B6 the history is in Toolbox's
 Postgres, schema `ssh_sftp` (core/state/sqlstore.py; the old SQLite file /app/data/ssh-sftp/sshsftp.db is copied
-in once and kept as a backup; standalone it is still the store). STAGED UPLOADS stay in /app/data/ssh-sftp/stage/
-on the `ssh_sftp_data` Docker volume (roadmap B8 moves them).
+in once and kept as a backup; standalone it is still the store). STAGED UPLOADS live in S3 storage since roadmap B8
+(`STAGE`, core/state/filecache.py, keys `ssh-sftp/<transfer id>/<id>.stage`); /app/data/ssh-sftp/stage/ is a local
+cache, so the worker that sends a file and the web process that received it don't need to share a disk.
 
 An upload is first received into the stage directory, then sent to the server from there. That is what
 makes it stable: if the connection drops, or the server is briefly unreachable, the transfer retries
@@ -18,24 +19,28 @@ Do not put passwords inside a command line: it would be saved here and visible i
 
 from __future__ import annotations
 
-import time
+import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 try:
+    from core.state.filecache import FileCache
     from core.state.sqlstore import SqlStore
 except ImportError:  # standalone without the repo root on the path
     import sys
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from core.state.filecache import FileCache
     from core.state.sqlstore import SqlStore
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "ssh-sftp"
 DB_PATH = DATA_DIR / "sshsftp.db"
 STAGE_DIR = DATA_DIR / "stage"
 STAGE_MAX_AGE_DAYS = 7
+ORPHAN_GRACE_SECONDS = 20  # a command row is created just before its job is claimed; don't call that an orphan
+STAGE = FileCache("ssh-sftp", STAGE_DIR, budget_mb=int(os.environ.get("SSH_SFTP_STAGE_CACHE_MB", "2048")))
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS transfers (
@@ -68,22 +73,52 @@ def init_db() -> None:
     STAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def recover_interrupted() -> None:
-    """A new process has no live run: anything 'running' was cut off. Transfers keep their staged file
-    (Retry resumes); stale staged files of finished transfers are removed."""
+def fail_orphans(is_live: Callable[[str], bool]) -> int:
+    """Transfers/commands still 'running' whose job is NOT live were cut off (restart, worker killed): mark them
+    failed. Transfers keep their staged file (Retry resumes). With the queue runner a job still running in the
+    worker is left alone."""
+    n = 0
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=ORPHAN_GRACE_SECONDS)).isoformat()
     with _connect() as con:
-        con.execute("UPDATE transfers SET status='failed', error='Interrupted by a restart — press Retry to resume', finished_at=? WHERE status='running'", (_now(),))
-        con.execute("UPDATE commands SET status='failed', finished_at=? WHERE status='running'", (_now(),))
-        keep = {r["id"] for r in con.execute("SELECT id FROM transfers WHERE status IN ('staged','running','failed','cancelled')")}
-    cutoff = time.time() - STAGE_MAX_AGE_DAYS * 86400
-    for p in STAGE_DIR.glob("*"):
-        tid = p.name.split(".")[0]
-        if p.is_file() and (tid not in keep or p.stat().st_mtime < cutoff):
-            p.unlink(missing_ok=True)
+        for r in con.execute("SELECT id FROM transfers WHERE status = 'running'").fetchall():
+            if not is_live(r["id"]):
+                con.execute("UPDATE transfers SET status='failed', error='Interrupted (restart or worker stopped) — "
+                            "press Retry to resume', finished_at=? WHERE id=?", (_now(), r["id"]))
+                n += 1
+        for r in con.execute("SELECT id, started_at FROM commands WHERE status = 'running'").fetchall():
+            if r["started_at"] < cutoff and not is_live(r["id"]):
+                con.execute("UPDATE commands SET status='failed', finished_at=? WHERE id=?", (_now(), r["id"]))
+                n += 1
+    return n
+
+
+def sweep_stage() -> int:
+    """Staged files of finished transfers, and anything older than a week, are removed (storage + local)."""
+    with _connect() as con:
+        keep = {r["id"] for r in con.execute(
+            "SELECT id FROM transfers WHERE status IN ('staged','running','failed','cancelled')")}
+    return STAGE.sweep(keep, STAGE_MAX_AGE_DAYS * 86400)
 
 
 def stage_path(transfer_id: str) -> Path:
+    """The LOCAL copy's path (may not exist in this process — use fetch_stage to read it)."""
     return STAGE_DIR / f"{transfer_id}.stage"
+
+
+def publish_stage(transfer_id: str) -> None:
+    STAGE.publish(transfer_id, stage_path(transfer_id))
+
+
+def fetch_stage(transfer_id: str) -> Optional[Path]:
+    return STAGE.fetch(transfer_id, stage_path(transfer_id).name)
+
+
+def has_stage(transfer_id: str) -> bool:
+    return STAGE.exists(transfer_id, stage_path(transfer_id).name)
+
+
+def delete_stage(transfer_id: str) -> None:
+    STAGE.remove_all(transfer_id)
 
 
 def new_id() -> str:
@@ -122,7 +157,7 @@ def list_transfers(limit: int = 40) -> list[dict[str, Any]]:
 def delete_transfer(tid: str) -> None:
     with _connect() as con:
         con.execute("DELETE FROM transfers WHERE id = ?", (tid,))
-    stage_path(tid).unlink(missing_ok=True)
+    delete_stage(tid)
 
 
 def add_command(server_id: str, server_name: str, command: str) -> str:

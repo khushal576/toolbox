@@ -256,7 +256,6 @@ def run_upload(
     """Send staged transfer *tid* to its server. *on_chunk(bytes_sent_so_far)* is called after every chunk
     (the test hook for dropping connections mid-transfer; unused in production)."""
     t = store.get_transfer(tid)
-    staged = store.stage_path(tid)
     store.update_transfer(tid, status="running", error=None, note=None, finished_at=None)
     size, sha = t["size"], t["sha256"]
     final = posixpath.join(t["remote_dir"], t["name"])
@@ -265,7 +264,8 @@ def run_upload(
     fresh = False
     last = 0.0
     try:
-        if not staged.exists():
+        staged = store.fetch_stage(tid)  # local copy, downloaded from storage if this process has none (B8)
+        if staged is None:
             raise ValueError("The staged copy of this file is gone (it was cleaned up) — upload it again.")
         data = _writable(t["server_id"])
         log("info", f"{t['name']} → {ssh_client.describe(data)}:{t['remote_dir']}  ({size:,} bytes)")
@@ -350,7 +350,7 @@ def run_upload(
                 else:
                     sftp.rename(part, final)
                 store.update_transfer(tid, status="done", bytes_done=size, error=None, note=note, attempts=attempts, finished_at=_now())
-                staged.unlink(missing_ok=True)
+                store.delete_stage(tid)
                 log("ok", f"done — {final} ({note})")
                 return
             except InterruptedError:
