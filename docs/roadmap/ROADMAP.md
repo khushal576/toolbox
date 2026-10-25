@@ -58,11 +58,11 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | A4 | Workspace UI shell | M | A2 ⚡ | ☑ |
 | A5 | Custom apps: static + external plugins | S | A3 | ☑ |
 | B1 | Redis, Postgres, S3 storage + shared clients | M | A3 | ☑ |
-| B2 | DataFrame Studio state out of memory | M | B1 ⚡ | ☐ |
-| B3 | DuckLab + SQL Studio state out of memory | M | B1 ⚡ | ☐ |
-| B4 | Job queue (RQ) + Data Syncer on it | M | B1 | ☐ |
-| B5 | Schema Copy + Data Dumper on the queue, files to S3 storage | M | B4 | ☐ |
-| B6 | SQLite → Postgres for durable stores | M | B1 ⚡ | ☐ |
+| B2 | DataFrame Studio state out of memory | M | B1 ⚡ | ☑ |
+| B3 | DuckLab + SQL Studio state out of memory | M | B1 ⚡ | ☑ |
+| B4 | Job queue (RQ) + Data Syncer on it | M | B1 | ☑ |
+| B5 | Schema Copy + Data Dumper on the queue, files to S3 storage | M | B4 | ☑ |
+| B6 | SQLite → Postgres for durable stores | M | B1 ⚡ | ☑ |
 | B7 | Vault as a service with scoped API | M | B6 | ☐ |
 | B8 | SSH & SFTP state out of memory | M | B1 ⚡ | ☐ |
 | B9 | Multiple workers + full regression | S | B2–B8 | ☐ |
@@ -193,9 +193,13 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
   jobs via RQ; staged uploads in S3 storage (resume still works).
 - **Done when**: works with 2 workers; resumable upload survives restart.
 
-### B9 Multiple workers + full regression (S)
+### B9 Multiple workers + full regression (S→M)
 - Remove the `--workers 1` pin (gunicorn/uvicorn with N workers); update `CLAUDE.md` "Standing
   rule" section; full smoke + manual check of each stateful tool. Re-measure vs baseline.
+- **Singleton plugins (`singleton: true` — sql-studio, schema-map, owner decision in B3)** must keep running
+  in exactly ONE process: run them in one dedicated single-worker process and have the main app route their
+  `/tools/<name>/` traffic there (in-process proxy, the first small piece of the phase-C gateway). Never give
+  them a pool per worker or store their passwords.
 - **Done when**: everything passes with 4 workers. **Checkpoint**: decide whether C–F are needed now.
 
 ## Phase C – Runtime pools and on-demand containers
@@ -275,6 +279,60 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+- 2026-10-25 – **B6 done.** `core/state/sqlstore.py` (`SqlStore`): sqlite3-shaped API over Toolbox's Postgres (one
+  schema per tool, `SET LOCAL search_path` per transaction, `?`→`%s`, `Row` = dict + positional, NUMERIC→int,
+  INTEGER→BIGINT/REAL→DOUBLE/BLOB→BYTEA in DDL, `add_columns`), SQLite fallback standalone. The five stores
+  (schema-map, data-syncer, schema-copy, data-dumper, ssh-sftp) now use it with almost unchanged SQL. **Migration is
+  automatic**: first `init()` copies the old SQLite file (columns by name, existing ids skipped, orphan rows skipped
+  one by one) under an advisory lock and records it in `<schema>._meta`; never repeats; the SQLite file stays as a
+  backup (owner's "temp" Schema Map project came across). **Bug found live:** psycopg auto-prepares after 5 runs per
+  connection, and tools share SQL text in different schemas → "cached plan must not change result type" — fixed
+  with `prepare=False` + regression test. Also: data-syncer status now heals before reading tables. Verified: 2M-row
+  copy sync with worker kill → resume from Postgres position (count/sum/distinct match), dump → restore, schema-copy
+  apply, schema-map versions, 240 alternating API calls with no errors. 92 unit (+8 Postgres tests in the container,
+  see `tests/unit/test_sqlstore.py` header) + 89 smoke. Volumes still mounted: SQLite backups, file caches, ssh-sftp
+  stage (B8), Vault (B7). **Next:** B7 (Vault) or B8 (SSH & SFTP).
+- 2026-10-25 – **B5 done.** Shared `core/jobs/runner.py` (`JobRunner`: queue mode via `Channel`/`enqueue` with the
+  job body run by `core.jobs.runner.execute` in the worker, thread fallback; progress dict mirrored to Redis ≤1/s) and
+  `core/state/filecache.py` (`FileCache`: S3 = home, local folder = cache; publish/fetch/exists/remove_all; trim to a
+  budget, never evicting unstored or recently used files; fetch uploads a never-stored local file). Schema Copy and
+  Data Dumper runners are thin wrappers; scripts/dump files/TOC caches go to S3 (`schema-copy/<id>/…`,
+  `data-dumper/<id>/…`); `state_store.fail_orphans` + `runner.recover_orphans/heal` replace the blanket
+  `recover_interrupted`. Verified live on a 3M-row DB: dump survived a web restart; contents/download/restore all
+  worked with the local copy deleted (restore count + sum match); 409 on double start; worker killed mid-dump →
+  dump failed after 27 s, `.part` gone; Stop while queued → "Stopped by you before it started"; schema-copy apply in
+  the worker + script served from storage. **Bug fixed from B4:** a killed worker crash-looped on restart ("active
+  worker named … already") for ~7 min — `core/jobs/worker.py` now clears stale registrations of its own hostname and
+  adds a random suffix. 88 unit + 89 smoke. Data Syncer still has its own B4 runner (could move to `JobRunner` later).
+  **Next:** B6 (SQLite → Postgres; volumes for these two tools then only hold caches + SQLite until migrated).
+- 2026-10-24 – **B4 done.** `core/jobs/` (RQ 2.1 on Redis: `Channel` = atomic claim (`SET NX`), heartbeat "alive"
+  key (30 s TTL running / 24 h queued), log tail list trimmed to N, stop flag, meta; `StopFlag` with `is_set()`
+  (1 s cache) + `wait()`; `enqueue(job_timeout=-1)`; `health()`), `core/jobs/worker.py`, compose `worker` service
+  (same image, same data volumes + env). `data-syncer/runner.py`: queue runner (`run_job` in the worker) + old
+  thread runner as standalone fallback; `recover_orphans()` replaces the blanket `recover_interrupted()` (would have
+  broken live worker runs on a web restart), `heal()` on status reads. Verified live with a 2M-row upsert: survived
+  a web restart mid-run, double start → 409, graceful Stop at 650k, worker `kill` → stopped after 26 s → resumed
+  "after key 1250000" → count + sum match. Test DBs/Vault entries/project removed. `/api/state/health` has `jobs`.
+  79 unit + 89 smoke. One unexplained smoke failure right after the first rebuild — not reproduced in 4 runs; watch it.
+  **For B5:** reuse `core/jobs` the same way for schema-copy/data-dumper; dump files → S3 (`core.state.objects`).
+- 2026-10-24 – **B3 done.** **DuckLab**: `duck-lab/session_store.py` (Redis meta + S3 files / memory fallback);
+  `engine.py` rewritten around per-worker `_Local` copies (DuckDB conn + cache dir, LRU 8, rebuilt when the stored
+  `version` changes, `RLock` per session), uploads + XML (now Parquet) + query results (Parquet) stored in S3;
+  `server.py` runs every engine call via `asyncio.to_thread`; exports deleted after sending. Verified: 6 unit tests
+  (run **inside the container** — host has no duckdb; they skip on the host), two separate processes sharing a
+  session end to end, session rebuilt after `--force-recreate` with an empty local cache; 76 unit + 88 smoke pass.
+  **SQL Studio / Schema Map: owner chose to keep them single-process** (pool of 3, password never stored) → new
+  manifest field `singleton: true` on both; B9 text updated to route them to one dedicated process. No code change
+  to either tool.
+- 2026-10-24 – **B2 done.** `df-studio/session_store.py`: `StateBackend` (Redis metadata, sliding 12 h TTL; original
+  DataFrame in S3 as Parquet with pickle fallback; sweep of expired sessions' files) / `MemoryBackend` (standalone +
+  unit tests). `engine.py`: `SESSIONS` dict removed → `get_session`/`create_session`/`save_session`/`delete_session` +
+  per-process LRU cache (3); every mutator saves. `server.py`: session loads via `asyncio.to_thread`, new load deletes
+  the browser's previous session. Templates → Postgres `df_studio.templates` (the old JSON file was being wiped by
+  every rebuild — none existed to migrate). `core/state/objects.py` gained `put_file`/`get_to` (multipart),
+  `list_objects`, `delete_prefix`. Verified: two separate processes share one session end to end; session + template
+  survive a container restart; 74 unit + 88 smoke pass. **For B3:** reuse `session_store.py`'s backend pattern
+  (DuckLab: files in S3; SQL Studio: connection settings only, pools stay per process).
 - 2026-10-24 – **B1 done.** Compose: `redis:7.4-alpine` (AOF, noeviction, 256 MB cap), `postgres:18-bookworm`
   (db/user `toolbox`), `chrislusf/seaweedfs:4.48` (S3 on :8333, creds via inline compose `configs:`) — all with
   named volumes + health checks, none published on host ports. **MinIO dropped** (`minio/minio` no longer

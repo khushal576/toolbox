@@ -120,8 +120,10 @@ orient/date_format/indent, Parquet compression/index) before downloading.
   `asyncio.to_thread` — see the gotcha below for why that matters here
   specifically (unlike duck-lab's own `/load/vault`, which deliberately
   does NOT use `to_thread`, matching that tool's own convention).
-- `engine.py` — session store (`SESSIONS: dict[str, Session]`, in-memory,
-  keyed by a `df_studio_sid` cookie) and the **replay model**: a session
+- `engine.py` — sessions (keyed by a `df_studio_sid` cookie) **stored outside
+  the process since roadmap B2** via `session_store.py` (see the B2 gotcha
+  below), plus a small per-process LRU cache of original DataFrames
+  (`DF_STUDIO_CACHE_SESSIONS`, default 3) — and the **replay model**: a session
   keeps `original_df` + an ordered `steps` list; the "current" DataFrame is
   always recomputed by folding every step over the original
   (`recompute()`), never mutated incrementally. This is what makes
@@ -150,9 +152,16 @@ orient/date_format/indent, Parquet compression/index) before downloading.
   type name (`"custom_code"`) via `/step` and `/step/check`, so if you
   rename this step type, update both `ui/index.html`'s query-box JS and
   `STEP_LABELS` together or the pipeline panel's label breaks silently.
+- `session_store.py` — `StateBackend` (metadata in Redis via
+  `core.state.sessions`, sliding TTL `DF_STUDIO_SESSION_TTL` default 12 h;
+  original DataFrame in S3 storage via `core.state.objects` as Parquet, pickle
+  fallback) or `MemoryBackend` (standalone dev / unit tests, chosen when the
+  state env vars are missing). Also the rate-limited sweep that deletes files
+  of expired sessions.
 - `templates_store.py` — saved pipelines as `{name: [{type, params}, ...]}`
-  in one JSON file (`data/templates.json`, gitignored, created on first
-  save). Only `type`/`params` are persisted, never the generated code —
+  in Postgres table `df_studio.templates` (roadmap B2; before that a JSON file
+  inside the container that every rebuild silently deleted), or
+  `data/templates.json` when running standalone without a database. Only `type`/`params` are persisted, never the generated code —
   code is always regenerated fresh from the current `STEP_HANDLERS` when a
   template is applied.
 - `ui/index.html` — single file, no build step. Uses Tabulator.js from
@@ -179,23 +188,33 @@ at its own internal-import call sites, not just at the entrypoint.
 
 ## Things that will bite you if you don't know them
 
-- **In-memory sessions — a server restart silently drops every open
-  session.** No persistence to disk by design (matches the tool's
-  no-durability posture: nothing here is meant to survive past "export
-  it"). If sessions need to survive restarts later, that's a real design
-  change (cache to `data/<session>.parquet`), not a quick patch.
-- **This is why `../Dockerfile`'s uvicorn CMD is pinned to `--workers 1`.**
-  With more than one worker, `SESSIONS` isn't shared across the separate
-  OS processes uvicorn spawns — a session created by `/load` on worker A is
-  invisible to worker B, so a later request can hit the other worker and
-  fail with "No active session" even though nothing expired and nothing
-  was deleted. This is exactly what happened once when the Dockerfile still
-  said `--workers 2` (real incident, not hypothetical) — it looked random
-  and time-delayed because it depends on which worker answers each
-  request, not on any timer. Don't raise `--workers` back up without giving
-  this tool a real shared session store (Redis/SQLite) first — every other
-  tool in the Toolbox is stateless/client-side and genuinely doesn't care
-  about worker count, so this constraint is specific to df-studio alone.
+- **Sessions live outside the process (roadmap B2).** Metadata (filename,
+  steps, preview mode, sample seed, frame format) in Redis; the ORIGINAL
+  DataFrame in S3 storage, uploaded once at `/load`. Sessions survive
+  restarts/rebuilds and work across processes — verified with two separate
+  uvicorn processes sharing one cookie (load on A, step on B, step on A, export
+  on B). History: in-memory `SESSIONS` once broke under `--workers 2` ("No
+  active session" depending on which worker answered); that failure mode is
+  gone, but the container stays `--workers 1` until roadmap B9 moves the other
+  stateful tools too.
+- **Every function that changes a session must call `save_session()`**
+  (`apply_step`, `remove_step`, `reset_steps`, `set_preview_mode`,
+  `apply_template` do). A new mutating function that forgets it changes only
+  its own copy — the next request (or another worker) won't see the change.
+- **`get_session()`/`create_session()` can hit the network** (Redis, and S3 on
+  a cache miss / at create) — always call them via `asyncio.to_thread`
+  (`server.py`'s `_session()` / `_replace_session()`), never directly in an
+  `async def`.
+- **Big uploads cost an extra copy at load**: the original is written to S3 as
+  Parquet (multipart upload) before the first preview returns. Frames Parquet
+  can't hold (e.g. mixed-type object columns) are stored as pickle — read back
+  only from Toolbox's own internal bucket.
+- **Loading a new file deletes the browser's previous session** (and its
+  stored file); sessions that just expire are cleaned by the sweep (at most
+  every 10 min per process, files older than the TTL whose Redis key is gone).
+- **Standalone dev still works** (`cd df-studio && uvicorn server:app`):
+  without `TOOLBOX_REDIS_URL`/`TOOLBOX_S3_ENDPOINT` it falls back to
+  `MemoryBackend` (old behavior) and logs a warning.
 - **`add_column`/`filter_rows` use `df.eval(...)`/`df.query(...,
   engine="python")`** — supports arithmetic, comparisons, string
   concatenation referencing columns by bare name. It does **not** give you

@@ -592,8 +592,11 @@ full picture.
 
 ### Known non-obvious behavior (read before touching these areas)
 
-- **Sessions are in-memory only** (`engine.SESSIONS`) — restarting the
-  server drops every open session. No persistence to disk by design.
+- **Sessions are stored outside the process since roadmap B2**
+  (`df-studio/session_store.py`: metadata in Redis, original DataFrame in S3
+  storage) — they survive restarts and work across worker processes. Every
+  session-changing function must call `engine.save_session()`. Templates are
+  in Postgres (`df_studio.templates`).
 - **The "current" DataFrame is always recomputed by replaying `steps` over
   `original_df`** (`engine.recompute`), never mutated in place — this is
   what makes removing a step from the middle of the pipeline just work.
@@ -947,7 +950,7 @@ section before assuming any of those exist.
 | FK-column badges in the columns table, the Relationships section        | `schema-map/ui/index.html` — `getTableForeignKeys()` (shared by both), `buildRelationshipsHtml()` |
 | Clusters (create/rename/delete, table picker, cluster canvas, seed)     | `schema-map/ui/index.html` — data layer: `loadClusters()`/`saveClusters()`/`createCluster()`/etc.; UI: `switchMode()`, `renderClusterList()`, `renderClusterWorkspace()`, `renderClusterPicker()`, `renderClusterCanvas()` (separate `clusterCy` instance) |
 | Explore graph "Color by Cluster" (multi-cluster pie split)              | `schema-map/ui/index.html` — `computeNodeColoring()`, `applyNodeColoring()`, `renderClusterColorLegend()` |
-| Projects/Versions (storage + entry-point UI, v2 design Phase A)         | `schema-map/project_store.py` (SQLite, `schema_map_data` Docker volume), endpoints in `schema-map/server.py`, `#projectsScreen`/`#detProject`/`openProject()`/`switchToVersion()` in `schema-map/ui/index.html` — see `schema-map/CLAUDE.md`'s "v2 design, Phase A" |
+| Projects/Versions (storage + entry-point UI, v2 design Phase A)         | `schema-map/project_store.py` (Postgres schema `schema_map` via `core/state/sqlstore.py` since B6; SQLite standalone), endpoints in `schema-map/server.py`, `#projectsScreen`/`#detProject`/`openProject()`/`switchToVersion()` in `schema-map/ui/index.html` — see `schema-map/CLAUDE.md`'s "v2 design, Phase A" |
 | Paste-and-load Project origin — 3 queries, tables/FKs required, columns optional (v2 design Phase B) | `introspection_postgres.TABLES_QUERY_SQL`/`FOREIGN_KEYS_QUERY_SQL`/`COLUMNS_QUERY_SQL`, `GET /paste-query`, `populatePasteQuery()`/`parsePastedArray()` in `schema-map/ui/index.html` — see `schema-map/CLAUDE.md`'s "v2 design, Phase B" |
 | Table detail panel columns with no live connection                     | `schema-map/ui/index.html` — `openTableDetail()` branches on `isConnected`, falls back to `lastGraphData.columns`; `renderColumnsAndRelationships()` shared by both paths |
 | Editor mode (from-scratch projects, add/edit tables/columns/FKs)        | `schema-map/ui/index.html` — `renderEditorCanvas()` (separate `editorCy` instance, LEFT sidebar `#editorTableCard` for per-table detail), `addTableToProject()`/`addColumnToProject()`/`addForeignKeyToProject()`/`changeColumnTypeInProject()` and their delete counterparts, `switchMode()`'s `skipRender` option — see `schema-map/CLAUDE.md`'s "v2 design, Phase C" |
@@ -1343,9 +1346,10 @@ experience. See `duck-lab/CLAUDE.md` for the full picture.
 
 ### Known non-obvious behavior (read before touching these areas)
 
-- **Sessions are in-memory only** (`engine.SESSIONS`), same accepted
-  tradeoff as df-studio — a restart drops every open session and its
-  uploaded files/DuckDB connection.
+- **Sessions are stored outside the process since roadmap B3**
+  (`duck-lab/session_store.py`: table list + result in Redis, files and
+  result Parquet in S3 storage; each worker rebuilds a local DuckDB copy on
+  demand) — they survive restarts and work across worker processes.
 - **CSV/JSON/Parquet never touch Python memory** — `read_csv_auto()`/
   `read_json_auto()`/`read_parquet()` point DuckDB directly at the saved
   file path. **XML is the one exception**: parsed once via
@@ -1482,8 +1486,8 @@ what is deliberately not built).
 | Adding another database engine (MSSQL/Oracle) | new class in `data-syncer/sync_ops.py` + register in `_OPS`; the engine is dialect-agnostic |
 | The resumable loop: retries/backoff, stop, crash cleanup, FK ordering, per-table failure handling | `data-syncer/engine.py` (`sync_table`, `run_project`, `order_tables`) |
 | What "Preflight" checks | `data-syncer/sync_ops.py` (`preflight_table`) + `data-syncer/engine.py` (`preflight_project`) — the engine runs the same checks before every table |
-| Where progress/positions/projects are stored, manual position edits, reset | `data-syncer/state_store.py` (SQLite, `data_syncer_data` volume) |
-| Starting/stopping a run, the log ring buffer (last N lines) | `data-syncer/runner.py` |
+| Where progress/positions/projects are stored, manual position edits, reset | `data-syncer/state_store.py` (Postgres schema `data_syncer` via `core/state/sqlstore.py` since B6) |
+| Starting/stopping a run (queued job in the `worker` container), the log tail (last N lines), orphan recovery | `data-syncer/runner.py`, shared `core/jobs/` (Channel, StopFlag, enqueue), `core/jobs/worker.py` |
 | Moving auto-increment sequences up to the max id after a sync (raise-only), the "Fix sequences now" button | `data-syncer/sync_ops.py` (`fix_sequences`), `data-syncer/engine.py` (`_fix_sequences`, `fix_sequences_project`), `POST /projects/{id}/fix-sequences` in `data-syncer/server.py`; option `fix_sequences` in `state_store.py` |
 | API endpoints, input validation, "can't edit while running" guards | `data-syncer/server.py` |
 | The page (project list/editor/run view, polling, log box) | `data-syncer/ui/index.html` |
@@ -1494,13 +1498,13 @@ what is deliberately not built).
   split rows sharing a key value across two batches and lose some, and a range
   can be re-run exactly. Keys are stored as text and cast back in SQL.
 - **Copy-mode `inflight` marker** — writing a chunk (target DB) and saving the
-  position (SQLite) can't be atomic; the recorded in-flight range is deleted
+  position (Postgres) can't be atomic; the recorded in-flight range is deleted
   from the target before a re-copy. Upsert is naturally idempotent.
 - **Boundary queries alias their output columns** (`AS _k0`) — without it,
   `ORDER BY "id"` sorts by the `::text` output column. A real bug found by test.
-- **Stateful, `--workers 1`**: the job registry and log buffer are in-process
-  (`runner.py`) — a fourth entry for `../CLAUDE.md`'s standing rule. Durable
-  state is SQLite; orphaned `running` tables become `interrupted` on startup.
+- **Runs are worker jobs since roadmap B4** (Redis queue): live state (heartbeat,
+  log tail, stop flag) in Redis, durable state in Postgres (B6). Orphaned `running`
+  tables become `interrupted` only when no job is alive (`recover_orphans`/`heal`).
 - Postgres → Postgres only for now; no table creation, no delete propagation,
   no change-tracking (a re-run is a full pass).
 
@@ -1529,8 +1533,8 @@ copies user-mapping passwords in cleartext).
 | What Preflight checks (empty target, same-or-newer server, extensions available, client version, foreign tables) | `schema-copy/engine.py` (`preflight`) + `schema-copy/catalog.py` |
 | How a failed apply is reported (failing line + context) | `schema-copy/engine.py` (`_explain_failure`) |
 | What "Verify" compares / adding an object category to the report | `schema-copy/catalog.py` (`_NAME_QUERIES`, `compare`) |
-| Projects, last-run result, the saved `.sql` script | `schema-copy/state_store.py` (SQLite + files on the `schema_copy_data` volume) |
-| Background run + log tail | `schema-copy/runner.py` |
+| Projects, last-run result, the saved `.sql` script | `schema-copy/state_store.py` (Postgres schema `schema_copy` since B6; scripts in S3 storage via `SCRIPTS` = `core/state/filecache.py`, `scripts/` is a local cache) |
+| Run as a job in the `worker` container (thread fallback standalone), log tail | `schema-copy/runner.py` → shared `core/jobs/runner.py` (`JobRunner`) |
 | API endpoints, guards | `schema-copy/server.py` |
 | The page | `schema-copy/ui/index.html` |
 | Vault entry → live connection incl. SSH tunnel (shared with data-syncer) | `core/db_endpoint.py` |
@@ -1544,8 +1548,7 @@ copies user-mapping passwords in cleartext).
   the `pgclient` Docker stage deliberately uses `postgres:N-bookworm`.
 - Postgres → Postgres only; target must be empty; roles/owners/grants stripped by
   default; matviews created empty; sequences fresh unless opted in.
-- **Stateful, `--workers 1`**: the run registry/log tail is in-process (fifth entry
-  for `../CLAUDE.md`'s standing rule); the last run's result is in SQLite.
+- **Runs are worker jobs since roadmap B5** (`core/jobs/runner.py`); the last run's result is in Postgres (B6).
 
 ---
 
@@ -1570,8 +1573,8 @@ contents and why "replace existing" is not `pg_restore --clean`.
 | Preflight (empty target, extensions, versions, "needs structure") | `data-dumper/engine.py` (`preflight_restore`) |
 | Taking a dump (progress, disk checks, `.part` → final rename) | `data-dumper/engine.py` (`run_dump`) |
 | Validating an uploaded dump file | `data-dumper/engine.py` (`finalize_upload`) |
-| The dump catalogue, run history, file locations | `data-dumper/state_store.py` (SQLite + files on the volume) |
-| Background run, log tail, progress | `data-dumper/runner.py` |
+| The dump catalogue, run history, file locations | `data-dumper/state_store.py` (Postgres schema `data_dumper` since B6; dump files + TOC caches in S3 storage via `FILES` = `core/state/filecache.py`, `files/` is a local cache trimmed to `DATA_DUMPER_CACHE_MB`) |
+| Run as a job in the `worker` container (thread fallback), log tail, progress (mirrored to Redis), orphan recovery (`recover_orphans`/`heal` → `state_store.fail_orphans`) | `data-dumper/runner.py` → shared `core/jobs/runner.py` (`JobRunner`) |
 | API endpoints (incl. download, contents, upload) | `data-dumper/server.py` |
 | The page | `data-dumper/ui/index.html` |
 | The bundled client version / what is bundled | `Dockerfile` stage `pgclient` (`PG_CLIENT_MAJOR`, pg_dump + pg_restore + psql) |
@@ -1604,7 +1607,7 @@ destructive commands need a confirm. See `ssh-sftp/CLAUDE.md`.
 | Pinning a key later without changing the entry's id | `core/vault.py` (`update_secret`) + `ssh-sftp/server.py` (`/trust`) |
 | Cached browsing session, reconnect-on-dead, idle close | `ssh-sftp/sessions.py` |
 | The upload (staging, resume, verify, atomic rename), downloads, commands, dangerous-command list | `ssh-sftp/engine.py` |
-| Transfer/command history, staged-file cleanup | `ssh-sftp/state_store.py` (SQLite + `stage/` on the `ssh_sftp_data` volume) |
+| Transfer/command history, staged-file cleanup | `ssh-sftp/state_store.py` (Postgres schema `ssh_sftp` since B6 + `stage/` on the `ssh_sftp_data` volume) |
 | Background jobs | `ssh-sftp/runner.py` |
 | API endpoints and error → HTTP mapping | `ssh-sftp/server.py` |
 | The page | `ssh-sftp/ui/index.html` |

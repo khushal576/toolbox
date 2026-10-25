@@ -69,6 +69,11 @@ outline panel is ever rebuilt it's from scratch: the parsing approach
 offset field to the tokenizer's segments, scan for structural keywords
 with real document positions instead of re-flowed text) is still sound.
 
+> **Single process by owner decision (roadmap B3, 2026-10-24).** This tool keeps ONE live database
+> pool in process memory and never stores the password. When the rest of the workspace moves to several
+> workers (roadmap B9), it stays in exactly one dedicated process (`singleton: true` in its
+> `manifest.yaml`) rather than storing credentials or opening a pool per worker.
+
 ## How it's built
 
 - `server.py` — serves `ui/index.html`, plus the Run feature's backend

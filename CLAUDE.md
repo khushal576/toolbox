@@ -80,6 +80,28 @@ containers/gateway pieces outside the roadmap session that owns them.
   `docker compose exec toolbox python -m core.state.selftest`. Defaults are
   local-only passwords; override `TOOLBOX_DB_PASSWORD`,
   `TOOLBOX_S3_ACCESS_KEY`, `TOOLBOX_S3_SECRET_KEY` in `.env`.
+- **Tool records in Postgres (roadmap B6):** schema-map, data-syncer,
+  schema-copy, data-dumper and ssh-sftp keep their tables in Toolbox's
+  Postgres, one schema each (`schema_map`, `data_syncer`, …), through
+  `core/state/sqlstore.py` (`SqlStore`: sqlite3-shaped API — `?`
+  placeholders, `row["col"]`, one transaction per `with connect()`; SQLite
+  when run standalone). On first start each tool copies its old SQLite file in
+  once (`<schema>._meta` records it; the file stays as a backup). New tools
+  with small relational state use `SqlStore` too. Gotcha: store queries run
+  with `prepare=False` — the same SQL text in two tools' schemas must never
+  share a prepared plan on a pooled connection.
+- **Background jobs (roadmap B4):** the `worker` service (same image,
+  `python -m core.jobs.worker`) runs long jobs from the Redis queue via
+  `core/jobs/` (`Channel` = heartbeat "alive" key + log tail + stop flag +
+  meta, `enqueue`, `StopFlag`). A web restart never kills a job; scale with
+  `docker compose up -d --scale worker=N`. `/api/state/health` reports
+  `jobs` (workers listening, jobs waiting) — no worker = not ok. Jobs run the
+  same tool code, so the worker mounts the same data volumes. New job-running
+  tools use `core/jobs/runner.py` (`JobRunner`: queue mode + thread fallback,
+  log tail, progress, stop — B5) and keep files in S3 storage with
+  `core/state/filecache.py` (`FileCache`: publish / fetch / remove_all, local
+  cache trimmed to a budget). The worker clears its own stale Redis
+  registration on start (a killed worker used to crash-loop on restart).
 - `GET /api/workspace/status` — per-tool state (`not_loaded`, `loaded`,
   `failed`, `disabled`), load time, errors. Never imports a tool.
 - One `Dockerfile` copies every tool's code (including its `manifest.yaml`),
@@ -297,9 +319,12 @@ uvicorn runs separate OS processes that don't share memory, so a session
 created by one request can be invisible to the next request if it lands on
 a different worker — this happened for real once (see `df-studio/CLAUDE.md`)
 and looked like random, unexplained "session not found" errors.
+**Resolved for DataFrame Studio in roadmap B2** (sessions in Redis + S3
+storage); the instances below still apply until their B-sessions land.
 
 SQL Studio's live database connection (`sql-studio/db_engine.py`,
-`STATE`) is a second, independent instance of the same constraint — a
+`STATE`) — **kept single-process by owner decision in roadmap B3**
+(`singleton: true`; same for schema-map's pool) — is a second, independent instance of the same constraint — a
 single module-level global holding the active Postgres connection pool,
 not a per-cookie dict (see `sql-studio/CLAUDE.md` for why it deliberately
 does NOT copy df-studio's per-cookie shape). The failure mode here is
@@ -310,29 +335,31 @@ database (visible in that database's own `pg_stat_activity`, consuming
 its connection-limit budget) until something notices and kills it — not
 just an inert lost value in memory.
 
-Duck Lab's loaded files + DuckDB connection (`duck-lab/engine.py`,
-`SESSIONS`) are a **third** instance of this — it deliberately copies
+Duck Lab's loaded files + DuckDB connection (**resolved in roadmap B3**:
+table list/result in Redis, files in S3 storage, local DuckDB copies rebuilt
+per worker — the rest of this paragraph is history) were a **third** instance of this — it deliberately copies
 df-studio's per-cookie-dict shape (not SQL Studio's single global), because
 each browser tab legitimately wants its own independent set of loaded
 files, the same reasoning df-studio uses. See `duck-lab/CLAUDE.md`.
 
-Data Syncer (`data-syncer/runner.py`) is a **fourth** instance: each sync
-runs on a background thread, and the job registry plus the log ring buffer
-live in that one process's memory. Its durable progress (per-table resume
-positions) is in SQLite and survives anything, but "is a run alive right
+Data Syncer (`data-syncer/runner.py`) was a **fourth** instance — **resolved in
+roadmap B4**: syncs are jobs on the Redis queue run by the `worker` container
+(`core/jobs/`), live state in Redis. History: each sync
+ran on a background thread, and the job registry plus the log ring buffer
+lived in that one process's memory. Its durable progress (per-table resume
+positions) is in Postgres since B6 and survives anything, but "is a run alive right
 now" and the log tail do not — with >1 worker a Start on one process would be
 invisible to the status poll on another. See `data-syncer/CLAUDE.md`.
 
-Schema Copy (`schema-copy/runner.py`) is a **fifth**, same shape as Data
-Syncer: a background thread plus an in-process job registry/log tail; the last
-run's result is durable in SQLite. See `schema-copy/CLAUDE.md`.
-
-Data Dumper (`data-dumper/runner.py`) is a **sixth**, same shape: a background thread plus an
-in-process job registry/log tail; the dump catalogue and run history are durable in SQLite and the
-dump files on a volume. See `data-dumper/CLAUDE.md`.
+Schema Copy (`schema-copy/runner.py`) was a **fifth** and Data Dumper
+(`data-dumper/runner.py`) a **sixth** — both **resolved in roadmap B5**: runs are
+jobs in the `worker` container through the shared `core/jobs/runner.py`
+(`JobRunner`), and generated scripts / dump files live in S3 storage with the
+local folders as per-process caches (`core/state/filecache.py`). Their
+catalogues/last-run results are in Postgres since B6. See their `CLAUDE.md`s.
 
 SSH & SFTP (`ssh-sftp/sessions.py`, `runner.py`) is a **seventh**: a per-server connection cache and an
-upload/command job registry live in memory; transfer/command history is in SQLite and staged uploads on a
+upload/command job registry live in memory; transfer/command history is in Postgres (B6) and staged uploads on a
 volume. See `ssh-sftp/CLAUDE.md`.
 
 **Decided now, before it comes up again:** any future tool that needs

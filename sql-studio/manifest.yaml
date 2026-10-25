@@ -14,3 +14,5 @@ state: [session]
 depends_on: [vault]
 requires: []
 order: 120
+# Owner decision (roadmap B3): one process only — keeps the pool of 3 and never stores the password.
+singleton: true

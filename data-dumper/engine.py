@@ -149,6 +149,12 @@ def run_dump(dump_id: str, cancel: threading.Event, log: LogFn, progress: dict) 
         part.replace(final)
         size = final.stat().st_size
         progress["bytes"] = size
+        log("info", f"storing the dump file ({_fmt_bytes(size)})…")
+        try:
+            store.publish_file(dump_id, final)
+        except Exception:
+            final.unlink(missing_ok=True)  # a dump that isn't in storage would vanish with this machine
+            raise
         store.update_dump(
             dump_id, status="ready", error=None, file_name=final.name, size_bytes=size, server_version=server["text"],
             client_version=str(client), source_db=data["database"], source_desc=connections.describe(data), finished_at=_now(),
@@ -203,6 +209,11 @@ def finalize_upload(dump_id: str, tmp: Path) -> None:
             fields["source_db"] = m.group(1).strip()
         if v:
             fields["server_version"] = v.group(1).strip()
+    try:
+        store.publish_file(dump_id, final)
+    except Exception:
+        final.unlink(missing_ok=True)
+        raise
     store.update_dump(dump_id, **fields)
 
 
@@ -238,19 +249,26 @@ def load_toc(dump: dict[str, Any]) -> tocmod.Toc:
     pre/post-data SQL is cheap but not free on a schema with thousands of objects)."""
     if dump["fmt"] != "custom":
         raise pgclient.PgToolError("Only custom-format dumps have browsable contents; a plain SQL dump restores whole.")
-    cache = store.toc_cache_path(dump["id"])
-    if cache.exists():
+    cache = store.FILES.fetch(dump["id"], store.toc_cache_path(dump["id"]).name)
+    if cache is not None:
         try:
             return _toc_from_json(json.loads(cache.read_text()))
         except (ValueError, KeyError):
-            cache.unlink(missing_ok=True)
-    path = store.file_path(dump)
+            store.FILES.remove(dump["id"], cache.name)
+    cache = store.toc_cache_path(dump["id"])
+    path = store.fetch_file(dump)
+    if path is None:
+        raise pgclient.PgToolError("The dump file is missing.")
     entries = tocmod.parse_toc(pgclient.restore_list(path))
     rel = tocmod.parse_relations(
         pgclient.restore_script(path, ["--section=pre-data"]), pgclient.restore_script(path, ["--section=post-data"])
     )
     toc = tocmod.Toc(entries, rel)
     cache.write_text(json.dumps(_toc_to_json(toc)))
+    try:
+        store.FILES.publish(dump["id"], cache)
+    except Exception:  # noqa: BLE001 - only a cache; rebuilt next time if missing
+        pass
     return toc
 
 
@@ -326,9 +344,9 @@ def preflight_restore(dump_id: str, opts: dict[str, Any]) -> dict[str, Any]:
         return {"errors": ["Dump not found."], "warnings": [], "info": {}, "preview": None}
     if dump["status"] != "ready":
         errors.append("This dump is not ready (it failed or is still running).")
-    path = store.file_path(dump)
-    if not path or not path.exists():
-        errors.append("The dump file is missing on disk.")
+    path = store.fetch_file(dump) if dump["status"] == "ready" else None
+    if dump["status"] == "ready" and path is None:
+        errors.append("The dump file is missing (not in storage).")
     if errors:
         return {"errors": errors, "warnings": warnings, "info": info, "preview": None}
     try:
@@ -435,7 +453,9 @@ def run_restore(dump_id: str, opts: dict[str, Any], cancel: threading.Event, log
         ep = Endpoint(data, read_only=False, label="target")
         log("info", f"target  {connections.describe(data)}")
         ep.open()
-        path = store.file_path(dump)
+        path = store.fetch_file(dump)
+        if path is None:
+            raise pgclient.PgToolError("The dump file is missing.")
         single = bool(opts.get("single_transaction", True))
         replace = bool(opts.get("replace_existing"))
         total = plan["entries_total"] or 0

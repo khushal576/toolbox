@@ -121,3 +121,45 @@ def health() -> dict:
     name = ensure_bucket()
     client().head_bucket(Bucket=name)
     return {"endpoint": load().s3_endpoint, "bucket": name}
+
+
+def put_file(k: str, fileobj, content_type: str = "application/octet-stream") -> None:
+    """Stream a file-like object (multipart for large data, so size isn't limited by one request)."""
+    client().upload_fileobj(fileobj, ensure_bucket(), k, ExtraArgs={"ContentType": content_type})
+
+
+def get_to(k: str, fileobj) -> bool:
+    """Stream an object into a writable file-like object. False if the key does not exist."""
+    from botocore.exceptions import ClientError
+
+    try:
+        client().download_fileobj(ensure_bucket(), k, fileobj)
+        return True
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound"):
+            return False
+        raise
+
+
+def list_objects(prefix: str) -> list[dict]:
+    """[{key, size, last_modified (datetime, UTC)}] under a prefix — for cleanup sweeps."""
+    out, token = [], None
+    while True:
+        kw = {"Bucket": ensure_bucket(), "Prefix": prefix}
+        if token:
+            kw["ContinuationToken"] = token
+        resp = client().list_objects_v2(**kw)
+        out += [{"key": o["Key"], "size": o["Size"], "last_modified": o["LastModified"]} for o in resp.get("Contents", [])]
+        if not resp.get("IsTruncated"):
+            return out
+        token = resp.get("NextContinuationToken")
+
+
+def delete_prefix(prefix: str) -> int:
+    """Delete every object under a prefix (must end with '/'). Returns how many were deleted."""
+    if not prefix.endswith("/") or prefix.count("/") < 2:
+        raise ValueError("delete_prefix needs a '<tool>/<id>/'-style prefix ending in '/'")
+    keys = [o["key"] for o in list_objects(prefix)]
+    for i in range(0, len(keys), 1000):
+        client().delete_objects(Bucket=ensure_bucket(), Delete={"Objects": [{"Key": k} for k in keys[i:i + 1000]]})
+    return len(keys)

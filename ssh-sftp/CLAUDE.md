@@ -19,7 +19,7 @@ recursive delete, no port forwarding.
 | The Vault "Add SSH server" form + `POST /test-ssh-server` | `../vault/ui/index.html`, `../vault/server.py` |
 | Cached browsing session per server (health-checked, reconnect once, idle reaper) | `sessions.py` |
 | List/mkdir/rename/delete/download, the resumable upload, commands | `engine.py` |
-| Transfer + command history (SQLite) and the STAGE directory | `state_store.py` |
+| Transfer + command history (Postgres schema `ssh_sftp`, B6; SQLite standalone) and the STAGE directory | `state_store.py` |
 | Background jobs + log tail | `runner.py` |
 | API + page | `server.py`, `ui/index.html` |
 

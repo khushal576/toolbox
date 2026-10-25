@@ -4,6 +4,11 @@ Part of the Toolbox monorepo — see `../CLAUDE.md` for repo-wide architecture
 and `../KNOWLEDGE_MAP.md` for the full symptom→file map across every tool.
 This file is just the fast-orientation version scoped to this one folder.
 
+> **Single process by owner decision (roadmap B3, 2026-10-24).** This tool keeps ONE live database
+> pool in process memory and never stores the password. When the rest of the workspace moves to several
+> workers (roadmap B9), it stays in exactly one dedicated process (`singleton: true` in its
+> `manifest.yaml`) rather than storing credentials or opening a pool per worker.
+
 ## What this tool is
 
 A **read-only**, progressive-disclosure explorer for large, poorly-
@@ -281,7 +286,9 @@ Built so far (Steps 1–3 of the plan's sequence):
   `[[schema-map-v2-design]]` memory for the full multi-session design
   conversation this came from) — turning Schema Map from a read-only
   live-DB viewer into a real offline-capable schema *design* tool.
-  - `project_store.py` — SQLite at `/app/data/schema-map/projects.db`,
+  - `project_store.py` — **since roadmap B6 in Toolbox's Postgres** (schema `schema_map`, via
+    `../core/state/sqlstore.py`; the SQLite file below was copied in once and stays as a backup;
+    standalone it is still the store). Originally: SQLite at `/app/data/schema-map/projects.db`,
     on a Docker named volume (`schema_map_data` in `../docker-compose.yml`)
     so it survives image rebuilds — **verified with an actual
     `--force-recreate`**, not assumed. Deliberately a SEPARATE database

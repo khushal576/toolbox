@@ -6,11 +6,11 @@ holding exactly how far that table got. This is what makes a run
 stoppable/restartable at any time — the engine writes the position after
 EVERY chunk, and a fresh process just reads it back.
 
-Storage: SQLite at /app/data/data-syncer/syncer.db (stdlib, no new service —
-same reasoning as schema-map/project_store.py and core/vault.py), on the
-`data_syncer_data` Docker volume so a rebuild doesn't erase every project's
-progress. Deliberately NOT stored in the target database: the syncer never
-writes anything to a target except the synced data itself.
+Storage (roadmap B6): Toolbox's own Postgres, schema `data_syncer`, through core/state/sqlstore.py — shared by
+the web app and the worker (which runs the syncs) and by every node later. The old SQLite file
+(/app/data/data-syncer/syncer.db on the `data_syncer_data` volume) is copied in once on first start and then
+left as a backup; standalone (no TOOLBOX_DATABASE_URL) it is still the store. Deliberately NOT stored in the
+target database: the syncer never writes anything to a target except the synced data itself.
 
 Position model (per table):
   last_key  JSON list of the key values (as TEXT, see sync_ops.py) of the
@@ -28,12 +28,18 @@ Status: pending | running | done | failed | interrupted | skipped | stopped
 from __future__ import annotations
 
 import json
-import sqlite3
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Optional
+
+try:
+    from core.state.sqlstore import SqlStore
+except ImportError:  # standalone without the repo root on the path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from core.state.sqlstore import SqlStore
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "data-syncer" / "syncer.db"
 
@@ -88,27 +94,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@contextmanager
-def _connect() -> Iterator[sqlite3.Connection]:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    # timeout: the engine thread writes after every chunk while HTTP requests read
-    con = sqlite3.connect(DB_PATH, timeout=30)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA foreign_keys = ON")
-    try:
-        yield con
-        con.commit()
-    finally:
-        con.close()
+# add_columns: databases created before fix_sequences existed get it ON (the default)
+STORE = SqlStore("data_syncer", sqlite_path=DB_PATH, ddl=_SCHEMA,
+                 add_columns={"projects": {"fix_sequences": "INTEGER NOT NULL DEFAULT 1"}})
+_connect = STORE.connect
 
 
 def init_db() -> None:
-    with _connect() as con:
-        con.execute("PRAGMA journal_mode = WAL")
-        con.executescript(_SCHEMA)
-        # migration: databases created before this option existed get it ON (the default)
-        if "fix_sequences" not in {r[1] for r in con.execute("PRAGMA table_info(projects)")}:
-            con.execute("ALTER TABLE projects ADD COLUMN fix_sequences INTEGER NOT NULL DEFAULT 1")
+    STORE.init()
 
 
 def recover_interrupted() -> int:
@@ -130,14 +123,14 @@ def mark_running_interrupted(project_id: str) -> None:
         )
 
 
-def _project(row: sqlite3.Row) -> dict[str, Any]:
+def _project(row: dict) -> dict[str, Any]:
     d = dict(row)
     for f in ("truncate_target", "stop_on_failure", "fix_sequences"):
         d[f] = bool(d[f])
     return d
 
 
-def _table(row: sqlite3.Row) -> dict[str, Any]:
+def _table(row: dict) -> dict[str, Any]:
     d = dict(row)
     for f in _JSON_FIELDS:
         d[f] = json.loads(d[f]) if d[f] is not None else None
@@ -281,7 +274,7 @@ def update_table(table_id: str, **fields: Any) -> None:
 
 def advance(table_id: str, *, last_key: Optional[list], rows_added: int) -> None:
     """The one write that makes progress durable: new position, rows counted,
-    inflight cleared — in a single SQLite transaction."""
+    inflight cleared — in a single transaction."""
     with _connect() as con:
         con.execute(
             "UPDATE project_tables SET last_key = ?, rows_done = rows_done + ?, inflight = NULL, updated_at = ? "
@@ -290,7 +283,7 @@ def advance(table_id: str, *, last_key: Optional[list], rows_added: int) -> None
         )
 
 
-def _reset_row(con: sqlite3.Connection, table_id: str) -> None:
+def _reset_row(con: Any, table_id: str) -> None:
     con.execute(
         "UPDATE project_tables SET status = 'pending', last_key = NULL, inflight = NULL, rows_done = 0, "
         "error = NULL, started_at = NULL, finished_at = NULL, updated_at = ? WHERE id = ?",

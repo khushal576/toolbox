@@ -92,11 +92,9 @@ def _describe(conn_id: str, name: Optional[str]) -> str:
 
 
 def _run_state(project_id: str) -> dict[str, Any]:
-    job = runner.get(project_id)
-    if job is None:
-        return {"running": False, "action": None, "logs": [], "started_at": None, "finished_at": None, "stopping": False}
-    return {"running": job.running, "action": job.action, "logs": job.snapshot(), "started_at": job.started_at,
-            "finished_at": job.finished_at, "stopping": job.running and job.cancel.is_set()}
+    v = runner.view(project_id)
+    return {"running": v["running"], "queued": v["queued"], "action": v["kind"], "logs": v["logs"],
+            "started_at": v["started_at"], "finished_at": v["finished_at"], "stopping": v["stopping"]}
 
 
 def _check_body(body: ProjectBody) -> None:
@@ -167,7 +165,7 @@ def get_project(project_id: str) -> dict[str, Any]:
     return {
         "project": p, "source": _describe(p["source_conn_id"], p["source_conn_name"]),
         "target": _describe(p["target_conn_id"], p["target_conn_name"]),
-        "run": _run_state(project_id), "has_script": store.script_path(project_id).exists(),
+        "run": _run_state(project_id), "has_script": store.has_script(project_id),
     }
 
 
@@ -215,14 +213,14 @@ def start(project_id: str, action: str) -> dict[str, Any]:
 @app.get("/projects/{project_id}/status")
 def status(project_id: str) -> dict[str, Any]:
     p = _require(project_id)
-    return {"run": _run_state(project_id), "last_run": p["last_run"], "has_script": store.script_path(project_id).exists()}
+    return {"run": _run_state(project_id), "last_run": p["last_run"], "has_script": store.has_script(project_id)}
 
 
 @app.get("/projects/{project_id}/script")
 def download_script(project_id: str):
     p = _require(project_id)
-    path = store.script_path(project_id)
-    if not path.exists():
+    path = store.fetch_script(project_id)
+    if path is None:
         raise HTTPException(404, "No script generated yet — run Preview or Apply first.")
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in p["name"])[:60] or "schema"
     return FileResponse(path, media_type="application/sql", filename=f"{safe}-structure.sql")
@@ -231,8 +229,8 @@ def download_script(project_id: str):
 @app.get("/projects/{project_id}/script/preview", response_class=PlainTextResponse)
 def preview_script(project_id: str) -> PlainTextResponse:
     _require(project_id)
-    path = store.script_path(project_id)
-    if not path.exists():
+    path = store.fetch_script(project_id)
+    if path is None:
         raise HTTPException(404, "No script generated yet.")
     size = path.stat().st_size
     with open(path, "rb") as f:

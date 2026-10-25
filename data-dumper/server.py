@@ -52,7 +52,7 @@ except ImportError:
 from core.postgres_conn import scrub_password
 
 store.init_db()
-store.recover_interrupted()
+runner.recover_orphans()
 
 app = FastAPI(title="Data Dumper", description="Take, download and restore Postgres dumps.")
 _UI_PATH = Path(__file__).resolve().parent / "ui" / "index.html"
@@ -100,11 +100,8 @@ def _require(dump_id: str) -> dict[str, Any]:
 
 
 def _job_state(dump_id: str) -> dict[str, Any]:
-    job = runner.get(dump_id)
-    if job is None:
-        return {"running": False, "kind": None, "logs": [], "progress": {}, "started_at": None, "finished_at": None, "stopping": False}
-    return {"running": job.running, "kind": job.kind, "logs": job.snapshot(), "progress": dict(job.progress),
-            "started_at": job.started_at, "finished_at": job.finished_at, "stopping": job.running and job.cancel.is_set()}
+    v = runner.view(dump_id)
+    return {k: v[k] for k in ("running", "queued", "kind", "logs", "progress", "started_at", "finished_at", "stopping")}
 
 
 def _default_label(db: str) -> str:
@@ -185,12 +182,14 @@ async def upload_dump(file: UploadFile, label: Optional[str] = None) -> dict[str
 
 @app.get("/dumps/{dump_id}")
 def get_dump(dump_id: str) -> dict[str, Any]:
+    runner.heal(dump_id)
     d = _require(dump_id)
     return {"dump": _view(d), "runs": store.list_runs(dump_id), "run": _job_state(dump_id)}
 
 
 @app.get("/dumps/{dump_id}/status")
 def status(dump_id: str) -> dict[str, Any]:
+    runner.heal(dump_id)  # a job whose worker died → the dump shows failed, not "running" forever
     d = _require(dump_id)
     return {"dump": _view(d), "run": _job_state(dump_id), "runs": store.list_runs(dump_id, 5)}
 
@@ -213,8 +212,8 @@ def delete_dump(dump_id: str) -> dict[str, Any]:
 @app.get("/dumps/{dump_id}/file")
 def download(dump_id: str):
     d = _require(dump_id)
-    path = store.file_path(d)
-    if d["status"] != "ready" or not path or not path.exists():
+    path = store.fetch_file(d) if d["status"] == "ready" else None
+    if path is None:
         raise HTTPException(404, "This dump has no file to download.")
     ext = "".join(path.suffixes[-2:]) if path.name.endswith(".sql.gz") else path.suffix
     base = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{d.get('source_db') or 'dump'}-{(d['created_at'] or '')[:19].replace(':', '').replace('T', '-')}")

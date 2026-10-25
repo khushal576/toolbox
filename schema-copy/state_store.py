@@ -2,25 +2,38 @@
 schema-copy/state_store.py
 
 Projects (what to copy from where to where) and each project's LAST run
-result. SQLite at /app/data/schema-copy/schemacopy.db on the
-`schema_copy_data` Docker volume — same pattern as data-syncer/state_store.py
-and schema-map/project_store.py. Generated DDL scripts are files next to it
-(`scripts/<project_id>.sql`), not rows: a script can be many MB.
+result. Since roadmap B6 in Toolbox's Postgres, schema `schema_copy` (core/state/sqlstore.py; the old SQLite
+file /app/data/schema-copy/schemacopy.db is copied in once, then kept as a backup; standalone it is still the
+store). Generated DDL scripts are files next to it
+(`scripts/<project_id>.sql`), not rows: a script can be many MB. Since roadmap B5 a script's home is S3
+storage (`SCRIPTS`, core/state/filecache.py) and `scripts/` is only a local cache, so the worker that generates
+it and the web process that serves it don't need to share a disk.
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
+import os
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Optional
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "schema-copy"
 DB_PATH = DATA_DIR / "schemacopy.db"
 SCRIPTS_DIR = DATA_DIR / "scripts"
+
+try:
+    from core.state.filecache import FileCache
+    from core.state.sqlstore import SqlStore
+except ImportError:  # standalone without the repo root on the path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from core.state.filecache import FileCache
+    from core.state.sqlstore import SqlStore
+
+SCRIPTS = FileCache("schema-copy", SCRIPTS_DIR, budget_mb=int(os.environ.get("SCHEMA_COPY_CACHE_MB", "256")))
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
@@ -46,26 +59,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@contextmanager
-def _connect() -> Iterator[sqlite3.Connection]:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB_PATH, timeout=30)
-    con.row_factory = sqlite3.Row
-    try:
-        yield con
-        con.commit()
-    finally:
-        con.close()
+STORE = SqlStore("schema_copy", sqlite_path=DB_PATH, ddl=_SCHEMA)
+_connect = STORE.connect
 
 
 def init_db() -> None:
-    with _connect() as con:
-        con.execute("PRAGMA journal_mode = WAL")
-        con.executescript(_SCHEMA)
+    STORE.init()
     SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _project(row: sqlite3.Row) -> dict[str, Any]:
+def _project(row: dict) -> dict[str, Any]:
     d = dict(row)
     d["schemas"] = json.loads(d["schemas"]) if d["schemas"] else None
     d["last_run"] = json.loads(d["last_run"]) if d["last_run"] else None
@@ -120,8 +123,22 @@ def list_projects() -> list[dict[str, Any]]:
 def delete_project(project_id: str) -> None:
     with _connect() as con:
         con.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-    script_path(project_id).unlink(missing_ok=True)
+    SCRIPTS.remove_all(project_id)
 
 
 def script_path(project_id: str) -> Path:
     return SCRIPTS_DIR / f"{project_id}.sql"
+
+
+def publish_script(project_id: str) -> None:
+    """The local script is complete: store it (the worker writes it, any web process may serve it)."""
+    SCRIPTS.publish(project_id, script_path(project_id))
+
+
+def fetch_script(project_id: str) -> Optional[Path]:
+    """Local path of the project's script (downloaded from storage if needed), or None if there is none."""
+    return SCRIPTS.fetch(project_id, script_path(project_id).name)
+
+
+def has_script(project_id: str) -> bool:
+    return SCRIPTS.exists(project_id, script_path(project_id).name)

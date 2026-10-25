@@ -52,19 +52,26 @@ exist" error now lists what's actually loaded).
   DuckDB view backed by that exact path, which has to keep existing for
   as long as the view might be queried, same as an uploaded file
   already requires), then calls `engine.load_file()` on it exactly like
-  `/upload` does. Deliberately uses a direct synchronous `vault` call,
-  not `asyncio.to_thread` — matching this file's own existing
-  convention (no other endpoint here uses `to_thread`; DataFrame Studio's
-  equivalent endpoint does, because that tool already wraps every
-  pandas-touching call that way — see `df-studio/CLAUDE.md`).
-- `engine.py` — session store (`SESSIONS: dict[str, Session]`, in-memory,
-  keyed by a `duck_lab_sid` cookie — same shape as `df-studio/engine.py`'s
-  `SESSIONS`, **not** sql-studio's single global `STATE`, because each
-  browser tab legitimately wants its own independent set of loaded files).
-  Each `Session` owns one DuckDB connection (`duckdb.connect(":memory:")`,
-  with `PRAGMA memory_limit` + `temp_directory` set — see "Memory safety"
-  below) plus a `data/<sid>/` folder on disk for uploaded files and DuckDB's
-  own spill files.
+  `/upload` does. Since roadmap B3 the vault call and every engine call
+  run via `asyncio.to_thread` (sessions can now hit Redis/S3 storage, so a
+  blocking call inside `async def` would stall every other request).
+- `engine.py` — sessions keyed by a `duck_lab_sid` cookie (each browser tab
+  owns its own set of loaded files), **stored outside the process since
+  roadmap B3** via `session_store.py`: the table list + current result +
+  a `version` counter in Redis, every uploaded file and every query result
+  (Parquet) in S3 storage under `duck-lab/<sid>/`. Each worker keeps a
+  disposable LOCAL working copy per session (`_Local`: one DuckDB connection
+  with `memory_limit` + `temp_directory`, plus a cache dir under
+  `$DUCK_LAB_CACHE_DIR`, default `/tmp/duck-lab-cache/<sid>/`), LRU-capped at
+  `DUCK_LAB_LOCAL_SESSIONS` (8). `get_or_create_session()` rebuilds the local
+  views whenever the stored version is newer, downloading files on demand.
+  Every engine call holds the session's local `RLock` (one request at a time
+  per session per process — a DuckDB connection isn't safe for concurrent
+  use) and `server.py` runs them all via `asyncio.to_thread`.
+- `session_store.py` — `StateBackend` (Redis + S3, sliding TTL
+  `DUCK_LAB_SESSION_TTL` default 12 h, sweep of expired sessions' files) or
+  `MemoryBackend` (standalone dev / unit tests; files kept in a local store
+  dir outside the per-session cache).
 - `ui/index.html` — single file, no build step. A small CodeMirror 6 setup
   (`basicSetup` + `@codemirror/lang-sql`'s `sql()` for highlighting **and**
   schema-aware autocomplete — no PL/pgSQL formatter, no Templates panel;
@@ -100,26 +107,24 @@ exist" error now lists what's actually loaded).
 - **XML**: DuckDB has no native XML reader. `engine.load_xml()` reuses
   `core/normalizer.py`'s existing `normalize(raw, "xml")` — the same
   parsing DataDiff Pro already uses — to parse the document into a Python
-  object once, builds a `pandas.DataFrame` via `pd.json_normalize()`, and
-  `con.register()`s it into DuckDB as a view. **This is the one format that
-  does fully load into Python memory**, once, at upload time — an accepted
-  ceiling that matches DataDiff Pro's own XML scope (single root element),
-  not a silently-hidden limitation. `Session.frames` keeps a reference to
-  every XML-derived DataFrame alive for the life of the session —
-  `con.register()` creates a view backed directly by that Python object,
-  not a copy, so if the DataFrame were garbage collected the view would
-  break.
+  object once, builds a `pandas.DataFrame` via `pd.json_normalize()`, then
+  **writes it to Parquet once** (`COPY ... (FORMAT PARQUET)`) and registers
+  that file like any other table (format label stays `xml`). **This is the
+  one format that fully loads into Python memory**, once, at upload — an
+  accepted ceiling matching DataDiff Pro's own XML scope (single root
+  element). Since B3 the DataFrame is not kept alive afterwards (the old
+  `Session.frames` dict is gone), and other workers just read the Parquet.
 
 ## The materialize-once, paginate-many model (the core design)
 
-`POST /query` does not return "the result" — it runs
-`CREATE OR REPLACE TEMP TABLE _result AS <user_sql>` once inside the
-session's DuckDB connection (`engine.run_query()`), then returns page 1.
-`GET /page?offset=&limit=` re-slices that same already-materialized
-`_result` table with `LIMIT`/`OFFSET` — no recomputation of the
-join/aggregation per page turn. Only one `_result` table exists per
-session at a time (`CREATE OR REPLACE` drops the previous one), so
-re-running Run frees the old result before building the new one.
+`POST /query` does not return "the result" — it materializes
+`<user_sql>` once inside the session's DuckDB connection, writes it ONCE to
+a Parquet file (local cache + S3 storage, roadmap B3) and returns page 1.
+`GET /page?offset=&limit=` re-slices that Parquet file (temp view
+`_result`) with `LIMIT`/`OFFSET` — no recomputation per page turn, and any
+worker can serve it (it downloads the result file if it doesn't have it).
+One result per session: a new Run deletes the previous result's file
+everywhere.
 
 - **Pagination correctness caveat, stated plainly**: `LIMIT`/`OFFSET` over
   a table with no explicit `ORDER BY` isn't guaranteed stable by the SQL
@@ -127,10 +132,11 @@ re-running Run frees the old result before building the new one.
   a consistent order across repeated calls. If a query's row order matters
   to the person running it, the fix is for *them* to add `ORDER BY` to
   their SQL — this tool doesn't inject one.
-- `/export` reads from the same materialized `_result` (full result, not
-  just the visible page) via `COPY _result TO <file> (FORMAT ...)` —
+- `/export` reads from the same result Parquet (full result, not just the
+  visible page) via `COPY (SELECT * FROM _result) TO <file> (FORMAT ...)` —
   DuckDB writes the file directly, it's never pulled into one big Python
-  object first.
+  object first. The temp export file is deleted after the response is sent
+  (it used to accumulate in the session folder).
 
 ## Memory safety (why a big join doesn't crash the container)
 
@@ -143,20 +149,23 @@ process's memory until the container OOMs. This is the actual mechanism
 behind "fast backend that never crashes the UI" — not just the pagination
 on top of it.
 
-## `--workers 1` — this is now a THIRD stateful tool
+## Multiple workers (roadmap B3)
 
-Same constraint as DataFrame Studio and SQL Studio (see `../Dockerfile`'s
-CMD comment and `df-studio/CLAUDE.md`): `SESSIONS` is an in-memory,
-per-process dict. With more than one uvicorn worker, a session created by
-one worker would be invisible to another. Don't raise `--workers` without
-giving this tool a real shared store too (not just the other two) — see
-`../CLAUDE.md`'s "Standing rule: stateful tools and `--workers`".
+Sessions are no longer per-process: verified with two separate uvicorn
+processes sharing one cookie (upload on A, XML upload on B, join query on B,
+page + export on A, remove on A seen by B) and with a full container
+recreate (local cache wiped, session rebuilt from Redis + S3). The container
+still runs `--workers 1` until roadmap B9 finishes the other tools.
 
 ## Things that will bite you if you don't know them
 
-- **In-memory sessions — a server restart silently drops every open
-  session**, same accepted tradeoff as df-studio (nothing here is meant to
-  survive past "export it").
+- **Sessions survive restarts (roadmap B3)** — 12 h sliding TTL; files of
+  expired sessions are swept from storage. **Every upload is also copied to
+  S3 storage** and every Run writes its result to Parquet + S3 — a real
+  extra cost on big files/results, the price of any worker being able to
+  serve the session. Changing a session means `engine._save()` (bumps the
+  version); a new mutating function that forgets it leaves other workers
+  on the old table list.
 - **Only one statement per Run.** `engine._validate_single_statement()` is
   a best-effort quote-aware semicolon counter (tracks `'...'`/`"..."` so a
   semicolon inside a string literal isn't miscounted), not a full

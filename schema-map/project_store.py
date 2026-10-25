@@ -9,7 +9,10 @@ scratch, or a pasted custom-query JSON result) — none of that origin
 logic lives here, this module only knows how to store and retrieve
 whatever schema snapshot it's handed.
 
-Storage: a single SQLite file at /app/data/schema-map/projects.db,
+Storage (since roadmap B6): Toolbox's own Postgres, schema `schema_map`, via core/state/sqlstore.py — the old
+SQLite file is copied in once on first start and kept as a backup; standalone (no TOOLBOX_DATABASE_URL) the
+SQLite file below is still the store. The original reasoning, kept for history:
+a single SQLite file at /app/data/schema-map/projects.db,
 deliberately NOT the same database as whatever Postgres the owner is
 exploring or designing — this is only ever Schema Map's own memory of
 its projects. SQLite (not Postgres, not a new service) because it needs
@@ -38,12 +41,18 @@ from __future__ import annotations
 
 import gzip
 import json
-import sqlite3
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Optional
+
+try:
+    from core.state.sqlstore import SqlStore
+except ImportError:  # standalone without the repo root on the path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from core.state.sqlstore import SqlStore
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "schema-map" / "projects.db"
 
@@ -72,21 +81,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@contextmanager
-def _connect() -> Iterator[sqlite3.Connection]:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+STORE = SqlStore("schema_map", sqlite_path=DB_PATH, ddl=_SCHEMA)
+_connect = STORE.connect
 
 
 def init_db() -> None:
-    with _connect() as conn:
-        conn.executescript(_SCHEMA)
+    STORE.init()
 
 
 def create_project(name: str, origin: str) -> dict[str, Any]:

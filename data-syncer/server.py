@@ -58,7 +58,9 @@ except ImportError:
     from core.postgres_conn import scrub_password
 
 store.init_db()
-store.recover_interrupted()  # a new process has no live runs: anything still 'running' was cut off
+# Tables left 'running' by a run that died → 'interrupted'. Only projects with NO live job: since roadmap B4 runs
+# happen in the worker container, so a web restart must not touch a sync that is still running there.
+runner.recover_orphans()
 
 app = FastAPI(title="Data Syncer", description="Resumable table copy/upsert between databases saved in the Vault.")
 _UI_PATH = Path(__file__).resolve().parent / "ui" / "index.html"
@@ -172,13 +174,13 @@ def _view_tables(project_id: str) -> list[dict[str, Any]]:
 
 
 def _run_state(project_id: str) -> dict[str, Any]:
-    job = runner.get(project_id)
-    if job is None:
-        return {"running": False, "stopping": False, "logs": [], "summary": None, "error": None, "started_at": None}
+    v = runner.view(project_id)
+    if not v.running:
+        runner.heal(project_id)
     return {
-        "running": job.running, "stopping": job.running and job.stop.is_set(),
-        "logs": job.snapshot_logs(), "summary": job.summary, "error": job.error,
-        "started_at": job.started_at, "finished_at": job.finished_at,
+        "running": v.running, "stopping": v.stopping, "queued": v.queued,
+        "logs": v.logs, "summary": v.summary, "error": v.error,
+        "started_at": v.started_at, "finished_at": v.finished_at,
     }
 
 
@@ -245,12 +247,13 @@ def create_project(body: ProjectBody) -> dict[str, Any]:
 @app.get("/projects/{project_id}")
 def get_project(project_id: str) -> dict[str, Any]:
     p = _require_project(project_id)
+    run = _run_state(project_id)  # heals first (see status)
     tables = _view_tables(project_id)
     return {
         "project": p,
         "source": _describe(p["source_conn_id"], p["source_conn_name"]),
         "target": _describe(p["target_conn_id"], p["target_conn_name"]),
-        "tables": tables, "progress": _progress(tables), "run": _run_state(project_id),
+        "tables": tables, "progress": _progress(tables), "run": run,
         "has_progress": _has_progress(project_id),
     }
 
@@ -317,8 +320,9 @@ def stop(project_id: str) -> dict[str, Any]:
 @app.get("/projects/{project_id}/status")
 def status(project_id: str) -> dict[str, Any]:
     _require_project(project_id)
+    run = _run_state(project_id)  # first: it heals a dead run, so the tables below already say 'interrupted'
     tables = _view_tables(project_id)
-    return {"tables": tables, "progress": _progress(tables), "run": _run_state(project_id)}
+    return {"tables": tables, "progress": _progress(tables), "run": run}
 
 
 @app.post("/projects/{project_id}/fix-sequences")

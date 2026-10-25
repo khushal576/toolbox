@@ -48,8 +48,8 @@ timestamp/text/composite keys all survive SQLite with no per-type code.
 | Vault entry → live connection (SSH tunnel, reconnect, UTF8/keepalives pinned) | `connections.py` (`Endpoint`, `resolve`) |
 | Everything database-specific (discovery, preflight, chunk bounds, COPY/upsert SQL) | `sync_ops.py` (`PostgresSyncOps`, `get_ops`) — add a class here for MSSQL/Oracle later; the engine doesn't change |
 | The resumable loop, retries, stop, FK ordering, crash cleanup | `engine.py` (`run_project`, `sync_table`, `preflight_project`, `order_tables`) |
-| Durable state: projects + per-table position/status (SQLite, `data_syncer_data` volume) | `state_store.py` |
-| Background thread + in-memory log ring buffer | `runner.py` |
+| Durable state: projects + per-table position/status (Postgres schema `data_syncer` since B6; SQLite standalone) | `state_store.py` |
+| Running a sync as a job on the Redis queue (worker container), log tail, stop flag, orphan recovery (thread fallback when standalone) | `runner.py` (+ shared `../core/jobs/`) |
 | API + page | `server.py`, `ui/index.html` |
 
 ## Things that will bite you if you don't know them
@@ -123,11 +123,29 @@ timestamp/text/composite keys all survive SQLite with no per-type code.
 - **Source/target/mode can't change once a table has progress** (the saved
   positions would be meaningless) — Reset first. Editing the key of a table
   resets that table's progress.
-- **In-process state, `--workers 1`**: the job registry + log buffer live in
-  this process (`runner.py`), a fourth stateful tool in `../CLAUDE.md`'s
-  standing rule. Durable state is SQLite; on process start,
-  `recover_interrupted()` flips orphaned `running` tables to `interrupted`
-  (Start resumes them — runs never auto-resume by design).
+- **Runs are jobs in the `worker` container since roadmap B4** (`runner.run_job`
+  on the shared Redis queue, `core/jobs/`), not threads in the web process: a
+  web restart/deploy no longer kills a sync (verified mid-run at 650k of 2M
+  rows — it kept going and finished with matching count + sum). Live state is in
+  Redis: heartbeat key = "running" (expires ~30 s after a worker dies), log tail
+  = Redis list trimmed to `log_size`, Stop = Redis flag the engine polls (cached
+  1 s; `StopFlag` also implements `wait()` for the retry back-off). "Already
+  running" is an atomic `SET NX` claim → 409. A queued job can be stopped
+  (cancelled) before a worker picks it up.
+- **Orphan recovery only touches projects with NO live job**
+  (`runner.recover_orphans()` at web start, `runner.heal()` on every status
+  read): a table still `running` without a heartbeat becomes `interrupted` and
+  Start resumes from the saved key (verified: worker killed mid-run → seen
+  stopped after ~26 s → resumed "after key 1250000"). The old blanket
+  `recover_interrupted()` at web start would have corrupted a run still alive
+  in the worker; it's only used in thread (standalone) mode now. Runs never
+  auto-resume by design.
+- **Projects/positions are in Toolbox's Postgres since roadmap B6** (schema `data_syncer`,
+  `core/state/sqlstore.py`; the old `syncer.db` was copied in once and stays as a backup). Verified: a 2M-row copy
+  with the worker killed mid-run resumed from the Postgres position, count/sum/distinct ids match. The worker still
+  reads the Vault from the shared volume until B7.
+- **Status reads heal before reading tables** (`server.status`/`get_project`): otherwise the first poll after a
+  worker died still showed `running`.
 
 ## Not built (decided, not forgotten)
 

@@ -161,3 +161,13 @@ def test_dockerfile_ships_every_manifest():
         folder = Path(m.source).parent.name
         assert f"COPY {folder}/ " in dockerfile or f"COPY {folder}/manifest.yaml " in dockerfile, \
             f"{m.name}: add `COPY {folder}/manifest.yaml ./<pkg>/manifest.yaml` to the Dockerfile"
+
+
+def test_singleton_requires_single_replica():
+    assert mk(kind="python", entry="x:app", runtime="data", singleton=True).singleton
+    with pytest.raises(ValueError, match="singleton"):
+        mk(kind="python", entry="x:app", runtime="data", singleton=True, scaling={"max": 2})
+
+
+def test_repo_singletons_are_the_live_db_pool_tools():
+    assert sorted(m.name for m in discover(REPO).ordered() if m.singleton) == ["schema-map", "sql-studio"]

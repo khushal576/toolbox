@@ -2,29 +2,44 @@
 data-dumper/state_store.py
 
 The dump catalogue: one row per dump (taken here or uploaded), plus a history of
-runs (dumps and restores). SQLite at /app/data/data-dumper/dumper.db and the dump
-FILES themselves in /app/data/data-dumper/files/, both on the `data_dumper_data`
-Docker volume — same pattern as the other stateful tools; without the volume a
-rebuild would delete every dump.
+runs (dumps and restores). Since roadmap B6 in Toolbox's Postgres, schema `data_dumper`
+(core/state/sqlstore.py); the old SQLite file /app/data/data-dumper/dumper.db is copied in once and kept as a
+backup (standalone it is still the store).
 
 A dump row also remembers HOW it was taken (source connection, format, scope,
 owner option). That is deliberate groundwork for the planned scheduler: a cron job
 is just "take a dump with these settings again" (see POST /dumps/{id}/again).
+
+Since roadmap B5 a dump file's home is S3 storage (`FILES`, core/state/filecache.py): `files/` is a local cache
+(trimmed to DATA_DUMPER_CACHE_MB, default 2048) — the worker that takes a dump and the web process that serves or
+restores it don't need to share a disk. Without S3 configured it is the only copy, as before.
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
+import os
 import uuid
-from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Callable, Optional
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "data-dumper"
 DB_PATH = DATA_DIR / "dumper.db"
 FILES_DIR = DATA_DIR / "files"
+
+try:
+    from core.state.filecache import FileCache
+    from core.state.sqlstore import SqlStore
+except ImportError:  # standalone without the repo root on the path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from core.state.filecache import FileCache
+    from core.state.sqlstore import SqlStore
+
+FILES = FileCache("data-dumper", FILES_DIR, budget_mb=int(os.environ.get("DATA_DUMPER_CACHE_MB", "2048")))
+ORPHAN_GRACE_SECONDS = 20  # a dump row is created just before its job is claimed; don't call that an orphan
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS dumps (
@@ -63,41 +78,38 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@contextmanager
-def _connect() -> Iterator[sqlite3.Connection]:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB_PATH, timeout=30)
-    con.row_factory = sqlite3.Row
-    try:
-        yield con
-        con.commit()
-    finally:
-        con.close()
+STORE = SqlStore("data_dumper", sqlite_path=DB_PATH, ddl=_SCHEMA)
+_connect = STORE.connect
 
 
 def init_db() -> None:
-    with _connect() as con:
-        con.execute("PRAGMA journal_mode = WAL")
-        con.executescript(_SCHEMA)
+    STORE.init()
     FILES_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def recover_interrupted() -> int:
-    """A new process has no live run: dumps still 'running' were cut off (their half-written
-    .part file is useless) and runs still 'running' never finished."""
+def fail_orphans(is_live: Callable[[str], bool], only: Optional[str] = None) -> int:
+    """Dumps/runs still 'running' whose job is NOT live were cut off (restart, worker killed): mark them failed.
+    `is_live(dump_id)` asks the runner (with the queue runner a dump still running in the worker is left alone)."""
     n = 0
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=ORPHAN_GRACE_SECONDS)).isoformat()
+    where, args = ("AND id = ?", (only,)) if only else ("", ())
     with _connect() as con:
-        for r in con.execute("SELECT id FROM dumps WHERE status = 'running'").fetchall():
-            for p in FILES_DIR.glob(f"{r['id']}.*"):
-                if p.suffix == ".part" or p.name.endswith(".part"):
-                    p.unlink(missing_ok=True)
-            con.execute("UPDATE dumps SET status='failed', error='Interrupted by a restart', finished_at=? WHERE id=?", (_now(), r["id"]))
+        for r in con.execute(f"SELECT id, created_at FROM dumps WHERE status = 'running' {where}", args).fetchall():
+            if r["created_at"] > cutoff or is_live(r["id"]):
+                continue
+            for p in FILES_DIR.glob(f"{r['id']}.*.part"):
+                p.unlink(missing_ok=True)
+            con.execute("UPDATE dumps SET status='failed', error='Interrupted (restart or worker stopped)', finished_at=? "
+                        "WHERE id=?", (_now(), r["id"]))
             n += 1
-        con.execute("UPDATE runs SET status='failed', finished_at=? WHERE status='running'", (_now(),))
+        where = "AND dump_id = ?" if only else ""
+        for r in con.execute(f"SELECT id, dump_id FROM runs WHERE status = 'running' {where}", args).fetchall():
+            if not is_live(r["dump_id"]):
+                con.execute("UPDATE runs SET status='failed', finished_at=? WHERE id=?", (_now(), r["id"]))
     return n
 
 
-def _dump(row: sqlite3.Row) -> dict[str, Any]:
+def _dump(row: dict) -> dict[str, Any]:
     d = dict(row)
     d["keep_owner"] = bool(d["keep_owner"])
     return d
@@ -142,12 +154,21 @@ def delete_dump(dump_id: str) -> None:
     with _connect() as con:
         con.execute("DELETE FROM dumps WHERE id = ?", (dump_id,))
         con.execute("DELETE FROM runs WHERE dump_id = ?", (dump_id,))
-    for p in FILES_DIR.glob(f"{dump_id}.*"):
-        p.unlink(missing_ok=True)
+    FILES.remove_all(dump_id)
 
 
 def file_path(dump: dict[str, Any]) -> Optional[Path]:
+    """Where the local copy lives (may not exist in this process — use fetch_file to read it)."""
     return FILES_DIR / dump["file_name"] if dump.get("file_name") else None
+
+
+def fetch_file(dump: dict[str, Any]) -> Optional[Path]:
+    """Local path of the dump file, downloaded from storage first if needed; None if it exists nowhere."""
+    return FILES.fetch(dump["id"], dump["file_name"]) if dump.get("file_name") else None
+
+
+def publish_file(dump_id: str, path: Path) -> None:
+    FILES.publish(dump_id, path)
 
 
 def part_path(dump_id: str, ext: str) -> Path:
@@ -188,7 +209,10 @@ def list_runs(dump_id: str, limit: int = 15) -> list[dict[str, Any]]:
 
 
 def disk_usage() -> dict[str, int]:
+    """dumps_bytes = all ready dumps (in storage); free_bytes = this machine's disk where dumps are written."""
     import shutil
-    total = sum(p.stat().st_size for p in FILES_DIR.glob("*") if p.is_file())
+    FILES_DIR.mkdir(parents=True, exist_ok=True)
+    with _connect() as con:
+        total = con.execute("SELECT COALESCE(SUM(size_bytes), 0) FROM dumps WHERE status = 'ready'").fetchone()[0]
     free = shutil.disk_usage(FILES_DIR).free
     return {"dumps_bytes": total, "free_bytes": free}

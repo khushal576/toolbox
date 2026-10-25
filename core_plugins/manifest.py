@@ -59,6 +59,9 @@ class Manifest(_Strict):
     requires: list[str] = Field(default_factory=list)
     enabled_by_default: bool = True
     order: int = Field(default=1000, ge=0)  # display order (lower first); ties sorted by title
+    # Must run in exactly ONE process (e.g. a single live DB pool + "password never stored"): B9 routes all its
+    # requests to one dedicated process when the rest of the workspace runs several workers.
+    singleton: bool = False
 
     # Filled by the loader, not by authors (excluded from the YAML contract).
     source: str = Field(default="", exclude=True)
@@ -99,6 +102,8 @@ class Manifest(_Strict):
                 raise ValueError(f"kind '{k}' cannot keep server state")
         if self.name in self.depends_on:
             raise ValueError("a plugin cannot depend on itself")
+        if self.singleton and (self.scaling.max != 1 or self.scaling.min > 1):
+            raise ValueError("a singleton plugin must keep scaling.max: 1")
         return self
 
     @property

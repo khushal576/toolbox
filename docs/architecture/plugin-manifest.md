@@ -49,6 +49,7 @@ order: 10                     # display order: lower first, ties by title
 | `requires` | no | list of capability names | e.g. `texlive`, `fontawesome`, `pg_client`, `duckdb`. |
 | `enabled_by_default` | no (true) | bool | Default for `workspace.yaml` (A3). |
 | `order` | no (1000) | int ≥ 0 | Display order (lower first); ties sorted by title. |
+| `singleton` | no (false) | bool | Must run in exactly one process (requires `scaling.max: 1`). Set for sql-studio and schema-map (roadmap B3: one live DB pool, password never stored); from B9 their requests go to one dedicated process. |
 
 Unknown keys are **rejected** (typos must not pass silently).
 

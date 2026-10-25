@@ -5,11 +5,12 @@ FastAPI app for DataFrame Studio — load a CSV/JSON/XML/Parquet file, apply
 pandas transformations through a UI (rename/drop/add column, filter, sort),
 inspect it (describe/info/nunique/value_counts), export the result.
 
-Session model: one uuid4 cookie per browser tab, held in engine.SESSIONS
-(in-memory — see engine.py's docstring for why that's an accepted
-tradeoff). Every mutating endpoint re-derives the current DataFrame by
-replaying the session's step list over the original upload; nothing here
-mutates a DataFrame in place.
+Session model: one uuid4 cookie per browser tab; the session itself lives outside the process (roadmap B2 —
+metadata in Redis, original DataFrame in S3 storage, see session_store.py), so it survives restarts and works
+with several worker processes. Loading a session may download the DataFrame, so it always runs via
+asyncio.to_thread (`_session()`). Every mutating endpoint re-derives the current DataFrame by replaying the
+session's step list over the original upload; nothing here mutates a DataFrame in place.
+Templates are stored in Postgres (templates_store.py).
 
 Every endpoint that calls into pandas (load/step/insight/export/template)
 runs that call via asyncio.to_thread — with --workers 1 (pinned, see
@@ -94,6 +95,23 @@ def _session_id(request: Request) -> Optional[str]:
     return request.cookies.get(_COOKIE)
 
 
+async def _session(request: Request) -> engine.Session:
+    """Load the request's session off the event loop (may fetch the DataFrame from storage)."""
+    return await asyncio.to_thread(engine.get_session, _session_id(request))
+
+
+async def _replace_session(request: Request, filename: str, df) -> tuple[str, engine.Session]:
+    """Start a new session for a fresh load and delete this browser's previous one (its stored file too)."""
+    old = _session_id(request)
+    session_id = await asyncio.to_thread(engine.create_session, filename, df)
+    if old and old != session_id:
+        try:
+            await asyncio.to_thread(engine.delete_session, old)
+        except Exception:  # noqa: BLE001 - cleanup of the old session must not fail the new load
+            pass
+    return session_id, await asyncio.to_thread(engine.get_session, session_id)
+
+
 def _error(exc: Exception, status: int = 400) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": str(exc)})
 
@@ -111,11 +129,11 @@ async def get_current_session(request: Request):
     what lets a browser refresh survive instead of losing everything. A
     missing/unknown cookie is the normal "nothing loaded yet" case, not an
     error, so this returns 200 with active=False rather than a banner."""
-    session_id = _session_id(request)
-    if not session_id or session_id not in engine.SESSIONS:
+    try:
+        session = await _session(request)
+    except engine.StepError:
         return {"active": False}
-    session = engine.SESSIONS[session_id]
-    df = engine.recompute(session)
+    df = await asyncio.to_thread(engine.recompute, session)
     preview = engine.build_preview(session, df)
     preview["active"] = True
     return preview
@@ -124,14 +142,15 @@ async def get_current_session(request: Request):
 @app.post("/preview-mode")
 async def set_preview_mode(body: PreviewModeRequest, request: Request):
     try:
-        session = engine.get_session(_session_id(request))
-        return engine.set_preview_mode(session, body.mode, resample=body.resample)
+        session = await _session(request)
+        return await asyncio.to_thread(engine.set_preview_mode, session, body.mode, resample=body.resample)
     except engine.StepError as exc:
         return _error(exc)
 
 
 @app.post("/load")
 async def load(
+    request: Request,
     response: Response,
     file: UploadFile = File(...),
     # CSV/TSV/TXT
@@ -162,8 +181,7 @@ async def load(
             xpath=xpath or None,
             columns=[c.strip() for c in columns.split(",") if c.strip()] or None,
         )
-        session_id = engine.create_session(file.filename or "upload", df)
-        session = engine.get_session(session_id)
+        session_id, session = await _replace_session(request, file.filename or "upload", df)
         preview = engine.build_preview(session, df)
     except engine.StepError as exc:
         return _error(exc)
@@ -175,7 +193,7 @@ async def load(
 
 
 @app.post("/load/vault")
-async def load_from_vault(response: Response, body: LoadFromVaultRequest):
+async def load_from_vault(request: Request, response: Response, body: LoadFromVaultRequest):
     """Load a dataset saved in core.vault (e.g. by duck-lab's or
     sql-studio's "Save/Export to Vault") as a new session, the same way
     /load does for an uploaded file. df-studio already reads every
@@ -193,8 +211,7 @@ async def load_from_vault(response: Response, body: LoadFromVaultRequest):
         tmp_path.unlink(missing_ok=True)
     try:
         df = await asyncio.to_thread(engine.load_dataframe, filename, content)
-        session_id = engine.create_session(filename, df)
-        session = engine.get_session(session_id)
+        session_id, session = await _replace_session(request, filename, df)
         preview = engine.build_preview(session, df)
     except engine.StepError as exc:
         return _error(exc)
@@ -208,7 +225,7 @@ async def load_from_vault(response: Response, body: LoadFromVaultRequest):
 @app.post("/step")
 async def add_step(body: StepRequest, request: Request):
     try:
-        session = engine.get_session(_session_id(request))
+        session = await _session(request)
         df = await asyncio.to_thread(engine.apply_step, session, body.type, body.params)
         return engine.build_preview(session, df)
     except engine.StepError as exc:
@@ -222,7 +239,7 @@ async def check_step(body: StepRequest, request: Request):
     """Run a step and return what it WOULD produce, without adding it to the
     pipeline — lets the query box's Check mode iterate before committing."""
     try:
-        session = engine.get_session(_session_id(request))
+        session = await _session(request)
         df = await asyncio.to_thread(engine.preview_step, session, body.type, body.params)
         preview = engine.build_preview(session, df)
     except engine.StepError as exc:
@@ -236,7 +253,7 @@ async def check_step(body: StepRequest, request: Request):
 @app.post("/step/remove")
 async def remove_step(body: RemoveRequest, request: Request):
     try:
-        session = engine.get_session(_session_id(request))
+        session = await _session(request)
         df = await asyncio.to_thread(engine.remove_step, session, body.index)
         return engine.build_preview(session, df)
     except engine.StepError as exc:
@@ -246,8 +263,8 @@ async def remove_step(body: RemoveRequest, request: Request):
 @app.post("/step/reset")
 async def reset_steps(request: Request):
     try:
-        session = engine.get_session(_session_id(request))
-        df = engine.reset_steps(session)  # trivial (clears a list) — no thread needed
+        session = await _session(request)
+        df = await asyncio.to_thread(engine.reset_steps, session)  # clears the list + saves to Redis
         return engine.build_preview(session, df)
     except engine.StepError as exc:
         return _error(exc)
@@ -256,7 +273,7 @@ async def reset_steps(request: Request):
 @app.get("/insight")
 async def insight(request: Request, kind: str, column: Optional[str] = None):
     try:
-        session = engine.get_session(_session_id(request))
+        session = await _session(request)
         df = await asyncio.to_thread(engine.recompute, session)
         return await asyncio.to_thread(engine.compute_insight, df, kind, column)
     except engine.StepError as exc:
@@ -266,7 +283,7 @@ async def insight(request: Request, kind: str, column: Optional[str] = None):
 @app.get("/script")
 async def script(request: Request):
     try:
-        session = engine.get_session(_session_id(request))
+        session = await _session(request)
     except engine.StepError as exc:
         return _error(exc)
     return {"script": engine.generate_script(session)}
@@ -274,26 +291,26 @@ async def script(request: Request):
 
 @app.get("/template/list")
 async def list_templates():
-    return {"templates": templates_store.list_templates()}
+    return {"templates": await asyncio.to_thread(templates_store.list_templates)}
 
 
 @app.post("/template/save")
 async def save_template(body: TemplateNameRequest, request: Request):
     try:
-        session = engine.get_session(_session_id(request))
+        session = await _session(request)
         if not session.steps:
             return _error(ValueError("Pipeline is empty — nothing to save."))
-        templates_store.save_template(body.name, session.steps)
+        await asyncio.to_thread(templates_store.save_template, body.name, session.steps)
     except (engine.StepError, ValueError) as exc:
         return _error(exc)
-    return {"templates": templates_store.list_templates()}
+    return {"templates": await asyncio.to_thread(templates_store.list_templates)}
 
 
 @app.post("/template/apply")
 async def apply_template(body: TemplateNameRequest, request: Request):
     try:
-        session = engine.get_session(_session_id(request))
-        template_steps = templates_store.get_template(body.name)
+        session = await _session(request)
+        template_steps = await asyncio.to_thread(templates_store.get_template, body.name)
         df, errors = await asyncio.to_thread(engine.apply_template, session, template_steps)
         preview = engine.build_preview(session, df)
     except (engine.StepError, ValueError) as exc:
@@ -304,8 +321,8 @@ async def apply_template(body: TemplateNameRequest, request: Request):
 
 @app.post("/template/delete")
 async def delete_template(body: TemplateNameRequest):
-    templates_store.delete_template(body.name)
-    return {"templates": templates_store.list_templates()}
+    await asyncio.to_thread(templates_store.delete_template, body.name)
+    return {"templates": await asyncio.to_thread(templates_store.list_templates)}
 
 
 _EXPORT_MEDIA_TYPES = {"csv": "text/csv", "json": "application/json", "parquet": "application/octet-stream"}
@@ -331,7 +348,7 @@ async def export(
     if format == "json" and orient not in _VALID_JSON_ORIENTS:
         return _error(ValueError(f"Unsupported JSON orient '{orient}'."))
     try:
-        session = engine.get_session(_session_id(request))
+        session = await _session(request)
         df = await asyncio.to_thread(engine.recompute, session)
     except engine.StepError as exc:
         return _error(exc)

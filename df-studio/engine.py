@@ -1,10 +1,11 @@
 """
 df-studio/engine.py
 
-Session state and DataFrame plumbing. One process, in-memory sessions
-(SESSIONS dict keyed by a cookie'd session id) — fine for a single-user
-local tool; a server restart loses in-progress sessions, which is an
-accepted tradeoff (nothing here is meant to be durable, see "Export").
+Session state and DataFrame plumbing. Sessions live OUTSIDE the process (roadmap B2, session_store.py):
+metadata in Redis (sliding TTL), the original DataFrame in S3 storage — so a session survives restarts and
+works across several worker processes. Each process keeps a small LRU cache of original DataFrames so a step
+doesn't re-download the file (the original never changes within a session, so the cache can't go stale).
+Every function that changes a session persists it before returning (`save_session`).
 
 The pipeline model: each session keeps the ORIGINAL DataFrame plus an
 ordered list of steps. The "current" DataFrame is always recomputed by
@@ -18,16 +19,21 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import random
+import threading
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
 
 import pandas as pd
 
 try:  # package import when mounted inside the toolbox (df_studio.*)
+    from df_studio import session_store
     from df_studio import steps as steps_mod
 except ImportError:  # flat import when run standalone from within this folder
+    import session_store
     import steps as steps_mod
 
 STEP_HANDLERS = steps_mod.STEP_HANDLERS
@@ -57,9 +63,35 @@ class Session:
     # rows on every incidental recompute() (Check, step add/remove, template
     # apply all trigger one) — only an explicit "resample" regenerates this.
     sample_seed: int = field(default_factory=lambda: random.randint(0, 2**31 - 1))
+    sid: str = ""
+    frame_format: str = ""
 
 
-SESSIONS: dict[str, Session] = {}
+BACKEND = session_store.make_backend()
+_CACHE_SIZE = max(1, int(os.environ.get("DF_STUDIO_CACHE_SESSIONS") or 3))
+_cache: "OrderedDict[str, pd.DataFrame]" = OrderedDict()  # sid -> original_df, per process
+_cache_lock = threading.Lock()
+
+
+def _cache_put(sid: str, df: pd.DataFrame) -> None:
+    with _cache_lock:
+        _cache[sid] = df
+        _cache.move_to_end(sid)
+        while len(_cache) > _CACHE_SIZE:
+            _cache.popitem(last=False)
+
+
+def _cache_get(sid: str) -> pd.DataFrame | None:
+    with _cache_lock:
+        df = _cache.get(sid)
+        if df is not None:
+            _cache.move_to_end(sid)
+        return df
+
+
+def _meta(session: Session) -> dict[str, Any]:
+    return {"filename": session.filename, "steps": session.steps, "preview_mode": session.preview_mode,
+            "sample_seed": session.sample_seed, "frame_format": session.frame_format}
 
 
 def load_dataframe(
@@ -123,15 +155,49 @@ def load_dataframe(
 
 
 def create_session(filename: str, df: pd.DataFrame) -> str:
+    """Store the original DataFrame + fresh metadata; returns the new session id. Slow for big frames
+    (uploads the file to storage) — call from a worker thread."""
     session_id = uuid.uuid4().hex
-    SESSIONS[session_id] = Session(filename=filename, original_df=df)
+    session = Session(filename=filename, original_df=df, sid=session_id)
+    session.frame_format = BACKEND.save_frame(session_id, df)
+    save_session(session)
+    _cache_put(session_id, df)
+    try:
+        BACKEND.sweep()  # rate-limited cleanup of expired sessions' files
+    except Exception:  # noqa: BLE001 - cleanup must never break a load
+        pass
     return session_id
 
 
 def get_session(session_id: str | None) -> Session:
-    if not session_id or session_id not in SESSIONS:
+    """Load a session (metadata from the backend, DataFrame from cache or storage). Call from a worker thread."""
+    meta = BACKEND.load_meta(session_id) if session_id else None
+    if meta is None:
         raise StepError("No active session — load a file first.")
-    return SESSIONS[session_id]
+    df = _cache_get(session_id)
+    if df is None:
+        df = BACKEND.load_frame(session_id, meta.get("frame_format", ""))
+        if df is None:
+            BACKEND.delete(session_id)
+            raise StepError("This session's data has expired — load the file again.")
+        _cache_put(session_id, df)
+    return Session(filename=meta["filename"], original_df=df, steps=list(meta.get("steps", [])),
+                   preview_mode=meta.get("preview_mode", "head"), sample_seed=int(meta["sample_seed"]),
+                   sid=session_id, frame_format=meta.get("frame_format", ""))
+
+
+def save_session(session: Session) -> None:
+    """Persist the session's metadata (steps, preview mode, seed). The DataFrame is stored once, at create."""
+    BACKEND.save_meta(session.sid, _meta(session))
+
+
+def delete_session(session_id: str | None) -> None:
+    """Remove a session and its stored DataFrame (e.g. the browser loaded a new file)."""
+    if not session_id:
+        return
+    with _cache_lock:
+        _cache.pop(session_id, None)
+    BACKEND.delete(session_id)
 
 
 def recompute(session: Session) -> pd.DataFrame:
@@ -160,6 +226,7 @@ def preview_step(session: Session, step_type: str, params: dict[str, Any]) -> pd
 def apply_step(session: Session, step_type: str, params: dict[str, Any]) -> pd.DataFrame:
     _, code = _run_step(session, step_type, params)  # validates against current df before committing
     session.steps.append({"type": step_type, "params": params, "code": code})
+    save_session(session)
     return recompute(session)
 
 
@@ -167,11 +234,13 @@ def remove_step(session: Session, index: int) -> pd.DataFrame:
     if index < 0 or index >= len(session.steps):
         raise StepError("Step not found.")
     session.steps.pop(index)
+    save_session(session)
     return recompute(session)
 
 
 def reset_steps(session: Session) -> pd.DataFrame:
     session.steps.clear()
+    save_session(session)
     return session.original_df
 
 
@@ -181,6 +250,7 @@ def set_preview_mode(session: Session, mode: str, resample: bool = False) -> dic
     session.preview_mode = mode
     if resample:
         session.sample_seed = random.randint(0, 2**31 - 1)
+    save_session(session)
     return build_preview(session, recompute(session))
 
 
@@ -201,6 +271,7 @@ def apply_template(session: Session, template_steps: list[dict[str, Any]]) -> tu
             label = STEP_LABELS.get(step["type"], step["type"])
             errors.append(f"Step {i + 1} ({label}): {exc}")
             break
+    save_session(session)  # also covers "template's first step failed" (pipeline was cleared)
     return recompute(session), errors
 
 

@@ -1,8 +1,10 @@
 """
 ssh-sftp/state_store.py
 
-History only — never credentials (those stay in the Vault). SQLite at /app/data/ssh-sftp/sshsftp.db
-and STAGED UPLOADS in /app/data/ssh-sftp/stage/, both on the `ssh_sftp_data` Docker volume.
+History only — never credentials (those stay in the Vault). Since roadmap B6 the history is in Toolbox's
+Postgres, schema `ssh_sftp` (core/state/sqlstore.py; the old SQLite file /app/data/ssh-sftp/sshsftp.db is copied
+in once and kept as a backup; standalone it is still the store). STAGED UPLOADS stay in /app/data/ssh-sftp/stage/
+on the `ssh_sftp_data` Docker volume (roadmap B8 moves them).
 
 An upload is first received into the stage directory, then sent to the server from there. That is what
 makes it stable: if the connection drops, or the server is briefly unreachable, the transfer retries
@@ -16,13 +18,19 @@ Do not put passwords inside a command line: it would be saved here and visible i
 
 from __future__ import annotations
 
-import sqlite3
 import time
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Optional
+
+try:
+    from core.state.sqlstore import SqlStore
+except ImportError:  # standalone without the repo root on the path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from core.state.sqlstore import SqlStore
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "ssh-sftp"
 DB_PATH = DATA_DIR / "sshsftp.db"
@@ -51,22 +59,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@contextmanager
-def _connect() -> Iterator[sqlite3.Connection]:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB_PATH, timeout=30)
-    con.row_factory = sqlite3.Row
-    try:
-        yield con
-        con.commit()
-    finally:
-        con.close()
+STORE = SqlStore("ssh_sftp", sqlite_path=DB_PATH, ddl=_SCHEMA)
+_connect = STORE.connect
 
 
 def init_db() -> None:
-    with _connect() as con:
-        con.execute("PRAGMA journal_mode = WAL")
-        con.executescript(_SCHEMA)
+    STORE.init()
     STAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 

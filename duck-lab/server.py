@@ -5,10 +5,14 @@ FastAPI app for Duck Lab: upload several CSV/JSON/XML sources, join/analyze
 them with SQL (DuckDB), paginated results. See engine.py for why DuckDB and
 for the materialize-once-paginate-many model. See ../CLAUDE.md for the
 repo-wide architecture this tool is mounted into.
+
+Since roadmap B3 a session lives outside the process (engine.py / session_store.py) and loading it can
+download files, so every engine call runs via asyncio.to_thread (`_get_session()`, `_run()`).
 """
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import uuid
 from pathlib import Path
@@ -36,9 +40,16 @@ _UI_PATH = Path(__file__).resolve().parent / "ui" / "index.html"
 _COOKIE_NAME = "duck_lab_sid"
 
 
-def _get_session(request: Request) -> tuple[str, "engine.Session"]:
+async def _get_session(request: Request) -> tuple[str, "engine.Session"]:
     sid = request.cookies.get(_COOKIE_NAME) or uuid.uuid4().hex
-    return sid, engine.get_or_create_session(sid)
+    try:
+        return sid, await asyncio.to_thread(engine.get_or_create_session, sid)
+    except engine.QueryError as exc:  # e.g. a stored file expired
+        raise HTTPException(410, str(exc)) from exc
+
+
+async def _run(fn, *args):
+    return await asyncio.to_thread(fn, *args)
 
 
 def _with_cookie(response: JSONResponse, sid: str) -> JSONResponse:
@@ -63,20 +74,20 @@ async def home() -> HTMLResponse:
 
 @app.get("/tables")
 async def list_tables(request: Request) -> JSONResponse:
-    sid, session = _get_session(request)
+    sid, session = await _get_session(request)
     tables = [_table_meta_json(m) for m in session.tables.values()]
     return _with_cookie(JSONResponse({"ok": True, "tables": tables}), sid)
 
 
 @app.post("/upload")
 async def upload(request: Request, file: UploadFile) -> JSONResponse:
-    sid, session = _get_session(request)
+    sid, session = await _get_session(request)
     filename = file.filename or "upload"
 
     try:
         if filename.lower().endswith(".xml"):  # fully read once, see engine.load_xml's docstring
             raw = (await file.read()).decode("utf-8", errors="replace")
-            meta = engine.load_xml(session, raw, filename)
+            meta = await _run(engine.load_xml, session, raw, filename)
         else:
             # Stream straight to disk — never buffer the whole file in
             # Python memory, DuckDB scans the saved file itself.
@@ -84,9 +95,13 @@ async def upload(request: Request, file: UploadFile) -> JSONResponse:
             # parquet from the extension and raises ValueError for
             # anything else.
             saved_path = session.data_dir / f"{uuid.uuid4().hex}_{filename}"
-            with saved_path.open("wb") as out:
-                shutil.copyfileobj(file.file, out)
-            meta = engine.load_file(session, saved_path, filename)
+
+            def _save_upload() -> None:
+                with saved_path.open("wb") as out:
+                    shutil.copyfileobj(file.file, out)
+
+            await _run(_save_upload)
+            meta = await _run(engine.load_file, session, saved_path, filename)
     except (engine.QueryError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -108,15 +123,15 @@ async def load_from_vault(request: Request, body: LoadFromVaultRequest) -> JSONR
     DuckDB view backed by that path — it has to keep existing for as
     long as the view might be queried, same as an uploaded file already
     does."""
-    sid, session = _get_session(request)
+    sid, session = await _get_session(request)
     try:
-        tmp_path = vault.load_dataset_file(body.id)
+        tmp_path = await _run(vault.load_dataset_file, body.id)
     except vault.SecretNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
     try:
         dest_path = session.data_dir / f"{uuid.uuid4().hex}_{body.name}{tmp_path.suffix}"
         shutil.move(str(tmp_path), str(dest_path))
-        meta = engine.load_file(session, dest_path, dest_path.name)
+        meta = await _run(engine.load_file, session, dest_path, dest_path.name)
     except (engine.QueryError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return _with_cookie(JSONResponse({"ok": True, "table": _table_meta_json(meta)}), sid)
@@ -124,9 +139,9 @@ async def load_from_vault(request: Request, body: LoadFromVaultRequest) -> JSONR
 
 @app.get("/preview/{name}")
 async def preview_table(request: Request, name: str) -> JSONResponse:
-    sid, session = _get_session(request)
+    sid, session = await _get_session(request)
     try:
-        result = engine.preview_table(session, name)
+        result = await _run(engine.preview_table, session, name)
     except engine.QueryError as exc:
         raise HTTPException(404, str(exc)) from exc
     return _with_cookie(JSONResponse({"ok": True, **result}), sid)
@@ -134,11 +149,11 @@ async def preview_table(request: Request, name: str) -> JSONResponse:
 
 @app.post("/table/remove")
 async def remove_table(request: Request) -> JSONResponse:
-    sid, session = _get_session(request)
+    sid, session = await _get_session(request)
     body = await request.json()
     name = body.get("name", "")
     try:
-        engine.remove_table(session, name)
+        await _run(engine.remove_table, session, name)
     except engine.QueryError as exc:
         raise HTTPException(404, str(exc)) from exc
     return _with_cookie(JSONResponse({"ok": True}), sid)
@@ -146,11 +161,11 @@ async def remove_table(request: Request) -> JSONResponse:
 
 @app.post("/query")
 async def query(request: Request) -> JSONResponse:
-    sid, session = _get_session(request)
+    sid, session = await _get_session(request)
     body = await request.json()
     sql = body.get("sql", "")
     try:
-        result = engine.run_query(session, sql)
+        result = await _run(engine.run_query, session, sql)
     except engine.QueryError as exc:
         raise HTTPException(400, str(exc)) from exc
     return _with_cookie(JSONResponse({"ok": True, **result}), sid)
@@ -158,9 +173,9 @@ async def query(request: Request) -> JSONResponse:
 
 @app.get("/page")
 async def page(request: Request, offset: int = 0, limit: int = engine.DEFAULT_PAGE_SIZE) -> JSONResponse:
-    sid, session = _get_session(request)
+    sid, session = await _get_session(request)
     try:
-        result = engine.fetch_page(session, offset, limit)
+        result = await _run(engine.fetch_page, session, offset, limit)
     except engine.QueryError as exc:
         raise HTTPException(400, str(exc)) from exc
     return _with_cookie(JSONResponse({"ok": True, **result}), sid)
@@ -168,12 +183,15 @@ async def page(request: Request, offset: int = 0, limit: int = engine.DEFAULT_PA
 
 @app.get("/export")
 async def export(request: Request, format: str = "csv") -> FileResponse:
-    _sid, session = _get_session(request)
+    _sid, session = await _get_session(request)
     try:
-        path = engine.export_result(session, format)
+        path = await _run(engine.export_result, session, format)
     except engine.QueryError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return FileResponse(path, filename=f"duck_lab_result.{format}")
+    # delete the temp export after it has been sent (it lives in this worker's disposable cache dir)
+    from starlette.background import BackgroundTask
+    return FileResponse(path, filename=f"duck_lab_result.{format}",
+                        background=BackgroundTask(path.unlink, missing_ok=True))
 
 
 class SaveToVaultRequest(BaseModel):
@@ -190,9 +208,9 @@ async def export_to_vault(request: Request, body: SaveToVaultRequest) -> JSONRes
     The temp export file is deleted immediately after being
     chunk-encrypted into the vault; it never lingers beyond this call.
     """
-    _sid, session = _get_session(request)
+    _sid, session = await _get_session(request)
     try:
-        tmp_path = engine.export_result(session, "parquet")
+        tmp_path = await _run(engine.export_result, session, "parquet")
     except engine.QueryError as exc:
         raise HTTPException(400, str(exc)) from exc
     try:
@@ -201,7 +219,7 @@ async def export_to_vault(request: Request, body: SaveToVaultRequest) -> JSONRes
             "columns": session.result_columns,
             "row_count": session.result_total_rows,
         }
-        secret_id = vault.save_dataset(body.name, "duckdb_result", meta, tmp_path)
+        secret_id = await _run(vault.save_dataset, body.name, "duckdb_result", meta, tmp_path)
     finally:
         tmp_path.unlink(missing_ok=True)
     return JSONResponse({"ok": True, "id": secret_id})
@@ -209,6 +227,6 @@ async def export_to_vault(request: Request, body: SaveToVaultRequest) -> JSONRes
 
 @app.post("/session/reset")
 async def session_reset(request: Request) -> JSONResponse:
-    sid, session = _get_session(request)
-    engine.reset_session(session)
+    sid, session = await _get_session(request)
+    await _run(engine.reset_session, session)
     return _with_cookie(JSONResponse({"ok": True}), sid)

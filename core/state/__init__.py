@@ -32,5 +32,11 @@ def health() -> dict[str, Any]:
     from core.state import db, objects, sessions
 
     out = {"postgres": _probe(db.health), "redis": _probe(sessions.health), "objects": _probe(objects.health)}
+
+    def _jobs() -> dict:
+        from core import jobs
+        return jobs.health()
+
+    out["jobs"] = _probe(_jobs)  # roadmap B4: at least one worker must be listening
     out["ok"] = all(v["ok"] for v in out.values())
     return out

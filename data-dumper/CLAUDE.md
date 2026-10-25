@@ -8,7 +8,7 @@ version scoped to this folder.
 
 Take a Postgres dump you can **download**, and **restore** a dump into any database — whole, or
 only what you choose. Sources/targets are Vault connections (never typed). A dump is a FILE on the
-`data_dumper_data` volume (kept until deleted) plus a catalogue row; a dump can also be **uploaded**
+`data_dumper_data` volume (kept until deleted; since roadmap B5 in S3 storage, the volume is a cache) plus a catalogue row; a dump can also be **uploaded**
 (`.dump`, `.sql`, `.sql.gz`). Each dump remembers how it was taken (source, format, scope, owner
 option) — groundwork for the planned scheduler: a cron job is just "dump again" (`POST /dumps/{id}/again`).
 
@@ -31,8 +31,8 @@ Restore choices (custom dumps; plain = whole only):
 | Server version / empty-target check / extension availability | `../core/pg_inspect.py` |
 | Understanding a dump's contents + building a selection | `toc.py` (pure functions, no DB) |
 | Dump, upload validation, contents cache, restore plan/preflight/run | `engine.py` |
-| Catalogue + run history (SQLite) and the files | `state_store.py` |
-| Background thread + log tail + progress | `runner.py` |
+| Catalogue + run history (Postgres schema `data_dumper`, B6; SQLite standalone) and the files (S3 storage, local cache) | `state_store.py` |
+| Run as a job in the `worker` container + log tail + progress (shared `../core/jobs/runner.py`) | `runner.py` |
 | API + page | `server.py`, `ui/index.html` |
 
 ## Things that will bite you if you don't know them
@@ -57,12 +57,14 @@ Restore choices (custom dumps; plain = whole only):
   per-object `DROP … IF EXISTS … CASCADE` for `tables/objects`. Atomic: if the restore part fails, the
   drops roll back (verified). Not available for plain dumps or data-only/post-data restores.
 - **Dumps are written to `<id>.<ext>.part` and renamed only when `pg_dump` exits 0**; a stopped/failed dump
-  leaves no file. A restart marks dumps still 'running' as failed (`recover_interrupted`).
+  leaves no file. A dump/run still 'running' with NO live job (worker killed, standalone restart) is marked
+  failed by `runner.recover_orphans()` (web start) / `runner.heal()` (status reads) → `state_store.fail_orphans`
+  (20 s grace for a just-created dump). Verified: worker killed mid-dump → failed after ~27 s, `.part` removed.
 - **pg_dump only dumps servers up to its own major version** (bundled client: `PG_CLIENT_MAJOR` in the
   Dockerfile, default 18). An uploaded dump from a NEWER pg_dump cannot be read — the error says so.
 - **Owners/GRANTs are stripped by default** (`--no-owner --no-privileges`) so a dump restores on any
   server; roles themselves are never in a pg_dump.
-- **Dumps are plain files on a volume, unencrypted, downloadable by anyone who can open the toolbox** —
+- **Dumps are plain files (S3 storage + local cache), unencrypted, downloadable by anyone who can open the toolbox** —
   the same trust model as the Vault (single trusted user). No retention/cleanup yet (manual delete).
 - **Dropped connections ("SSL error: unexpected eof")**: a dump/restore holds ONE connection for minutes and
   NATs, proxies, load balancers and tunnels silently drop idle-looking ones. `core/pgclient.py` therefore
@@ -75,7 +77,16 @@ Restore choices (custom dumps; plain = whole only):
   3 attempts the cause is outside the tool: a proxy/tunnel with a hard timeout, the server killing the
   backend (check the server log; a read replica cancels long queries on recovery conflicts), or a very
   slow/lossy link (pg_dump runs thousands of catalog queries before the first row).
-- **In-process job registry → `--workers 1`**, a sixth stateful tool in `../CLAUDE.md`'s standing rule.
+- **Dumps/restores are jobs in the `worker` container since roadmap B5** (`runner.do_dump`/`do_restore` via
+  `core/jobs/runner.JobRunner`; thread fallback standalone). Log tail, progress (written to Redis at most 1/s) and
+  "running" are in Redis; a web restart mid-dump doesn't stop it (verified). Stop while still queued cancels the
+  job and marks the dump "Stopped by you before it started."
+- **Dump files live in S3 storage** (`state_store.FILES`, `core/state/filecache.py`, keys
+  `data-dumper/<id>/<file>`): uploaded right after `pg_dump` finishes / an upload is validated (a dump that can't
+  be stored fails — it would vanish with the machine). `files/` is a per-process cache: restore, contents and
+  download fetch the file when missing (verified with the local copy deleted). The cache is trimmed to
+  `DATA_DUMPER_CACHE_MB` (default 2048), evicting only stored files not used in the last 15 min. `disk.dumps_bytes`
+  in `/dumps` is now the total of ready dumps; `free_bytes` is still the local disk (where pg_dump writes).
 
 ## Not built (decided, not forgotten)
 

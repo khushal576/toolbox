@@ -163,8 +163,9 @@ def preflight(project: dict, src: Endpoint, tgt: Optional[Endpoint], log: LogFn)
 def build_script(project: dict, src: Endpoint, schemas: list[str], log: LogFn, cancel: threading.Event) -> dict:
     """Generate the full DDL script for *schemas* into scripts/<project>.sql.
     Returns {bytes, lines, kinds}."""
-    out = store.script_path(project["id"])
-    tmp = out.with_suffix(".dump.tmp")
+    final = store.script_path(project["id"])
+    out = final.with_name(final.name + ".part")  # a failed/stopped build never replaces the previous script
+    tmp = final.with_suffix(".dump.tmp")
     foreign = catalog.foreign_tables(src.conn, schemas)
     log("info", f"running pg_dump --schema-only on {len(schemas)} schema(s)…")
     pgtools.pg_dump(
@@ -205,11 +206,14 @@ def build_script(project: dict, src: Endpoint, schemas: list[str], log: LogFn, c
                     for s, q, v in seqs:
                         f.write(f"SELECT pg_catalog.setval('{_qi(s)}.{_qi(q)}'::regclass, {int(v)}, true);\n")
                     log("info", f"{len(seqs)} sequence value(s) included")
+        out.replace(final)
     finally:
         tmp.unlink(missing_ok=True)
+        out.unlink(missing_ok=True)
+    store.publish_script(project["id"])
     for e in exts:
         kinds["EXTENSION"] += 1
-    return {"bytes": out.stat().st_size, "lines": lines, "kinds": dict(kinds.most_common())}
+    return {"bytes": final.stat().st_size, "lines": lines, "kinds": dict(kinds.most_common())}
 
 
 def _explain_failure(err: str, script_lines: list[str]) -> dict:
@@ -228,7 +232,9 @@ def _explain_failure(err: str, script_lines: list[str]) -> dict:
 def apply_script(project: dict, tgt: Endpoint, cancel: threading.Event, log: LogFn) -> Optional[dict]:
     """Apply the saved script in ONE transaction. Returns None on success, or an
     {message, detail, line, context} failure description (target untouched)."""
-    path = store.script_path(project["id"])
+    path = store.fetch_script(project["id"])
+    if path is None:
+        raise pgtools.PgToolError("The generated script is missing — run Preview or Apply again.")
     log("info", f"applying {path.stat().st_size:,} bytes to the target in a single transaction…")
     ok, err = pgtools.psql_apply(
         host=tgt.host, port=tgt.port, user=tgt.data["username"], password=tgt.data["password"],

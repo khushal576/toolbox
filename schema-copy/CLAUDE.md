@@ -50,8 +50,8 @@ rolls back.
 | Spawning `pg_dump`/`psql` (bundled binaries, env, cancel, argv) | `pgtools.py` (thin re-export of `../core/pgclient.py`, shared with data-dumper) |
 | Read-only catalog queries: schemas, extensions, foreign tables, target-emptiness, the per-category object-name sets used for verification | `catalog.py` |
 | Preflight, script building, applying, verification, one run end to end | `engine.py` |
-| Projects + last-run result (SQLite, `schema_copy_data` volume) and the script files | `state_store.py` |
-| Background thread + log tail | `runner.py` |
+| Projects + last-run result (Postgres schema `schema_copy`, B6; SQLite standalone) and the script files (S3 storage, local cache) | `state_store.py` |
+| Run as a job in the `worker` container + log tail (shared `../core/jobs/runner.py`) | `runner.py` |
 | API + page | `server.py`, `ui/index.html` |
 | Vault entry → connection (SSH tunnel aware; shared with data-syncer) | `../core/db_endpoint.py` |
 
@@ -85,8 +85,13 @@ rolls back.
   "data-ish" thing the tool ever reads, and it is opt-in.
 - **A schema subset can fail the apply** if chosen schemas depend on unchosen
   ones; preflight warns, the one-transaction apply keeps it safe.
-- **In-process job registry → `--workers 1`**, a fifth stateful tool in
-  `../CLAUDE.md`'s standing rule. The last run's *result* is durable in SQLite.
+- **Runs are jobs in the `worker` container since roadmap B5** (`runner.run_action` via the shared
+  `core/jobs/runner.JobRunner`; a background thread when standalone without Redis). Log tail + "running" live in
+  Redis, so any web process sees them and a web restart doesn't kill an apply. A worker that dies mid-run just
+  shows as not running ~30 s later (the last run result stays the previous one; psql's transaction rolls back).
+- **The script's home is S3 storage** (`state_store.SCRIPTS`, `core/state/filecache.py`): built as
+  `<id>.sql.part`, renamed, then uploaded; `scripts/` is only a cache, re-downloaded by apply/preview/download
+  when missing. A failed/stopped build no longer overwrites the previous script.
 
 - **Stop an apply**: `psql` is terminated, so the single transaction is never
   committed and nothing is left behind (verified) — but the server only
