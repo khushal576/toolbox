@@ -2,10 +2,10 @@
 ProxyApp — forward a mounted tool's HTTP traffic to another process (roadmap B9; the first small piece of the
 phase-C gateway).
 
-Used for `singleton: true` plugins (sql-studio, schema-map): the web app runs several worker processes, but those
-tools hold ONE live database pool each (and never store the password), so they run in one dedicated process — the
-`singletons` compose service — and every web worker forwards `/tools/<name>/...` there unchanged (same path, same
-query, same cookies). Request and response bodies are streamed, never buffered (uploads, exports and downloads
+Since roadmap C2 the `toolbox` service is a gateway: every python tool is forwarded to the runtime image its
+manifest names (`rt-light`, `rt-data`, … — TOOLBOX_RUNTIME_URLS), and the `singleton: true` plugins (sql-studio,
+schema-map: ONE live DB pool each, password never stored) to the one-process `singletons` service
+(TOOLBOX_SINGLETON_URL). Path, query, cookies and Host are forwarded unchanged. Request and response bodies are streamed, never buffered (uploads, exports and downloads
 can be large). Websockets are refused (no tool uses one).
 """
 
@@ -19,8 +19,10 @@ from core_plugins.lazy import _reject
 logger = logging.getLogger("toolbox.plugins")
 
 # Hop-by-hop headers (RFC 9110 §7.6.1) are for one connection only and must not be forwarded.
+# Host is NOT dropped: tools see the browser's Host (cookie-lab / header-reference show it; cookies stay right),
+# the usual reverse-proxy behaviour (nginx: proxy_set_header Host $host).
 _HOP = {b"connection", b"keep-alive", b"proxy-authenticate", b"proxy-authorization", b"te", b"trailer",
-        b"transfer-encoding", b"upgrade", b"host"}
+        b"transfer-encoding", b"upgrade"}
 _client = None
 _client_loop = None
 
@@ -43,15 +45,26 @@ def _http():
 
 
 class ProxyApp:
-    def __init__(self, name: str, title: str, base_url: str):
+    def __init__(self, name: str, title: str, base_url: str, supervisor: Any = None):
         self.name, self.title, self.base_url = name, title, base_url.rstrip("/")
         self.state = "remote"
+        # roadmap C3: an on-demand runtime's container is started here if it sleeps (the request waits for it)
+        self.supervisor = supervisor
 
     async def __call__(self, scope: dict[str, Any], receive, send) -> None:
         if scope["type"] != "http":
             await _reject(scope, send, 503, "Not supported", "")
             return
         import httpx
+
+        sup = self.supervisor
+        if sup is not None:
+            sup.touch()
+            if not await sup.ensure_running():
+                await _reject(scope, send, 503, f"{self.title} could not be started",
+                              f"<p>Its container (<code>{sup.service}</code>) did not start. Check "
+                              f"<code>docker compose ps</code> and <code>docker compose logs {sup.service} docker-proxy</code>.</p>")
+                return
 
         path = scope.get("raw_path") or scope["path"].encode()  # the ORIGINAL path, incl. /tools/<name>
         url = self.base_url + path.decode("latin-1")
@@ -84,16 +97,22 @@ class ProxyApp:
             resp = await http.send(req, stream=True)
         except httpx.HTTPError as exc:
             logger.warning("proxy %s → %s failed: %s", self.name, self.base_url, exc)
+            import html
+            from urllib.parse import urlsplit
+
+            service = html.escape(urlsplit(self.base_url).hostname or self.base_url)
             await _reject(scope, send, 503, f"{self.title} is starting or unavailable",
-                          f"<p>{self.title} runs in its own process (the <code>singletons</code> service) and did "
+                          f"<p>{html.escape(self.title)} runs in its own container (<code>{service}</code>) and did "
                           "not answer. If you just started the toolbox, wait a few seconds and reload. Otherwise check "
-                          "<code>docker compose logs singletons</code>.</p>")
+                          f"<code>docker compose ps</code> and <code>docker compose logs {service}</code>.</p>")
             return
         try:
             out_headers = [(k.lower(), v) for k, v in resp.headers.raw if k.lower() not in _HOP]
             await send({"type": "http.response.start", "status": resp.status_code, "headers": out_headers})
             async for chunk in resp.aiter_raw():  # raw: keep the upstream encoding + content-length as they are
                 await send({"type": "http.response.body", "body": chunk, "more_body": True})
+                if sup is not None:
+                    sup.touch()  # a long download is activity, not idleness (throttled to every 5 s)
             await send({"type": "http.response.body", "body": b"", "more_body": False})
         finally:
             await resp.aclose()

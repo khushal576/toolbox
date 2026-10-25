@@ -1,0 +1,3 @@
+# Image "gateway" (roadmap C2): the workspace UI + the proxy that routes /tools/<name> to each tool's runtime
+# image. Runs no tool code; the state clients are for /api/state/health and `python -m core.state.selftest`.
+-r state.txt

@@ -1,0 +1,5 @@
+# Runtime "pgtools" (roadmap C1): Schema Copy, Data Dumper (+ the bundled pg_dump/pg_restore/psql in the image).
+# sshtunnel/paramiko: Vault connections may go through an SSH tunnel (core/postgres_conn.py).
+-r state.txt
+paramiko==3.4.0
+sshtunnel==0.4.0

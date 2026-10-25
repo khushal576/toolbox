@@ -1,0 +1,2 @@
+# Runtime "latex" (roadmap C1): LaTeX → PDF (TeX Live comes from apt in the image, not pip).
+-r light.txt

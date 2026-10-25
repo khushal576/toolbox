@@ -66,10 +66,10 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | B7 | Vault as a service with scoped API | M | B6 | ☑ |
 | B8 | SSH & SFTP state out of memory | M | B1 ⚡ | ☑ |
 | B9 | Multiple workers + full regression | S | B2–B8 | ☑ |
-| C1 | Split into runtime images | M | B9 | ☐ |
-| C2 | Gateway service + routing from manifests | M | C1 | ☐ |
-| C3 | On-demand supervisor (start/stop, idle, limits) | M | C2 | ☐ |
-| C4 | Move tier-4 tools to on-demand containers | S | C3 | ☐ |
+| C1 | Split into runtime images | M | B9 | ☑ |
+| C2 | Gateway service + routing from manifests | M | C1 | ☑ |
+| C3 | On-demand supervisor (start/stop, idle, limits) | M | C2 | ☑ |
+| C4 | Move tier-4 tools to on-demand containers | S | C3 | ☑ |
 | D1 | DataDiff as a shared API + client | M | C2 ⚡ | ☐ |
 | D2 | Generic job API + results in S3 storage | M | D1 | ☐ |
 | D3 | Replica autoscaling on one node | M | C3, D2 | ☐ |
@@ -279,6 +279,60 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+- 2026-10-25 – **C4 done — phase C complete.** The tier-4 tools (LaTeX, SSH & SFTP, Schema Copy, Data Dumper) were
+  already on-demand since C3; what was left: the `worker` ran the 1.2 GB `full` image with TeX Live it never uses →
+  new Dockerfile target `worker` (all packages + pg_dump, no TeX, 647 MB); `full` is no longer run by compose (kept
+  for a single-container `docker run`). Test: among compose-built targets only `rt-latex` inherits the `tex` stage.
+  Verified on the new worker: dump, restore (200k rows) and an upsert sync all completed; no pdflatex inside.
+  Measured (`measure-C4.md`): stack idle 643 MiB awake → 548 MiB with the on-demand runtimes asleep; after use
+  those three held 168 MiB, freed on sleep. Honest note in the file: the whole stack is bigger than the original
+  single container (state services ~150 MiB + a Python floor per container) — what dropped is the idle cost of
+  unused heavy tools. Unused images `toolbox-full` / `toolbox-toolbox` (1.2 GB each) can be removed.
+  **Checkpoint (owner):** phase D (DataDiff as shared API, autoscaling) / E (metrics, status page) / F (multi-node)
+  are optional for one user on one machine.
+- 2026-10-25 – **C3 done.** `core_plugins/supervisor.py` in the gateway: on-demand = runtimes whose python plugins
+  are all tier 4 + `scaling.min: 0` (latex, pgtools, ssh; light/data always on); idle = max `idle_timeout_s`
+  (`TOOLBOX_IDLE_TIMEOUT_S` overrides, empty = manifests). `ProxyApp` calls `ensure_running()` (cached Docker state
+  2 s, start + wait for `/healthz` ≤ 60 s, asyncio lock per process) and touches Redis activity (also while
+  streaming); one leader per gateway sweeps every 15 s. Docker via new `docker-proxy` service
+  (tecnativa/docker-socket-proxy:0.3.0) with OUR haproxy rules — its env switches can't allow start/stop without
+  allowing every container POST (create/exec/update); ours: GET _ping/version/containers(json), POST start/stop of
+  `*-rt-<runtime>-<n>` only. Limits: tier-4 manifests got `resources`, compose `mem_limit`/`cpus` = sum (test).
+  Status shows `asleep`/`starting` (UI dots + pills), `GET /api/workspace/runtimes`. Startup hook avoided
+  (`on_event` deprecated / gone in Starlette 1.x): the sweep starts on a worker's first request. Verified with
+  idle 45 s: all three stopped after ~50 s; cold latex page 200 in 1.2 s; 6 concurrent cold pgtools requests all 200
+  (4 start calls = one per gateway worker, Docker answers 304 — harmless); denied: stop postgres/worker, create,
+  kill, exec, update, delete, images, volumes, info (403); limits visible in `docker inspect`; smoke 89 × 3 (one run
+  with runtimes asleep). 126 unit. Asleep saves ~40 MiB idle per runtime (more after use: latex/pandas pages).
+  **Next:** C4 (drop TeX Live from images that don't need it — `full` still carries it for the worker) or stop here.
+- 2026-10-25 – **C2 done.** `toolbox` = gateway: new Dockerfile target `gateway` (241 MB: light + state clients, no
+  tool libs), web role with `TOOLBOX_RUNTIME_URLS` → every python plugin is a `ProxyApp` to `rt-<runtime>` (singletons
+  → `singletons`), static/external served locally, `_lazy` stays empty. rt-* run by default (no host ports, profile
+  removed; rt-data 2 workers), `singletons` now on the data image, `worker` on `toolbox-full`; compose uses
+  `x-state-env` / `x-tool-service` anchors (`depends_on` is REPLACED by a merge, not combined — services that need
+  their own list restate it). Proxy now forwards the browser's Host. `/api/state/health` is answered by rt-data (its
+  probes made each gateway worker +25 MB: 288 → 211 MiB after 12 calls). 503 page names the container
+  (`docker compose logs rt-latex`). No tool needs WebSockets (checked). Orchestrator CLI → `docker compose exec
+  worker`. Verified: smoke 89 × 5 through the gateway; 144 MB duck-lab upload + 150 MB CSV export streamed;
+  status shows tools loaded in other containers; stopping rt-latex → only LaTeX shows the 503 page, back on start.
+  **Idle memory went UP**: ~260 MiB (B9) → ~500 MiB for all tool containers (gateway 177 + six Python floors of
+  ~38 MB + rt-data 104 + worker 21) — the price of separate containers; C3 (stop idle runtimes) wins it back.
+  The old `toolbox-toolbox` image (1.2 GB) is unused now (can be removed). 122 unit. **Next:** C3.
+- 2026-10-25 – **C1 done.** Dockerfile = stages `pgclient → pyslim → code → wheels → deps-*/runtime …→ tex → latex →
+  full`; targets `light` 187 MB, `ssh` 249 MB, `pgtools` 267 MB, `data` 629 MB, `latex` 746 MB, `full` 1.2 GB (was
+  1.35 GB: the wheelhouse no longer sits in a layer — packages install in `deps-*` stages with `pip --prefix=/install`,
+  only /install is copied). `requirements/{light,state,data,pgtools,ssh,latex}.txt` (pins identical to
+  requirements.txt, `tests/unit/test_runtimes.py`). `main.py` role `runtime` (+`TOOLBOX_RUNTIME`): only its own python
+  plugins, singletons never; role filters now run BEFORE the on/off check (a turned-off tool of another role was
+  getting a "turned off" mount). Vault moved to runtime `data` (needs DB drivers, DuckDB, paramiko). Compose: `toolbox`
+  builds `target: full`; `rt-light/data/pgtools/ssh/latex` under profile `runtimes` (127.0.0.1:8101–8105, not started
+  by default). Gotchas: no buildx here → classic builder: no `RUN --mount`, and it runs every stage before the target
+  (stages ordered cheapest-first); the `tex` stage must begin exactly like the old image or the ~600 MB TeX Live
+  layer re-downloads (it did once, and failed on a flaky mirror). ssh-sftp needed `sshtunnel` (core/ssh_client →
+  core/postgres_conn). Verified: every runtime loads all its plugins (pages 200, state loaded) and 404s other tools;
+  vault decrypt + duck-lab session (data), pg_dump/psql 18 + dump catalogue (pgtools), PDF compile (latex) against the
+  shared state; main stack on the new `full` image: smoke 89 × 2. 121 unit. **Next:** C2 (gateway routes
+  /tools/<name> to its runtime service; then `toolbox` can shrink to the gateway).
 - 2026-10-25 – **B9 done — phase B complete.** Web runs `TOOLBOX_WEB_WORKERS` uvicorn workers (compose default 4;
   image default 1). New `singletons` service (same image, `TOOLBOX_ROLE=singletons`, one process, healthcheck
   `/healthz`) hosts sql-studio + schema-map; web workers forward to it with `core_plugins/proxy.py` (`ProxyApp`:

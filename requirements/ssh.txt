@@ -1,0 +1,5 @@
+# Runtime "ssh" (roadmap C1): SSH & SFTP.
+# sshtunnel: ssh-sftp imports core.postgres_conn (scrub_password), which imports it at module level.
+-r state.txt
+paramiko==3.4.0
+sshtunnel==0.4.0

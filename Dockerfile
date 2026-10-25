@@ -1,10 +1,26 @@
 # =============================================================================
 # Toolbox — Dockerfile
 # =============================================================================
-# One image, one container, one process: serves the home page (main.py) and
-# every tool mounted inside it (currently just DataDiff Pro).
-# Build:   docker build -t toolbox .
-# Run:     docker-compose up
+# One Dockerfile, several images (build targets, roadmap C1). Every image has the same code and the same
+# plugin loader (main.py); they differ only in the libraries/system tools installed and which plugins they mount:
+#   worker   background jobs of every runtime: all packages + pg_dump, no TeX (the `worker` service, roadmap C4)
+#   full     everything incl. TeX in one image — only for a single-container `docker run` (default target)
+#   gateway  workspace UI + proxy, no tool code — the `toolbox` service since roadmap C2
+#   light    small stateless tools                       TOOLBOX_RUNTIME=light
+#   data     pandas / DuckDB / DB drivers (+ Vault)       TOOLBOX_RUNTIME=data
+#   pgtools  + bundled pg_dump/pg_restore/psql            TOOLBOX_RUNTIME=pgtools
+#   ssh      paramiko (SSH & SFTP)                        TOOLBOX_RUNTIME=ssh
+#   latex    TeX Live (LaTeX → PDF)                       TOOLBOX_RUNTIME=latex
+# A plugin's `runtime:` in its manifest.yaml decides which image serves it; requirements/<runtime>.txt lists
+# that image's Python packages (pins identical to requirements.txt — tests/unit/test_runtimes.py).
+# Build:   docker build -t toolbox .                  (full)
+#          docker build --target data -t toolbox-rt-data .
+# Run:     docker-compose up -d                       (gateway + one container per runtime, roadmap C2)
+#
+# The classic builder is used here (no BuildKit/buildx), so packages are installed in throw-away deps-*
+# stages with `pip --prefix=/install` and only /install is copied into an image — the 130 MB wheelhouse
+# never ends up in a final image. Note the classic builder runs every stage that comes BEFORE the target,
+# so the stages are ordered cheapest-first.
 # =============================================================================
 
 # --- Stage 1: the PostgreSQL client bundle (pg_dump + pg_restore + psql) -----
@@ -26,49 +42,16 @@ RUN mkdir -p /opt/pgclient/bin /opt/pgclient/lib \
  && for b in pg_dump pg_restore psql; do ldd /usr/lib/postgresql/${PG_CLIENT_MAJOR}/bin/$b | awk '/=> \//{print $3}'; done | sort -u \
     | grep -Ev '/(libc|libm|libdl|libpthread|librt|libresolv)\.so' | xargs -I{} cp -L {} /opt/pgclient/lib/
 
-# --- Stage 2: the toolbox ------------------------------------------------------
-# Use the official slim Python 3.11 image as the base.
-# "slim" strips dev tools and docs to keep the image small (~60 MB base).
-FROM python:3.11-slim
-
-# Set a working directory inside the container.
+# --- Base for every image: slim Python 3.11 + env ------------------------------
+FROM python:3.11-slim AS pyslim
 WORKDIR /app
+# No .pyc files, unbuffered logs (they show up in `docker compose logs` at once), /app importable.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
 
-# --- TeX Live (LaTeX to PDF tool) --------------------------------------------
-# Offline pdflatex for latex-pdf/. Kept before the pip layer so rebuilds that only change app code
-# reuse it. texlive-fonts-extra (fontawesome5, marvosym, ...) is a 624 MB download / ~1.7 GB on disk,
-# so it is opt-in:
-#   docker compose build --build-arg TEX_FONTS_EXTRA=1
-ARG TEX_FONTS_EXTRA=0
-RUN apt-get update \
- && apt-get install -y --no-install-recommends texlive-latex-base texlive-latex-recommended \
-        texlive-latex-extra texlive-fonts-recommended texlive-plain-generic lmodern \
- && if [ "$TEX_FONTS_EXTRA" = "1" ]; then apt-get install -y --no-install-recommends texlive-fonts-extra; fi \
- && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
-
-# Font Awesome for LaTeX resumes: the CTAN `fontawesome` and `fontawesome5` packages (~2 MB together,
-# vendored in latex-pdf/texmf/) instead of the ~1.7 GB texlive-fonts-extra. Installed into TEXMFLOCAL
-# and registered with updmap. Note LaTeX itself refuses to load both in one document (fontawesome5
-# errors) — a resume must pick one.
-COPY latex-pdf/texmf/ /tmp/texmf/
-RUN python /tmp/texmf/install_fontawesome.py /usr/local/share/texmf /tmp/texmf/fontawesome5.zip /tmp/texmf/fontawesome.zip \
- && mktexlsr \
- && updmap-sys --enable Map=fontawesome5.map --enable Map=fontawesome.map \
- && rm -rf /tmp/texmf
-
-# --- Install dependencies first (separate layer for better caching) ----------
-# Copy only the requirements file first so Docker can cache this layer.
-# If requirements.txt doesn't change, this layer is reused on every rebuild.
-#
-# wheelhouse/ (gitignored) holds pre-downloaded wheels for this exact
-# platform/Python version — see "./download-wheels.sh". Installing from it
-# avoids hitting the network during the build, which matters on a slow
-# connection. Regenerate wheelhouse/ after changing requirements.txt.
-COPY requirements.txt .
-COPY wheelhouse/ ./wheelhouse/
-RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse -r requirements.txt \
-    && rm -rf ./wheelhouse
-
+# --- Application code (identical in every image) -------------------------------
+FROM pyslim AS code
 # --- Copy application code ---------------------------------------------------
 # DataDiff Pro (tool #1) — uses the un-namespaced "core"/"api" top-level
 # packages. Grandfathered as-is; any NEW tool must NOT reuse these two
@@ -176,7 +159,6 @@ COPY data-syncer/ ./data_syncer/
 # 'pgclient' stage above. Imports core.db_endpoint (Vault -> connection,
 # shared with data-syncer), so must be copied after core/. Runs as a job in
 # the `worker` service; scripts live in S3 storage (roadmap B5).
-COPY --from=pgclient /opt/pgclient /opt/pgclient
 COPY schema-copy/ ./schema_copy/
 
 # Data Dumper (tool #18) — whole-folder copy. Takes Postgres dumps (downloadable) and restores
@@ -205,22 +187,130 @@ COPY main.py .
 # Create empty __init__.py files so Python treats these as packages.
 RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py
 
-# --- Runtime config ----------------------------------------------------------
-# Tell Python not to write .pyc files and not to buffer stdout/stderr.
-# Unbuffered output means logs appear immediately in docker-compose logs.
+# --- Python packages: wheelhouse + one deps stage per image ----------------------
+# wheelhouse/ (gitignored) holds pre-downloaded wheels for this exact platform/Python version — see
+# ./download-wheels.sh; regenerate it after changing requirements.txt. Installing from it avoids the
+# network during builds (slow connection).
+FROM pyslim AS wheels
+COPY requirements.txt ./
+COPY requirements/ ./requirements/
+COPY wheelhouse/ ./wheelhouse/
+
+FROM wheels AS deps-light
+RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/install -r requirements/light.txt
+
+# --- Runtime images (roadmap C1) -------------------------------------------------
+FROM pyslim AS light
+COPY --from=deps-light /install /usr/local
+COPY --from=code /app /app
+ENV TOOLBOX_ROLE=runtime TOOLBOX_RUNTIME=light
+EXPOSE 8080
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers ${TOOLBOX_WEB_WORKERS:-1}"]
+
+# --- gateway (roadmap C2): workspace UI + proxy to the runtime images; runs no tool code ---------------------
+FROM wheels AS deps-gateway
+RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/install -r requirements/gateway.txt
+
+FROM pyslim AS gateway
+COPY --from=deps-gateway /install /usr/local
+COPY --from=code /app /app
+# web role: home page, switches, status; every python tool proxied to TOOLBOX_RUNTIME_URLS / TOOLBOX_SINGLETON_URL
+ENV TOOLBOX_ROLE=web
+EXPOSE 8080
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers ${TOOLBOX_WEB_WORKERS:-1}"]
+
+FROM wheels AS deps-ssh
+RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/install -r requirements/ssh.txt
+
+FROM pyslim AS ssh
+COPY --from=deps-ssh /install /usr/local
+COPY --from=code /app /app
+ENV TOOLBOX_ROLE=runtime TOOLBOX_RUNTIME=ssh
+EXPOSE 8080
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers ${TOOLBOX_WEB_WORKERS:-1}"]
+
+FROM wheels AS deps-pgtools
+RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/install -r requirements/pgtools.txt
+
+FROM pyslim AS pgtools
+COPY --from=deps-pgtools /install /usr/local
+COPY --from=pgclient /opt/pgclient /opt/pgclient
+COPY --from=code /app /app
+ENV TOOLBOX_ROLE=runtime TOOLBOX_RUNTIME=pgtools
+EXPOSE 8080
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers ${TOOLBOX_WEB_WORKERS:-1}"]
+
+FROM wheels AS deps-data
+RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/install -r requirements/data.txt
+
+FROM pyslim AS data
+COPY --from=deps-data /install /usr/local
+COPY --from=code /app /app
+ENV TOOLBOX_ROLE=runtime TOOLBOX_RUNTIME=data
+EXPOSE 8080
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers ${TOOLBOX_WEB_WORKERS:-1}"]
+
+# --- worker (roadmap C4): background jobs of every runtime — all Python packages + pg_dump, NO TeX Live ---------
+# Jobs are syncs, dumps/restores, schema copies, SSH uploads/commands; none renders LaTeX, so the worker no
+# longer drags TeX Live around (before C4 it ran the 1.2 GB `full` image).
+FROM wheels AS deps-full
+RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/install -r requirements.txt
+
+FROM pyslim AS worker
+COPY --from=deps-full /install /usr/local
+COPY --from=pgclient /opt/pgclient /opt/pgclient
+COPY --from=code /app /app
+CMD ["python", "-m", "core.jobs.worker"]
+
+# --- TeX Live: base for the latex and full images ---------------------------------
+# Starts exactly like the pre-C1 image (FROM python:3.11-slim, WORKDIR, then TeX) so its big apt layer stays
+# cached across rebuilds — TeX Live is a ~600 MB download on a slow line.
+FROM python:3.11-slim AS tex
+WORKDIR /app
+# --- TeX Live (LaTeX to PDF tool) --------------------------------------------
+# Offline pdflatex for latex-pdf/. Kept before the pip layer so rebuilds that only change app code
+# reuse it. texlive-fonts-extra (fontawesome5, marvosym, ...) is a 624 MB download / ~1.7 GB on disk,
+# so it is opt-in:
+#   docker compose build --build-arg TEX_FONTS_EXTRA=1
+ARG TEX_FONTS_EXTRA=0
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends texlive-latex-base texlive-latex-recommended \
+        texlive-latex-extra texlive-fonts-recommended texlive-plain-generic lmodern \
+ && if [ "$TEX_FONTS_EXTRA" = "1" ]; then apt-get install -y --no-install-recommends texlive-fonts-extra; fi \
+ && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
+
+# Font Awesome for LaTeX resumes: the CTAN `fontawesome` and `fontawesome5` packages (~2 MB together,
+# vendored in latex-pdf/texmf/) instead of the ~1.7 GB texlive-fonts-extra. Installed into TEXMFLOCAL
+# and registered with updmap. Note LaTeX itself refuses to load both in one document (fontawesome5
+# errors) — a resume must pick one.
+COPY latex-pdf/texmf/ /tmp/texmf/
+RUN python /tmp/texmf/install_fontawesome.py /usr/local/share/texmf /tmp/texmf/fontawesome5.zip /tmp/texmf/fontawesome.zip \
+ && mktexlsr \
+ && updmap-sys --enable Map=fontawesome5.map --enable Map=fontawesome.map \
+ && rm -rf /tmp/texmf
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
-EXPOSE 8080
+FROM wheels AS deps-latex
+RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/install -r requirements/latex.txt
 
-# Start the toolbox app (main.py) with uvicorn.
-# --host 0.0.0.0  makes it reachable from outside the container.
-# --workers       N processes since roadmap B9 (TOOLBOX_WEB_WORKERS, default 4). Every stateful tool keeps its
-#                 state outside the process (Redis sessions, Postgres records, S3 files, jobs in the `worker`
-#                 service — roadmap B2–B8). The two exceptions, SQL Studio and Schema Map (`singleton: true`:
-#                 one live DB pool, password never stored), run in the separate `singletons` service
-#                 (TOOLBOX_ROLE=singletons, one worker) and this app proxies to them (TOOLBOX_SINGLETON_URL).
-#                 WITHOUT TOOLBOX_SINGLETON_URL (e.g. `docker run` of this image alone) they are mounted
-#                 in-process — then run with TOOLBOX_WEB_WORKERS=1. See ../CLAUDE.md "Standing rule".
+FROM tex AS latex
+COPY --from=deps-latex /install /usr/local
+COPY --from=code /app /app
+ENV TOOLBOX_ROLE=runtime TOOLBOX_RUNTIME=latex
+EXPOSE 8080
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers ${TOOLBOX_WEB_WORKERS:-1}"]
+
+# --- full: everything in one image (default target) --------------------------------
+# NOT run by compose (since roadmap C4). The image to `docker run` when you want every tool in ONE container
+# (then TOOLBOX_WEB_WORKERS=1, see below). The only image besides `latex` that carries TeX Live.
+FROM tex AS full
+COPY --from=deps-full /install /usr/local
+COPY --from=pgclient /opt/pgclient /opt/pgclient
+COPY --from=code /app /app
+EXPOSE 8080
+# --workers: N processes since roadmap B9 (TOOLBOX_WEB_WORKERS, compose default 4). Singleton plugins (sql-studio,
+# schema-map) run in the `singletons` service and are proxied (TOOLBOX_SINGLETON_URL); without that variable
+# (a bare `docker run`) they are mounted in-process — then keep TOOLBOX_WEB_WORKERS=1. See CLAUDE.md "Standing rule".
 CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers ${TOOLBOX_WEB_WORKERS:-1}"]

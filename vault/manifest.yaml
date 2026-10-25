@@ -8,7 +8,7 @@ icon: 🔒
 category: tool
 kind: python
 entry: vault.server:app
-runtime: light
+runtime: data     # roadmap C1: needs the DB drivers (test connection), DuckDB (dataset preview), paramiko
 tier: 2
 state: [durable]
 depends_on: []

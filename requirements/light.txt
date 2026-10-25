@@ -1,0 +1,9 @@
+# Runtime "light" (roadmap C1): small stateless tools + the plugin loader itself. Every other runtime starts from
+# this file. Pins must match ../requirements.txt exactly (tests/unit/test_runtimes.py checks it).
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pyyaml==6.0.1
+python-multipart==0.0.9
+httpx==0.28.1
+# workspace load-state shared between processes (main.py, roadmap B9)
+redis==5.2.1

@@ -39,6 +39,10 @@
     .nav-item .tt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--idle); flex: none; }
     .dot.loaded { background: var(--ok); } .dot.failed { background: var(--err); }
+    /* roadmap C3: on-demand runtime container stopped (starts on first use) / starting */
+    .dot.asleep { background: transparent; box-shadow: inset 0 0 0 1.5px var(--idle); }
+    .dot.starting { background: #e0a400; animation: dotpulse 1s ease-in-out infinite; }
+    @keyframes dotpulse { 50% { opacity: .35; } }
     .group { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
              color: var(--muted); padding: 14px 8px 4px; }
     .side-foot { border-top: 1px solid var(--border); padding: 10px 14px; font-size: 0.8rem; color: var(--muted); }
@@ -280,10 +284,12 @@
     function renderSettings(s) {
       var c = s.counts, on = s.plugins.filter(function (p) { return p.enabled; }).length;
       $("summary").innerHTML = pill("Tools", s.plugins.length) + pill("On", on) + pill("Off", s.plugins.length - on) +
-        pill("Loaded now", c.loaded || 0) + pill("Not loaded", c.not_loaded || 0) + (c.failed ? pill("Failed", c.failed) : "");
+        pill("Loaded now", c.loaded || 0) + pill("Not loaded", c.not_loaded || 0) + (c.failed ? pill("Failed", c.failed) : "") +
+        (c.asleep ? pill("Asleep (on demand)", c.asleep) : "") + (c.starting ? pill("Starting", c.starting) : "");
       $("rows").innerHTML = s.plugins.map(function (p) {
         var st = p.state === "disabled" ? (p.restart_to_free_memory ? "off · restart frees memory" : "off") : p.state.replace("_", " ");
-        var dot = p.state === "loaded" ? "loaded" : p.state === "failed" ? "failed" : "";
+        var dot = ["loaded", "failed", "asleep", "starting"].indexOf(p.state) >= 0 ? p.state : "";
+        if (p.state === "asleep") st = "asleep · starts on first use";
         return "<tr><td><div class='name'>" + esc(p.title) + "</div><div class='mono'>" + esc(p.name) + "</div></td>" +
           "<td class='hide-sm'>" + esc(p.kind) + "</td><td class='hide-sm'>" + esc(p.runtime || "–") + " · tier " + esc(p.tier) + "</td>" +
           "<td><span class='state'><span class='dot " + dot + "'></span>" + esc(st) + "</span>" +

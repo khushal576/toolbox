@@ -1,186 +1,226 @@
 # =============================================================================
 # Toolbox — docker-compose.yml
 # =============================================================================
-# toolbox    = home page + every mounted tool (main.py), N uvicorn workers (TOOLBOX_WEB_WORKERS, default 4).
-# singletons = the same image with ONE process for the `singleton: true` tools (SQL Studio, Schema Map);
-#              toolbox forwards their /tools/<name>/ traffic there (roadmap B9).
-# worker     = background jobs; redis/postgres/seaweedfs = state services.
+# toolbox    = the GATEWAY (roadmap C2): workspace UI + proxy. Runs no tool code; forwards every /tools/<name>/
+#              to the runtime image its manifest names. N uvicorn workers (TOOLBOX_WEB_WORKERS, default 4).
+# rt-light / rt-data / rt-pgtools / rt-ssh / rt-latex
+#            = runtime images (roadmap C1), each serving ONLY the tools of its `runtime:`.
+# singletons = SQL Studio + Schema Map in ONE process (`singleton: true`, roadmap B9), data image.
+# worker     = background jobs of every runtime (worker image, no TeX); redis/postgres/seaweedfs = state services.
 #
 # Usage:
 #   Start:   docker-compose up --build -d
 #   Stop:    docker-compose down
-#   Logs:    docker-compose logs -f
+#   Logs:    docker-compose logs -f            (one tool's image: docker compose logs -f rt-data)
 #
 # Open in browser: http://localhost:8000
 # (8080 is deliberately avoided as the host port — commonly taken by other
 # local services such as Jenkins.)
 # =============================================================================
 
+# State services for every Toolbox container (roadmap B1, core/state/config.py). Defaults point at the bundled
+# services below; set TOOLBOX_DATABASE_URL in a .env file to use an existing Postgres (own `toolbox` DB + user).
+# TOOLBOX_VAULT_KEY (roadmap B7) comes from the git-ignored .env — NOT a data volume.
+x-state-env: &state-env
+  PYTHONUNBUFFERED: "1"
+  TOOLBOX_DATABASE_URL: ${TOOLBOX_DATABASE_URL:-postgresql://toolbox:${TOOLBOX_DB_PASSWORD:-toolbox-local-only}@postgres:5432/toolbox}
+  TOOLBOX_REDIS_URL: ${TOOLBOX_REDIS_URL:-redis://redis:6379/0}
+  TOOLBOX_S3_ENDPOINT: ${TOOLBOX_S3_ENDPOINT:-http://seaweedfs:8333}
+  TOOLBOX_S3_ACCESS_KEY: ${TOOLBOX_S3_ACCESS_KEY:-toolbox}
+  TOOLBOX_S3_SECRET_KEY: ${TOOLBOX_S3_SECRET_KEY:-toolbox-local-only-secret}
+  TOOLBOX_S3_BUCKET: ${TOOLBOX_S3_BUCKET:-toolbox}
+  TOOLBOX_VAULT_KEY: ${TOOLBOX_VAULT_KEY:-}
+
+# Tool containers: restart on crash, reach services on the HOST as `host.docker.internal` (Docker Desktop does
+# this by itself; native Linux needs the mapping — e.g. a host Postgres, or Schema Map's Ollama), and report
+# health on /healthz.
+x-tool-service: &tool-service
+  restart: unless-stopped
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+    interval: 15s
+    timeout: 5s
+    retries: 3
+  depends_on:
+    redis:
+      condition: service_started
+    postgres:
+      condition: service_started
+    seaweedfs:
+      condition: service_started
+
 services:
+  # ---------------------------------------------------------------------------
+  # Gateway (roadmap C2) — the only service on a host port.
+  # ---------------------------------------------------------------------------
   toolbox:
+    <<: *tool-service
     build:
       context: .
       dockerfile: Dockerfile
-
-    # Map host port 8000 → container port 8080.
+      target: gateway
+    image: toolbox-gateway
     ports:
       - "8000:8080"
-
-    # Restart the container automatically if it crashes.
-    restart: unless-stopped
-
-    # Lets the container reach services running on the HOST (not in this
-    # compose file) via the stable name `host.docker.internal`, the same
-    # name Docker Desktop provides automatically — on native Linux it
-    # needs this explicit mapping. Added for Schema Map's "AI Assist"
-    # initiative: an Ollama instance runs as its own separate container
-    # (a different docker-compose project entirely, not part of this
-    # one), reachable only via its host-published port. Without this,
-    # the only working address was the bridge gateway IP (172.17.0.1 on
-    # this host) — correct today, but an implementation detail of this
-    # specific machine's Docker networking, not something to hardcode
-    # into application code.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    # Web worker processes (roadmap B9). Every tool's state is shared (Redis/Postgres/S3) except the singletons,
-    # which run in the `singletons` service below.
     command: ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers $${TOOLBOX_WEB_WORKERS:-4}"]
-
-    # Start order only — Toolbox still starts if a state service is down (tools that don't use state keep
-    # working; GET /api/state/health reports the problem).
-    depends_on:
-      redis:
-        condition: service_started
-      postgres:
-        condition: service_started
-      seaweedfs:
-        condition: service_started
-      singletons:
-        condition: service_started
-
-    # Environment variables available inside the container.
-    # Add any future config here (e.g. LOG_LEVEL, MAX_PAYLOAD_MB).
     environment:
-      - PYTHONUNBUFFERED=1
-      - TOOLBOX_PLUGINS_DIR=/app/plugins
-      - TOOLBOX_WEB_WORKERS=${TOOLBOX_WEB_WORKERS:-4}
-      # singleton plugins (sql-studio, schema-map) are served by the `singletons` service (roadmap B9)
-      - TOOLBOX_SINGLETON_URL=http://singletons:8080
-      # State services (roadmap B1, core/state/config.py). Defaults point at the bundled services below;
-      # set TOOLBOX_DATABASE_URL in a .env file to use an existing Postgres instead (own `toolbox` DB + user).
-      - TOOLBOX_DATABASE_URL=${TOOLBOX_DATABASE_URL:-postgresql://toolbox:${TOOLBOX_DB_PASSWORD:-toolbox-local-only}@postgres:5432/toolbox}
-      - TOOLBOX_REDIS_URL=${TOOLBOX_REDIS_URL:-redis://redis:6379/0}
-      - TOOLBOX_S3_ENDPOINT=${TOOLBOX_S3_ENDPOINT:-http://seaweedfs:8333}
-      - TOOLBOX_S3_ACCESS_KEY=${TOOLBOX_S3_ACCESS_KEY:-toolbox}
-      - TOOLBOX_S3_SECRET_KEY=${TOOLBOX_S3_SECRET_KEY:-toolbox-local-only-secret}
-      - TOOLBOX_S3_BUCKET=${TOOLBOX_S3_BUCKET:-toolbox}
-      # Vault encryption key (roadmap B7): keep it in the git-ignored .env, NOT on a data volume.
-      - TOOLBOX_VAULT_KEY=${TOOLBOX_VAULT_KEY:-}
-
-    # Optional: mount the ui/ folder so you can edit the frontend
-    # without rebuilding the image.  Uncomment during development:
-    # volumes:
-    #   - ./ui:/app/ui:ro
-
-    # Schema Map's Projects/Versions are stored in a SQLite file at
-    # /app/data/schema-map/projects.db (see schema-map/project_store.py).
-    # Without this, that file lives only in the container's writable
-    # layer and every `docker-compose up --build` (a full recreate, not
-    # just a restart) would silently wipe every project and its entire
-    # version history. A named volume is Docker-managed storage that
-    # survives image rebuilds and `docker-compose down` — only an
-    # explicit `docker-compose down -v` removes it.
-    # Vault's secrets (encrypted) and its encryption key are stored at
-    # /app/data/vault/ (see core/vault.py). Same reasoning as
-    # schema_map_data above — without this, every saved secret and the
-    # key itself would be silently wiped on the next image rebuild,
-    # which would also make any already-encrypted-but-now-orphaned rows
-    # permanently undecryptable garbage even if the DB file somehow
-    # survived without the key.
-    # SSH & SFTP's transfer/command history and STAGED uploads live in /app/data/ssh-sftp/
-    # (see ssh-sftp/state_store.py); staging is what lets a dropped upload resume.
-    #
-    # Data Dumper's dump FILES (can be large) and its catalogue live in /app/data/data-dumper/
-    # (see data-dumper/state_store.py). Without this volume a rebuild would delete every dump.
-    #
-    # Schema Copy's projects, last-run results and generated .sql scripts live
-    # in /app/data/schema-copy/ (see schema-copy/state_store.py) — same reasoning.
-    #
-    # Data Syncer's projects and per-table resume positions live in
-    # /app/data/data-syncer/syncer.db (see data-syncer/state_store.py).
-    # Without this volume a rebuild would erase every project AND the
-    # saved position of every half-finished sync.
+      <<: *state-env
+      TOOLBOX_PLUGINS_DIR: /app/plugins
+      TOOLBOX_WEB_WORKERS: ${TOOLBOX_WEB_WORKERS:-4}
+      # where each manifest `runtime:` is served (roadmap C2); singletons separately (roadmap B9)
+      TOOLBOX_RUNTIME_URLS: light=http://rt-light:8080,data=http://rt-data:8080,pgtools=http://rt-pgtools:8080,ssh=http://rt-ssh:8080,latex=http://rt-latex:8080
+      TOOLBOX_SINGLETON_URL: http://singletons:8080
+      # roadmap C3: start/stop on-demand runtimes (tier-4 ones: latex, pgtools, ssh) through the docker-proxy
+      TOOLBOX_DOCKER_URL: http://docker-proxy:2375
+      # empty = each runtime's manifest scaling.idle_timeout_s (900 s); set it in .env/shell to override (testing)
+      TOOLBOX_IDLE_TIMEOUT_S: ${TOOLBOX_IDLE_TIMEOUT_S:-}
     volumes:
-      - schema_map_data:/app/data/schema-map
-      - vault_data:/app/data/vault
-      - data_syncer_data:/app/data/data-syncer
-      - schema_copy_data:/app/data/schema-copy
-      - data_dumper_data:/app/data/data-dumper
-      - ssh_sftp_data:/app/data/ssh-sftp
-      # Workspace settings (which tools are on) — core_plugins/workspace.py, roadmap A3/A4.
+      # Workspace settings (which tools are on) — core_plugins/workspace.py, roadmap A3/A4. Shared read-only
+      # with the tool containers so a turned-off tool is off everywhere.
       - workspace_data:/app/data/workspace
       # Custom apps (roadmap A5): static/external plugins, read-only; edit on the host, then restart.
       - ./plugins:/app/plugins:ro
+    depends_on:
+      redis:
+        condition: service_started
+      rt-light:
+        condition: service_started
+      rt-data:
+        condition: service_started
+      rt-pgtools:
+        condition: service_started
+      rt-ssh:
+        condition: service_started
+      rt-latex:
+        condition: service_started
+      singletons:
+        condition: service_started
+      docker-proxy:
+        condition: service_started
+
+  # ---------------------------------------------------------------------------
+  # Docker access for the gateway's on-demand supervisor (roadmap C3) — and NOTHING else. docker-socket-proxy
+  # (HAProxy) with our own rule set instead of its env switches: those can only allow start/stop together with
+  # ALL container POSTs (create, exec, update…). Allowed: GET /_ping, /version, /containers/json, /containers/<x>/json;
+  # POST start/stop ONLY of containers named `<project>-rt-<runtime>-<n>`. The socket is mounted read-only here
+  # and nowhere else. Not published.
+  # ---------------------------------------------------------------------------
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    configs:
+      - source: docker_proxy_rules
+        target: /usr/local/etc/haproxy/haproxy.cfg.template
+
+  # ---------------------------------------------------------------------------
+  # Runtime images (roadmap C1) — one per manifest `runtime:`, each mounting ONLY its own python plugins
+  # (TOOLBOX_ROLE=runtime is baked into the image). Not published: the gateway proxies to them. Their local
+  # folders under /app/data are caches only — the real state is in Postgres / Redis / S3 storage (phase B).
+  # Debug one directly: docker compose exec rt-data curl -s localhost:8080/api/workspace/status
+  # ---------------------------------------------------------------------------
+  rt-light:
+    <<: *tool-service
+    build: {context: ., target: light}
+    image: toolbox-rt-light
+    environment: *state-env
+    volumes:
+      - workspace_data:/app/data/workspace:ro
+
+  rt-data:
+    <<: *tool-service
+    build: {context: ., target: data}
+    image: toolbox-rt-data
+    environment:
+      <<: *state-env
+      # 2 processes: DataDiff/pandas work is CPU-bound; every tool here keeps its state outside the process
+      TOOLBOX_WEB_WORKERS: ${TOOLBOX_DATA_WORKERS:-2}
+    volumes:
+      - workspace_data:/app/data/workspace:ro
+      # legacy files (one-time migration sources, B6/B7 — already migrated here; harmless afterwards)
+      - vault_data:/app/data/vault
+      - data_syncer_data:/app/data/data-syncer
+
+  # On-demand (roadmap C3): pgtools, ssh and latex hold only tier-4 tools, so the gateway starts them on first use
+  # and stops them after scaling.idle_timeout_s. Limits = the sum of their plugins' manifest `resources`
+  # (tests/unit/test_runtimes.py keeps them equal). `docker compose up -d` starts them; the gateway puts them to sleep.
+  rt-pgtools:
+    <<: *tool-service
+    mem_limit: 1024m
+    cpus: 2.0
+    build: {context: ., target: pgtools}
+    image: toolbox-rt-pgtools
+    environment: *state-env
+    volumes:
+      - workspace_data:/app/data/workspace:ro
+      - schema_copy_data:/app/data/schema-copy    # legacy SQLite + local file cache
+      - data_dumper_data:/app/data/data-dumper
+
+  rt-ssh:
+    <<: *tool-service
+    mem_limit: 512m
+    cpus: 1.0
+    build: {context: ., target: ssh}
+    image: toolbox-rt-ssh
+    environment: *state-env
+    volumes:
+      - workspace_data:/app/data/workspace:ro
+      - ssh_sftp_data:/app/data/ssh-sftp          # legacy SQLite + local stage cache
+
+  rt-latex:
+    <<: *tool-service
+    mem_limit: 1024m
+    cpus: 2.0
+    build: {context: ., target: latex}
+    image: toolbox-rt-latex
+    environment: *state-env
+    volumes:
+      - workspace_data:/app/data/workspace:ro
 
   # ---------------------------------------------------------------------------
   # Singleton tools (roadmap B9): SQL Studio and Schema Map each hold ONE live database pool and never store the
-  # password (owner decision, B3), so they must run in exactly one process — this one, the same image with
-  # TOOLBOX_ROLE=singletons (mounts only `singleton: true` plugins). Not published: toolbox proxies to it.
-  # Never scale this service.
+  # password (owner decision, B3), so they run in exactly one process — the data image with
+  # TOOLBOX_ROLE=singletons (mounts only `singleton: true` plugins). Never scale this service.
   # ---------------------------------------------------------------------------
   singletons:
-    image: toolbox-toolbox
+    <<: *tool-service
+    image: toolbox-rt-data
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
-    restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
-      - PYTHONUNBUFFERED=1
-      - TOOLBOX_ROLE=singletons
-      - TOOLBOX_DATABASE_URL=${TOOLBOX_DATABASE_URL:-postgresql://toolbox:${TOOLBOX_DB_PASSWORD:-toolbox-local-only}@postgres:5432/toolbox}
-      - TOOLBOX_REDIS_URL=${TOOLBOX_REDIS_URL:-redis://redis:6379/0}
-      - TOOLBOX_S3_ENDPOINT=${TOOLBOX_S3_ENDPOINT:-http://seaweedfs:8333}
-      - TOOLBOX_S3_ACCESS_KEY=${TOOLBOX_S3_ACCESS_KEY:-toolbox}
-      - TOOLBOX_S3_SECRET_KEY=${TOOLBOX_S3_SECRET_KEY:-toolbox-local-only-secret}
-      - TOOLBOX_S3_BUCKET=${TOOLBOX_S3_BUCKET:-toolbox}
-      - TOOLBOX_VAULT_KEY=${TOOLBOX_VAULT_KEY:-}
+      <<: *state-env
+      TOOLBOX_ROLE: singletons
     volumes:
-      - schema_map_data:/app/data/schema-map
+      - schema_map_data:/app/data/schema-map   # legacy SQLite (one-time migration source, B6)
       - vault_data:/app/data/vault
-      - workspace_data:/app/data/workspace
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
+      - workspace_data:/app/data/workspace:ro
     depends_on:
+      rt-data:
+        condition: service_started   # builds/tags the toolbox-rt-data image first
       redis:
         condition: service_started
       postgres:
         condition: service_started
 
   # ---------------------------------------------------------------------------
-  # Job worker (roadmap B4, core/jobs): runs long jobs (Data Syncer runs today; dumps/transfers in B5/B8) from the
-  # Redis queue, so a web restart never kills them. Same image as `toolbox`; scale with --scale worker=N.
-  # Needs the same env, host access and data volumes as the web app because jobs use the same tool code.
+  # Job worker (roadmap B4, core/jobs): long jobs from the Redis queue (syncs, dumps/restores, schema copies,
+  # SSH uploads/commands), so a web restart never kills them. Worker image: jobs of every runtime run here.
+  # Scale with --scale worker=N. Also the place for the headless CLI:
+  #   docker compose exec worker python -m orchestrator.cli ...
   # ---------------------------------------------------------------------------
   worker:
-    image: toolbox-toolbox
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker       # all packages + pg_dump, no TeX Live (roadmap C4)
+    image: toolbox-worker
     command: ["python", "-m", "core.jobs.worker"]
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    environment:
-      - PYTHONUNBUFFERED=1
-      - TOOLBOX_DATABASE_URL=${TOOLBOX_DATABASE_URL:-postgresql://toolbox:${TOOLBOX_DB_PASSWORD:-toolbox-local-only}@postgres:5432/toolbox}
-      - TOOLBOX_REDIS_URL=${TOOLBOX_REDIS_URL:-redis://redis:6379/0}
-      - TOOLBOX_S3_ENDPOINT=${TOOLBOX_S3_ENDPOINT:-http://seaweedfs:8333}
-      - TOOLBOX_S3_ACCESS_KEY=${TOOLBOX_S3_ACCESS_KEY:-toolbox}
-      - TOOLBOX_S3_SECRET_KEY=${TOOLBOX_S3_SECRET_KEY:-toolbox-local-only-secret}
-      - TOOLBOX_S3_BUCKET=${TOOLBOX_S3_BUCKET:-toolbox}
-      # Vault encryption key (roadmap B7): keep it in the git-ignored .env, NOT on a data volume.
-      - TOOLBOX_VAULT_KEY=${TOOLBOX_VAULT_KEY:-}
+    environment: *state-env
     volumes:
       # Legacy SQLite files/key (one-time migration sources since B6/B7) and local file caches.
       - vault_data:/app/data/vault
@@ -189,8 +229,6 @@ services:
       - data_dumper_data:/app/data/data-dumper
       - ssh_sftp_data:/app/data/ssh-sftp
     depends_on:
-      toolbox:
-        condition: service_started
       redis:
         condition: service_healthy
 
@@ -249,6 +287,32 @@ services:
       start_period: 30s
 
 configs:
+  docker_proxy_rules:
+    # HAProxy config for docker-proxy (see the service). $$ = a literal $ in compose files.
+    content: |
+      global
+          log stdout format raw daemon info
+          maxconn 200
+      defaults
+          mode http
+          log global
+          option httplog
+          option dontlognull
+          option http-server-close
+          timeout http-request 10s
+          timeout connect 10s
+          timeout client 2m
+          timeout server 2m
+      backend dockerbackend
+          server dockersocket /var/run/docker.sock
+      frontend dockerfrontend
+          bind :2375
+          http-request allow if METH_GET { path,url_dec -m reg -i ^(/v[0-9.]+)?/(_ping|version)$$ }
+          http-request allow if METH_GET { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/json$$ }
+          http-request allow if METH_GET { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+/json$$ }
+          http-request allow if METH_POST { path,url_dec -m reg -i ^(/v[0-9.]+)?/containers/[a-zA-Z0-9_.-]+-rt-[a-z]+-[0-9]+/(start|stop)$$ }
+          http-request deny
+          default_backend dockerbackend
   seaweedfs_s3:
     content: |
       {"identities": [{"name": "toolbox",

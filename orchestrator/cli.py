@@ -5,7 +5,7 @@ Headless entrypoint for orchestrator recipes. Run from inside the running
 container (reuses the exact same Python environment the web tools run
 in — no separate deploy, no new service):
 
-    docker compose exec toolbox python -m orchestrator.cli compare \\
+    docker compose exec worker python -m orchestrator.cli compare \\
         --left-kind postgres --left-host ... --left-database ... --left-username ... --left-password ... \\
         --left-query "SELECT * FROM t ORDER BY id" \\
         --right-kind file --right-path /app/data/expected.csv
@@ -21,7 +21,7 @@ Vault" after a query, or sql-studio's "Export FULL result to Vault"
 (the real, uncapped result, not the UI's 500-row display cap). This is
 the hand-off point for "feed one tool's output into another":
 
-    docker compose exec toolbox python -m orchestrator.cli compare \\
+    docker compose exec worker python -m orchestrator.cli compare \\
         --left-vault-dataset "transformed-postgres-data" \\
         --right-kind file --right-path /app/data/expected.csv
 

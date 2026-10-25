@@ -1,0 +1,12 @@
+# Runtime "data" (roadmap C1): DataDiff, DataFrame Studio, Duck Lab, SQL Studio, Schema Map, Data Syncer, Vault.
+-r state.txt
+xmltodict==0.13.0
+pandas==2.2.2
+numpy==1.26.4
+pyarrow==16.1.0
+lxml==5.2.2
+python-tds==1.17.1
+oracledb==26.0.1
+duckdb==1.2.2
+paramiko==3.4.0
+sshtunnel==0.4.0

@@ -83,7 +83,8 @@ def upstream():
     async def echo(request: Request):
         body = await request.body()
         return JSONResponse({"path": request.url.path, "query": request.url.query, "len": len(body),
-                             "cookie": request.headers.get("cookie"), "xff": request.headers.get("x-forwarded-for")},
+                             "cookie": request.headers.get("cookie"), "xff": request.headers.get("x-forwarded-for"),
+                             "host": request.headers.get("host")},
                             headers={"set-cookie": "sid=abc; Path=/"})
 
     async def big(request: Request):
@@ -132,6 +133,7 @@ def test_proxy_forwards_path_query_body_cookies_and_headers(upstream):
     j = r.json()
     assert r.status_code == 200 and j["path"] == "/tools/sql-studio/echo" and j["query"] == "a=1&b=two"
     assert j["len"] == 300_000 and j["cookie"] == "sid=s1" and j["xff"]
+    assert j["host"] == "testserver"  # the browser's Host, not the upstream's address (C2)
     assert r.headers["set-cookie"].startswith("sid=abc")
 
 
@@ -145,4 +147,16 @@ def test_proxy_streams_large_responses_and_passes_redirects(upstream):
 def test_proxy_shows_a_clear_page_when_the_singleton_process_is_down():
     c = _proxy_client("http://127.0.0.1:9")  # nothing listens there
     r = c.get("/tools/sql-studio/")
-    assert r.status_code == 503 and "singletons" in r.text
+    assert r.status_code == 503 and "docker compose logs 127.0.0.1" in r.text
+
+
+def test_gateway_mode_proxies_every_python_tool_and_imports_none(monkeypatch, tmp_path):
+    """Roadmap C2: with TOOLBOX_RUNTIME_URLS the web role is a pure gateway."""
+    urls = ",".join(f"{r}=http://rt-{r}:8080" for r in ("light", "data", "pgtools", "ssh", "latex"))
+    main = _fresh_main(monkeypatch, tmp_path, TOOLBOX_RUNTIME_URLS=urls, TOOLBOX_SINGLETON_URL="http://singletons:8080")
+    for m in main._registry.ordered():
+        app = main._slots[m.name].app if m.name in main._slots else None
+        if m.kind == "python" and main._workspace.is_enabled(m):
+            assert type(app).__name__ == "ProxyApp", m.name
+            assert app.base_url == ("http://singletons:8080" if m.singleton else f"http://rt-{m.runtime}:8080")
+    assert main._lazy == {}  # nothing importable is even prepared in the gateway

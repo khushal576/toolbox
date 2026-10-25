@@ -14,3 +14,4 @@ state: []
 depends_on: []
 requires: [texlive, fontawesome]
 order: 200
+resources: {cpu: 2.0, memory_mb: 1024}   # roadmap C3: limit of the on-demand rt-latex container (pdflatex)

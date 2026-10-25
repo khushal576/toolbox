@@ -40,11 +40,11 @@ order: 10                     # display order: lower first, ties by title
 | `category` | no (default `tool`) | `tool` \| `learn` | `learn` = educational/reference (hidden by default on the home page). |
 | `kind` | yes | `static` \| `python` \| `external` \| `service` | How the workspace loads it (below). |
 | `entry` | depends on kind | text | See kinds. |
-| `runtime` | python/service: yes | `light` \| `data` \| `pgtools` \| `latex` \| `ssh` | Which runtime image hosts it (phase C). |
+| `runtime` | python/service: yes | `light` \| `data` \| `pgtools` \| `latex` \| `ssh` | Which runtime image hosts it: Dockerfile target + `requirements/<runtime>.txt` (roadmap C1); the gateway routes there from C2. Until then the `full` image serves every tool. |
 | `tier` | no (default 2) | 1–4 | Cost class from ADR-001. |
 | `state` | no (default `[]`) | list of `session`, `durable`, `jobs` | What state it keeps; drives phase B work and replica rules. |
-| `resources.cpu` / `resources.memory_mb` | no | number / int | Limits applied by the supervisor (phase C). |
-| `scaling.min` / `.max` / `.idle_timeout_s` | no (0 / 1 / 900) | ints | Replicas and scale-to-zero (phases C–D). |
+| `resources.cpu` / `resources.memory_mb` | no | number / int | Since roadmap C3 the runtime container's compose `cpus`/`mem_limit` = the SUM over its plugins (`tests/unit/test_runtimes.py` keeps them equal). No value anywhere in a runtime = no limit. |
+| `scaling.min` / `.max` / `.idle_timeout_s` | no (0 / 1 / 900) | ints | C3: a runtime whose plugins are ALL `tier: 4` with `min: 0` is on-demand — the gateway starts its container on the first request and stops it after the largest `idle_timeout_s` (env `TOOLBOX_IDLE_TIMEOUT_S` overrides). `min: 1` keeps it warm. `max`: replicas (phase D). |
 | `depends_on` | no | list of plugin names | Other plugins it calls. Must exist. |
 | `requires` | no | list of capability names | e.g. `texlive`, `fontawesome`, `pg_client`, `duckdb`. |
 | `enabled_by_default` | no (true) | bool | Default for `workspace.yaml` (A3). |

@@ -15,3 +15,4 @@ depends_on: [vault]
 requires: [pg_client]
 order: 170
 vault: {read: [postgres_connection]}   # Vault scope (roadmap B7): source/target connections
+resources: {cpu: 1.0, memory_mb: 512}   # roadmap C3: share of the on-demand rt-pgtools limit (applies run in the worker)

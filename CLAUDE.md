@@ -15,10 +15,12 @@ heavy tools in runtime images started on demand behind a gateway, shared tools
 sessions ("Roadmap: do session `<ID>`"); do only the named session and update
 its status + handoff log.
 
-**Until phase C of the roadmap lands:** one repo, one Dockerfile, one image;
-compose runs it as `toolbox` (web, N workers), `singletons` (sql-studio +
-schema-map, one process, proxied by `toolbox` — B9) and `worker` (jobs, B4),
-plus the state services (B1). (An earlier per-tool-container idea was rejected by
+**Since roadmap C2:** one repo, one Dockerfile, several images (build
+targets). Compose runs `toolbox` = the **gateway** (workspace UI + proxy, no
+tool code, the only host port), one container per runtime (`rt-light`,
+`rt-data`, `rt-pgtools`, `rt-ssh`, `rt-latex` — each serving only the tools
+of its manifest `runtime:`), `singletons` (sql-studio + schema-map, one
+process, data image), `worker` (jobs, full image) and the state services. (An earlier per-tool-container idea was rejected by
 the owner; the roadmap's runtime pools are deliberately different — a few
 shared runtime images, not one container per tool.) Do not introduce
 containers/gateway pieces outside the roadmap session that owns them.
@@ -83,6 +85,42 @@ containers/gateway pieces outside the roadmap session that owns them.
   `docker compose exec toolbox python -m core.state.selftest`. Defaults are
   local-only passwords; override `TOOLBOX_DB_PASSWORD`,
   `TOOLBOX_S3_ACCESS_KEY`, `TOOLBOX_S3_SECRET_KEY` in `.env`.
+- **Gateway (roadmap C2):** `toolbox` runs the `gateway` image (241 MB, no
+  tool libraries) in the web role with `TOOLBOX_RUNTIME_URLS`; every python
+  tool is a `ProxyApp` to `rt-<runtime>` (singletons → `singletons`).
+  Static/external custom apps are still served by the gateway. Host header,
+  cookies, path and query pass through; bodies stream both ways (verified: a
+  144 MB upload and a 150 MB export through it). `/api/state/health` is
+  answered by `rt-data` (the probes' libraries would cost every gateway
+  worker ~25 MB). No tool uses WebSockets; the proxy refuses them. The
+  headless CLI now runs in the worker: `docker compose exec worker python -m
+  orchestrator.cli …`.
+- **On-demand runtimes (roadmap C3):** `rt-latex`, `rt-pgtools`, `rt-ssh`
+  (all-tier-4 runtimes) sleep when idle: the gateway's supervisor
+  (`core_plugins/supervisor.py`) stops a container after its manifests'
+  `scaling.idle_timeout_s` (900 s) without traffic and starts it again on the
+  next request, which waits for `/healthz` (~1–2 s). Activity is shared in
+  Redis (`toolbox:sup:last:*`, touched while downloads stream); one gateway
+  worker leads the sweep (`toolbox:sup:leader`). Docker only via the
+  `docker-proxy` service with our own HAProxy rules: list/inspect + start/stop
+  of `*-rt-<runtime>-<n>` containers, everything else 403 (verified). Limits:
+  compose `mem_limit`/`cpus` = sum of manifest `resources`. UI: grey ring =
+  asleep, pulsing amber = starting; `GET /api/workspace/runtimes`. `docker
+  compose up -d` starts everything; idle runtimes go back to sleep.
+- **Runtime images (roadmap C1):** the Dockerfile has a target per manifest
+  `runtime:` — `light` (187 MB), `data` (629 MB, also hosts the Vault),
+  `pgtools` (267 MB, bundled pg_dump), `ssh` (249 MB), `latex` (746 MB) —
+  each installs only `requirements/<runtime>.txt` and runs `main.py` with
+  `TOOLBOX_ROLE=runtime` + `TOOLBOX_RUNTIME`, mounting only its own plugins
+  (singletons never). `full` (1.2 GB, all of it) stays the default target and
+  is no longer run by compose (C4): the `worker` has its own `worker` target
+  (all packages + pg_dump, no TeX, 647 MB). Only `rt-latex` carries TeX Live
+  (`tests/unit/test_runtimes.py` enforces it). Since C2 the rt-* services run
+  by default behind the gateway (no host ports). Memory/disk per container:
+  `docs/roadmap/measure-C4.md`. Classic builder (no buildx here):
+  packages install in throw-away `deps-*` stages with `pip --prefix`, and the
+  `tex` stage must start exactly like before (`FROM python:3.11-slim`,
+  `WORKDIR`, TeX) or the ~600 MB TeX Live layer is downloaded again.
 - **Vault (roadmap B7):** secrets in Postgres (schema `vault`), dataset
   blobs in S3 storage, key from `TOOLBOX_VAULT_KEY` in the git-ignored
   `.env` (back that file up — without it the Vault can't be decrypted).
@@ -138,9 +176,10 @@ datadiff-pro/                (repo root)
 ├── main.py                    THE entrypoint — home page + mounts every tool
 ├── theme-tokens.css             canonical color palette — COPY-SOURCE only,
 │                                  never served/linked, see its own header
-├── Dockerfile                  builds the one image (copies every tool)
+├── Dockerfile                  build targets: full (default, what compose runs) + one per runtime (C1)
 ├── docker-compose.yml          one service, host port 8000
-├── requirements.txt             shared dependency set for the whole image
+├── requirements.txt             full dependency set (the `full` image)
+├── requirements/                per-runtime subsets: light, state, data, pgtools, ssh, latex (C1)
 ├── README.md
 ├── CLAUDE.md                   (this file)
 ├── GITHUB_AUTH.md
@@ -307,7 +346,11 @@ tested checklist, not a guess.)
    container" tradeoff; a genuine conflict is the signal to reconsider, not
    something to route around silently). If a tool needs no Python packages
    beyond what's already there (e.g. a pure client-side tool like
-   Encode/Decode), this step is a no-op — nothing to add.
+   Encode/Decode), this step is a no-op — nothing to add. **Since roadmap
+   C1** also add the same pin line to `requirements/<runtime>.txt` for the
+   tool's manifest `runtime:` (`tests/unit/test_runtimes.py` checks the pins
+   match and that every package is used by some runtime), then rebuild the
+   wheelhouse (`./download-wheels.sh`) if the package is new.
 8. Update `KNOWLEDGE_MAP.md` with this tool's section.
 9. **Add a `CLAUDE.md` inside the tool's own folder** — short, scoped to
    just that tool (what it does, where each piece of logic lives, its own
@@ -403,9 +446,10 @@ now" paragraph.
 ## Operating notes (the owner is not a developer)
 
 - One thing to start/stop: `docker-compose up --build -d` / `docker-compose
-  down` from the repo root. No network setup, no per-tool containers.
-  (Phase B adds Redis/Postgres/MinIO services to the same compose file and
-  phase C adds runtimes; the start/stop commands stay the same.)
+  down` from the repo root. No network setup, no per-tool containers (one
+  container per runtime, a few in total). The start/stop commands stay the
+  same. A tool shows "… is starting or unavailable" when its runtime
+  container is down: `docker compose ps`, `docker compose logs rt-<runtime>`.
 - Only commit when explicitly asked. Only push when explicitly asked. This
   has been the working agreement all along — it does not change as the repo
   grows.

@@ -31,7 +31,11 @@ Several worker processes (roadmap B9): the web role runs with N uvicorn workers.
 workspace.yaml when its mtime changes (`_sync_workspace`), so a switch flipped on one worker reaches all.
 `singleton: true` plugins (sql-studio, schema-map: one live DB pool, password never stored) run in ONE dedicated
 process — the same image started with TOOLBOX_ROLE=singletons, which mounts only them — and every web worker
-forwards their traffic there with a `ProxyApp` when TOOLBOX_SINGLETON_URL is set. Without that variable (a
+forwards their traffic there with a `ProxyApp` when TOOLBOX_SINGLETON_URL is set.
+
+Gateway (roadmap C2): with TOOLBOX_RUNTIME_URLS set, the web role imports NO tool at all — every python plugin is
+proxied to the runtime image of its manifest `runtime:` (TOOLBOX_ROLE=runtime there, roadmap C1). Static/external
+plugins are still served here. Without that variable (a
 standalone dev run) they are mounted in-process as before, and the app must then run with one worker.
 """
 
@@ -50,6 +54,7 @@ from pydantic import BaseModel
 
 from core_plugins import (DisabledApp, ExternalApp, LazyApp, ProxyApp, Slot, StaticApp, default_path, discover,
                           load_workspace)
+from core_plugins.supervisor import RuntimeSupervisor, Supervisor, on_demand_runtimes
 
 logger = logging.getLogger("toolbox")
 
@@ -58,10 +63,19 @@ app = FastAPI(title="Toolbox", description="One-stop access to internal tools.")
 _REPO = Path(__file__).resolve().parent
 # "web" (default): every tool, singletons proxied when TOOLBOX_SINGLETON_URL is set.
 # "singletons": only the singleton plugins, in this one process (the `singletons` compose service).
+# "runtime": only the python plugins whose manifest `runtime:` is TOOLBOX_RUNTIME, singletons excluded (roadmap C1:
+#            one image per runtime — light / data / pgtools / ssh / latex; the gateway routes to them from C2).
 ROLE = os.environ.get("TOOLBOX_ROLE", "web")
+RUNTIME = (os.environ.get("TOOLBOX_RUNTIME") or "").strip()
 SINGLETON_URL = (os.environ.get("TOOLBOX_SINGLETON_URL") or "").strip()
-if ROLE not in ("web", "singletons"):
-    raise SystemExit(f"TOOLBOX_ROLE must be 'web' or 'singletons', not {ROLE!r}")
+# Gateway mode (roadmap C2): "light=http://rt-light:8080,data=http://rt-data:8080,…" — in the web role every python
+# plugin whose runtime has a URL here is proxied there instead of imported in this process.
+RUNTIME_URLS = {k.strip(): v.strip() for k, v in
+                (p.split("=", 1) for p in (os.environ.get("TOOLBOX_RUNTIME_URLS") or "").split(",") if "=" in p)}
+if ROLE not in ("web", "singletons", "runtime"):
+    raise SystemExit(f"TOOLBOX_ROLE must be 'web', 'singletons' or 'runtime', not {ROLE!r}")
+if ROLE == "runtime" and RUNTIME not in ("light", "data", "pgtools", "latex", "ssh"):
+    raise SystemExit(f"TOOLBOX_ROLE=runtime needs TOOLBOX_RUNTIME=light|data|pgtools|latex|ssh, not {RUNTIME!r}")
 
 # Discovered once at startup: mounting happens at startup too, so a manifest
 # change needs a restart either way. Errors/warnings are logged, never raised.
@@ -73,6 +87,14 @@ for _err in _registry.errors:
     logger.error("Plugin manifest problem — plugin skipped: %s", _err)
 for _warn in _registry.warnings:
     logger.warning("Plugin manifest warning: %s", _warn)
+
+# On-demand runtimes (roadmap C3): only in gateway mode, and only with the docker-proxy configured.
+DOCKER_URL = (os.environ.get("TOOLBOX_DOCKER_URL") or "").strip()
+_supervisors: dict[str, RuntimeSupervisor] = {}
+if ROLE == "web" and DOCKER_URL and RUNTIME_URLS:
+    for _rt, _idle in on_demand_runtimes(_registry.ordered()).items():
+        if _rt in RUNTIME_URLS:
+            _supervisors[_rt] = RuntimeSupervisor(_rt, RUNTIME_URLS[_rt], DOCKER_URL, _idle)
 
 _workspace = load_workspace(default_path(_REPO), known=set(_registry.plugins))
 for _err in _workspace.errors:
@@ -221,7 +243,19 @@ async def home() -> HTMLResponse:
 
 @app.get("/api/state/health")
 async def state_health() -> dict[str, Any]:
-    """Postgres / Redis / object storage status (roadmap B1). Imported lazily so idle memory stays low."""
+    """Postgres / Redis / object storage / jobs / Vault status (roadmap B1). Imported lazily so idle memory stays low.
+    In gateway mode (roadmap C2) the `data` runtime answers it: the probes import psycopg/boto3/rq/cryptography
+    (~25 MB per process), which every gateway worker would otherwise keep for good."""
+    data_url = RUNTIME_URLS.get("data") if ROLE == "web" else None
+    if data_url:
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(f"{data_url}/api/state/health")
+            return {**r.json(), "answered_by": "rt-data"}
+        except (httpx.HTTPError, ValueError) as exc:
+            return {"ok": False, "error": f"the data runtime did not answer the health check: {exc}"}
     from starlette.concurrency import run_in_threadpool
 
     from core.state import health
@@ -236,6 +270,7 @@ async def workspace_status() -> dict[str, Any]:
     from starlette.concurrency import run_in_threadpool
 
     procs = await run_in_threadpool(_all_processes)
+    rt_state = {rt: await sup.refresh() for rt, sup in _supervisors.items()}  # roadmap C3: asleep | starting | running
     loaded_anywhere = {n: s for p in procs for n, s in p.get("loaded", {}).items()}
     failed_anywhere = {n: e for p in procs for n, e in p.get("failed", {}).items()}
     plugins = []
@@ -253,9 +288,11 @@ async def workspace_status() -> dict[str, Any]:
                 state = "loaded"
         elif isinstance(mount, (StaticApp, ExternalApp)):
             state = "ready"  # no server code to load
-        elif isinstance(mount, ProxyApp):  # singleton: runs in the `singletons` process (roadmap B9)
+        elif isinstance(mount, ProxyApp):  # another container: runtime (C2) or the singletons process (B9)
             state = ("failed" if m.name in failed_anywhere else "loaded" if m.name in loaded_anywhere
                      else "not_loaded" if procs else "remote")
+            if rt_state.get(m.runtime or "") in ("asleep", "starting") and not m.singleton:
+                state = rt_state[m.runtime]  # its container is stopped (starts on first use) or starting
         else:
             state = "not_mounted"  # kind: service — routed by the gateway from roadmap C2/D1
         plugins.append({
@@ -266,6 +303,7 @@ async def workspace_status() -> dict[str, Any]:
             "restart_to_free_memory": state == "disabled" and bool((lazy and lazy.state == "loaded")
                                                                    or m.name in loaded_anywhere),
             "error": _failed_tools.get(m.name) or failed_anywhere.get(m.name),
+            "on_demand": (m.runtime in _supervisors) and not m.singleton,
         })
     counts: dict[str, int] = {}
     for p in plugins:
@@ -282,17 +320,22 @@ def _app_for(m, enabled: bool):
     """The ASGI app to put in a tool's Slot for its kind and on/off state (None = not mountable here)."""
     if m.kind == "service":
         return None  # separately running service: routed by the gateway (roadmap C2/D1)
+    # which plugins this process hosts at all — decided before on/off, so it never mounts another role's tools
+    if ROLE == "runtime" and (m.kind != "python" or m.runtime != RUNTIME or m.singleton):
+        return None  # a runtime image serves only its own python plugins; the rest live elsewhere
+    if ROLE == "singletons" and not m.singleton:
+        return None  # the singleton process hosts only the singletons
     if not enabled:
         return DisabledApp(m.name, m.title)
     if m.kind == "static":
         return StaticApp(m.name, Path(m.source).parent, m.entry)
     if m.kind == "external":
         return ExternalApp(m.name, m.entry)
-    if ROLE == "singletons" and not m.singleton:
-        return None  # the singleton process hosts only the singletons
-    if ROLE == "web" and m.singleton and SINGLETON_URL:
+    target = (SINGLETON_URL if m.singleton else RUNTIME_URLS.get(m.runtime or "")) if ROLE == "web" else ""
+    if target:
         if m.name not in _proxies:
-            _proxies[m.name] = ProxyApp(m.name, m.title, SINGLETON_URL)
+            _proxies[m.name] = ProxyApp(m.name, m.title, target,
+                                        supervisor=None if m.singleton else _supervisors.get(m.runtime or ""))
         return _proxies[m.name]
     if m.name not in _lazy:
         _lazy[m.name] = LazyApp(m.name, m.module, on_failure=_record_failure, on_loaded=_publish_soon)
@@ -328,6 +371,33 @@ async def set_plugin_enabled(name: str, body: _ToggleBody) -> dict[str, Any]:
         message = f"{m.title} is off and uses no memory."
     logger.info("Workspace: %s turned %s", name, "on" if body.enabled else "off")
     return {"name": name, "enabled": body.enabled, "message": message, "plugin": _card_data(m)}
+
+
+@app.get("/api/workspace/runtimes")
+async def runtimes_status() -> dict[str, Any]:
+    """On-demand runtime containers (roadmap C3): state, idle timeout, seconds since the last request."""
+    from starlette.concurrency import run_in_threadpool
+
+    out = {}
+    for rt, sup in _supervisors.items():
+        idle = await run_in_threadpool(sup.idle_for)
+        out[rt] = {"state": await sup.refresh(), "idle_timeout_s": sup.idle_s,
+                   "idle_s": round(idle, 1) if idle is not None else None}
+    return {"on_demand": out, "always_on": sorted(set(RUNTIME_URLS) - set(_supervisors))}
+
+
+_sweeper_started = False
+
+
+def _start_supervisor() -> None:
+    """Start the idle sweep on this process's event loop (first request — no deprecated startup hook needed)."""
+    global _sweeper_started
+    if _supervisors and not _sweeper_started:
+        import asyncio
+
+        _sweeper_started = True
+        asyncio.get_running_loop().create_task(Supervisor(_supervisors).run())
+        logger.info("On-demand runtimes: %s", {rt: s.idle_s for rt, s in _supervisors.items()})
 
 
 @app.get("/healthz")
@@ -392,6 +462,7 @@ class _WorkspaceSync:
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
             _sync_workspace()
+            _start_supervisor()
         await self.app(scope, receive, send)
 
 
@@ -409,5 +480,6 @@ if _redis_configured := bool(os.environ.get("TOOLBOX_REDIS_URL")):
     import threading as _threading
 
     _threading.Thread(target=_heartbeat, daemon=True, name="proc-heartbeat").start()
-logger.info("Toolbox role=%s, singletons %s", ROLE,
-            f"proxied to {SINGLETON_URL}" if (ROLE == "web" and SINGLETON_URL) else "in this process")
+logger.info("Toolbox role=%s%s, singletons %s, runtimes %s", ROLE, f" runtime={RUNTIME}" if ROLE == "runtime" else "",
+            f"proxied to {SINGLETON_URL}" if (ROLE == "web" and SINGLETON_URL) else "in this process",
+            RUNTIME_URLS or "in this process")

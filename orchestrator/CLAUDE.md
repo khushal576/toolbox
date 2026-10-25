@@ -11,10 +11,11 @@ an HTTP dispatch service.** Every tool already runs in one container, one
 Python process (`PYTHONPATH=/app`) — composing them is just importing two
 modules and calling functions in sequence. This package has no `server.py`,
 no `ui/`, no `manifest.yaml`, no `main.py` mount — it's a plain Python
-package + CLI, invoked as a one-shot process:
+package + CLI, invoked as a one-shot process (in the `worker` container since roadmap C2 — the
+`toolbox` container is the gateway and has no pandas/DuckDB/DB drivers):
 
 ```
-docker compose exec toolbox python -m orchestrator.cli compare \
+docker compose exec worker python -m orchestrator.cli compare \
   --left-kind postgres --left-host host --left-database db --left-username user --left-password pass \
   --left-query "SELECT * FROM t ORDER BY id" \
   --right-kind file --right-path /app/data/expected.csv
@@ -23,7 +24,7 @@ docker compose exec toolbox python -m orchestrator.cli compare \
 Or, loading a connection saved in the vault instead of specifying it by hand:
 
 ```
-docker compose exec toolbox python -m orchestrator.cli compare \
+docker compose exec worker python -m orchestrator.cli compare \
   --left-vault "prod-replica" --left-query "SELECT * FROM t ORDER BY id" \
   --right-kind file --right-path /app/data/expected.csv
 ```
