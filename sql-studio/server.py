@@ -24,6 +24,8 @@ GET  /export/csv        — download the last successful query's result as CSV
 GET  /export/json        — download the same result as JSON
 POST /import/vault        — load a Vault dataset INTO a table on the live connection (create/append; needs confirmed=true — see core/db/loader.py)
 POST /export/vault        — run a statement with NO row cap, save the real full result into core.vault (see db_engine.export_to_file)
+POST /export/lake         — the same full result → a Vault Data table workspace.table (roadmap L4; 409 if it exists)
+POST /import/lake         — a Vault Data table INTO a table on the live connection (create/append; confirmed=true)
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ import asyncio
 import csv
 import io
 import json
+import shutil
 import tempfile
 import uuid
 from pathlib import Path
@@ -60,7 +63,10 @@ except ImportError:  # standalone dev run from inside this folder: core/ is ../.
     from core.db.registry import get_dialect
     from core.postgres_conn import ssh_tunnel_from_dict
 
+from core import lake as lake_store
+
 vault = vault_store.scoped("sql-studio")  # Vault scope from manifest.yaml `vault:` (roadmap B7)
+lake = lake_store.scoped("sql-studio")    # Vault Data tables, `vault: {data: write}` (roadmap L4)
 
 app = FastAPI(
     title="SQL Studio",
@@ -103,6 +109,21 @@ class ImportFromVaultRequest(BaseModel):
     secret_id: str
     table: str
     mode: str = "create"  # "create" a new table, or "append" to an existing one
+    confirmed: bool = False
+
+
+class ExportToLakeRequest(BaseModel):
+    sql: str
+    workspace: str
+    table: str
+    mode: str = "create"
+
+
+class ImportFromLakeRequest(BaseModel):
+    workspace: str
+    source_table: str
+    table: str
+    mode: str = "create"
     confirmed: bool = False
 
 
@@ -241,6 +262,59 @@ async def export_to_vault(body: ExportToVaultRequest):
     finally:
         tmp_path.unlink(missing_ok=True)
     return JSONResponse({"ok": True, "id": secret_id, "row_count": export_info["row_count"]})
+
+
+@app.post("/export/lake")
+async def export_to_lake(body: ExportToLakeRequest):
+    """The REAL full result of *body.sql* (same validated, uncapped, streamed path as /export/vault) stored as a
+    Vault Data table (Parquet, types inferred from the exported values). 409 when it exists and mode is create."""
+    tmp_path = Path(tempfile.gettempdir()) / f"sql_studio_export_{uuid.uuid4().hex}.csv"
+    dialect = db_engine.current_dialect()
+    try:
+        export_info = await db_engine.export_to_file(body.sql, tmp_path)
+    except db_engine.ConnectError as exc:
+        tmp_path.unlink(missing_ok=True)
+        return _error(str(exc))
+    try:
+        t = await asyncio.to_thread(
+            lake.import_file, body.workspace, body.table, tmp_path, mode=body.mode,
+            source={"kind": "sql-studio", "database": dialect.name if dialect else None, "sql": body.sql[:4000]})
+    except (lake_store.LakeError, lake_store.ScopeError) as exc:
+        status = 403 if isinstance(exc, lake_store.ScopeError) else 409 if "already exists" in str(exc) else 400
+        return _error(str(exc), status=status)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    return JSONResponse({"ok": True, "table": t, "row_count": export_info["row_count"]})
+
+
+@app.post("/import/lake")
+async def import_from_lake(body: ImportFromLakeRequest):
+    """Load a Vault Data table INTO a table on the live connection (roadmap L4) — like /import/vault, it writes to
+    the connected database, so it answers 409 until called with confirmed=true."""
+    dialect = db_engine.current_dialect()
+    if dialect is None:
+        return _error("Not connected — connect to a database first.")
+    try:
+        t = await asyncio.to_thread(lake.get_table, body.workspace, body.source_table)
+    except (lake_store.LakeError, lake_store.ScopeError) as exc:
+        return _error(str(exc), status=404 if isinstance(exc, lake_store.NotFound) else 400)
+    if not body.confirmed:
+        verb = "Create table" if body.mode == "create" else "Append rows to table"
+        return JSONResponse(status_code=409, content={
+            "requires_confirmation": True,
+            "message": f"{verb} {body.table} on the connected {dialect.name} database and load "
+                       f"{t['full_name']} ({t['row_count']:,} rows) into it."})
+    tmp_dir = Path(tempfile.mkdtemp(prefix="sql_studio_lake_"))
+    try:
+        await asyncio.to_thread(lake.export_table, body.workspace, body.source_table, tmp_dir / "t.parquet")
+        info = await db_engine.import_file(str(tmp_dir / "t.parquet"), body.table, body.mode)
+    except (lake_store.LakeError, lake_store.ScopeError) as exc:
+        return _error(str(exc))
+    except db_engine.ConnectError as exc:
+        return _error(str(exc))
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    return JSONResponse({"ok": True, **info})
 
 
 @app.post("/import/vault")

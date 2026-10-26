@@ -242,6 +242,149 @@ async def restore(file: UploadFile) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------
+# 📦 Data — the lake catalog (roadmap L1, core/lake.py): workspaces → tables
+# (Parquet in Toolbox's S3 storage). This page is the front door; tools use
+# core.lake.scoped(<name>) with their manifest's `vault: {data: ...}`.
+# ---------------------------------------------------------------------
+
+def _lake_call(fn, *args, **kw):
+    from core import lake
+
+    try:
+        return fn(*args, **kw)
+    except lake.NotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except lake.LakeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+class WorkspaceBody(BaseModel):
+    name: str
+    description: str = ""
+
+
+class WorkspaceUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class TableUpdate(BaseModel):
+    name: str | None = None
+    workspace: str | None = None
+    description: str | None = None
+
+
+@app.get("/data")
+async def data_overview() -> JSONResponse:
+    """All workspaces (+ table counts/rows/size). The first call also imports the old Vault datasets once."""
+    from core import lake
+
+    imported = await asyncio.to_thread(lake.import_vault_datasets)
+    return JSONResponse({"workspaces": await asyncio.to_thread(lake.list_workspaces), "import": imported})
+
+
+@app.get("/data/catalog")
+async def data_catalog() -> JSONResponse:
+    """Every workspace → tables (rows, size, columns): the table pickers in every tool's "Load from Vault" (L4)."""
+    from core import lake
+
+    return JSONResponse({"workspaces": await asyncio.to_thread(lake.catalog)})
+
+
+@app.get("/data/tables/{ws}/{name}/csv")
+async def data_table_csv(ws: str, name: str, max_rows: int = DEFAULT_PREVIEW_MAX_ROWS) -> JSONResponse:
+    """For DataDiff Pro's "Load from Vault" (L4) — same rule as a dataset's /preview: a table with more than
+    max_rows rows is refused (400), never silently cut, because a diff of a cut table would lie."""
+    from core import lake
+
+    t = await asyncio.to_thread(_lake_call, lake.get_table, ws, name)
+    if t["row_count"] > max_rows:
+        raise HTTPException(400, f"{t['full_name']} has {t['row_count']:,} rows — loading into the page is limited to "
+                                 f"{max_rows:,}. Make a smaller table first (Data Lake → SQL: CREATE TABLE ws.t AS "
+                                 f"SELECT … WHERE …).")
+    with tempfile.TemporaryDirectory(prefix="vault_csv_") as tmp:
+        dest = Path(tmp) / "t.csv"
+        info = await asyncio.to_thread(_lake_call, lake.export_table, ws, name, dest, "csv")
+        text = dest.read_text(encoding="utf-8")
+    return JSONResponse({"ok": True, "csv": text, "row_count": info["rows"], "table": t["full_name"]})
+
+
+@app.post("/data/import-datasets")
+async def data_import_again() -> JSONResponse:
+    from core import lake
+
+    return JSONResponse(await asyncio.to_thread(lake.import_vault_datasets, True))
+
+
+@app.post("/data/workspaces")
+async def data_create_workspace(body: WorkspaceBody) -> JSONResponse:
+    from core import lake
+
+    return JSONResponse(await asyncio.to_thread(_lake_call, lake.create_workspace, body.name, body.description))
+
+
+@app.patch("/data/workspaces/{ws}")
+async def data_update_workspace(ws: str, body: WorkspaceUpdate) -> JSONResponse:
+    from core import lake
+
+    return JSONResponse(await asyncio.to_thread(_lake_call, lake.update_workspace, ws, body.name, body.description))
+
+
+@app.delete("/data/workspaces/{ws}")
+async def data_delete_workspace(ws: str, drop_tables: bool = False) -> JSONResponse:
+    from core import lake
+
+    n = await asyncio.to_thread(_lake_call, lake.delete_workspace, ws, drop_tables)
+    return JSONResponse({"ok": True, "tables_deleted": n})
+
+
+@app.get("/data/workspaces/{ws}/tables")
+async def data_tables(ws: str) -> JSONResponse:
+    from core import lake
+
+    return JSONResponse({"workspace": ws, "tables": await asyncio.to_thread(_lake_call, lake.list_tables, ws)})
+
+
+@app.get("/data/tables/{ws}/{name}")
+async def data_table(ws: str, name: str) -> JSONResponse:
+    from core import lake
+
+    t = await asyncio.to_thread(_lake_call, lake.get_table, ws, name)
+    t["history"] = await asyncio.to_thread(_lake_call, lake.table_history, ws, name)
+    return JSONResponse(t)
+
+
+@app.get("/data/tables/{ws}/{name}/preview")
+async def data_preview(ws: str, name: str, rows: int = 50) -> JSONResponse:
+    from core import lake
+
+    return JSONResponse(await asyncio.to_thread(_lake_call, lake.preview, ws, name, rows))
+
+
+@app.patch("/data/tables/{ws}/{name}")
+async def data_update_table(ws: str, name: str, body: TableUpdate) -> JSONResponse:
+    from core import lake
+
+    def go():
+        t = lake.get_table(ws, name)
+        if body.name or body.workspace:
+            t = lake.rename_table(ws, name, new_name=body.name, new_workspace=body.workspace)
+        if body.description is not None:
+            t = lake.update_table(t["workspace"], t["name"], body.description)
+        return t
+
+    return JSONResponse(await asyncio.to_thread(_lake_call, go))
+
+
+@app.delete("/data/tables/{ws}/{name}")
+async def data_drop_table(ws: str, name: str) -> JSONResponse:
+    from core import lake
+
+    await asyncio.to_thread(_lake_call, lake.drop_table, ws, name)
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------
 # Scoped read API (roadmap B7) — for plugin code running OUTSIDE this
 # process (phase C runtimes). Each call names the plugin and carries its
 # token (`python -m core.vault token <plugin>`, an HMAC of the Vault key);

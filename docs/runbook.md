@@ -14,6 +14,30 @@ Everything is run from the repo folder (`toolbox/`). Architecture details: `../C
 | Logs of one part | Status page → "logs" button, or `docker compose logs -f <service>` |
 | What is running | `docker compose ps` |
 
+**Use it as an app (own window, icon in the app menu/taskbar):** open http://localhost:8000 in Chromium/Chrome →
+the install icon at the right end of the address bar (or ⋮ menu → *Cast, save and share* → *Install page as app…*)
+→ **Install**. From then on start "Toolbox" like any program; right-click its icon for *Status* / *Settings*.
+Toolbox must be running (`docker compose up -d`) — the app is only a window onto it. Uninstall: in the app
+window, ⋮ → *Uninstall Toolbox*. (Without installing: `chromium --app=http://localhost:8000`.)
+
+**Your data files (Data Lake):** put files you want to load into **`~/toolbox-data`** (Toolbox sees it read-only;
+it can never change or delete them). Then open **Data Lake** → *Data folder* → pick a file, a folder or a pattern →
+choose a workspace and table name → *Load*. Uploading through the page or loading from a link works too. Browse the
+result in **Vault → 📦 Data**. Another folder: set `TOOLBOX_DATA_DIR=/path/to/folder` in `.env`, then
+`docker compose up -d`.
+
+**Querying your tables (Data Lake → 🔎 SQL):** write SQL with tables as `workspace.table`, e.g.
+`SELECT c.country, sum(o.amount) FROM sales.orders o JOIN crm.customers c USING (customer_id) GROUP BY 1`.
+*Run* answers within 30 s; for big queries press *Run in background* (you can close the page — the result waits in
+*History*). Results can be paged, downloaded (CSV/Parquet) or saved as a new table; `CREATE TABLE ws.name AS SELECT …`
+does the same in one step. Queries never change or delete data; results are kept 7 days.
+
+**Using tables in other tools:** Duck Lab, DataFrame Studio, SQL Studio (import dialog) and DataDiff list your
+tables under **📦 workspace** in their "Load from Vault" lists; their **📦 Save to Vault Data** buttons save a
+result as `workspace.table`. **Copying tables out of a database** (e.g. staging for a migration): save the
+connection in the Vault once, then Data Lake → *Database* → pick the connection → *Show tables* → tick tables (or
+write one SELECT) → workspace → *Load*. The database is only read.
+
 **Never run `docker compose down -v`** unless you mean it: `-v` deletes the data volumes (database, files).
 
 What runs (one machine, Docker Compose): `toolbox` (the gateway: workspace page + routing, port 8000),
@@ -99,6 +123,7 @@ identical; a secret decrypted with the restored key).
 | `TOOLBOX_WORKER_SCALING` | `1:3` | Min:max background-job workers |
 | `TOOLBOX_IDLE_TIMEOUT_S` | (manifests: 900) | Minutes-unused before LaTeX/SSH/pgtools sleep, in seconds |
 | `TOOLBOX_SLOW_MS` | 2000 | When a request counts as "slow" on the Status page |
+| `TOOLBOX_DATA_DIR` | `~/toolbox-data` | The folder Data Lake can load from (shared read-only) |
 | `TOOLBOX_DATABASE_URL` | bundled Postgres | Use your own Postgres instead (a dedicated `toolbox` database) |
 | `TOOLBOX_DB_PASSWORD`, `TOOLBOX_S3_ACCESS_KEY`, `TOOLBOX_S3_SECRET_KEY` | local-only defaults | Passwords of the bundled services |
 | `TOOLBOX_VAULT_KEY` | (moved here in B7) | The Vault key — **back it up, never change it** while secrets exist |

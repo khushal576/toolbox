@@ -307,8 +307,9 @@
       <div class="btn-row">
         <button class="action" id="btnFormat" title="Ctrl+Enter">✨ Format</button>
         <button class="action run" id="btnRun" title="Connect to a database first" disabled>▶ Run</button>
-        <button class="action secondary small" id="btnImportVault" disabled title="Connect to a database first">📥 Import Vault dataset → table</button>
+        <button class="action secondary small" id="btnImportVault" disabled title="Connect to a database first">📥 Import from Vault → table</button>
         <button class="action secondary small" id="btnExportVault" disabled title="Connect to a database first">🔒 Export FULL result → Vault</button>
+        <button class="action secondary small" id="btnExportLake" disabled title="Connect to a database first">📦 Export FULL result → Vault Data</button>
         <div class="schema-filter-wrap">
           <button type="button" class="action secondary small" id="btnSchemaFilter" disabled title="Connect to a database first">Schemas: public ▾</button>
           <div class="schema-filter-panel" id="schemaFilterPanel">
@@ -499,10 +500,10 @@
 </dialog>
 
 <dialog id="importDialog">
-  <h2>Import a Vault dataset into a table</h2>
+  <h2>Import from the Vault into a table</h2>
   <p class="hint">Writes to the connected database. Column types are inferred from the data.</p>
   <div class="conn-field">
-    <label>Vault dataset</label>
+    <label>Vault Data table (📦) or dataset (🔒)</label>
     <select id="importDataset"></select>
   </div>
   <div class="conn-field">
@@ -2298,7 +2299,12 @@ function updateConnectionGatedButtons() {
   const importVaultBtn = $("btnImportVault");
   importVaultBtn.disabled = !isConnected;
   importVaultBtn.title = isConnected
-    ? "Load a dataset saved in the Vault into a new (or existing) table on the connected database"
+    ? "Load a Vault Data table or saved dataset into a new (or existing) table on the connected database"
+    : "Connect to a database first";
+  const exportLakeBtn = $("btnExportLake");
+  exportLakeBtn.disabled = !isConnected;
+  exportLakeBtn.title = isConnected
+    ? "Runs the whole query (no 500-row cap) and saves the full result as a Vault Data table (workspace.table)"
     : "Connect to a database first";
   const exportVaultBtn = $("btnExportVault");
   exportVaultBtn.disabled = !isConnected;
@@ -2740,6 +2746,47 @@ async function exportFullResultToVault() {
 }
 $("btnExportVault").addEventListener("click", exportFullResultToVault);
 
+// ---- Export the FULL result as a Vault Data table (roadmap L4) — staging data for migrations, Data Lake SQL, …
+$("btnExportLake").addEventListener("click", async () => {
+  const selection = view.state.selection.main;
+  const sqlText = selection.empty ? view.state.doc.toString() : view.state.sliceDoc(selection.from, selection.to);
+  const statements = splitTopLevelStatements(sqlText);
+  if (statements.length !== 1) {
+    showResultsError(`Export works on exactly one statement at a time (found ${statements.length}).`);
+    return;
+  }
+  const full = (prompt("Save the FULL result (no 500-row cap) to Vault Data as workspace.table (e.g. staging.customers):") || "").trim();
+  if (!full) return;
+  const m = full.match(/^([a-z][a-z0-9_]*)\.([a-z][a-z0-9_]*)$/);
+  if (!m) { showResultsError("Use workspace.table — lowercase letters, digits and _ (e.g. staging.customers)."); return; }
+  const btn = $("btnExportLake");
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = "Exporting…";
+  const send = (mode) => fetch("export/lake", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql: statements[0], workspace: m[1], table: m[2], mode }) });
+  try {
+    let res = await send("create");
+    let data = await res.json();
+    if (res.status === 409) {
+      if (!confirm(`${full} already exists in Vault Data. Replace it with this result?`)) return;
+      res = await send("overwrite");
+      data = await res.json();
+    }
+    if (!res.ok || data.error) { showResultsError(data.error || "Export to Vault Data failed."); return; }
+    $("resultsTitle").textContent = "Saved to Vault Data";
+    $("resultsMeta").textContent = `${data.table.full_name} — ${data.row_count.toLocaleString()} rows (full result, not capped)`;
+    $("resultsBody").innerHTML = "";
+    setExportEnabled(false);
+    $("resultsDialog").showModal();
+  } catch (e) {
+    showResultsError("Network error: " + e.message);
+  } finally {
+    btn.disabled = !isConnected;
+    btn.textContent = originalText;
+  }
+});
+
 // ---- Import a Vault dataset INTO a table (reverse of the export above) ----
 function showImportError(msg) {
   const box = $("importErr");
@@ -2752,14 +2799,25 @@ $("btnImportVault").addEventListener("click", async () => {
   const select = $("importDataset");
   select.innerHTML = "";
   try {
+    // Vault Data tables (roadmap L4, value "lake:<ws>.<table>") first, then the older datasets
+    let html = "";
+    try {
+      const cat = await (await fetch("/tools/vault/data/catalog")).json();
+      (cat.workspaces || []).filter((w) => w.tables.length).forEach((w) => {
+        html += `<optgroup label="📦 ${escHtml(w.name)}">` + w.tables.map((t) =>
+          `<option value="lake:${escHtml(w.name)}.${escHtml(t.name)}">${escHtml(t.name)} (${Number(t.row_count).toLocaleString()} rows)</option>`).join("") + "</optgroup>";
+      });
+    } catch (e) { /* no Vault Data — datasets only */ }
     const res = await fetch("/tools/vault/secrets");
     const data = await res.json();
     const datasets = (data.secrets || []).filter((s) => s.has_data);
-    if (!datasets.length) {
-      showResultsError("The Vault has no datasets yet — use \"Export FULL result → Vault\" (or Duck Lab's export) first.");
+    if (datasets.length) html += '<optgroup label="🔒 Datasets">' +
+      datasets.map((s) => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join("") + "</optgroup>";
+    if (!html) {
+      showResultsError("The Vault has no tables or datasets yet — use \"Export FULL result → Vault Data\" (or Data Lake) first.");
       return;
     }
-    select.innerHTML = datasets.map((s) => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join("");
+    select.innerHTML = html;
     $("importDialog").showModal();
   } catch (e) {
     showResultsError("Couldn't list Vault datasets: " + e.message);
@@ -2769,19 +2827,24 @@ $("btnImportCancel").addEventListener("click", () => $("importDialog").close());
 $("btnImportGo").addEventListener("click", async () => {
   const table = $("importTable").value.trim();
   if (!table) { showImportError("Enter a table name."); return; }
-  const body = { secret_id: $("importDataset").value, table, mode: $("importMode").value };
+  const picked = $("importDataset").value;
+  const lakeTable = picked.startsWith("lake:") ? picked.slice(5).split(".") : null;
+  const url = lakeTable ? "import/lake" : "import/vault";
+  const body = lakeTable
+    ? { workspace: lakeTable[0], source_table: lakeTable[1], table, mode: $("importMode").value }
+    : { secret_id: picked, table, mode: $("importMode").value };
   const go = $("btnImportGo");
   go.disabled = true;
   go.textContent = "Importing…";
   showImportError(null);
   try {
-    const first = await fetch("import/vault", {
+    const first = await fetch(url, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
     let res = first, data = await first.json();
     if (first.status === 409 && data.requires_confirmation) {
       if (!confirm(data.message + "\n\nProceed?")) return;
-      res = await fetch("import/vault", {
+      res = await fetch(url, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...body, confirmed: true }),
       });

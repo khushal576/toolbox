@@ -1071,15 +1071,24 @@ list_keys:
     box.classList.add('show');
   }
 
+  // Since roadmap L4 the list starts with Vault Data tables (📦 per workspace, value "lake:<ws>.<table>") —
+  // same cap and same "refuse, never cut" rule as datasets (/tools/vault/data/tables/<ws>/<t>/csv).
   async function refreshVaultDatasetSelects() {
-    let secrets = [];
+    let secrets = [], workspaces = [];
+    try {
+      const cat = await (await fetch('/tools/vault/data/catalog')).json();
+      workspaces = (cat.workspaces || []).filter((w) => w.tables.length);
+    } catch (e) { /* Vault Data unreachable — datasets only */ }
     try {
       const res = await fetch('/tools/vault/secrets');
       const data = await res.json();
       secrets = (data.secrets || []).filter((s) => s.has_data);
-    } catch (e) { /* Vault unreachable — selects just stay empty, not fatal */ return; }
+    } catch (e) { /* Vault unreachable — selects just stay empty, not fatal */ }
     const options = '<option value="">— load from Vault —</option>' +
-      secrets.map((s) => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join('');
+      workspaces.map((w) => `<optgroup label="📦 ${escHtml(w.name)}">` + w.tables.map((t) =>
+        `<option value="lake:${escHtml(w.name)}.${escHtml(t.name)}">${escHtml(t.name)} (${Number(t.row_count).toLocaleString()} rows)</option>`).join('') + '</optgroup>').join('') +
+      (secrets.length ? '<optgroup label="🔒 Datasets">' +
+        secrets.map((s) => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join('') + '</optgroup>' : '');
     document.getElementById('left-vault-select').innerHTML = options;
     document.getElementById('right-vault-select').innerHTML = options;
   }
@@ -1090,7 +1099,10 @@ list_keys:
     if (!id) return;
     showVaultLoadError(null);
     try {
-      const res = await fetch(`/tools/vault/datasets/${encodeURIComponent(id)}/preview`);
+      const url = id.startsWith('lake:')
+        ? `/tools/vault/data/tables/${id.slice(5).split('.').map(encodeURIComponent).join('/')}/csv`
+        : `/tools/vault/datasets/${encodeURIComponent(id)}/preview`;
+      const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Load from Vault failed.');
       document.getElementById(`${side}-data`).value = data.csv;

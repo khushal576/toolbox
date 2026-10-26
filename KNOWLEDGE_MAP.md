@@ -27,6 +27,8 @@ misleads. If a file's job changes, update its row here in the same commit.
 | Replicas: how many run, why it scaled up/down, which replica got a request, worker pool size | `core_plugins/autoscale.py` (`ScaledService.tick`, thresholds `UP_CPU`/`DOWN_CPU`/`DOWN_AFTER`/`COOLDOWN`), `core_plugins/balancer.py` (`Balancer.pick`, `mark_failed`), wiring + `scaled` in `/api/workspace/runtimes` in `main.py`, retry loop in `core_plugins/proxy.py`; compose `deploy.replicas` + `TOOLBOX_WORKER_SCALING` (roadmap D3) |
 | The Status tab: what it shows, the attention rules, where each number comes from | `core_plugins/overview.py` (`containers`, `jobs_summary`, `storage_summary`, `attention`), `/api/workspace/overview` + `/api/state/overview` in `main.py`, `renderStatus` in `core_plugins/ui/workspace.html` (roadmap E1) |
 | Per-tool request/error/slow counters, the recent-errors list, the log window, the sidebar alert badge | `core_plugins/metrics.py` (`Metered`, `record`, `flush`, `read`, `recent_errors`), `core_plugins/overview.py` (`logs`, `_demux`, `container_states`, `attention`), `/api/workspace/{metrics,errors,logs/<name>,alerts}` in `main.py`, `loadAlerts`/`showLog`/`spark` in `core_plugins/ui/workspace.html` (roadmap E2/E3) |
+| Vault Data: workspaces/tables, where a table's files are, versions/history, importing old datasets, which tool may read/write Data | `core/lake.py` (`create_workspace`, `write_table`, `rename_table`, `drop_table`, `preview`, `local_files`, `import_vault_datasets`, `scoped`), `/data*` endpoints in `vault/server.py`, Data tab in `vault/ui/index.html`, manifest `vault: {data: …}` (roadmap L1) |
+| Installing Toolbox as an app, its name/colors/shortcuts, the icons, the favicon | `_WEBMANIFEST`, `/manifest.webmanifest`, `/icons/{name}`, `/favicon.ico` in `main.py`; icons in `core_plugins/ui/icons/` (regenerate: `python3 tools/icons/make_icons.py`); `<link rel="manifest">` in `core_plugins/ui/workspace.html` (roadmap G1) |
 | Backups / restore, what's in an archive, the "last backup" line | `scripts/backup.sh`, `scripts/restore.sh`, `core/state/backup.py` (`objects_export`, `objects_import`, `mark`, `last`), `backup` in `/api/state/overview` (main.py) + `attention` (overview.py); owner how-to `docs/runbook.md` (Ops session) |
 | Docker filters per compose project (two stacks side by side), one-off containers ignored | `core_plugins/dockerapi.py` (`own_project`, `service_filter`) |
 | Several web workers: worker count, singleton routing, switches/load state shared between processes | `TOOLBOX_WEB_WORKERS` (compose `toolbox.command`, Dockerfile `CMD`); `TOOLBOX_ROLE` / `TOOLBOX_SINGLETON_URL` + `_app_for` in `main.py`; `core_plugins/proxy.py` (`ProxyApp`); `_sync_workspace` / `_WorkspaceSync` and `_publish_now` / `_all_processes` in `main.py`; `singletons` service in `docker-compose.yml` (roadmap B9) |
@@ -1352,7 +1354,7 @@ experience. See `duck-lab/CLAUDE.md` for the full picture.
 | If you need to change...                                          | Go to |
 |-----------------------------------------------------------------------|-------|
 | Session state, DuckDB connection setup (memory/spill config), CSV/JSON/Parquet/XML loading, query materialization, pagination, export, table preview | `duck-lab/engine.py` |
-| API endpoints (`/upload`, `/load/vault`, `/tables`, `/table/remove`, `/preview/{name}`, `/query`, `/page`, `/export`, `/export/vault`, `/session/reset`) | `duck-lab/server.py` |
+| API endpoints (`/upload`, `/load/vault`, `/load/lake`, `/tables`, `/table/remove`, `/preview/{name}`, `/query`, `/page`, `/export`, `/export/vault`, `/export/lake`, `/session/reset`) | `duck-lab/server.py` |
 | The frontend: upload/table list, "load from Vault" picker, preview panel, CodeMirror SQL editor + schema autocomplete, results table + pagination, query time | `duck-lab/ui/index.html` |
 | Loading a saved Vault dataset in as a new table (the consumer side of `/export/vault`) | `duck-lab/server.py`'s `/load/vault` — decrypts via `core.vault.load_dataset_file()`, moves the result into the session's own `data_dir` (not a tempfile) since `engine.load_file()` builds a LAZY view backed by that path, then loads it exactly like an upload |
 
@@ -1399,6 +1401,37 @@ experience. See `duck-lab/CLAUDE.md` for the full picture.
   (`COPY duck-lab/ ./duck_lab/`), same reason as df-studio/sql-studio —
   extra backend module (`engine.py`) beyond `server.py`. Imports
   `core.normalizer` directly for XML, so it must be copied after `core/`.
+
+## Tool: Data Lake — mounted at `/tools/data-lake/`
+
+Loads files into **Vault Data** tables as Parquet (roadmap L2) and queries them with SQL, Athena style (L3, 🔎 SQL tab). Read `data-lake/CLAUDE.md` first.
+
+| If you need to change... | Go to |
+|---|---|
+| What can be loaded from where (upload / data folder / link / pattern), path safety | `data-lake/sources.py` (`browse`, `match`, `summary`, `STAGE`, `download`) |
+| How a load works (detection, XML/Excel conversion, DuckDB COPY → Parquet, modes, column-change warning) | `data-lake/loader.py` (`run_load`) |
+| Format detection / reading many files as one table (shared) | `core/file_source.py` (`detect_any`, `build_multi_read_expr`) |
+| Endpoints, starting/stopping/polling a load | `data-lake/server.py` |
+| The page | `data-lake/ui/index.html` |
+| Where tables end up, external tables, preview | `core/lake.py` (`write_table`, `register_external`, `read_expr`, `preview`) |
+| The shared data folder location | `TOOLBOX_DATA_DIR` (compose: rt-data + worker, `/data`, read-only) |
+| What SQL is allowed (read-only check, which tables get mounted, unqualified names) | `data-lake/query.py` (`analyse`, `ALLOWED_FUNCTIONS`) |
+| Running a query (instant 30 s vs background job, memory, timeout/stop), CREATE TABLE AS | `data-lake/query.py` (`execute`, `run_query_job`), env `DATA_LAKE_INSTANT_SECONDS` / `DATA_LAKE_QUERY_MEMORY` |
+| Stored results (paging, CSV/Parquet download, save as table, 7-day expiry), history + saved queries | `data-lake/query.py` (`RESULTS`, `page`, `export_csv`, `save_as_table`, `STORE` schema `data_lake`) |
+| The SQL editor (catalog tree, autocomplete, results grid) | `data-lake/ui/index.html` (`#sqlView`, `acSuggest`) |
+| Staging database tables (Vault connection → tables / one SELECT → workspace), batch typing, read-only source | `data-lake/staging.py` (`connect`, `run_stage`, `_batch_to_parquet`, `_merge`); page: `#src-db` |
+
+### Vault Data in every tool (roadmap L4) — symptom → file
+
+| If you need to change... | Go to |
+|---|---|
+| The table list every tool shows ("📦 workspace" groups) | Vault `GET /data/catalog` (`vault/server.py`) → `core/lake.py` `catalog()` |
+| Table → file for a tool (Parquet/CSV, optional first N rows) / file → table | `core/lake.py` `export_table`, `import_file` (scoped: `ScopedLake`) |
+| Duck Lab load / save | `duck-lab/server.py` `/load/lake`, `/export/lake`; page `refreshVaultSelect`, `btnSaveToLake` |
+| DataFrame Studio load (1 M-row limit, `DF_STUDIO_LAKE_MAX_ROWS`) / save | `df-studio/server.py` `/load/lake`, `/export/lake`; page `loadLakeTable`, `saveLakeBtn` |
+| SQL Studio full result → table / table → database | `sql-studio/server.py` `/export/lake`, `/import/lake`; page `btnExportLake`, import dialog |
+| DataDiff "Load from Vault" with tables (2000-row limit, bigger refused) | `ui/index.html` `refreshVaultDatasetSelects` → Vault `GET /data/tables/{ws}/{t}/csv` |
+| A new visitor sees someone else's tool session | `core_plugins/proxy.py` `_no_cookie_jar` (the proxy client must never store cookies) |
 
 ## Tool: Vault — mounted at `/tools/vault/`
 

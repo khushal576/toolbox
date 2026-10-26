@@ -534,13 +534,16 @@ class Scope:
     """What one plugin may do: decrypt `read` kinds, create/update `write` kinds, and datasets
     ('none' | 'read' = load any dataset | 'write' = also save them)."""
 
-    def __init__(self, name: str, read: Iterable[str] = (), write: Iterable[str] = (), datasets: str = "none"):
-        if datasets not in ("none", "read", "write"):
-            raise ValueError("datasets must be none | read | write")
+    def __init__(self, name: str, read: Iterable[str] = (), write: Iterable[str] = (), datasets: str = "none",
+                 data: str = "none"):
+        if datasets not in ("none", "read", "write") or data not in ("none", "read", "write"):
+            raise ValueError("datasets / data must be none | read | write")
         self.name, self.read, self.write, self.datasets = name, frozenset(read) | frozenset(write), frozenset(write), datasets
+        self.data = data  # Vault Data — lake tables (roadmap L1, enforced by core.lake.scoped)
 
     def as_dict(self) -> dict[str, Any]:
-        return {"plugin": self.name, "read": sorted(self.read), "write": sorted(self.write), "datasets": self.datasets}
+        return {"plugin": self.name, "read": sorted(self.read), "write": sorted(self.write), "datasets": self.datasets,
+                "data": self.data}
 
 
 _scope_cache: dict[str, Scope] = {}
@@ -554,7 +557,7 @@ def scope_for(plugin: str) -> Scope:
         repo = Path(__file__).resolve().parent.parent
         m = discover(repo).plugins.get(plugin)
         v = m.vault if m is not None else None
-        _scope_cache[plugin] = Scope(plugin, v.read, v.write, v.datasets) if v else Scope(plugin)
+        _scope_cache[plugin] = Scope(plugin, v.read, v.write, v.datasets, v.data) if v else Scope(plugin)
     return _scope_cache[plugin]
 
 

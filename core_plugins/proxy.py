@@ -38,6 +38,7 @@ def _http():
 
         # read=900 s: a long SQL statement or export can take minutes; the tool enforces its own limits.
         _client = httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=900.0, write=900.0),
+                                    cookies=_no_cookie_jar(),
                                     # keepalive 2 s < uvicorn's 5 s: never reuse a connection the tool is closing
                                     # (that race showed up as a rare 503 under load in D3)
                                     limits=httpx.Limits(max_connections=100, max_keepalive_connections=20,
@@ -45,6 +46,15 @@ def _http():
                                     follow_redirects=False)
         _client_loop = loop
     return _client
+
+
+def _no_cookie_jar():
+    """The proxy must never remember cookies. httpx's client keeps a jar by default: it stored every tool's
+    Set-Cookie and added it to the next request WITHOUT its own Cookie header — so a new browser was handed the last
+    visitor's duck_lab_sid / df-studio session (found in roadmap L4). Browser cookies still pass through as headers."""
+    from http.cookiejar import CookieJar, DefaultCookiePolicy
+
+    return CookieJar(policy=DefaultCookiePolicy(allowed_domains=[]))
 
 
 class ProxyApp:

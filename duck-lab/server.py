@@ -33,8 +33,10 @@ except ImportError:  # standalone dev run from inside this folder: core/ is ../c
 
     _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from core import vault as vault_store
+from core import lake as lake_store
 
 vault = vault_store.scoped("duck-lab")  # Vault scope from manifest.yaml `vault:` (roadmap B7)
+lake = lake_store.scoped("duck-lab")    # Vault Data tables, `vault: {data: write}` (roadmap L4)
 
 app = FastAPI(title="Duck Lab")
 
@@ -225,6 +227,62 @@ async def export_to_vault(request: Request, body: SaveToVaultRequest) -> JSONRes
     finally:
         tmp_path.unlink(missing_ok=True)
     return JSONResponse({"ok": True, "id": secret_id})
+
+
+class LakeTableRequest(BaseModel):
+    workspace: str
+    table: str
+
+
+class SaveToLakeRequest(BaseModel):
+    workspace: str
+    table: str
+    mode: str = "create"   # create | overwrite | append
+
+
+def _lake_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, lake_store.NotFound):
+        return HTTPException(404, str(exc))
+    if isinstance(exc, lake_store.ScopeError):
+        return HTTPException(403, str(exc))
+    return HTTPException(409 if "already exists" in str(exc) else 400, str(exc))
+
+
+@app.post("/load/lake")
+async def load_from_lake(request: Request, body: LakeTableRequest) -> JSONResponse:
+    """Load a Vault Data table (roadmap L4) as a source: exported once to Parquet in this session's data_dir
+    (streamed by DuckDB), then registered exactly like an upload — it becomes a lazy view named after the table."""
+    sid, session = await _get_session(request)
+    dest = session.data_dir / f"{uuid.uuid4().hex}_{body.table}.parquet"
+    try:
+        await _run(lake.export_table, body.workspace, body.table, dest, "parquet")
+        meta = await _run(engine.load_file, session, dest, f"{body.table}.parquet")
+    except (lake_store.LakeError, lake_store.ScopeError) as exc:
+        dest.unlink(missing_ok=True)
+        raise _lake_error(exc) from exc
+    except (engine.QueryError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _with_cookie(JSONResponse({"ok": True, "table": _table_meta_json(meta)}), sid)
+
+
+@app.post("/export/lake")
+async def export_to_lake(request: Request, body: SaveToLakeRequest) -> JSONResponse:
+    """Save the current query result as a Vault Data table (roadmap L4) — the full result (its Parquet), not a page.
+    409 when the table exists and mode is create (the page then asks before overwriting)."""
+    _sid, session = await _get_session(request)
+    try:
+        tmp_path = await _run(engine.export_result, session, "parquet")
+    except engine.QueryError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    try:
+        t = await _run(lambda: lake.write_table(
+            body.workspace, body.table, [tmp_path], mode=body.mode, create_workspace_if_missing=True,
+            source={"kind": "duck-lab", "columns": session.result_columns}))
+    except (lake_store.LakeError, lake_store.ScopeError) as exc:
+        raise _lake_error(exc) from exc
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    return JSONResponse({"ok": True, "table": t})
 
 
 @app.post("/session/reset")

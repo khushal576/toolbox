@@ -137,6 +137,7 @@
         <button class="action secondary small" id="btnExportCsv">Export CSV</button>
         <button class="action secondary small" id="btnExportJson">Export JSON</button>
         <button class="action secondary small" id="btnSaveToVault">🔒 Save to Vault</button>
+        <button class="action secondary small" id="btnSaveToLake" title="Save the full result as a Vault Data table (workspace.table)">📦 Save to Vault Data</button>
         <span class="stats" id="queryTime"></span>
       </div>
       <div class="error-box" id="errorBox"></div>
@@ -201,6 +202,15 @@ const API = {
     const res = await fetch("upload", { method: "POST", body: form });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Upload failed");
+    return data;
+  },
+  async loadFromLake(workspace, table) {
+    const res = await fetch("load/lake", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace, table }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Load from Vault Data failed.");
     return data;
   },
   async loadFromVault(id, name) {
@@ -385,15 +395,25 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
 // (see btnSaveToVault below). No size cap here, unlike DataDiff Pro's own
 // "Load from Vault" — DuckDB reads the decrypted file lazily off disk the
 // same way an upload does, never materializing it in Python memory.
+// Since roadmap L4 the list also has Vault Data tables (📦, one group per workspace) — value "lake:<ws>.<table>".
 async function refreshVaultSelect() {
   const select = document.getElementById("vaultSelect");
+  let html = '<option value="">— load from Vault —</option>';
+  try {
+    const cat = await (await fetch("/tools/vault/data/catalog")).json();
+    (cat.workspaces || []).filter((w) => w.tables.length).forEach((w) => {
+      html += `<optgroup label="📦 ${escapeHtml(w.name)}">` + w.tables.map((t) =>
+        `<option value="lake:${escapeHtml(w.name)}.${escapeHtml(t.name)}">${escapeHtml(t.name)} (${Number(t.row_count).toLocaleString()} rows)</option>`).join("") + "</optgroup>";
+    });
+  } catch (e) { /* Vault Data unreachable — just no table entries */ }
   try {
     const res = await fetch("/tools/vault/secrets");
     const data = await res.json();
     const secrets = (data.secrets || []).filter((s) => s.has_data);
-    select.innerHTML = '<option value="">— load from Vault —</option>' +
-      secrets.map((s) => `<option value="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join("");
+    if (secrets.length) html += '<optgroup label="🔒 Datasets">' +
+      secrets.map((s) => `<option value="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join("") + "</optgroup>";
   } catch (e) { /* Vault unreachable — select just stays empty, not fatal */ }
+  select.innerHTML = html;
 }
 refreshVaultSelect();
 
@@ -408,7 +428,12 @@ document.getElementById("btnVaultLoad").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "Loading…";
   try {
-    await API.loadFromVault(id, name);
+    if (id.startsWith("lake:")) {
+      const [ws, table] = id.slice(5).split(".");
+      await API.loadFromLake(ws, table);
+    } else {
+      await API.loadFromVault(id, name);
+    }
     await refreshTables();
   } catch (err) {
     showError(err.message);
@@ -537,6 +562,39 @@ document.getElementById("btnSaveToVault").addEventListener("click", async () => 
   } finally {
     btn.disabled = false;
     btn.textContent = originalText;
+  }
+});
+
+// ── Save to Vault Data (roadmap L4): the full result becomes a table `workspace.table` (Parquet), usable from
+// Data Lake SQL and every other tool. A name that exists → asks, then overwrites.
+document.getElementById("btnSaveToLake").addEventListener("click", async () => {
+  if (!STATE.totalRows && STATE.totalRows !== 0) { showError("Run a query first."); return; }
+  const full = (prompt("Save the full result to Vault Data as workspace.table (e.g. staging.orders_clean):") || "").trim();
+  if (!full) return;
+  const m = full.match(/^([a-z][a-z0-9_]*)\.([a-z][a-z0-9_]*)$/);
+  if (!m) { showError("Use workspace.table — lowercase letters, digits and _ (e.g. staging.orders_clean)."); return; }
+  showError(null);
+  const btn = document.getElementById("btnSaveToLake");
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+  const send = (mode) => fetch("export/lake", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspace: m[1], table: m[2], mode }) });
+  try {
+    let res = await send("create");
+    if (res.status === 409 && confirm(`${full} already exists. Replace it with this result?`)) res = await send("overwrite");
+    else if (res.status === 409) return;
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Save to Vault Data failed.");
+    btn.textContent = `✓ ${data.table.full_name}`;
+    refreshVaultSelect();
+    setTimeout(() => { btn.textContent = originalText; }, 2500);
+    return;
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    btn.disabled = false;
+    if (btn.textContent === "Saving…") btn.textContent = originalText;
   }
 });
 

@@ -16,4 +16,4 @@ requires: []
 order: 120
 # Owner decision (roadmap B3): one process only — keeps the pool of 3 and never stores the password.
 singleton: true
-vault: {datasets: write}   # Vault scope (roadmap B7): "Export to Vault" + load datasets
+vault: {datasets: write, data: write}   # Vault scope (roadmap B7): "Export to Vault" + load datasets; L4: Vault Data tables

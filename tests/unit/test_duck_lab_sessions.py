@@ -106,3 +106,16 @@ def test_xml_is_stored_as_parquet_and_rebuilds(eng):
 def test_sessions_are_isolated(eng):
     upload(eng, "s1", "only_s1.csv", "a\n1\n")
     assert eng.get_or_create_session("s2").tables == {}
+
+
+def test_rows_with_decimals_uuids_and_intervals_are_json_safe(eng):
+    """Roadmap L4: tables staged from databases bring DECIMAL/UUID columns — those used to 500 every page."""
+    import json
+    import uuid
+    from datetime import timedelta
+    from decimal import Decimal
+
+    row = eng._row_to_jsonable((Decimal("12.50"), Decimal("435"), Decimal("12345678901234567.25"),
+                                uuid.UUID(int=1), timedelta(hours=1)))
+    assert json.loads(json.dumps(row)) == [12.5, 435, "12345678901234567.25",
+                                           "00000000-0000-0000-0000-000000000001", "1:00:00"]

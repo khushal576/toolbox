@@ -142,7 +142,9 @@ def test_repo_manifests_cover_all_tools_in_order():
     reg = discover(REPO)
     assert reg.errors == [], reg.errors
     assert reg.warnings == [], reg.warnings
-    assert list(reg.plugins)[: len(EXPECTED)] == EXPECTED  # new tools may follow; these keep their order
+    names = list(reg.plugins)
+    # the original 20 keep their relative order; new tools may sit anywhere (e.g. Data Lake next to the Vault)
+    assert [n for n in names if n in EXPECTED] == EXPECTED
 
 
 def test_repo_python_entries_point_at_existing_source():

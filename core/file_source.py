@@ -48,3 +48,60 @@ def build_read_expr(path: str) -> str:
     unsupported extension."""
     fmt = detect_format(path)
     return f"{_READERS[fmt]}({_quote_literal(path)})"
+
+
+# ---- many files at once (roadmap L2: loading into Vault Data) ---------------------------------------------------
+
+# extension (after stripping .gz) → format; xml/xlsx are converted first (not lazy DuckDB reads)
+_EXT_FORMAT = {"csv": "csv", "tsv": "csv", "txt": "csv", "json": "json", "jsonl": "json", "ndjson": "json",
+               "parquet": "parquet", "pq": "parquet", "xml": "xml", "xlsx": "excel", "xlsm": "excel"}
+FORMATS = ("csv", "json", "parquet", "xml", "excel")
+
+
+def detect_any(path: str) -> str:
+    """Format of one file: by extension (".csv.gz" counts as csv), else by sniffing its first bytes.
+    Returns one of FORMATS; raises ValueError if it can't tell."""
+    import gzip
+
+    name = path.lower()
+    if name.endswith(".gz"):
+        name = name[:-3]
+    ext = name.rsplit(".", 1)[-1] if "." in name.rsplit("/", 1)[-1] else ""
+    if ext in _EXT_FORMAT:
+        return _EXT_FORMAT[ext]
+    opener = gzip.open if path.lower().endswith(".gz") else open
+    with opener(path, "rb") as f:
+        head = f.read(4096)
+    if head.startswith(b"PAR1"):
+        return "parquet"
+    if head.startswith(b"PK\x03\x04"):
+        return "excel"
+    text = head.lstrip(b"\xef\xbb\xbf \t\r\n")
+    if text.startswith((b"{", b"[")):
+        return "json"
+    if text.startswith(b"<"):
+        return "xml"
+    if b"," in head or b"\t" in head or b";" in head or b"|" in head:
+        return "csv"
+    raise ValueError(f"Can't tell what kind of file '{path}' is — give it an extension (.csv, .json, .parquet…)")
+
+
+def build_multi_read_expr(paths: list[str], fmt: str, *, header: bool | None = None, delimiter: str | None = None,
+                          with_filename: bool = False) -> str:
+    """One DuckDB expression reading ALL `paths` (same format) as one table: columns matched by name across files
+    (`union_by_name`), compression detected from the name (.gz), optional `filename` column for "which file did
+    this row come from". csv/json/parquet only (xml/excel are converted to Parquet first)."""
+    files = "[" + ", ".join(_quote_literal(p) for p in paths) + "]"
+    extra = ", filename=true" if with_filename else ""
+    if fmt == "csv":
+        opts = ""
+        if header is not None:
+            opts += f", header={'true' if header else 'false'}"
+        if delimiter:
+            opts += f", delim={_quote_literal(delimiter)}"
+        return f"read_csv({files}, auto_detect=true, union_by_name=true{opts}{extra})"
+    if fmt == "json":
+        return f"read_json_auto({files}, union_by_name=true{extra})"
+    if fmt == "parquet":
+        return f"read_parquet({files}, union_by_name=true{extra})"
+    raise ValueError(f"{fmt} files are converted before reading")

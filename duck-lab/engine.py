@@ -33,6 +33,8 @@ import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -468,9 +470,23 @@ def _row_to_jsonable(row: tuple) -> list:
             out.append(v.hex())
         elif hasattr(v, "isoformat"):
             out.append(v.isoformat())
+        elif isinstance(v, Decimal):  # DECIMAL columns (money, sum() of BIGINT) used to 500 the whole page
+            out.append(_decimal_jsonable(v))
+        elif isinstance(v, (uuid.UUID, timedelta)):
+            out.append(str(v))
         else:
             out.append(v)
     return out
+
+
+def _decimal_jsonable(v: Decimal):
+    """A number when a browser holds it exactly (whole < 2**53, or ≤ 15 significant digits), else exact text."""
+    if v.is_finite():
+        if v == v.to_integral_value() and abs(v) < 2**53:
+            return int(v)
+        if len(v.normalize().as_tuple().digits) <= 15:
+            return float(v)
+    return str(v)
 
 
 def export_result(session: Session, fmt: str) -> Path:

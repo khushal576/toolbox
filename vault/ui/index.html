@@ -72,15 +72,90 @@
     border-radius: 8px; padding: 10px 12px; font-size: 0.82rem; margin: 12px 0; display: none;
   }
   .error-box.show { display: block; }
+
+  /* ---- Secrets | Data tabs (roadmap L1) ---- */
+  .vtabs { max-width: 900px; margin: 0 auto 16px; display: flex; gap: 6px; border-bottom: 1px solid var(--border); }
+  .vtabs button { cursor: pointer; border: none; background: none; font: inherit; font-size: 0.9rem; font-weight: 600;
+                  color: var(--muted); padding: 8px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .vtabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+  #dataView { max-width: 1180px; margin: 0 auto; display: none; }
+  .data-grid { display: grid; grid-template-columns: 250px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 800px) { .data-grid { grid-template-columns: 1fr; } }
+  .ws-list { list-style: none; display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+  .ws-list li { padding: 8px 10px; border-radius: 7px; cursor: pointer; font-size: 0.85rem; border: 1px solid transparent; }
+  .ws-list li:hover { background: var(--bg); }
+  .ws-list li.on { background: rgba(79,94,240,0.10); border-color: rgba(79,94,240,0.3); }
+  .ws-list .n { font-weight: 700; } .ws-list .m { color: var(--muted); font-size: 0.72rem; }
+  table.dt { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  table.dt th, table.dt td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.dt th { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); background: #fafbfe; }
+  table.dt td.num, table.dt th.num { text-align: right; white-space: nowrap; }
+  table.dt tr.click { cursor: pointer; } table.dt tr.click:hover td { background: var(--bg); }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.76rem; }
+  .muted { color: var(--muted); }
+  .preview-wrap { overflow: auto; max-height: 420px; border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; }
+  .preview-wrap table.dt td { white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+  .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .pill { display: inline-block; background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
+          padding: 2px 9px; font-size: 0.72rem; color: var(--muted); margin-right: 4px; }
 </style>
 </head>
 <body>
 <header>
   <h1>Vault<span>.</span></h1>
-  <p>Shared encrypted secret store — add connections here, or save them from sql-studio/schema-map's Connection panel. Encrypted at rest; see vault/CLAUDE.md for the exact trust model.</p>
+  <p>One place for what Toolbox keeps: 🔑 <b>Secrets</b> (connections, servers, keys — encrypted at rest) and 📦 <b>Data</b> (workspaces → tables, stored as Parquet). See vault/CLAUDE.md for the trust model.</p>
 </header>
 
-<div class="wrap">
+<nav class="vtabs" role="tablist">
+  <button id="tabSecrets" class="on" role="tab">🔑 Secrets</button>
+  <button id="tabData" role="tab">📦 Data</button>
+</nav>
+
+<div id="dataView">
+  <div class="data-grid">
+    <div class="card">
+      <h2>Workspaces</h2>
+      <p class="hint">Like Glue databases: group tables, e.g. <span class="mono">migration_staging</span>. Tables are
+        named <span class="mono">workspace.table</span> everywhere.</p>
+      <ul class="ws-list" id="wsList"></ul>
+      <div class="form-grid" style="margin-top:10px;">
+        <div class="full"><label>New workspace</label><input type="text" id="wsNew" placeholder="e.g. sales_analysis" /></div>
+      </div>
+      <div class="row-actions"><button class="action small" id="btnWsCreate">Create</button></div>
+      <div class="error-box" id="wsErr"></div>
+      <p class="hint" id="importNote" style="margin-top:10px;"></p>
+      <button class="action small" id="btnImport" style="background:var(--muted);">Import new Vault datasets</button>
+    </div>
+    <div>
+      <div class="card" id="wsCard">
+        <h2 id="wsTitle">Pick a workspace</h2>
+        <p class="hint" id="wsDesc">Tables are stored as Parquet in Toolbox's storage (fast to query). Loading files
+          into tables comes with the Data Lake tool (roadmap L2); tools will load from / save to here (L4).</p>
+        <div id="wsTables"></div>
+        <div class="row-actions" id="wsActions" style="display:none;">
+          <button class="action small" id="btnWsRename">Rename workspace</button>
+          <button class="action small danger" id="btnWsDelete">Delete workspace</button>
+        </div>
+      </div>
+      <div class="card" id="tblCard" style="display:none;">
+        <h2 id="tblTitle"></h2>
+        <p class="hint" id="tblMeta"></p>
+        <div id="tblCols"></div>
+        <h2 style="margin-top:14px;">First rows</h2>
+        <div class="preview-wrap" id="tblPreview"></div>
+        <div class="row-actions">
+          <button class="action small" id="btnTblRename">Rename / move</button>
+          <button class="action small danger" id="btnTblDelete">Delete table</button>
+        </div>
+        <div class="error-box" id="tblErr"></div>
+        <h2 style="margin-top:14px;">History</h2>
+        <div id="tblHist"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" id="secretsView">
   <div class="card">
     <h2>Saved secrets</h2>
     <p class="hint">Values are never shown here — only name, kind, and when they were saved/updated. A consuming tool (e.g. sql-studio's "Load saved connection") decrypts one only at the moment it's actually used.</p>
@@ -436,6 +511,135 @@ $("btnSaveAnyway").addEventListener("click", async () => {
 });
 
 refresh();
+
+// ================= 📦 Data (roadmap L1) =================
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const esc = escapeHtml;
+  let curWs = null, curTbl = null;
+  const fmtBytes = (n) => { const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; n = Number(n || 0);
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : n.toFixed(0)) + " " + u[i]; };
+  const fmtN = (n) => Number(n || 0).toLocaleString();
+  function err(box, msg) { box.textContent = msg || ""; box.classList.toggle("show", !!msg); }
+  async function api(path, opts) {
+    const r = await fetch(path, opts); const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || j.error || ("HTTP " + r.status)); return j;
+  }
+  function sourceText(src) {
+    if (!src || !src.kind) return "–";
+    if (src.kind === "vault_dataset") return "imported Vault dataset “" + src.dataset + "”";
+    return src.kind + (src.file ? " · " + src.file : "") + (src.detail ? " · " + src.detail : "");
+  }
+
+  function showTab(which) {
+    $("tabSecrets").classList.toggle("on", which === "secrets"); $("tabData").classList.toggle("on", which === "data");
+    $("secretsView").style.display = which === "secrets" ? "" : "none";
+    $("dataView").style.display = which === "data" ? "block" : "none";
+    try { localStorage.setItem("vault_tab", which); } catch (e) {}
+    if (which === "data") loadWorkspaces();
+  }
+  $("tabSecrets").onclick = () => showTab("secrets");
+  $("tabData").onclick = () => showTab("data");
+
+  async function loadWorkspaces() {
+    try {
+      const d = await api("data");
+      const imp = d.import || {};
+      $("importNote").textContent = (imp.imported || []).length || (imp.failed || []).length
+        ? `Vault datasets imported as tables: ${(imp.imported || []).length}` + ((imp.failed || []).length ? `, failed: ${imp.failed.length}` : "")
+        : "Saved Vault datasets are copied into the “datasets” workspace (originals stay).";
+      $("wsList").innerHTML = d.workspaces.map((w) => `<li data-ws="${esc(w.name)}" class="${w.name === curWs ? "on" : ""}">
+          <div class="n">${esc(w.name)}</div><div class="m">${w.tables} table(s) · ${fmtN(w.row_count)} rows · ${fmtBytes(w.size_bytes)}</div></li>`).join("")
+        || '<li class="muted" style="cursor:default">No workspaces yet — create one below.</li>';
+      if (curWs && !d.workspaces.some((w) => w.name === curWs)) { curWs = null; curTbl = null; }
+      if (curWs) await loadTables(); else renderNoWs();
+    } catch (e) { err($("wsErr"), e.message); }
+  }
+  function renderNoWs() {
+    $("wsTitle").textContent = "Pick a workspace"; $("wsTables").innerHTML = ""; $("wsActions").style.display = "none";
+    $("tblCard").style.display = "none";
+  }
+  async function loadTables() {
+    const d = await api(`data/workspaces/${encodeURIComponent(curWs)}/tables`);
+    $("wsTitle").textContent = "📦 " + curWs; $("wsActions").style.display = "flex";
+    $("wsTables").innerHTML = d.tables.length ? `<table class="dt"><thead><tr><th>Table</th><th class="num">Rows</th>
+        <th class="num">Columns</th><th class="num">Size</th><th>From</th><th>Updated</th></tr></thead><tbody>` +
+        d.tables.map((t) => `<tr class="click" data-tbl="${esc(t.name)}"><td><b>${esc(t.name)}</b>
+          <div class="mono muted">${esc(t.full_name)}</div></td><td class="num">${fmtN(t.row_count)}</td>
+          <td class="num">${t.columns.length}</td><td class="num">${fmtBytes(t.size_bytes)}</td>
+          <td class="muted">${esc(sourceText(t.source))}</td><td class="muted">${formatTimestamp(t.updated_at)}</td></tr>`).join("") +
+        "</tbody></table>" : '<p class="empty-hint">No tables in this workspace yet.</p>';
+    if (curTbl && d.tables.some((t) => t.name === curTbl)) await loadTable(); else { curTbl = null; $("tblCard").style.display = "none"; }
+  }
+  async function loadTable() {
+    err($("tblErr"), "");
+    const t = await api(`data/tables/${encodeURIComponent(curWs)}/${encodeURIComponent(curTbl)}`);
+    $("tblCard").style.display = "block";
+    $("tblTitle").textContent = t.full_name;
+    $("tblMeta").innerHTML = `<span class="pill">${esc(t.kind)}</span><span class="pill">${esc(t.format)}</span>` +
+      `<span class="pill">${fmtN(t.row_count)} rows</span><span class="pill">${fmtBytes(t.size_bytes)}</span>` +
+      `<span class="pill">version ${t.version} · ${t.parts} file(s)</span><br>From: ${esc(sourceText(t.source))}` +
+      (t.description ? `<br>${esc(t.description)}` : "");
+    $("tblCols").innerHTML = `<table class="dt"><thead><tr><th>Column</th><th>Type</th></tr></thead><tbody>` +
+      t.columns.map((c) => `<tr><td class="mono">${esc(c.name)}</td><td class="mono muted">${esc(c.type)}</td></tr>`).join("") + "</tbody></table>";
+    $("tblHist").innerHTML = (t.history || []).length ? `<table class="dt"><tbody>` + t.history.map((h) =>
+      `<tr><td class="muted">${formatTimestamp(h.at)}</td><td>${esc(h.action)}</td><td class="mono muted">${esc(JSON.stringify(h.detail))}</td></tr>`).join("") +
+      "</tbody></table>" : '<p class="empty-hint">No history.</p>';
+    $("tblPreview").innerHTML = '<p class="empty-hint" style="padding:8px">Loading…</p>';
+    try {
+      const p = await api(`data/tables/${encodeURIComponent(curWs)}/${encodeURIComponent(curTbl)}/preview?rows=50`);
+      $("tblPreview").innerHTML = `<table class="dt"><thead><tr>${p.columns.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
+        p.rows.map((r) => "<tr>" + r.map((v) => `<td title="${esc(v == null ? "" : v)}">${v == null ? '<span class="muted">null</span>' : esc(v)}</td>`).join("") + "</tr>").join("") +
+        "</tbody></table>";
+    } catch (e) { $("tblPreview").innerHTML = `<p class="empty-hint" style="padding:8px">${esc(e.message)}</p>`; }
+  }
+
+  $("wsList").addEventListener("click", async (e) => {
+    const li = e.target.closest("[data-ws]"); if (!li) return;
+    curWs = li.dataset.ws; curTbl = null; await loadWorkspaces();
+  });
+  $("wsTables").addEventListener("click", async (e) => {
+    const tr = e.target.closest("[data-tbl]"); if (!tr) return;
+    curTbl = tr.dataset.tbl; await loadTable(); $("tblCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  $("btnWsCreate").onclick = async () => {
+    err($("wsErr"), "");
+    try { const w = await api("data/workspaces", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: $("wsNew").value.trim() }) });
+          $("wsNew").value = ""; curWs = w.name; curTbl = null; await loadWorkspaces(); }
+    catch (e) { err($("wsErr"), e.message); }
+  };
+  $("btnWsRename").onclick = async () => {
+    const n = prompt(`New name for workspace “${curWs}”:`, curWs); if (!n || n === curWs) return;
+    try { const w = await api(`data/workspaces/${encodeURIComponent(curWs)}`, { method: "PATCH",
+            headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: n.trim() }) });
+          curWs = w.name; await loadWorkspaces(); } catch (e) { err($("wsErr"), e.message); }
+  };
+  $("btnWsDelete").onclick = async () => {
+    if (!confirm(`Delete workspace “${curWs}”? If it has tables, they and their data are deleted too.`)) return;
+    try { await api(`data/workspaces/${encodeURIComponent(curWs)}?drop_tables=true`, { method: "DELETE" });
+          curWs = null; curTbl = null; await loadWorkspaces(); } catch (e) { err($("wsErr"), e.message); }
+  };
+  $("btnTblRename").onclick = async () => {
+    const v = prompt("New name, or workspace.name to move it:", `${curWs}.${curTbl}`); if (!v) return;
+    const [ws, name] = v.includes(".") ? v.split(".", 2) : [curWs, v];
+    try { const t = await api(`data/tables/${encodeURIComponent(curWs)}/${encodeURIComponent(curTbl)}`, { method: "PATCH",
+            headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), workspace: ws.trim() }) });
+          curWs = t.workspace; curTbl = t.name; await loadWorkspaces(); } catch (e) { err($("tblErr"), e.message); }
+  };
+  $("btnTblDelete").onclick = async () => {
+    if (!confirm(`Delete table “${curWs}.${curTbl}” and its data? This cannot be undone (except from a backup).`)) return;
+    try { await api(`data/tables/${encodeURIComponent(curWs)}/${encodeURIComponent(curTbl)}`, { method: "DELETE" });
+          curTbl = null; await loadWorkspaces(); } catch (e) { err($("tblErr"), e.message); }
+  };
+  $("btnImport").onclick = async () => {
+    try { const r = await api("data/import-datasets", { method: "POST" });
+          $("importNote").textContent = `Imported ${r.imported.length} dataset(s)` + (r.failed.length ? `, ${r.failed.length} failed` : "") + ".";
+          await loadWorkspaces(); } catch (e) { err($("wsErr"), e.message); }
+  };
+  let start = "secrets"; try { start = localStorage.getItem("vault_tab") || "secrets"; } catch (e) {}
+  showTab(location.hash === "#data" ? "data" : start);
+})();
 
 /* ---------- Add SSH server ---------- */
 (function () {

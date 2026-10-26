@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Data Lake</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+    --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --ok: #15803d; --err: #b91c1c;
+  }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh;
+         padding: 24px 20px 60px; }
+  header, .wrap { max-width: 980px; margin: 0 auto; }
+  header { margin-bottom: 18px; }
+  header h1 { font-size: 1.5rem; letter-spacing: -0.5px; } header h1 span { color: var(--accent); }
+  header p { color: var(--muted); font-size: 0.86rem; margin-top: 3px; line-height: 1.5; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 1rem; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .step { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+          font-size: 0.75rem; align-items: center; justify-content: center; }
+  .hint { color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs button { border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 7px; padding: 6px 12px;
+                 font: inherit; font-size: 0.84rem; cursor: pointer; }
+  .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  label { display: block; font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin: 10px 0 4px; }
+  input[type=text], select { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
+                             font: inherit; font-size: 0.86rem; color: var(--text); }
+  .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 760px) { .row, .row2 { grid-template-columns: 1fr; } }
+  .drop { border: 2px dashed var(--border); border-radius: 10px; padding: 22px; text-align: center; color: var(--muted);
+          font-size: 0.86rem; cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: rgba(79,94,240,0.05); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .chip { background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: 0.75rem; }
+  .browser { border: 1px solid var(--border); border-radius: 8px; max-height: 280px; overflow: auto; font-size: 0.84rem; }
+  .browser div { padding: 6px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 8px; cursor: pointer; }
+  .browser div:hover { background: var(--bg); }
+  .crumbs { font-size: 0.8rem; margin-bottom: 6px; } .crumbs a { color: var(--accent); cursor: pointer; text-decoration: none; }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.78rem; }
+  .muted { color: var(--muted); }
+  .radio { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.86rem; margin-top: 4px; }
+  .radio label { display: flex; align-items: center; gap: 5px; text-transform: none; font-size: 0.86rem; color: var(--text);
+                 letter-spacing: 0; font-weight: 400; margin: 0; }
+  details summary { cursor: pointer; font-size: 0.86rem; color: var(--accent); margin-top: 12px; }
+  button.action { border: none; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; font-weight: 600;
+                  font-size: 0.9rem; padding: 10px 22px; cursor: pointer; }
+  button.action:disabled { opacity: 0.5; cursor: wait; }
+  .ghost { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 7px; padding: 6px 12px; font: inherit;
+                 font-size: 0.8rem; cursor: pointer; }
+  .msg { border-radius: 8px; padding: 9px 12px; font-size: 0.84rem; margin-top: 12px; display: none; }
+  .msg.show { display: block; } .msg.err { background: #fdecea; color: var(--err); border: 1px solid #f5c6c0; }
+  .msg.ok { background: #eaf7f0; color: var(--ok); border: 1px solid #bfe5cf; }
+  .bar { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; margin: 10px 0; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.4s; }
+  pre.log { background: #0f1222; color: #d7dbf0; border-radius: 8px; padding: 10px 12px; font: 0.76rem/1.5 ui-monospace, Menlo, Consolas, monospace;
+            max-height: 220px; overflow: auto; white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { font-size: 0.68rem; text-transform: uppercase; color: var(--muted); }
+  .views { display: flex; gap: 6px; margin-top: 12px; }
+  .views button { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 8px; padding: 7px 16px;
+                  font: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+  .views button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .sqlgrid { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .sqlgrid > * { min-width: 0; }
+  @media (max-width: 860px) { .sqlgrid { grid-template-columns: 1fr; } }
+  .tree { font-size: 0.82rem; max-height: 620px; overflow: auto; }
+  .tree .ws { font-weight: 700; padding: 5px 4px; cursor: pointer; } .tree .ws:hover { color: var(--accent); }
+  .tree .tb { padding: 3px 4px 3px 16px; cursor: pointer; display: flex; justify-content: space-between; gap: 6px; }
+  .tree .tb:hover { background: var(--bg); } .tree .col { padding: 1px 4px 1px 32px; color: var(--muted); cursor: pointer; font-size: 0.76rem; }
+  .tree .col:hover { color: var(--accent); }
+  .edwrap { position: relative; }
+  textarea#sql { width: 100%; min-height: 170px; resize: vertical; background: #0f1222; color: #e6e9f8; border: 1px solid var(--border);
+                 border-radius: 8px; padding: 10px 12px; font: 0.85rem/1.55 ui-monospace, Menlo, Consolas, monospace; tab-size: 2; }
+  #ac { position: absolute; z-index: 5; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; min-width: 220px;
+        max-height: 220px; overflow: auto; box-shadow: 0 6px 20px rgba(0,0,0,0.12); display: none; font-size: 0.8rem; }
+  #ac div { padding: 4px 10px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+  #ac div.on, #ac div:hover { background: var(--accent); color: #fff; } #ac div.on .muted, #ac div:hover .muted { color: #e6e9f8; }
+  .bar2 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .grid { overflow: auto; max-height: 460px; border: 1px solid var(--border); border-radius: 8px; margin-top: 10px; }
+  .grid table th { position: sticky; top: 0; background: var(--surface); } .grid td { white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+  .grid td.null { color: var(--muted); font-style: italic; }
+  .list > div { padding: 7px 4px; border-bottom: 1px solid var(--border); font-size: 0.8rem; display: flex; gap: 10px; align-items: baseline; }
+  .list .sqltext { flex: 1; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list .sqltext:hover { color: var(--accent); }
+  .badge { font-size: 0.68rem; border-radius: 999px; padding: 1px 8px; border: 1px solid var(--border); white-space: nowrap; }
+  .badge.done { color: var(--ok); } .badge.failed { color: var(--err); }
+  a.x { color: var(--muted); cursor: pointer; text-decoration: none; } a.x:hover { color: var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Data Lake<span>.</span></h1>
+  <p>Load files into <b>Vault Data</b> tables — one file or thousands, CSV/TSV, JSON/JSON Lines, Parquet, XML, Excel,
+    also <span class="mono">.gz</span>. Everything is converted to Parquet (fast, compact) in the background, so even
+    multi-GB files never fill memory. Then query them with <b>SQL</b> — joins across workspaces, results you can page,
+    download or save as a new table. Browse tables in <a href="/tools/vault/#data" target="_top">Vault → 📦 Data</a>.</p>
+  <div class="views" id="views"><button data-view="load" class="on">⬆ Load files</button><button data-view="sql">🔎 SQL</button></div>
+</header>
+
+<div class="wrap" id="loadView">
+  <div class="card">
+    <h2><span class="step">1</span> Where is the data?</h2>
+    <div class="tabs" id="srcTabs">
+      <button data-src="upload" class="on">⬆ Upload files</button>
+      <button data-src="folder">📁 Data folder</button>
+      <button data-src="url">🔗 Link</button>
+      <button data-src="db">🗄 Database</button>
+    </div>
+
+    <div id="src-upload">
+      <div class="drop" id="drop">Drop files here or <u>choose files</u> — several files of the same kind become one table
+        <input type="file" id="fileInput" multiple style="display:none" /></div>
+      <div class="chips" id="fileChips"></div>
+    </div>
+
+    <div id="src-folder" style="display:none">
+      <p class="hint" id="folderHint">Files in your shared data folder (<span class="mono">~/toolbox-data</span> on this
+        machine, read-only). Click a file or folder, or type a pattern.</p>
+      <div class="crumbs" id="crumbs"></div>
+      <div class="browser" id="browser"></div>
+      <label>File, folder or pattern</label>
+      <input type="text" id="pattern" placeholder="e.g. sales/2026-*.csv   or   logs/**/*.json.gz" />
+      <p class="hint" id="matchInfo" style="margin-top:6px"></p>
+      <div class="radio"><label><input type="checkbox" id="external" /> Read in place (external table — nothing copied; csv/json/parquet)</label></div>
+    </div>
+
+    <div id="src-db" style="display:none">
+      <p class="hint">Copy tables from a database saved in the Vault (Postgres, SQL Server, Oracle — SSH tunnels work)
+        into a workspace, e.g. to stage data for a migration. The database is only read.</p>
+      <div class="row2">
+        <div><label>Saved connection</label><select id="dbConn"></select></div>
+        <div><label>What to copy</label><div class="radio">
+          <label><input type="radio" name="dbwhat" value="tables" checked /> tables</label>
+          <label><input type="radio" name="dbwhat" value="sql" /> a query</label></div></div>
+      </div>
+      <div id="dbTablesBox">
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="ghost" id="btnDbTables">Show tables</button>
+          <input type="text" id="dbFilter" placeholder="filter…" style="flex:1" />
+        </div>
+        <div class="browser" id="dbTables" style="margin-top:8px"><div class="muted" style="cursor:default">Pick a connection, then “Show tables”.</div></div>
+        <p class="hint" id="dbPicked" style="margin-top:6px"></p>
+      </div>
+      <div id="dbSqlBox" style="display:none">
+        <label>Query (one SELECT)</label>
+        <textarea id="dbSql" class="mono" style="width:100%;min-height:90px;border:1px solid var(--border);border-radius:6px;padding:8px;background:var(--bg)"
+                  placeholder="SELECT * FROM public.orders WHERE created_at >= '2026-01-01'"></textarea>
+      </div>
+    </div>
+
+    <div id="src-url" style="display:none">
+      <label>Link to a file</label>
+      <input type="text" id="url" placeholder="https://example.com/data/orders.csv.gz" />
+      <p class="hint" style="margin-top:6px">Downloaded once by the worker, then loaded like an upload.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">2</span> Into which table?</h2>
+    <div class="row">
+      <div><label>Workspace</label>
+        <select id="ws"></select>
+        <input type="text" id="wsNew" placeholder="new workspace name" style="display:none;margin-top:6px" /></div>
+      <div><label>Table name</label><input type="text" id="table" placeholder="e.g. orders" /></div>
+      <div><label>If the table exists</label>
+        <div class="radio">
+          <label><input type="radio" name="mode" value="create" checked /> new only</label>
+          <label><input type="radio" name="mode" value="append" /> append</label>
+          <label><input type="radio" name="mode" value="overwrite" /> overwrite</label>
+        </div></div>
+    </div>
+    <p class="hint" style="margin-top:8px">Names: lowercase letters, digits and <span class="mono">_</span>. The table
+      will be <b class="mono" id="fullName">workspace.table</b>.</p>
+    <details>
+      <summary>Advanced: format, header, delimiter…</summary>
+      <div class="row">
+        <div><label>Format</label><select id="format">
+          <option value="auto">detect automatically</option><option value="csv">CSV / TSV / text</option>
+          <option value="json">JSON / JSON Lines</option><option value="parquet">Parquet</option>
+          <option value="xml">XML</option><option value="excel">Excel (.xlsx)</option></select></div>
+        <div><label>Header row (CSV)</label><select id="header">
+          <option value="">detect</option><option value="true">yes</option><option value="false">no</option></select></div>
+        <div><label>Delimiter (CSV)</label><input type="text" id="delim" placeholder="detect (e.g. , ; | \t)" /></div>
+      </div>
+      <div class="row2">
+        <div><label>Excel sheet</label><input type="text" id="sheet" placeholder="first sheet" /></div>
+        <div><label>&nbsp;</label><div class="radio"><label><input type="checkbox" id="addFile" /> Add a
+          <span class="mono">_source_file</span> column (which file each row came from)</label></div></div>
+      </div>
+    </details>
+    <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+      <button class="action" id="btnLoad">Load into Vault Data</button>
+      <span class="hint" id="loadHint"></span>
+    </div>
+    <div class="msg err" id="err"></div>
+  </div>
+
+  <div class="card" id="jobCard" style="display:none">
+    <h2><span class="step">3</span> <span id="jobTitle">Loading…</span></h2>
+    <div class="bar"><i id="bar"></i></div>
+    <p class="hint" id="jobPhase"></p>
+    <pre class="log" id="jobLog"></pre>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button class="ghost" id="btnStop">Stop</button>
+      <a class="ghost" id="openVault" href="/tools/vault/#data" target="_top" style="display:none;text-decoration:none;color:var(--accent)">Open in Vault → Data</a>
+    </div>
+    <div class="msg" id="jobMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Recent changes in Vault Data</h2>
+    <div id="recent"><p class="hint">Loading…</p></div>
+  </div>
+</div>
+
+
+<div class="wrap" id="sqlView" style="display:none">
+  <div class="sqlgrid">
+    <div class="card tree" id="tree"><p class="hint">Loading…</p></div>
+    <div>
+      <div class="card">
+        <div class="edwrap">
+          <textarea id="sql" spellcheck="false" placeholder="SELECT c.name, sum(o.amount) AS total
+FROM sales.orders o JOIN crm.customers c USING (customer_id)
+GROUP BY 1 ORDER BY 2 DESC"></textarea>
+          <div id="ac"></div>
+        </div>
+        <div class="bar2">
+          <button class="action" id="btnRun" title="Ctrl+Enter">▶ Run</button>
+          <button class="ghost" id="btnBg" title="No time limit — runs in a worker; you can close the page">Run in background</button>
+          <button class="ghost" id="btnSaveQ">☆ Save query</button>
+          <span class="hint" id="runHint"></span>
+        </div>
+        <p class="hint" style="margin-top:8px">Tables are <span class="mono">workspace.table</span> (a table name alone works
+          when only one workspace has it). Read-only: SELECT / WITH / EXPLAIN. To make a table:
+          <span class="mono">CREATE TABLE ws.name AS SELECT …</span> (or <span class="mono">CREATE OR REPLACE</span>).
+          <b>Run</b> stops after 30 s — use <b>Run in background</b> for big ones. Tab / Enter accepts a suggestion.</p>
+        <div class="msg err" id="sqlErr"></div>
+      </div>
+
+      <div class="card" id="resCard" style="display:none">
+        <h2 id="resTitle">Result</h2>
+        <p class="hint" id="resInfo"></p>
+        <pre class="log" id="resLog" style="display:none;margin-top:8px"></pre>
+        <div class="bar2" id="resActions" style="display:none">
+          <button class="ghost" id="pgPrev">◀</button><span class="hint" id="pgInfo"></span><button class="ghost" id="pgNext">▶</button>
+          <span style="flex:1"></span>
+          <a class="ghost" id="dlCsv" style="text-decoration:none">⬇ CSV</a>
+          <a class="ghost" id="dlPq" style="text-decoration:none">⬇ Parquet</a>
+          <button class="ghost" id="btnSaveT">💾 Save as table</button>
+          <button class="ghost" id="btnStopQ" style="display:none">Stop</button>
+        </div>
+        <div id="saveT" style="display:none" class="row">
+          <div><label>Workspace</label><input type="text" id="saveWs" placeholder="e.g. marts" /></div>
+          <div><label>Table</label><input type="text" id="saveTb" placeholder="e.g. top_customers" /></div>
+          <div><label>If it exists</label><div class="radio">
+            <label><input type="radio" name="smode" value="create" checked /> new only</label>
+            <label><input type="radio" name="smode" value="overwrite" /> overwrite</label>
+            <label><input type="radio" name="smode" value="append" /> append</label></div>
+            <button class="action" id="btnSaveGo" style="margin-top:8px;padding:6px 16px">Save</button></div>
+        </div>
+        <div class="msg" id="resMsg"></div>
+        <div class="grid" id="resGrid" style="display:none"></div>
+      </div>
+
+      <div class="card">
+        <div class="tabs" id="listTabs"><button data-list="history" class="on">History</button><button data-list="saved">☆ Saved queries</button></div>
+        <div class="list" id="list"><p class="hint">Loading…</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtBytes = (n) => { const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; n = Number(n || 0); while (n >= 1024 && i < 4) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + " " + u[i]; };
+const safeName = (t) => { let n = String(t || "").toLowerCase().replace(/\.gz$/, "").replace(/\.[a-z0-9]+$/, "").replace(/[^a-z0-9_]+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, ""); if (!n || !/^[a-z]/.test(n)) n = "t_" + n; return n.slice(0, 63); };
+async function api(path, opts) {
+  const r = await fetch(path, opts); const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const d = j.detail; const e = new Error((d && d.message) || (typeof d === "string" ? d : "HTTP " + r.status)); e.detail = d; throw e; }
+  return j;
+}
+function msg(el, text, kind) { el.textContent = text || ""; el.className = "msg " + (kind || "err") + (text ? " show" : ""); }
+
+let src = "upload", picked = [], folderPath = "";
+
+// ---- source tabs ----
+$("srcTabs").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-src]"); if (!b) return;
+  src = b.dataset.src;
+  document.querySelectorAll("#srcTabs button").forEach((x) => x.classList.toggle("on", x === b));
+  ["upload", "folder", "url", "db"].forEach((k) => $("src-" + k).style.display = k === src ? "" : "none");
+  if (src === "folder") browse(folderPath);
+  if (src === "db") loadConnections();
+  updateName();
+});
+
+// ---- upload ----
+$("drop").onclick = () => $("fileInput").click();
+$("fileInput").onchange = () => pick([...$("fileInput").files]);
+["dragover", "dragenter"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
+$("drop").addEventListener("drop", (e) => pick([...e.dataTransfer.files]));
+function pick(files) {
+  picked = files;
+  $("fileChips").innerHTML = files.map((f) => `<span class="chip">${esc(f.name)} · ${fmtBytes(f.size)}</span>`).join("");
+  if (files.length && !$("table").value) { $("table").value = safeName(files[0].name); updateName(); }
+  $("addFile").checked = files.length > 1;
+}
+
+// ---- data folder ----
+async function browse(path) {
+  try {
+    const d = await api("folder?path=" + encodeURIComponent(path));
+    folderPath = d.path;
+    const parts = d.path ? d.path.split("/") : [];
+    $("crumbs").innerHTML = `<a data-go="">data</a>` + parts.map((p, i) => ` / <a data-go="${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</a>`).join("");
+    $("browser").innerHTML = d.dirs.map((x) => `<div data-dir="${esc(x.path)}"><span>📁 ${esc(x.name)}</span><span class="muted">folder</span></div>`).join("") +
+      d.files.map((x) => `<div data-file="${esc(x.path)}"><span>📄 ${esc(x.name)}</span><span class="muted">${fmtBytes(x.size)}</span></div>`).join("") ||
+      '<div class="muted" style="cursor:default">Empty — put files into the data folder on your machine.</div>';
+  } catch (e) { $("browser").innerHTML = `<div class="muted" style="cursor:default">${esc(e.message)}</div>`; $("crumbs").innerHTML = ""; }
+}
+$("crumbs").addEventListener("click", (e) => { const a = e.target.closest("[data-go]"); if (a) browse(a.dataset.go); });
+$("browser").addEventListener("click", (e) => {
+  const d = e.target.closest("[data-dir]"), f = e.target.closest("[data-file]");
+  if (d) { browse(d.dataset.dir); setPattern(d.dataset.dir); }
+  if (f) setPattern(f.dataset.file);
+});
+let matchTimer = null;
+function setPattern(p) { $("pattern").value = p; checkPattern(); }
+$("pattern").addEventListener("input", () => { clearTimeout(matchTimer); matchTimer = setTimeout(checkPattern, 350); });
+async function checkPattern() {
+  const p = $("pattern").value.trim(); if (!p) { $("matchInfo").textContent = ""; return; }
+  try {
+    const m = await api("folder/match?pattern=" + encodeURIComponent(p));
+    $("matchInfo").innerHTML = m.count ? `<b>${m.count.toLocaleString()} file(s)</b>, ${fmtBytes(m.bytes)} · ` +
+      Object.entries(m.formats).map(([k, v]) => `${v} ${esc(k)}`).join(", ") + (m.count > 1 ? " — loaded together as one table" : "")
+      : "No files match.";
+    if (m.count && !$("table").value) { $("table").value = safeName(m.sample[0].split("/").pop()); updateName(); }
+    $("addFile").checked = m.count > 1;
+  } catch (e) { $("matchInfo").textContent = e.message; }
+}
+
+// ---- target ----
+async function loadWorkspaces() {
+  const d = await api("workspaces");
+  const cur = $("ws").value;
+  $("ws").innerHTML = d.workspaces.map((w) => `<option value="${esc(w.name)}">${esc(w.name)} (${w.tables} tables)</option>`).join("") +
+    `<option value="__new">+ new workspace…</option>`;
+  if (cur && [...$("ws").options].some((o) => o.value === cur)) $("ws").value = cur;
+  else if (!d.workspaces.length) $("ws").value = "__new";
+  $("wsNew").style.display = $("ws").value === "__new" ? "" : "none";
+  if (!d.data_folder) $("folderHint").textContent = "The data folder isn't mounted — see docs/runbook.md (TOOLBOX_DATA_DIR).";
+  updateName();
+}
+$("ws").onchange = () => { $("wsNew").style.display = $("ws").value === "__new" ? "" : "none"; updateName(); };
+["wsNew", "table"].forEach((id) => $(id).addEventListener("input", updateName));
+function wsName() { return $("ws").value === "__new" ? $("wsNew").value.trim() : $("ws").value; }
+function updateName() {
+  const multi = src === "db" && dbWhat() === "tables";
+  $("table").disabled = multi;
+  $("table").placeholder = multi ? "named after each source table" : "e.g. orders";
+  $("fullName").textContent = (wsName() || "workspace") + "." + (multi ? "<each table>" : ($("table").value.trim() || "table"));
+}
+
+// ---- database source (roadmap L4: staging) ----
+let dbTables = [], dbChosen = new Set();
+const dbWhat = () => (document.querySelector("input[name=dbwhat]:checked") || {}).value || "tables";
+async function loadConnections() {
+  try {
+    const d = await api("connections");
+    $("dbConn").innerHTML = d.connections.length ? d.connections.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")
+      : '<option value="">— no saved connections (save one in the Vault or SQL Studio) —</option>';
+  } catch (e) { $("dbConn").innerHTML = `<option value="">${esc(e.message)}</option>`; }
+}
+document.querySelectorAll("input[name=dbwhat]").forEach((r) => r.addEventListener("change", () => {
+  $("dbTablesBox").style.display = dbWhat() === "tables" ? "" : "none";
+  $("dbSqlBox").style.display = dbWhat() === "sql" ? "" : "none";
+  updateName();
+}));
+$("dbConn").onchange = () => { dbTables = []; dbChosen.clear(); drawDbTables(); };
+$("btnDbTables").onclick = async () => {
+  if (!$("dbConn").value) return;
+  $("dbTables").innerHTML = '<div class="muted" style="cursor:default">Connecting…</div>';
+  try { dbTables = (await api(`connections/${encodeURIComponent($("dbConn").value)}/tables`)).tables; dbChosen.clear(); drawDbTables(); }
+  catch (e) { $("dbTables").innerHTML = `<div class="muted" style="cursor:default">${esc(e.message)}</div>`; }
+};
+$("dbFilter").addEventListener("input", () => drawDbTables());
+function drawDbTables() {
+  const f = $("dbFilter").value.trim().toLowerCase();
+  const shown = dbTables.filter((t) => !f || t.full_name.toLowerCase().includes(f));
+  $("dbTables").innerHTML = dbTables.length ? (shown.map((t) => `<div data-t="${esc(t.full_name)}"><span><input type="checkbox" ${dbChosen.has(t.full_name) ? "checked" : ""} style="pointer-events:none" />
+      <span class="mono">${esc(t.full_name)}</span></span><span class="muted">${t.columns} col</span></div>`).join("") || '<div class="muted" style="cursor:default">No match.</div>')
+    : '<div class="muted" style="cursor:default">Pick a connection, then “Show tables”.</div>';
+  $("dbPicked").textContent = dbChosen.size ? `${dbChosen.size} table(s) chosen` : "";
+}
+$("dbTables").addEventListener("click", (e) => {
+  const d = e.target.closest("[data-t]"); if (!d) return;
+  dbChosen.has(d.dataset.t) ? dbChosen.delete(d.dataset.t) : dbChosen.add(d.dataset.t); drawDbTables();
+});
+
+// ---- load ----
+let jobId = null, poll = null, jobKind = "loads", jobT0 = 0;
+$("btnLoad").onclick = async () => {
+  msg($("err"), "");
+  const mode = document.querySelector("input[name=mode]:checked").value;
+  const body = { workspace: wsName(), table: $("table").value.trim(), mode, format: $("format").value,
+    header: $("header").value === "" ? null : $("header").value === "true", delimiter: $("delim").value.replace("\\t", "\t") || null,
+    add_filename: $("addFile").checked, sheet: $("sheet").value.trim() || null, external: src === "folder" && $("external").checked };
+  $("btnLoad").disabled = true;
+  try {
+    if (src === "db") {
+      const sbody = { connection_id: $("dbConn").value, workspace: body.workspace, mode };
+      if (!sbody.connection_id) throw new Error("Choose a saved connection.");
+      if (dbWhat() === "sql") { sbody.sql = $("dbSql").value.trim(); sbody.table = body.table; if (!sbody.sql) throw new Error("Write the query."); }
+      else { sbody.tables = [...dbChosen]; if (!sbody.tables.length) throw new Error("Choose at least one table."); }
+      const r = await api("stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sbody) });
+      jobId = r.job_id; jobKind = "stages";
+      showJob({ workspace: body.workspace, table: dbWhat() === "sql" ? body.table : `${sbody.tables.length} table(s)` });
+      return;
+    }
+    if (src === "upload") {
+      if (!picked.length) throw new Error("Choose at least one file.");
+      const fd = new FormData(); picked.forEach((f) => fd.append("files", f));
+      $("loadHint").textContent = "uploading…";
+      const up = await api("upload", { method: "POST", body: fd });
+      body.source = { kind: "upload", upload_id: up.upload_id, files: up.files.map((f) => f.name) };
+    } else if (src === "folder") {
+      if (!$("pattern").value.trim()) throw new Error("Pick a file/folder or type a pattern.");
+      body.source = { kind: "folder", pattern: $("pattern").value.trim() };
+    } else {
+      if (!$("url").value.trim()) throw new Error("Paste a link.");
+      body.source = { kind: "url", url: $("url").value.trim() };
+    }
+    $("loadHint").textContent = "";
+    const r = await api("load", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    jobId = r.job_id; jobKind = "loads"; showJob(body);
+  } catch (e) { msg($("err"), e.message); $("loadHint").textContent = ""; }
+  finally { $("btnLoad").disabled = false; }
+};
+function showJob(body) {
+  jobT0 = Date.now();
+  $("jobCard").style.display = ""; $("jobTitle").textContent = jobKind === "stages"
+    ? `Copying into ${body.workspace} (${body.table})` : `Loading into ${body.workspace}.${body.table}`;
+  $("bar").style.width = "3%"; $("jobLog").textContent = ""; msg($("jobMsg"), ""); $("openVault").style.display = "none"; $("btnStop").style.display = "";
+  $("jobCard").scrollIntoView({ behavior: "smooth" });
+  clearTimeout(poll); tick();
+}
+async function tick() {
+  try {
+    const s = await api(`${jobKind}/${jobId}`);
+    const secs = Math.round((Date.now() - jobT0) / 1000);
+    const extra = s.tables_total ? ` · table ${Math.min((s.tables_done || 0) + 1, s.tables_total)} of ${s.tables_total}` : "";
+    $("jobPhase").textContent = (s.state === "queued" ? "waiting for a worker…" : s.phase || s.state) + extra +
+      (s.rows ? ` · ${Number(s.rows).toLocaleString()} rows` : "") + (s.state === "running" ? ` · ${secs} s` : "");
+    const pct = s.tables_total ? 5 + 95 * (s.tables_done || 0) / s.tables_total : (s.state === "running" ? 10 : 3);
+    $("bar").style.width = (s.state === "done" ? 100 : Math.max(3, pct)) + "%";
+    $("jobLog").textContent = s.logs.map((l) => `${l.ts.slice(11, 19)}  ${l.msg}`).join("\n");
+    if (s.state === "done") {
+      msg($("jobMsg"), jobKind === "stages"
+        ? `Done: ${s.tables.map((t) => `${t.table} (${Number(t.rows).toLocaleString()})`).join(", ")} — ${s.seconds} s.`
+        : `Done: ${s.table} — ${Number(s.rows || 0).toLocaleString()} rows in ${s.seconds} s.`, "ok");
+      $("openVault").style.display = ""; $("btnStop").style.display = "none"; loadWorkspaces(); loadRecent(); return;
+    }
+    if (s.state === "failed") { msg($("jobMsg"), s.error || "The load failed — see the log."); $("btnStop").style.display = "none"; loadRecent(); return; }
+  } catch (e) { msg($("jobMsg"), e.message); }
+  poll = setTimeout(tick, 1000);
+}
+$("btnStop").onclick = () => jobId && api(`${jobKind}/${jobId}/stop`, { method: "POST" }).catch(() => {});
+
+async function loadRecent() {
+  try {
+    const d = await api("recent");
+    $("recent").innerHTML = d.recent.length ? "<table><thead><tr><th>When</th><th>Table</th><th>What</th><th>Rows</th></tr></thead><tbody>" +
+      d.recent.map((h) => `<tr><td class="muted">${new Date(h.at).toLocaleString()}</td><td class="mono">${esc(h.workspace)}.${esc(h.table_name)}</td>
+        <td>${esc(h.action)}${h.detail.source && h.detail.source.file_count ? ` · ${h.detail.source.file_count} file(s)` : ""}</td>
+        <td>${h.detail.rows != null ? Number(h.detail.rows).toLocaleString() : ""}</td></tr>`).join("") + "</tbody></table>"
+      : '<p class="hint">Nothing loaded yet.</p>';
+  } catch (e) { $("recent").innerHTML = `<p class="hint">${esc(e.message)}</p>`; }
+}
+loadWorkspaces(); loadRecent();
+
+// ================= SQL (roadmap L3) =================
+let cat = [], view = "load";
+function showView(v) {
+  view = v;
+  document.querySelectorAll("#views button").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
+  $("loadView").style.display = v === "load" ? "" : "none"; $("sqlView").style.display = v === "sql" ? "" : "none";
+  history.replaceState(null, "", v === "sql" ? "#sql" : "#");
+  if (v === "sql") { loadCatalog(); loadList(); }
+}
+$("views").addEventListener("click", (e) => { const b = e.target.closest("[data-view]"); if (b) showView(b.dataset.view); });
+
+async function loadCatalog() {
+  try {
+    cat = (await api("catalog")).workspaces;
+    $("tree").innerHTML = cat.length ? cat.map((w) => `<div class="ws" data-ins="${esc(w.name)}" title="${esc(w.description)}">🗂 ${esc(w.name)}</div>` +
+      w.tables.map((t) => `<div class="tb" data-tbl="${esc(w.name + "." + t.name)}" title="click: insert · double-click: SELECT"><span class="mono">${esc(t.name)}</span>
+        <span class="muted">${t.kind === "external" ? "ext · " : ""}${Number(t.row_count || 0).toLocaleString()}</span></div>
+        <div class="cols" data-of="${esc(w.name + "." + t.name)}" style="display:none">${t.columns.map((c) =>
+          `<div class="col" data-ins="${esc(c.name)}">${esc(c.name)} <span>${esc(c.type || "")}</span></div>`).join("")}</div>`).join("")).join("")
+      : '<p class="hint">No tables yet — load some files first (⬆ Load files).</p>';
+  } catch (e) { $("tree").innerHTML = `<p class="hint">${esc(e.message)}</p>`; }
+}
+function insert(text) {
+  const ta = $("sql"), a = ta.selectionStart, b = ta.selectionEnd;
+  ta.value = ta.value.slice(0, a) + text + ta.value.slice(b); ta.selectionStart = ta.selectionEnd = a + text.length; ta.focus({ preventScroll: true });
+}
+$("tree").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-tbl]"), i = e.target.closest("[data-ins]");
+  if (t) { const c = $("tree").querySelector(`[data-of="${CSS.escape(t.dataset.tbl)}"]`); c.style.display = c.style.display ? "" : "none"; insert(t.dataset.tbl); }
+  else if (i) insert(i.dataset.ins);
+});
+$("tree").addEventListener("dblclick", (e) => {
+  const t = e.target.closest("[data-tbl]"); if (!t) return;
+  $("sql").value = `SELECT *\nFROM ${t.dataset.tbl}\nLIMIT 100`; run(false);
+});
+
+// ---- autocomplete: workspaces, tables (after "ws."), columns of the tables in the query, keywords ----
+const KW = ["SELECT", "FROM", "WHERE", "GROUP BY", "ORDER BY", "HAVING", "LIMIT", "JOIN", "LEFT JOIN", "INNER JOIN", "FULL JOIN",
+  "USING", "ON", "AS", "AND", "OR", "NOT", "IN", "IS NULL", "DISTINCT", "COUNT(*)", "SUM(", "AVG(", "MIN(", "MAX(", "CASE WHEN",
+  "WITH", "UNION ALL", "EXCEPT", "QUALIFY", "CREATE TABLE", "EXPLAIN", "DESC", "CAST(", "COALESCE(", "date_trunc("];
+let acItems = [], acOn = 0, acWord = "";
+function acSuggest() {
+  const ta = $("sql"), before = ta.value.slice(0, ta.selectionStart), m = before.match(/[A-Za-z0-9_.]+$/);
+  acWord = m ? m[0] : "";
+  if (!acWord) return acHide();
+  const low = acWord.toLowerCase(), dot = low.lastIndexOf(".");
+  let items = [];
+  if (dot > 0) {
+    const head = low.slice(0, dot), tail = low.slice(dot + 1), w = cat.find((x) => x.name === head);
+    if (w) items = w.tables.filter((t) => t.name.startsWith(tail)).map((t) => ({ text: head + "." + t.name, note: "table" }));
+    else { // alias.col → columns of the tables in the query
+      items = usedColumns().filter((c) => c.name.toLowerCase().startsWith(tail)).map((c) => ({ text: acWord.slice(0, dot + 1) + c.name, note: c.type }));
+    }
+  } else {
+    items = [...cat.map((w) => ({ text: w.name, note: "workspace" })),
+      ...cat.flatMap((w) => w.tables.map((t) => ({ text: w.name + "." + t.name, note: "table", key: t.name }))),
+      ...usedColumns().map((c) => ({ text: c.name, note: c.type })),
+      ...KW.map((k) => ({ text: k, note: "" }))].filter((x) => (x.key || x.text).toLowerCase().startsWith(low) || x.text.toLowerCase().startsWith(low));
+  }
+  const seen = new Set(); acItems = items.filter((x) => x.text.toLowerCase() !== low && !seen.has(x.text) && seen.add(x.text)).slice(0, 12);
+  if (!acItems.length) return acHide();
+  acOn = 0; acDraw();
+  const lines = before.split("\n"), lh = 20.5;
+  $("ac").style.top = Math.min(ta.clientHeight, 12 + lines.length * lh - ta.scrollTop) + "px";
+  $("ac").style.left = Math.min(ta.clientWidth - 230, 12 + lines[lines.length - 1].length * 8.2) + "px";
+  $("ac").style.display = "block";
+}
+function usedColumns() {
+  const sql = $("sql").value.toLowerCase(), out = [];
+  cat.forEach((w) => w.tables.forEach((t) => { if (sql.includes(w.name + "." + t.name) || new RegExp("\\b" + t.name + "\\b").test(sql)) out.push(...t.columns); }));
+  return out;
+}
+function acDraw() { $("ac").innerHTML = acItems.map((x, i) => `<div data-i="${i}" class="${i === acOn ? "on" : ""}"><span class="mono">${esc(x.text)}</span><span class="muted">${esc(x.note || "")}</span></div>`).join(""); }
+function acHide() { $("ac").style.display = "none"; acItems = []; }
+function acAccept(i) {
+  const ta = $("sql"), pos = ta.selectionStart, start = pos - acWord.length, text = acItems[i].text;
+  ta.value = ta.value.slice(0, start) + text + ta.value.slice(pos); ta.selectionStart = ta.selectionEnd = start + text.length; acHide(); ta.focus();
+}
+$("ac").addEventListener("mousedown", (e) => { const d = e.target.closest("[data-i]"); if (d) { e.preventDefault(); acAccept(+d.dataset.i); } });
+$("sql").addEventListener("input", acSuggest);
+$("sql").addEventListener("blur", () => setTimeout(acHide, 150));
+$("sql").addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); acHide(); run(false); return; }
+  if (acItems.length) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); acOn = (acOn + (e.key === "ArrowDown" ? 1 : acItems.length - 1)) % acItems.length; acDraw(); return; }
+    if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); acAccept(acOn); return; }
+    if (e.key === "Escape") { acHide(); return; }
+  } else if (e.key === "Tab") { e.preventDefault(); insert("  "); }
+});
+
+// ---- run / result ----
+let cur = null, offset = 0, qPoll = null, clock = null;
+const PAGE = 100;
+function startClock(label) {
+  const t0 = Date.now(); clearInterval(clock);
+  const draw = () => $("runHint").textContent = `${label} ${((Date.now() - t0) / 1000).toFixed(0)} s`; draw(); clock = setInterval(draw, 500);
+}
+function stopClock() { clearInterval(clock); $("runHint").textContent = ""; }
+async function run(background) {
+  const sql = $("sql").value.trim(); if (!sql) return;
+  msg($("sqlErr"), ""); clearTimeout(qPoll); $("btnRun").disabled = $("btnBg").disabled = true;
+  startClock(background ? "queuing…" : "running…");
+  try {
+    const r = await api("query", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sql, background }) });
+    if (background) { showRunning(r.query_id); return; }
+    showResult(r);
+  } catch (e) { msg($("sqlErr"), e.message); }
+  finally { $("btnRun").disabled = $("btnBg").disabled = false; if (!background) stopClock(); loadList(); }
+}
+$("btnRun").onclick = () => run(false);
+$("btnBg").onclick = () => run(true);
+
+function showRunning(qid) {
+  cur = { id: qid }; $("resCard").style.display = ""; $("resTitle").textContent = "Running in the background…";
+  $("resInfo").textContent = "You can close this page — the result is kept (History)."; $("resGrid").style.display = "none";
+  $("resActions").style.display = ""; ["pgPrev", "pgNext", "dlCsv", "dlPq", "btnSaveT"].forEach((id) => $(id).style.display = "none");
+  $("pgInfo").textContent = ""; $("btnStopQ").style.display = ""; $("saveT").style.display = "none"; msg($("resMsg"), "");
+  startClock("running…"); pollQuery();
+}
+async function pollQuery() {
+  try {
+    const r = await api("queries/" + cur.id);
+    $("resLog").style.display = r.logs && r.logs.length ? "" : "none";
+    if (r.logs) $("resLog").textContent = r.logs.map((l) => `${l.ts.slice(11, 19)}  ${l.msg}`).join("\n");
+    if (r.state === "done") { stopClock(); showResult(r); loadList(); return; }
+    if (r.state === "failed") { stopClock(); $("btnStopQ").style.display = "none"; $("resTitle").textContent = "Failed"; msg($("resMsg"), r.error || "The query failed."); loadList(); return; }
+    $("resTitle").textContent = r.state === "queued" ? "Waiting for a worker…" : "Running in the background…";
+  } catch (e) { msg($("resMsg"), e.message); }
+  qPoll = setTimeout(pollQuery, 1000);
+}
+$("btnStopQ").onclick = () => cur && api(`queries/${cur.id}/stop`, { method: "POST" }).catch(() => {});
+
+function showResult(r) {
+  cur = r; offset = 0; $("resCard").style.display = ""; $("resLog").style.display = "none"; $("btnStopQ").style.display = "none";
+  $("resTitle").textContent = r.saved_as ? `Created ${r.saved_as}` : "Result";
+  $("resInfo").innerHTML = `<b>${Number(r.row_count).toLocaleString()}</b> row(s) · ${r.seconds} s · ${r.columns.length} column(s)` +
+    (r.tables.length ? ` · from <span class="mono">${r.tables.map(esc).join(", ")}</span>` : "") + ` · ${fmtBytes(r.result_bytes)} stored`;
+  $("resActions").style.display = ""; ["pgPrev", "pgNext", "dlCsv", "dlPq", "btnSaveT"].forEach((id) => $(id).style.display = "");
+  $("dlCsv").href = `queries/${r.id}/download?format=csv`; $("dlPq").href = `queries/${r.id}/download?format=parquet`;
+  $("saveT").style.display = "none"; msg($("resMsg"), r.result_error || "", r.result_error ? "err" : "ok");
+  if (r.saved_as) { msg($("resMsg"), `Saved as ${r.saved_as} in Vault Data.`, "ok"); loadCatalog(); }
+  drawPage(r.page);
+}
+function drawPage(p) {
+  if (!p) { $("resGrid").style.display = "none"; return; }
+  const types = Object.fromEntries((cur.columns || []).map((c) => [c.name, c.type]));
+  $("resGrid").style.display = "";
+  $("resGrid").innerHTML = "<table><thead><tr>" + p.columns.map((c) => `<th title="${esc(types[c] || "")}">${esc(c)}</th>`).join("") + "</tr></thead><tbody>" +
+    p.rows.map((row) => "<tr>" + row.map((v) => v === null ? '<td class="null">null</td>' :
+      `<td title="${esc(typeof v === "object" ? JSON.stringify(v) : v)}">${esc(typeof v === "object" ? JSON.stringify(v) : v)}</td>`).join("") + "</tr>").join("") + "</tbody></table>";
+  const n = Number(cur.row_count || 0);
+  $("pgInfo").textContent = n ? `rows ${(offset + 1).toLocaleString()}–${Math.min(offset + PAGE, n).toLocaleString()} of ${n.toLocaleString()}` : "no rows";
+  $("pgPrev").disabled = offset === 0; $("pgNext").disabled = offset + PAGE >= n;
+}
+async function goPage(delta) {
+  offset = Math.max(0, offset + delta * PAGE);
+  try { drawPage(await api(`queries/${cur.id}/rows?offset=${offset}&limit=${PAGE}`)); } catch (e) { msg($("resMsg"), e.message); }
+}
+$("pgPrev").onclick = () => goPage(-1);
+$("pgNext").onclick = () => goPage(1);
+$("btnSaveT").onclick = () => { $("saveT").style.display = $("saveT").style.display ? "" : "none"; };
+$("btnSaveGo").onclick = async () => {
+  try {
+    const mode = document.querySelector("input[name=smode]:checked").value;
+    const r = await api(`queries/${cur.id}/save`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace: $("saveWs").value.trim(), table: $("saveTb").value.trim(), mode }) });
+    msg($("resMsg"), `Saved as ${r.table.full_name} (${Number(r.table.row_count).toLocaleString()} rows) in Vault Data.`, "ok");
+    $("saveT").style.display = "none"; loadCatalog(); loadList();
+  } catch (e) { msg($("resMsg"), e.message); }
+};
+$("btnSaveQ").onclick = async () => {
+  const sql = $("sql").value.trim(); if (!sql) return;
+  const name = prompt("Name for this query (same name = replace):"); if (!name) return;
+  try { await api("saved", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, sql }) }); listTab = "saved"; loadList(); }
+  catch (e) { msg($("sqlErr"), e.message); }
+};
+
+// ---- history / saved ----
+let listTab = "history", listData = [];
+$("listTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-list]"); if (b) { listTab = b.dataset.list; loadList(); } });
+async function loadList() {
+  document.querySelectorAll("#listTabs button").forEach((b) => b.classList.toggle("on", b.dataset.list === listTab));
+  try {
+    if (listTab === "history") {
+      listData = (await api("history")).history;
+      $("list").innerHTML = listData.length ? listData.map((q, i) => `<div><span class="badge ${esc(q.state)}">${esc(q.state)}${q.mode === "background" ? " · bg" : ""}</span>
+        <span class="sqltext mono" data-i="${i}" title="${esc(q.error || q.sql)}">${esc(q.sql)}</span>
+        <span class="muted">${q.state === "done" ? Number(q.row_count).toLocaleString() + " rows · " + q.seconds + " s" : ""}</span>
+        <span class="muted">${new Date(q.started_at).toLocaleString()}</span><a class="x" data-del="${esc(q.id)}" title="forget">✕</a></div>`).join("")
+        : '<p class="hint">No queries yet.</p>';
+    } else {
+      listData = (await api("saved")).saved;
+      $("list").innerHTML = listData.length ? listData.map((q, i) => `<div><b>${esc(q.name)}</b><span class="sqltext mono" data-i="${i}">${esc(q.sql)}</span>
+        <a class="x" data-dels="${esc(q.id)}" title="delete">✕</a></div>`).join("") : '<p class="hint">No saved queries — write one and press ☆ Save query.</p>';
+    }
+  } catch (e) { $("list").innerHTML = `<p class="hint">${esc(e.message)}</p>`; }
+}
+$("list").addEventListener("click", async (e) => {
+  const t = e.target.closest("[data-i]"), d = e.target.closest("[data-del]"), ds = e.target.closest("[data-dels]");
+  if (t) {
+    const q = listData[+t.dataset.i]; $("sql").value = q.sql; $("sql").focus();
+    if (listTab === "history" && q.state === "done") { try { showResult(await api("queries/" + q.id)); } catch (err) { msg($("sqlErr"), err.message); } }
+    else if (listTab === "history" && (q.state === "running" || q.state === "queued") && q.mode === "background") showRunning(q.id);
+  }
+  if (d) { await api("history/" + d.dataset.del, { method: "DELETE" }).catch(() => {}); loadList(); }
+  if (ds && confirm("Delete this saved query?")) { await api("saved/" + ds.dataset.dels, { method: "DELETE" }).catch(() => {}); loadList(); }
+});
+if (location.hash === "#sql") showView("sql");
+</script>
+</body>
+</html>

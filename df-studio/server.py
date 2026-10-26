@@ -38,6 +38,9 @@ from __future__ import annotations
 
 import asyncio
 import io
+import os
+import shutil
+import tempfile
 from typing import Any, Optional
 
 from fastapi import FastAPI, Form, Request, Response, UploadFile, File
@@ -58,8 +61,12 @@ except ImportError:  # standalone dev run from inside this folder: core/ is ../c
 
     _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from core import vault as vault_store
+from core import lake as lake_store
 
 vault = vault_store.scoped("df-studio")  # Vault scope from manifest.yaml `vault:` (roadmap B7)
+lake = lake_store.scoped("df-studio")    # Vault Data tables, `vault: {data: write}` (roadmap L4)
+# A table is read fully into pandas — this tool's design — so bigger tables need an explicit "first N rows".
+LAKE_MAX_ROWS = int(os.environ.get("DF_STUDIO_LAKE_MAX_ROWS", "1000000"))
 
 app = FastAPI(
     title="DataFrame Studio",
@@ -86,6 +93,18 @@ class TemplateNameRequest(BaseModel):
 class PreviewModeRequest(BaseModel):
     mode: str
     resample: bool = False
+
+
+class LoadFromLakeRequest(BaseModel):
+    workspace: str
+    table: str
+    limit: Optional[int] = None   # first N rows (asked for when the table is bigger than LAKE_MAX_ROWS)
+
+
+class SaveToLakeRequest(BaseModel):
+    workspace: str
+    table: str
+    mode: str = "create"
 
 
 class LoadFromVaultRequest(BaseModel):
@@ -222,6 +241,72 @@ async def load_from_vault(request: Request, response: Response, body: LoadFromVa
     response = JSONResponse(content=preview)
     response.set_cookie(_COOKIE, session_id, httponly=True, samesite="lax")
     return response
+
+
+def _lake_status(exc: Exception) -> int:
+    if isinstance(exc, lake_store.NotFound):
+        return 404
+    if isinstance(exc, lake_store.ScopeError):
+        return 403
+    return 409 if "already exists" in str(exc) else 400
+
+
+@app.post("/load/lake")
+async def load_from_lake(request: Request, body: LoadFromLakeRequest):
+    """Load a Vault Data table (roadmap L4) as a new session — exported to Parquet once (DuckDB, streamed), then the
+    same pandas load as an upload. Tables over LAKE_MAX_ROWS answer 413 with the row count so the page can offer
+    "load the first N rows" instead of silently cutting the table."""
+    try:
+        t = await asyncio.to_thread(lake.get_table, body.workspace, body.table)
+    except (lake_store.LakeError, lake_store.ScopeError) as exc:
+        return _error(exc, status=_lake_status(exc))
+    limit = min(body.limit, LAKE_MAX_ROWS) if body.limit else None
+    if t["row_count"] > LAKE_MAX_ROWS and not limit:
+        return JSONResponse(status_code=413, content={
+            "error": f"{t['full_name']} has {t['row_count']:,} rows — DataFrame Studio keeps the whole table in memory "
+                     f"and loads at most {LAKE_MAX_ROWS:,}.", "row_count": t["row_count"], "max_rows": LAKE_MAX_ROWS})
+    tmp_dir = Path(tempfile.mkdtemp(prefix="dfs_lake_"))
+    try:
+        await asyncio.to_thread(lake.export_table, body.workspace, body.table, tmp_dir / "t.parquet", "parquet", limit)
+        content = await asyncio.to_thread((tmp_dir / "t.parquet").read_bytes)
+        filename = f"{t['full_name']}.parquet"
+        df = await asyncio.to_thread(engine.load_dataframe, filename, content)
+        session_id, session = await _replace_session(request, filename, df)
+        preview = engine.build_preview(session, df)
+    except (lake_store.LakeError, lake_store.ScopeError) as exc:
+        return _error(exc, status=_lake_status(exc))
+    except Exception as exc:  # noqa: BLE001 - surface parser errors to the UI
+        return _error(exc)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    response = JSONResponse(content=preview)
+    response.set_cookie(_COOKIE, session_id, httponly=True, samesite="lax")
+    return response
+
+
+@app.post("/export/lake")
+async def export_to_lake(request: Request, body: SaveToLakeRequest):
+    """Save the transformed DataFrame (every step applied) as a Vault Data table (roadmap L4). 409 = it exists and
+    mode is create (the page asks, then sends overwrite)."""
+    try:
+        session = await _session(request)
+        df = await asyncio.to_thread(engine.recompute, session)
+    except engine.StepError as exc:
+        return _error(exc)
+    tmp_dir = Path(tempfile.mkdtemp(prefix="dfs_lake_"))
+    try:
+        out = tmp_dir / "t.parquet"
+        await asyncio.to_thread(df.to_parquet, out, index=False)
+        t = await asyncio.to_thread(lambda: lake.write_table(
+            body.workspace, body.table, [out], mode=body.mode, create_workspace_if_missing=True,
+            source={"kind": "df-studio", "file": session.filename, "steps": len(session.steps)}))
+    except (lake_store.LakeError, lake_store.ScopeError) as exc:
+        return _error(exc, status=_lake_status(exc))
+    except Exception as exc:  # noqa: BLE001 - e.g. a column pyarrow can't store
+        return _error(exc)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    return JSONResponse({"ok": True, "table": t})
 
 
 @app.post("/step")

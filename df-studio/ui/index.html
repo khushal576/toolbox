@@ -508,6 +508,9 @@
             <button class="secondary" data-format="json">JSON</button>
             <button class="secondary" data-format="parquet">Parquet</button>
           </div>
+          <button class="secondary" id="saveLakeBtn" style="margin-top:8px;width:100%"
+                  title="Save the transformed data as a Vault Data table (workspace.table)">📦 Save to Vault Data</button>
+          <p class="hint" id="saveLakeMsg" style="margin:6px 0 0;"></p>
         </div>
       </div>
     </div>
@@ -1342,29 +1345,59 @@
   // reads every load fully into memory as its own accepted design (see
   // engine.py), so there's no size cap here the way DataDiff Pro's "Load
   // from Vault" needs one — anything already saved to the vault is fine.
+  // Since roadmap L4 the list starts with Vault Data tables (📦 per workspace, value "lake:<ws>.<table>").
   async function refreshVaultSelect() {
     const select = document.getElementById("vaultSelect");
+    let html = '<option value="">— select —</option>';
+    try {
+      const cat = await api("/tools/vault/data/catalog");
+      (cat.workspaces || []).filter((w) => w.tables.length).forEach((w) => {
+        html += `<optgroup label="📦 ${escapeHtml(w.name)}">` + w.tables.map((t) =>
+          `<option value="lake:${escapeHtml(w.name)}.${escapeHtml(t.name)}">${escapeHtml(t.name)} (${Number(t.row_count).toLocaleString()} rows)</option>`).join("") + "</optgroup>";
+      });
+    } catch (e) { /* Vault Data unreachable — no table entries */ }
     try {
       const data = await api("/tools/vault/secrets");
       const secrets = (data.secrets || []).filter((s) => s.has_data);
-      select.innerHTML = '<option value="">— select —</option>' +
-        secrets.map((s) => `<option value="${s.id}" data-name="${s.name}">${s.name}</option>`).join("");
+      if (secrets.length) html += '<optgroup label="🔒 Datasets">' +
+        secrets.map((s) => `<option value="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join("") + "</optgroup>";
     } catch (e) { /* Vault unreachable — select just stays empty, not fatal */ }
+    select.innerHTML = html;
+  }
+
+  async function loadLakeTable(ws, table, limit) {
+    const res = await fetch("load/lake", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace: ws, table, limit: limit || null }) });
+    const data = await res.json();
+    if (res.status === 413 && !limit) {
+      if (!confirm(`${data.error}\n\nLoad the first ${Number(data.max_rows).toLocaleString()} rows instead?\n` +
+                   "(Or make a smaller table first in Data Lake → SQL.)")) return null;
+      return loadLakeTable(ws, table, data.max_rows);
+    }
+    if (!res.ok || data.error) throw new Error(data.error || "Load from Vault Data failed.");
+    return data;
   }
   refreshVaultSelect();
 
   document.getElementById("vaultLoadBtn").addEventListener("click", async () => {
     const select = document.getElementById("vaultSelect");
     const id = select.value;
-    if (!id) { showError("Choose a saved dataset first."); return; }
+    if (!id) { showError("Choose a table or saved dataset first."); return; }
     const name = select.selectedOptions[0].dataset.name;
     const btn = document.getElementById("vaultLoadBtn");
     btn.disabled = true;
     try {
-      const preview = await api("load/vault", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, name }),
-      });
+      let preview;
+      if (id.startsWith("lake:")) {
+        const [ws, table] = id.slice(5).split(".");
+        preview = await loadLakeTable(ws, table);
+        if (!preview) return;
+      } else {
+        preview = await api("load/vault", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, name }),
+        });
+      }
       applyPreview(preview);
       document.getElementById("loadOptionsPanel").open = false;
     } catch (e) {
@@ -1372,6 +1405,31 @@
     } finally {
       btn.disabled = false;
     }
+  });
+
+  // ── Save to Vault Data (roadmap L4): the transformed DataFrame becomes `workspace.table`; existing → ask.
+  document.getElementById("saveLakeBtn").addEventListener("click", async () => {
+    const full = (prompt("Save the transformed data to Vault Data as workspace.table (e.g. staging.customers_clean):") || "").trim();
+    if (!full) return;
+    const m = full.match(/^([a-z][a-z0-9_]*)\.([a-z][a-z0-9_]*)$/);
+    const msg = document.getElementById("saveLakeMsg");
+    if (!m) { showError("Use workspace.table — lowercase letters, digits and _ (e.g. staging.customers_clean)."); return; }
+    const btn = document.getElementById("saveLakeBtn");
+    btn.disabled = true; msg.textContent = "Saving…";
+    const send = (mode) => fetch("export/lake", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace: m[1], table: m[2], mode }) });
+    try {
+      let res = await send("create");
+      if (res.status === 409) {
+        if (!confirm(`${full} already exists. Replace it?`)) { msg.textContent = ""; return; }
+        res = await send("overwrite");
+      }
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Save to Vault Data failed.");
+      msg.textContent = `✓ Saved ${data.table.full_name} (${Number(data.table.row_count).toLocaleString()} rows).`;
+      refreshVaultSelect();
+    } catch (e) { msg.textContent = ""; showError(e.message); }
+    finally { btn.disabled = false; }
   });
 
   async function switchPreviewMode(mode, resample) {

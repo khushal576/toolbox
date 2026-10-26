@@ -46,6 +46,7 @@ class VaultAccess(_Strict):
     read: list[str] = Field(default_factory=list)       # secret kinds it may decrypt
     write: list[str] = Field(default_factory=list)      # kinds it may create/update (implies read)
     datasets: Literal["none", "read", "write"] = "none"  # load any saved dataset / also save datasets
+    data: Literal["none", "read", "write"] = "none"      # Vault Data = lake tables (roadmap L1, core/lake.py)
 
 
 class Manifest(_Strict):

@@ -110,6 +110,42 @@ containers/gateway pieces outside the roadmap session that owns them.
   /api/v1/jobs/{id}` and `/result`; `DELETE` cancels (a running diff can't be
   interrupted, its result is discarded). The page uses it automatically for
   > 2 MB of input; client `submit_*`/`wait`; CLI `--background`.
+- **Vault Data / lake catalog (roadmap L1):** `core/lake.py` — workspaces →
+  tables (Glue-Catalog-like), catalog in Postgres (schema `lake`), managed
+  tables as Parquet in S3 storage (`lake/<table id>/<id>.v<n>.<part>.parquet`,
+  by id: renames never move files; a new version is switched to only after its
+  files are stored). The Vault page's **📦 Data** tab is the front door
+  (Secrets stay encrypted, data is plain Parquet — owner decision). Tools use
+  `lake.scoped("<tool>")` with manifest `vault: {data: none|read|write}`. Old
+  Vault datasets are imported once into workspace `datasets`. Phase L plan
+  (load files L2, SQL L3, every tool L4): `docs/roadmap/ROADMAP.md`. **L2:**
+  new tool **Data Lake** (`data-lake/`, runtime data) loads uploads, the
+  shared **data folder** (`~/toolbox-data` → `/data` read-only in rt-data +
+  worker, `TOOLBOX_DATA_DIR`), links and patterns into tables — worker job,
+  DuckDB streams to Parquet with a memory cap (1.5 GB CSV → 530 MiB peak);
+  external tables read in place. `core/file_source.py` gained the multi-file
+  reader + content sniffing; Excel via `openpyxl` (data/worker images). **L3:**
+  Data Lake's **🔎 SQL** tab (`data-lake/query.py`) — Athena style: only the
+  tables a query names are mounted as `workspace.table` views in a fresh DuckDB;
+  read-only checked on DuckDB's parse tree (no file-reading functions — the
+  container's files incl. `/proc` stay out of reach); Run = 30 s in rt-data,
+  Run in background = worker job; every result stored as Parquet in S3 (7 days)
+  for paging/download/"save as table"; `CREATE TABLE ws.t AS SELECT`; history +
+  saved queries in Postgres schema `data_lake`. **L4:** every data tool lists
+  tables (Vault `GET /data/catalog`) and saves to `workspace.table`
+  (`lake.export_table` / `import_file`; Duck Lab, DataFrame Studio ≤ 1 M rows,
+  SQL Studio full result + import into a DB, DataDiff ≤ 2000 rows); Data Lake →
+  🗄 Database stages tables from a Vault connection (`data-lake/staging.py`,
+  worker job, read-only source). **Gotcha fixed in L4:** the gateway's proxy
+  client must never keep cookies (`core_plugins/proxy.py` `_no_cookie_jar`) —
+  it used to hand one visitor's tool session cookie to the next.
+- **Installable app (roadmap G1):** the gateway serves `/manifest.webmanifest`
+  (standalone display, Status/Settings shortcuts), `/icons/<file>` (four
+  known PNGs from `core_plugins/ui/icons/`, drawn by
+  `tools/icons/make_icons.py`) and `/favicon.ico`; `workspace.html` links them.
+  Chromium offers "Install Toolbox" (verified: no installability errors) —
+  an app window onto the running stack, nothing else (no Electron, G2
+  deferred). How to install: `docs/runbook.md` §1.
 - **Backups (Ops session):** `scripts/backup.sh` → one dated archive in
   `backups/` (git-ignored, mode 600): Postgres dump (pg_dump in a one-off
   `docker compose run` of the worker), every S3 object (`core/state/backup.py`

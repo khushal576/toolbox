@@ -78,6 +78,11 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | E3 | Recent errors + log peek + in-page alerts | S | E1 | ☑ |
 | E4 | (later, optional) `/metrics` export → Prometheus/Grafana, stored logs | M | E2 | ☐ |
 | O1 | Ops: backup/restore scripts, tested restore, runbook, last backup on Status | S | E1 | ☑ |
+| L1 | Lake catalog + Vault "Data" section (workspaces → tables), shared client, datasets imported | M | B7 | ☑ |
+| L2 | Load files into tables as Parquet (upload, data folder, links, patterns; auto-detect; append/overwrite) | M | L1 | ☑ |
+| L3 | SQL over the lake (Athena-like: instant + background queries, CREATE TABLE AS, history) | M | L2 | ☑ |
+| L4 | Load from / Save to Vault Data in every tool; stage database tables via Vault connections | M | L3 | ☑ |
+| L5 | Extras: profiles, suggested joins, charts, AWS S3 locations, notebook (later) | M | L4 | ☐ |
 | F1 | Image versioning, registry, k8s manifests from plugin manifests | M | D3, E1 | ⏸ deferred |
 | F2 | k3s single-node deploy (lab) | M | F1 | ⏸ deferred |
 | F3 | KEDA scale-to-zero + queue scaling | M | F2 | ⏸ deferred |
@@ -243,6 +248,49 @@ About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 befor
   load-balances (round robin, health-aware).
 - **Done when**: a load test (many compares) adds replicas, then scales back down.
 
+## Phase L – Lakehouse: Vault Data (Glue-Catalog-like catalog, Redshift-style loading, Athena-style SQL)
+
+Owner request (2026-10-27): work with many files — join, analyse, stage data for migrations — in **workspaces**
+that every tool can use, organised like the AWS Glue Data Catalog, loaded like Redshift (files → **Parquet**), queried
+like Athena (SQL), with pandas through the existing tools (a Jupyter-like notebook later). Decisions:
+- **The Vault is the front door**: the Vault page gets two sections — 🔑 **Secrets** (unchanged, encrypted) and
+  📦 **Data** (workspaces → tables). Every tool's "Load from / Save to Vault" will offer Data tables (L4).
+  Names are `workspace.table` everywhere. Today's Vault *datasets* are imported as tables (L1).
+- **Data tables are plain Parquet** in Toolbox's S3 storage (owner went with recommendation A): queryable and fast;
+  Secrets stay encrypted. Same single-user trust model as the rest of Toolbox.
+- **Managed tables** (loaded into the lake, the default) and **external tables** (read in place, e.g. from the shared
+  data folder `~/toolbox-data` → `/data`, read-only; `TOOLBOX_DATA_DIR`).
+- **Catalog in Postgres** (schema `lake`, `SqlStore`), files under `lake/<table id>/<table id>.v<n>.<part>.parquet` (ids, so a
+  rename never moves files). A shared service `core/lake` + permissions in the manifest's `vault:` section
+  (`data: none|read|write`), like secrets. Backups cover both (Postgres + S3).
+
+### L1 Catalog + Vault Data (M)
+- `core/lake`: workspaces + tables (columns, rows, size, source, versions, history), create/rename/drop, write a
+  table from Parquet files, preview; scoped access (`lake.scoped(tool)` from the manifest). Vault page: 📦 Data
+  section (browse, describe, preview, rename, delete, new workspace). One-time import of existing Vault datasets.
+- **Done when**: workspaces/tables are listed, described and previewed in the Vault; a dataset becomes a table.
+
+### L2 Load (Redshift COPY style) (M)
+- Load into a table from an upload, the data folder, a link or a file pattern; worker job converts to Parquet
+  (streamed); auto-detect type/delimiter/header/types (CSV/TSV, JSON/JSONL, Parquet, XML, Excel, .gz); create /
+  append / overwrite; schema-change warning; external tables. UI: new **Data Lake** tool (loading + later SQL).
+- **Done when**: a multi-GB CSV and a folder of files become Parquet tables without filling memory.
+
+### L3 SQL (Athena style) (M)
+- Query editor over every workspace; small queries instant, big ones as background jobs with stored results; save a
+  result as a table (CREATE TABLE AS); history + saved queries.
+- **Done** (2026-10-27): Data Lake → 🔎 SQL tab (`data-lake/query.py`). Read-only checked on DuckDB's parse tree;
+  only the named tables are mounted; results stored as Parquet (7 days) for paging / download / save as table.
+
+### L4 Every tool (M)
+- "Load from / Save to Vault" shows Data tables (DataFrame Studio, Duck Lab, DataDiff, SQL Studio export); stage a
+  database table into a workspace via a Vault connection (migration staging).
+- **Done** (2026-10-27): Duck Lab, DataFrame Studio, SQL Studio, DataDiff list tables (📦 per workspace) next to the
+  old datasets and save to `workspace.table`; Data Lake → 🗄 Database stages tables or a query (worker job).
+
+### L5 Extras (M)
+- Column profiles, suggested joins, charts, AWS S3 locations, Jupyter-like notebook.
+
 ## Phase E – Observability (revised 2026-10-25: lightweight, no new containers)
 
 Owner decision: Prometheus + Grafana (two always-on containers, ~150–250 MiB, own storage) are too heavy for one
@@ -300,13 +348,77 @@ the workspace status) and shows it on ONE page in the workspace. Nothing runs or
 - Cloud alternative: replace F2–F4 with an **ECS Fargate** track (same images and state services).
 
 ## Phase G – Desktop app (optional, any time after A4)
-- **G1 (S)**: web app manifest + icons so Chromium "Install app" works; `chromium --app=` shortcut.
-- **G2 (M)**: Electron wrapper that starts/stops the Docker stack and opens the workspace window.
+- **G1 (S)** ☑ (2026-10-26): web app manifest + icons so Chromium "Install app" works; `chromium --app=` shortcut.
+- **G2 (M)** (not planned — owner chose G1 only): Electron wrapper that starts/stops the Docker stack and opens the workspace window.
 
 ---
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+- 2026-10-27 – **L4 done.** Shared: `lake.catalog()`, `lake.export_table(ws, t, dest, csv|parquet, limit)`,
+  `lake.import_file(ws, t, path)` (+ scoped versions); Vault `GET /data/catalog` (every tool's table picker) and
+  `GET /data/tables/{ws}/{t}/csv` (DataDiff, ≤ 2000 rows, bigger refused like datasets). Tools (manifests `data:
+  write`): **Duck Lab** `/load/lake` (table → lazy view) + `/export/lake` (full result); **DataFrame Studio**
+  `/load/lake` (> 1 M rows → 413, page offers "first 1 M") + `/export/lake` (transformed df → Parquet); **SQL
+  Studio** `/export/lake` (full uncapped result) + `/import/lake` (table → DB table, confirm like import/vault);
+  **DataDiff** dropdowns. Save = prompt `workspace.table`, 409 → confirm → overwrite. Old datasets stay listed
+  (🔒). **Staging** (`data-lake/staging.py`, Data Lake → 🗄 Database, manifest `read: [postgres_connection]`):
+  Vault connection (postgres/mssql/oracle, SSH tunnel) → tables (or one SELECT) streamed in 50k-row batches
+  (Postgres read-only session) → pyarrow batch Parquet (json/arrays → JSON text, untypeable → text) → DuckDB merge
+  `union_by_name` → `write_table`; two schemas with the same table name → `schema_table`. **Bugs found on the way:**
+  (1) **the gateway's httpx proxy client kept a cookie jar** and gave the last visitor's tool cookie to every new
+  visitor without one — Duck Lab / DataFrame Studio sessions were shared between browsers since C2
+  (`proxy._no_cookie_jar`, unit + smoke test); (2) Duck Lab 500'd on any DECIMAL/UUID/INTERVAL value
+  (`_row_to_jsonable`); (3) Data Lake query pages sent non-whole decimals as text (now numbers when ≤ 15 digits).
+  Verified live against a throwaway Postgres (300k orders + jsonb/uuid/numeric/timestamptz, NULL-only first
+  batches): 3 tables / 305k rows staged in 3.2 s, create-again 409, overwrite → v2, query mode, DELETE refused,
+  source untouched; each tool's load + save via API and in headless Chromium; 34 container tests, 165 host tests,
+  smoke 106. SQL Server/Oracle staging written on the shared dialects but not run against real engines. Test data
+  removed (`l3test` kept). **Next:** L5 extras.
+- 2026-10-27 – **L3 done.** Data Lake gained a **🔎 SQL** tab (`#sql`): `data-lake/query.py` + endpoints `/catalog`,
+  `/query` (instant, 30 s, rt-data, DuckDB 384MB / 2 threads) or `background: true` (worker job, 1GB, Stop works),
+  `/queries/{id}` (+ `/rows` paging ≤ 1000, `/download` csv|parquet, `/save` → table, `/stop`), `/history`, `/saved`.
+  Each query: fresh DuckDB, only the tables it names mounted as views `workspace.table` (unqualified name OK if
+  unique). Read-only by DuckDB's own parse tree (`json_serialize_sql`): one SELECT/EXPLAIN; table functions other
+  than range/generate_series/unnest and `FROM 'file'` refused (no reading `/etc` or `/proc` through SQL);
+  `CREATE [OR REPLACE] TABLE ws.t AS SELECT` → `lake.write_table`. Results = Parquet in S3 (`data-lake-results/`,
+  7 days; HUGEINT → DECIMAL(38,0) so sums stay exact); history (last 500) + saved queries in Postgres schema
+  `data_lake`. Editor: catalog tree (click inserts, double-click previews), autocomplete (workspaces, `ws.` → tables,
+  columns of the tables in the query, keywords). **Fixed on the way:** concurrent loads into a NEW workspace from two
+  workers failed (`_ensure_workspace`); preview after an append that added columns lost them (NULL-filled now);
+  DuckDB 1.2's Python API has no `query_progress` — the L2 percent never worked, removed (pages show elapsed time).
+  Verified: 30 M-row table made by background CTAS (28 s), group-by over it 3 s, count(distinct) 9 s, rt-data anon
+  peak ~570 MiB; 30 s timeout and Stop; page in headless Chromium; 30 container tests + smoke 103. Test workspace
+  `l3test` left for the owner to try (delete in Vault → Data). **Next:** L4 every tool.
+- 2026-10-27 – **L2 done.** New tool **Data Lake** (`data-lake/`: `server.py`, `loader.py`, `sources.py`, page; runtime
+  data, `vault: {data: write}`, order 155 next to the Vault). Sources: upload (multi-file, staged in S3
+  `data-lake/<upload id>/`), shared data folder `~/toolbox-data` → `/data:ro` in rt-data + worker (browse, patterns
+  incl. `**`, confined: `..`/absolute/outside links refused, hidden skipped), links (streamed download). Load =
+  worker job: detect (extension, else sniff; `.gz`), XML → JSON lines, Excel → Parquet (openpyxl added to data/worker
+  + wheelhouse), DuckDB `COPY … TO dir (FORMAT PARQUET, FILE_SIZE_BYTES 256MB)` with `memory_limit` 1GB + spill dir +
+  `query_progress` → `lake.write_table` (create/append/overwrite, column-change warning); external tables
+  (`lake.register_external`, read in place). `core/file_source.py`: `detect_any`, `build_multi_read_expr`
+  (union_by_name, filename). `lake.preview` reads only the first part (20 M-row table: 0.4 s). Plugin-order test now
+  checks relative order (new tools may sit anywhere). Verified: 1.5 GB/20 M-row CSV → 341 MB Parquet in 16 s,
+  worker peak 530 MiB; 500 files → one table + `_source_file`; `.csv.gz` with `;`; link; external; 409 on create
+  again; page in headless Chromium; 15 container tests + host tests + smoke. Test data removed. **Next:** L3 SQL.
+- 2026-10-27 – **L1 done (phase L planned with the owner first).** `core/lake.py`: catalog (SqlStore schema `lake`:
+  workspaces, tables with columns/rows/size/parts/version/source, history, `_lake_meta`), managed tables = Parquet in
+  S3 (`FileCache("lake")`, keys `lake/<table id>/<id>.v<n>.<part>.parquet`); `write_table` create / overwrite (new
+  version, old files deleted after the catalog switch) / append (type-clash check, column union); rename/move (catalog
+  only), drop, delete workspace (protected unless confirmed), preview (DuckDB, ≤ 500 rows), `local_files`, one-time
+  `import_vault_datasets` (+ manual "again", skips imported ids), `ScopedLake` + manifest `vault.data`. Vault page:
+  🔑 Secrets | 📦 Data tabs (workspaces, tables, table detail with columns/preview/history, rename/move, delete,
+  import). Verified live (Postgres + S3) + screenshot; 7 lake tests in the container (DuckDB), smoke for the API.
+  Owner decisions recorded above (Vault = front door, plain Parquet, data folder `~/toolbox-data` for L2).
+  **Next:** L2 — loading files (upload / data folder / link / pattern → Parquet in the worker; new Data Lake tool).
+- 2026-10-26 – **G1 done** (owner: G1 only, no start/stop shortcut, no Electron). Gateway serves
+  `/manifest.webmanifest` (id/start_url/scope "/", standalone, theme #4f5ef0, icons 192/512 "any" + 512 "maskable",
+  shortcuts Status/Settings), `/icons/<file>` (whitelist of 4 files, cached 1 day) and `/favicon.ico` (fixes the
+  console 404 every browser test had to ignore); `workspace.html` links manifest, theme-color, icon. Icons drawn by
+  `tools/icons/make_icons.py` (Pillow, host-side; white toolbox on the accent blue). Verified in Chromium via CDP:
+  `Page.getInstallabilityErrors` → none, manifest parsed without errors, console clean. Unit tests (manifest
+  criteria, icon sizes, path whitelist) + smoke. Runbook §1: how to install / uninstall.
 - 2026-10-25 – **O1 (Ops session) done.** `scripts/backup.sh` (pg_dump via a one-off `docker compose run --no-deps
   worker`, S3 → tar via `python -m core.state.backup objects-export`, .env, workspace.yaml, manifest.json → one
   `backups/toolbox-<stamp>.tar.gz`, mode 600, keep 7, records Redis `toolbox:backup:last`); `scripts/restore.sh`

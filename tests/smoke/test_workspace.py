@@ -52,3 +52,13 @@ def test_traffic_counters_errors_logs_and_alerts():
     assert request("GET", "/api/workspace/logs/not-a-toolbox-container").status == 404
     a = request("GET", "/api/workspace/alerts").json()
     assert {"items", "errors", "warnings"} <= set(a)
+
+
+def test_installable_app_assets():
+    """Roadmap G1: manifest, icons and favicon are served by the gateway."""
+    m = request("GET", "/manifest.webmanifest")
+    assert m.status == 200 and m.json()["display"] == "standalone"
+    for icon in m.json()["icons"]:
+        r = request("GET", icon["src"])
+        assert r.status == 200 and r.ctype == "image/png", icon["src"]
+    assert request("GET", "/favicon.ico").status == 200

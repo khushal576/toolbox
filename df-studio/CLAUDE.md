@@ -325,3 +325,11 @@ at its own internal-import call sites, not just at the entrypoint.
 - Mounted at `/tools/df-studio/` by `main.py` in the repo root — this
   folder never needs to know that; it's a fully self-contained ASGI app
   either way (verify with `cd df-studio && uvicorn server:app --reload`).
+
+## Vault Data tables (roadmap L4)
+
+`/load/lake` exports a table to Parquet (`lake.export_table`) and loads it like an upload — into memory, this
+tool's design — so tables over `DF_STUDIO_LAKE_MAX_ROWS` (1 000 000) answer **413** with the row count and the page
+offers "load the first 1 000 000 rows" instead of silently cutting. `/export/lake` saves the transformed DataFrame
+(all steps applied, `df.to_parquet`) as `workspace.table` (409 → confirm → overwrite). Manifest:
+`vault: {datasets: read, data: write}`.

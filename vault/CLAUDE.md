@@ -116,6 +116,29 @@ Save. The confirmed key is stored in the entry (`host_key`), and every later con
 (`core/ssh_client.py`). `core/vault.update_secret()` exists so a key can be pinned later without changing
 the entry's id.
 
+## Since roadmap L1 — 📦 Data (the lake catalog)
+
+- The Vault page has two tabs: **🔑 Secrets** (everything below) and **📦 Data** — workspaces → tables, like the
+  AWS Glue Data Catalog (`../core/lake.py`, roadmap phase L). The Vault is the owner's single front door for
+  everything Toolbox keeps; the data itself is NOT encrypted (owner decision: plain Parquet, queryable and fast —
+  secrets stay encrypted). Names are `workspace.table` (lowercase identifiers) everywhere.
+- Endpoints (this tool): `GET /data` (workspaces + the one-time dataset import result), `POST
+  /data/import-datasets` (import datasets added since), `POST/PATCH/DELETE /data/workspaces[/{ws}]`
+  (`?drop_tables=true` to delete a non-empty one), `GET /data/workspaces/{ws}/tables`, `GET/PATCH/DELETE
+  /data/tables/{ws}/{name}` (PATCH: rename / move to another workspace / description), `GET
+  /data/tables/{ws}/{name}/preview?rows=`.
+- Old Vault **datasets** are copied into workspace `datasets` as tables (once, on the first look at Data;
+  originals stay). Until L4 moves the tools' "Save to Vault" to Data, new datasets are imported with the button.
+- Tools reach Data through `lake.scoped("<tool>")` with `vault: {data: none|read|write}` in their manifest.
+- **L4:** `GET /data/catalog` = every workspace → tables (rows, size, columns) — the table list in Duck Lab,
+  DataFrame Studio, SQL Studio's import dialog and DataDiff (same-origin fetch, like `/secrets`). `GET
+  /data/tables/{ws}/{name}/csv?max_rows=` (default 2000) is DataDiff's loader: a bigger table is refused with a
+  400, never cut (same rule as `/datasets/{id}/preview`). Tools now save new results as tables; the old datasets
+  stay listed (🔒) and keep working.
+- Verified live: dataset → `datasets.<name>` table + preview; a 200k-row table written to S3 storage as one
+  Parquet file, renamed/moved (files stay — stored by table id), history kept; non-empty workspace protected; bad
+  names refused; Data tab screenshot checked.
+
 ## Since roadmap B7 — storage, key, scopes (read first; older sections below are history where they disagree)
 
 - **Rows in Toolbox's Postgres** (schema `vault`, `../core/state/sqlstore.py`), **dataset blobs in S3 storage**

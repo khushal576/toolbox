@@ -203,3 +203,12 @@ still runs `--workers 1` until roadmap B9 finishes the other tools.
 - Mounted at `/tools/duck-lab/` by `main.py` in the repo root — this folder
   never needs to know that; it's a fully self-contained ASGI app either way
   (verify with `cd duck-lab && uvicorn server:app --reload`).
+
+## Vault Data tables (roadmap L4)
+
+`/load/lake` exports a Vault Data table to Parquet in the session's `data_dir` (`lake.export_table`, streamed) and
+registers it like an upload (view named after the table, `_2` on a clash); `/export/lake` stores the full current
+result (its Parquet) as `workspace.table` (409 when it exists → the page asks, then sends `overwrite`). The "load
+from Vault" list shows tables (📦, from Vault `GET /data/catalog`) above the older datasets (🔒). Manifest:
+`vault: {datasets: write, data: write}`. **Fixed here in L4:** `_row_to_jsonable` handles DECIMAL (number when a
+browser holds it exactly, else text), UUID and INTERVAL — a DECIMAL column used to 500 every query page.

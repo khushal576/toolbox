@@ -14,4 +14,4 @@ state: [session]
 depends_on: [vault]
 requires: [duckdb]
 order: 140
-vault: {datasets: write}   # Vault scope (roadmap B7): save results / load datasets
+vault: {datasets: write, data: write}   # Vault scope (roadmap B7): save results / load datasets; L4: Vault Data tables

@@ -147,6 +147,8 @@ services:
       # legacy files (one-time migration sources, B6/B7 — already migrated here; harmless afterwards)
       - vault_data:/app/data/vault
       - data_syncer_data:/app/data/data-syncer
+      # the shared data folder (roadmap L2): files on this machine the Data Lake can load or read in place — READ-ONLY
+      - ${TOOLBOX_DATA_DIR:-~/toolbox-data}:/data:ro
 
   # On-demand (roadmap C3): pgtools, ssh and latex hold only tier-4 tools, so the gateway starts them on first use
   # and stops them after scaling.idle_timeout_s. Limits = the sum of their plugins' manifest `resources`
@@ -247,6 +249,8 @@ services:
       # the orchestrator CLI (and future jobs) compare through DataDiff's API, not its code (roadmap D1)
       TOOLBOX_DATADIFF_URL: http://rt-datadiff:8080/tools/datadiff-pro
     volumes:
+      # the shared data folder (roadmap L2) — load jobs run here — READ-ONLY
+      - ${TOOLBOX_DATA_DIR:-~/toolbox-data}:/data:ro
       # Legacy SQLite files/key (one-time migration sources since B6/B7) and local file caches.
       - vault_data:/app/data/vault
       - data_syncer_data:/app/data/data-syncer

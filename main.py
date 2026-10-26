@@ -258,6 +258,50 @@ async def home() -> HTMLResponse:
     return HTMLResponse(_WORKSPACE_HTML.replace("{{CARDS}}", cards).replace("{{DATA}}", payload))
 
 
+# ---------------------------------------------------------------------------
+# Installable app (roadmap G1): Chromium's "Install Toolbox" → its own window, app-menu/taskbar icon
+# ---------------------------------------------------------------------------
+
+_ICONS = _REPO / "core_plugins" / "ui" / "icons"   # drawn by tools/icons/make_icons.py
+_ICON_FILES = {"icon-192.png", "icon-512.png", "icon-maskable-512.png", "favicon-32.png"}
+_WEBMANIFEST = {
+    "id": "/", "name": "Toolbox", "short_name": "Toolbox",
+    "description": "One-stop workspace of internal tools — data, databases, network, files.",
+    "start_url": "/", "scope": "/", "display": "standalone",
+    "background_color": "#f4f6fb", "theme_color": "#4f5ef0",  # --bg / --accent of the workspace
+    "icons": [
+        {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+        {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        {"src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+    ],
+    "shortcuts": [  # right-click the app icon
+        {"name": "Status", "url": "/#/status", "icons": [{"src": "/icons/icon-192.png", "sizes": "192x192"}]},
+        {"name": "Settings", "url": "/#/settings", "icons": [{"src": "/icons/icon-192.png", "sizes": "192x192"}]},
+    ],
+}
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+async def webmanifest():
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(_WEBMANIFEST, media_type="application/manifest+json")
+
+
+@app.get("/icons/{name}", include_in_schema=False)
+async def app_icon(name: str):
+    from fastapi.responses import FileResponse
+
+    if name not in _ICON_FILES:
+        raise HTTPException(404)
+    return FileResponse(_ICONS / name, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return await app_icon("favicon-32.png")
+
+
 @app.get("/api/state/health")
 async def state_health() -> dict[str, Any]:
     """Postgres / Redis / object storage / jobs / Vault status (roadmap B1). Imported lazily so idle memory stays low.

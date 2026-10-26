@@ -1236,3 +1236,13 @@ show on screen.
   `ui/index.html` all use relative paths (no leading `/`), same repo-wide
   convention as every other tool, so they resolve correctly under the
   `/tools/sql-studio/` prefix.
+
+## Vault Data tables (roadmap L4)
+
+- **"📦 Export FULL result → Vault Data"** (`POST /export/lake`): the same validated, uncapped, streamed export as
+  "→ Vault" (CSV via `db_engine.export_to_file`), then `lake.import_file` → Parquet table `workspace.table`. Types
+  are inferred from the exported text (NUMERIC sums arrive as DOUBLE) — Data Lake → 🗄 Database staging keeps the
+  driver's types better for whole tables. 409 when the table exists → the page asks → `overwrite`.
+- **Import dialog** lists tables (📦) above datasets (🔒); a table goes through `POST /import/lake` (exported to
+  Parquet, then the same `core/db/loader.py` path, same `confirmed: true` gate as `/import/vault`).
+- Runs in the `singletons` process (data image — has DuckDB). Manifest `vault: {datasets: write, data: write}`.

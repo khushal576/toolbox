@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+schema_version: 1
+name: data-lake
+title: Data Lake
+description: Load files (CSV, JSON, Parquet, XML, Excel, .gz — one or thousands) into Vault Data tables as Parquet
+icon: 🏞️
+category: tool
+kind: python
+entry: data_lake.server:app
+runtime: data
+tier: 3
+state: [durable, jobs]
+depends_on: [vault]
+requires: [duckdb]
+order: 155
+vault: {data: write, read: [postgres_connection]}   # L1/L2: writes Vault Data tables; L4: reads saved DB connections to stage tables

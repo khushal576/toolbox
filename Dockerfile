@@ -173,6 +173,10 @@ COPY data-dumper/ ./data_dumper/
 # browsing connection cache stays per process (recreated on demand).
 COPY ssh-sftp/ ./ssh_sftp/
 
+# Data Lake (roadmap L2) — whole-folder copy. Loads files into Vault Data tables (core/lake.py); loads run in the
+# worker; reads the shared data folder (/data, mounted read-only in compose).
+COPY data-lake/ ./data_lake/
+
 # LaTeX to PDF (tool #20) — same namespacing pattern. Shells out to pdflatex from the TeX Live
 # layer above; fully offline.
 COPY latex-pdf/server.py ./latex_pdf/server.py
@@ -186,7 +190,7 @@ COPY core_plugins/ ./core_plugins/
 COPY main.py .
 
 # Create empty __init__.py files so Python treats these as packages.
-RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py
+RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py data_lake/__init__.py
 
 # --- Python packages: wheelhouse + one deps stage per image ----------------------
 # wheelhouse/ (gitignored) holds pre-downloaded wheels for this exact platform/Python version — see
