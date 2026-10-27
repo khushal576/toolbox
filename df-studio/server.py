@@ -284,6 +284,56 @@ async def load_from_lake(request: Request, body: LoadFromLakeRequest):
     return response
 
 
+class FrameRequest(BaseModel):
+    workspace: str = ""
+    table: str = ""
+    name: str = ""
+
+
+@app.get("/column-stats")
+async def column_stats(request: Request):
+    """Stats per column of the current (transformed) DataFrame — the grid's header strip (roadmap L5)."""
+    try:
+        session = await _session(request)
+        df = await asyncio.to_thread(engine.recompute, session)
+        return {"stats": await asyncio.to_thread(engine.column_stats, df), "rows": len(df)}
+    except engine.StepError as exc:
+        return _error(exc)
+
+
+@app.post("/session/clear")
+async def session_clear(request: Request):
+    """Unload everything (the Tables list's ✕ on the first table) — the browser starts with no table."""
+    await asyncio.to_thread(engine.delete_session, _session_id(request))
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(_COOKIE)
+    return response
+
+
+@app.post("/frames/add")
+async def frames_add(request: Request, body: FrameRequest):
+    """Add another Vault Data table by name (roadmap L5) — for the Join step and as a variable in the Query box."""
+    try:
+        session = await _session(request)
+        name = await asyncio.to_thread(engine.add_frame, session, f"{body.workspace}.{body.table}", body.name or None)
+        preview = engine.build_preview(session, await asyncio.to_thread(engine.recompute, session))
+    except (lake_store.LakeError, lake_store.ScopeError) as exc:
+        return _error(exc, status=_lake_status(exc))
+    except engine.StepError as exc:
+        return _error(exc)
+    return JSONResponse({**preview, "added": name})
+
+
+@app.post("/frames/remove")
+async def frames_remove(request: Request, body: FrameRequest):
+    try:
+        session = await _session(request)
+        await asyncio.to_thread(engine.remove_frame, session, body.name)
+        return engine.build_preview(session, await asyncio.to_thread(engine.recompute, session))
+    except engine.StepError as exc:
+        return _error(exc)
+
+
 @app.post("/export/lake")
 async def export_to_lake(request: Request, body: SaveToLakeRequest):
     """Save the transformed DataFrame (every step applied) as a Vault Data table (roadmap L4). 409 = it exists and

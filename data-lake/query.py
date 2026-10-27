@@ -273,6 +273,7 @@ def execute(qid: str, plan: Plan, *, mode: str = "instant", timeout: Optional[fl
             con.execute("SET threads = 2")
         progress["phase"] = "reading tables"
         for (schema, name), t in plan.tables.items():
+            lake.prepare(con, t)  # an S3 table gets its bucket-scoped credentials (before the config lock below)
             expr = lake.read_expr(t["workspace"], t["name"])  # managed: downloads its parts once per process
             con.execute(f"CREATE SCHEMA IF NOT EXISTS {_quote(schema)}")
             con.execute(f"CREATE VIEW {_quote(schema)}.{_quote(name)} AS SELECT * FROM {expr}")

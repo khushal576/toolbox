@@ -24,6 +24,12 @@ POST /transfers/{id}/retry|stop — resume a failed/stopped transfer / stop a ru
 DELETE /transfers/{id}          — discard (removes the staged copy)
 POST /servers/{id}/exec         — {command, timeout, confirm_danger} -> {command_id}
 GET  /commands, GET /commands/{id}, POST /commands/{id}/stop
+Live terminal (owner request 2026-10-28: log in once, keep typing — terminal.py)
+POST /terminals                 — {server_id, cols, rows} -> {id}   (one SSH login + a shell with a PTY)
+GET  /terminals                 — open sessions (re-attach after a reload)
+GET  /terminals/{id}/stream?since= — Server-Sent Events: output from byte offset `since` (base64), then `end`
+POST /terminals/{id}/input      — {data}  keystrokes        POST /terminals/{id}/resize — {cols, rows}
+DELETE /terminals/{id}          — close it
 """
 
 from __future__ import annotations
@@ -33,6 +39,7 @@ import errno
 import hashlib
 import shutil
 import sys
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -41,12 +48,13 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 try:  # package import when mounted inside the toolbox (ssh_sftp.*)
-    from ssh_sftp import engine, runner, sessions, state_store as store
+    from ssh_sftp import engine, runner, sessions, state_store as store, terminal
 except ImportError:  # flat import when run standalone from within this folder
     import engine
     import runner
     import sessions
     import state_store as store
+    import terminal
 
 try:
     from core import ssh_client, vault as vault_store
@@ -122,6 +130,19 @@ def index() -> HTMLResponse:
     if not _UI_PATH.exists():
         return HTMLResponse("<h1>SSH &amp; SFTP UI not built yet</h1>", status_code=503)
     return HTMLResponse(_UI_PATH.read_text(encoding="utf-8"), headers={"Cache-Control": "no-cache"})
+
+
+_VENDOR = {"term-bundle.js": "text/javascript", "xterm.css": "text/css"}   # xterm.js (see CLAUDE.md "Live terminal")
+
+
+@app.get("/vendor/{name}", include_in_schema=False)
+def vendor(name: str):
+    from fastapi.responses import FileResponse
+
+    if name not in _VENDOR:
+        raise HTTPException(404, "Not found")
+    return FileResponse(_UI_PATH.parent / "vendor" / name, media_type=_VENDOR[name],
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @app.get("/servers")
@@ -359,3 +380,111 @@ def command(cid: str, since: int = 0) -> dict[str, Any]:
 @app.post("/commands/{cid}/stop")
 def stop_command(cid: str) -> dict[str, Any]:
     return {"stopping": runner.stop(cid)}
+
+
+# ---- live terminal (terminal.py) --------------------------------------------------------------------------------
+
+class TermOpenBody(BaseModel):
+    server_id: str
+    cols: int = 120
+    rows: int = 32
+
+
+class TermInputBody(BaseModel):
+    data: str = Field(max_length=65536)
+
+
+class TermResizeBody(BaseModel):
+    cols: int
+    rows: int
+
+
+def _term(term_id: str) -> "terminal.Term":
+    try:
+        return terminal.get(term_id)
+    except KeyError:
+        raise HTTPException(404, "This terminal has ended — open a new one.") from None
+
+
+@app.post("/terminals")
+def term_open(body: TermOpenBody) -> dict[str, Any]:
+    server = _server(body.server_id)
+    server["_id"] = body.server_id
+    try:
+        t = terminal.open_term(server, body.cols, body.rows)
+    except terminal.TermError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — host key / login problems get the tool's usual answers
+        raise _fail(exc) from exc
+    return {"id": t.id, "name": t.name}
+
+
+@app.get("/terminals")
+def term_list() -> dict[str, Any]:
+    return {"terminals": terminal.list_terms()}
+
+
+@app.get("/terminals/{term_id}/stream")
+async def term_stream(term_id: str, request: Request, since: int = 0) -> StreamingResponse:
+    """Server-Sent Events (works through the gateway, which streams bodies but refuses WebSockets): `data` events
+    {o: new offset, d: base64 bytes, cut: true if older output was no longer kept}, a comment every 15 s, and an
+    `end` event {exit_status} when the shell is gone."""
+    import base64
+    import json as _json
+
+    t = _term(term_id)
+
+    async def events():
+        off = since
+        t.viewers += 1
+        last_beat = 0.0
+        try:
+            yield ": attached\n\n"
+            while True:
+                data, new_off, cut = t.read(off)
+                if data:
+                    off = new_off
+                    yield "data: " + _json.dumps({"o": off, "d": base64.b64encode(data).decode(), "cut": cut}) + "\n\n"
+                    continue
+                if t.closed:
+                    yield "event: end\ndata: " + _json.dumps({"exit_status": t.exit_status}) + "\n\n"
+                    return
+                if await request.is_disconnected():
+                    return
+                now = asyncio.get_running_loop().time()
+                if now - last_beat > 15:
+                    last_beat = now
+                    yield ": keep-alive\n\n"
+                await asyncio.sleep(0.03)
+        finally:
+            t.viewers -= 1
+            t.last_seen = time.time()
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/terminals/{term_id}/input")
+def term_input(term_id: str, body: TermInputBody) -> dict[str, Any]:
+    try:
+        _term(term_id).write(body.data)
+    except terminal.TermError as exc:
+        raise HTTPException(410, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(410, f"The connection is gone: {exc}") from exc
+    return {"ok": True}
+
+
+@app.post("/terminals/{term_id}/resize")
+def term_resize(term_id: str, body: TermResizeBody) -> dict[str, Any]:
+    try:
+        _term(term_id).resize(body.cols, body.rows)
+    except Exception:  # noqa: BLE001 — a resize of an ending session is harmless
+        pass
+    return {"ok": True}
+
+
+@app.delete("/terminals/{term_id}")
+def term_close(term_id: str) -> dict[str, Any]:
+    terminal.close(term_id)
+    return {"ok": True}

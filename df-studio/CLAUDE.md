@@ -333,3 +333,25 @@ tool's design — so tables over `DF_STUDIO_LAKE_MAX_ROWS` (1 000 000) answer **
 offers "load the first 1 000 000 rows" instead of silently cutting. `/export/lake` saves the transformed DataFrame
 (all steps applied, `df.to_parquet`) as `workspace.table` (409 → confirm → overwrite). Manifest:
 `vault: {datasets: read, data: write}`.
+
+## Tables bar + joins by name, no uploads (roadmap L5, owner decision)
+
+- The page loads ONLY from Vault Data: a left **Tables** column (workspaces → tables → columns with SQL types, filter)
+  with one **Load** button (owner: "just load multiple tables, I join myself"): the first table becomes `df`
+  (`/load/lake`), every further one is added by name (`POST /frames/add`, `Session.frames = {"customers":
+  "crm.customers"}`) and is a variable in the Query box (`df.merge(customers, on=...)`). Loaded rows turn green and
+  show their variable name; ✕ unloads (`/frames/remove`, refused while a step uses it; ✕ on `df` = `POST
+  /session/clear`, start over). The upload bar, load-options panel and their JS are gone; `/load` (upload) still
+  exists server-side, unused by the page. The `join_table` step still exists in `steps.py` (templates/API) but is
+  no longer in the page's step form (owner).
+- Added tables are read through `engine.lake_frame()` (export to Parquet → pandas, cached per table version, same
+  1 M-row limit) and made visible during replay via the `steps.FRAMES` context variable (`recompute`/`_run_step` set
+  it): the new **`join_table`** step (`df.merge(<name>, how, left_on, right_on, suffixes=('', '_<name>'))`) and the
+  Query box (a table's name is a variable when the code mentions it). `POST /frames/remove` refuses while a step
+  uses the table. The generated script reads added tables as `<name> = pd.read_parquet('<ws.table>.parquet')`.
+- **Green = loaded + header stats (owner feedback):** loaded tables are green in the Tables list (`table_ref` in
+  the preview = the `df` table, `frames` = the others). The grid header shows the
+  column name + an SQL-style type (`engine.sql_type`: bigint/double/varchar/date/timestamp/numeric…) and, with the
+  **📊 Column stats** toggle (remembered in localStorage), a 4-line strip from `GET /column-stats`
+  (`engine.column_stats` over the WHOLE transformed DataFrame: empty, distinct, min/max, avg/std; full text on hover).
+  Few columns fill the width (`fitColumns`); dates/timestamps are shown without the ISO `T…000`.

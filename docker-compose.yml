@@ -171,7 +171,10 @@ services:
     cpus: 1.0
     build: {context: ., target: ssh}
     image: toolbox-rt-ssh
-    environment: *state-env
+    environment:
+      <<: *state-env
+      # ONE web process: a live terminal (ssh-sftp/terminal.py) is an SSH channel held in this process's memory
+      TOOLBOX_WEB_WORKERS: "1"
     volumes:
       - workspace_data:/app/data/workspace:ro
       - ssh_sftp_data:/app/data/ssh-sftp          # legacy SQLite + local stage cache

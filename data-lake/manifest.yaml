@@ -13,4 +13,4 @@ state: [durable, jobs]
 depends_on: [vault]
 requires: [duckdb]
 order: 155
-vault: {data: write, read: [postgres_connection]}   # L1/L2: writes Vault Data tables; L4: reads saved DB connections to stage tables
+vault: {data: write, read: [postgres_connection, s3_location]}   # L1/L2: writes Vault Data tables; L4: DB connections to stage; L5: S3 locations

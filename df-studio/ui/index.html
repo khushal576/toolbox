@@ -79,43 +79,7 @@
 
   .upload-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; flex-shrink: 0; padding: 10px 16px; }
   .upload-bar .meta { font-size: 0.8rem; color: var(--muted); }
-  #loadProgress { width: 140px; height: 8px; accent-color: var(--accent); }
 
-  #loadOptionsPanel { flex-shrink: 0; padding: 8px 16px; }
-  #loadOptionsPanel summary {
-    cursor: pointer; font-size: 0.78rem; font-weight: 700; color: var(--muted);
-    list-style: none; text-transform: uppercase; letter-spacing: 0.4px;
-  }
-  #loadOptionsPanel[open] summary { margin-bottom: 10px; color: var(--text); }
-  #loadOptionsPanel summary::-webkit-details-marker { display: none; }
-  #loadOptionsPanel summary::before { content: "▸ "; color: var(--muted); }
-  #loadOptionsPanel[open] summary::before { content: "▾ "; }
-  #loadFormatBadge {
-    background: var(--accent); color: #fff; border-radius: 4px;
-    padding: 1px 6px; font-size: 0.68rem; letter-spacing: 0;
-  }
-
-  .load-options-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 8px 14px; align-items: end;
-  }
-  .load-options-grid .field { margin-bottom: 0; }
-  .load-options-grid label { font-size: 0.68rem; margin-bottom: 2px; }
-  .load-options-grid select, .load-options-grid input[type="text"] { padding: 5px 7px; font-size: 0.78rem; }
-  .load-header-check {
-    display: flex; align-items: center; gap: 5px; text-transform: none;
-    font-weight: 400; font-size: 0.78rem; color: var(--text); padding-bottom: 6px;
-  }
-  .load-options-row2 {
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 8px;
-  }
-  .load-options-row2 label {
-    display: flex; align-items: center; gap: 5px; text-transform: none;
-    font-weight: 400; font-size: 0.78rem; margin-bottom: 0; color: var(--text);
-  }
-  .load-options-row2 .hint { font-size: 0.68rem; margin-bottom: 0; flex: 1; min-width: 220px; }
-  .nrows-presets { display: flex; gap: 4px; }
-  .nrows-presets button { font-size: 0.68rem; padding: 4px 7px; }
 
   .preview-mode-group { display: flex; gap: 6px; align-items: center; }
   .preview-mode-group button { font-size: 0.76rem; padding: 6px 10px; }
@@ -125,7 +89,7 @@
      panel — min-height:0 is what actually lets a flex/grid child shrink
      below its content size instead of pushing the page taller. */
   .layout {
-    display: grid; grid-template-columns: 1fr 320px; gap: 16px;
+    display: grid; grid-template-columns: 260px minmax(0, 1fr) 320px; gap: 16px;
     flex: 1; min-height: 0; min-width: 0; overflow: hidden;
   }
 
@@ -143,12 +107,52 @@
   }
 
   .sidebar { height: 100%; min-width: 0; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
+  /* Tables bar (roadmap L5, Athena-style): workspaces → tables → columns with SQL types */
+  .catalog { height: 100%; min-width: 0; display: flex; flex-direction: column; overflow: hidden; margin-bottom: 0; }
+  .catalog h2 { margin-bottom: 6px; }
+  .catalog input { font-size: 0.8rem; padding: 6px 8px; margin-bottom: 6px; }
+  .cat-tree { flex: 1; overflow-y: auto; font-size: 0.8rem; margin: 0 -6px; }
+  .cat-ws { font-weight: 700; padding: 5px 6px; cursor: pointer; user-select: none; }
+  .cat-ws::before { content: "▸ "; color: var(--muted); } .cat-ws.open::before { content: "▾ "; }
+  .cat-tb { display: flex; align-items: center; gap: 4px; padding: 3px 6px 3px 16px; border-radius: 6px; }
+  .cat-tb:hover { background: var(--bg); }
+  .cat-tb .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+                font-family: 'Cascadia Code', 'Fira Code', monospace; }
+  .cat-tb .nm::before { content: "▸ "; color: var(--muted); font-family: system-ui; } .cat-tb.open .nm::before { content: "▾ "; }
+  .cat-tb .n { color: var(--muted); font-size: 0.7rem; }
+  .cat-tb button { font-size: 0.68rem; padding: 2px 6px; }
+  .cat-col { display: flex; justify-content: space-between; gap: 6px; padding: 1px 6px 1px 34px; font-size: 0.74rem;
+             font-family: 'Cascadia Code', 'Fira Code', monospace; }
+  .cat-col .ty { color: var(--muted); white-space: nowrap; }
+  .cat-tb.loaded { background: rgba(21,128,61,0.12); box-shadow: inset 3px 0 0 var(--ok-text); }
+  .cat-tb.loaded .nm { color: var(--ok-text); font-weight: 700; }
+  .cat-tb .var { font-size: 0.68rem; color: var(--ok-text); font-family: 'Cascadia Code', 'Fira Code', monospace; }
+  .cat-legend { font-size: 0.7rem; color: var(--muted); border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }
+  /* grid header (roadmap L5): name, SQL type, optional stats strip */
+  #table .tabulator-col .tabulator-col-title { white-space: normal; }
+  .h-name { font-weight: 700; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .h-type { font-weight: 400; font-size: 0.68rem; color: var(--muted); font-family: 'Cascadia Code', 'Fira Code', monospace; }
+  .h-stats { margin-top: 4px; font-weight: 400; font-size: 0.66rem; line-height: 1.45; color: var(--text);
+             border-top: 1px dashed var(--border); padding-top: 3px; font-variant-numeric: tabular-nums; }
+  .h-stats span { color: var(--muted); }
+  .h-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .h-stats .bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 2px; overflow: hidden; }
+  .h-stats .bar i { display: block; height: 100%; background: #d97706; }
+  #table .tabulator-header-filter input { padding: 3px 6px !important; font-size: 0.72rem; border: 1px solid var(--border);
+                                          border-radius: 5px; background: var(--surface); }
+  #table .tabulator-cell { font-size: 0.8rem; padding: 5px 8px; }
+  #table .tabulator-row.tabulator-row-even { background: #fafbfe; }
+  #table .tabulator-cell.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #table .tabulator { background: var(--surface); border: 0; }
+  #table .tabulator-tableholder { background: var(--surface); }
+  #statsBtn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 
   @media (max-width: 900px) {
     .layout { display: block; height: auto; overflow: visible; }
     .table-card { height: auto; }
     #table { flex: none; height: 480px; }
     .sidebar { height: auto; overflow: visible; padding-right: 0; }
+    .catalog { height: auto; max-height: 420px; margin-bottom: 10px; }
   }
 
   .step-form fieldset { display: none; border: none; }
@@ -241,25 +245,16 @@
 <body>
   <header>
     <h1>DataFrame <span>Studio</span></h1>
-    <p>Load a CSV / JSON / XML / Parquet file, transform it by clicking instead of writing pandas from scratch, export the result.</p>
+    <p>Open a Vault Data table, transform it by clicking instead of writing pandas from scratch, save the result back as a table (or export it).</p>
   </header>
 
   <div id="banner" class="banner"></div>
 
   <div class="wrap">
     <div class="card upload-bar">
-      <div>
-        <label for="fileInput">Load file</label>
-        <input type="file" id="fileInput" accept=".csv,.tsv,.txt,.json,.xml,.parquet" />
-      </div>
-      <button id="loadBtn">Load</button>
-      <div>
-        <label for="vaultSelect">Load from Vault</label>
-        <select id="vaultSelect" style="font-size:0.82rem;"><option value="">— select —</option></select>
-      </div>
-      <button id="vaultLoadBtn">Load</button>
-      <progress id="loadProgress" max="100" value="0" style="display:none;"></progress>
-      <span class="meta" id="fileMeta">No file loaded yet.</span>
+      <span class="meta" id="fileMeta">Pick a table on the left and press <b>Load</b>.</span>
+      <a class="meta" href="/tools/data-lake/" target="_top" title="Upload / data folder / S3 / database → Vault Data tables">New files? Load them in Data Lake →</a>
+      <button type="button" class="secondary" id="statsBtn" title="Show / hide per-column stats in the header (whole table, not just the rows shown)">📊 Column stats</button>
       <div class="preview-mode-group">
         <span class="meta">Preview:</span>
         <button type="button" class="secondary" id="previewModeHeadBtn" data-mode="head" disabled>Head</button>
@@ -268,103 +263,6 @@
       </div>
     </div>
 
-    <details class="card" id="loadOptionsPanel">
-      <summary>Load options — <span id="loadFormatBadge">CSV</span></summary>
-
-      <div class="load-options-grid" id="loadFieldsCsv">
-        <div class="field">
-          <label for="loadSep">Separator</label>
-          <select id="loadSep">
-            <option value="">Auto (, or tab for .tsv)</option>
-            <option value=",">Comma (,)</option>
-            <option value="&#9;">Tab (TSV)</option>
-            <option value=";">Semicolon (;)</option>
-            <option value="|">Pipe (|)</option>
-            <option value="__custom__">Custom…</option>
-          </select>
-          <input type="text" id="loadSepCustom" placeholder="custom separator" style="display:none; margin-top:5px;" />
-        </div>
-        <div class="field">
-          <label for="loadEncoding">Encoding</label>
-          <select id="loadEncoding" class="load-encoding-select">
-            <option value="utf-8" selected>UTF-8</option>
-            <option value="latin-1">Latin-1</option>
-            <option value="utf-16">UTF-16</option>
-            <option value="cp1252">Windows-1252</option>
-          </select>
-        </div>
-        <label class="load-header-check"><input type="checkbox" id="loadHeader" checked style="width:auto;" /> Header row</label>
-      </div>
-
-      <div class="load-options-grid" id="loadFieldsJson" style="display:none;">
-        <div class="field">
-          <label for="loadOrient">Orient</label>
-          <select id="loadOrient">
-            <option value="">Auto-detect</option>
-            <option value="records">records — [{"col": val}, ...]</option>
-            <option value="columns">columns — {"col": {idx: val}}</option>
-            <option value="split">split — columns/data arrays</option>
-            <option value="index">index — {idx: {col: val}}</option>
-            <option value="values">values — [[...], ...]</option>
-            <option value="table">table — schema + data</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="loadLines">Structure</label>
-          <select id="loadLines">
-            <option value="">Auto-detect</option>
-            <option value="false">Single JSON document</option>
-            <option value="true">One object per line (JSONL/NDJSON)</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="loadEncodingJson">Encoding</label>
-          <select id="loadEncodingJson" class="load-encoding-select">
-            <option value="utf-8" selected>UTF-8</option>
-            <option value="latin-1">Latin-1</option>
-            <option value="utf-16">UTF-16</option>
-            <option value="cp1252">Windows-1252</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="load-options-grid" id="loadFieldsXml" style="display:none;">
-        <div class="field">
-          <label for="loadXpath">XPath (advanced, optional)</label>
-          <input type="text" id="loadXpath" placeholder="default: .//*" />
-        </div>
-        <div class="field">
-          <label for="loadEncodingXml">Encoding</label>
-          <select id="loadEncodingXml" class="load-encoding-select">
-            <option value="utf-8" selected>UTF-8</option>
-            <option value="latin-1">Latin-1</option>
-            <option value="utf-16">UTF-16</option>
-            <option value="cp1252">Windows-1252</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="load-options-grid" id="loadFieldsParquet" style="display:none;">
-        <div class="field" style="grid-column: 1 / -1;">
-          <label for="loadColumns">Columns to load (comma-separated, optional)</label>
-          <input type="text" id="loadColumns" placeholder="all columns — column pruning saves real memory on a big file" />
-        </div>
-      </div>
-
-      <div class="load-options-row2">
-        <div class="field" style="margin:0;">
-          <label for="loadNrows" style="margin-bottom:2px;">Row limit</label>
-          <input type="text" id="loadNrows" placeholder="no limit" inputmode="numeric" style="width:100px;" />
-        </div>
-        <div class="nrows-presets">
-          <button type="button" class="secondary" data-nrows-preset="500">500</button>
-          <button type="button" class="secondary" data-nrows-preset="5000">5k</button>
-          <button type="button" class="secondary" data-nrows-preset="50000">50k</button>
-          <button type="button" class="secondary" data-nrows-preset="">No limit</button>
-        </div>
-        <p class="hint" id="loadFormatHint">CSV/TSV row limit is read directly (low memory).</p>
-      </div>
-    </details>
 
     <!-- One shared full-width result panel for both Query-box Check results
          and Insights — same slot, same behavior, just different title/actions
@@ -384,10 +282,16 @@
     </div>
 
     <div class="layout">
+      <!-- Tables (Vault Data) — roadmap L5 -->
+      <div class="card catalog">
+        <h2>Tables</h2>
+        <input type="search" id="catFilter" placeholder="filter tables…" />
+        <div class="cat-tree" id="catTree"><p class="hint">Loading…</p></div>
+      </div>
       <!-- Main: table -->
       <div class="card table-card">
         <div id="table"></div>
-        <div id="emptyState" class="empty-state">Load a file above to get started.</div>
+        <div id="emptyState" class="empty-state">Pick a table on the left and press Load.</div>
       </div>
 
       <!-- Sidebar -->
@@ -450,6 +354,7 @@
               <div class="field"><label>Columns (multi-select, priority order)</label><select class="col-select" data-field="columns" multiple></select></div>
               <div class="field"><label><input type="checkbox" data-field="ascending" checked style="width:auto;display:inline-block;margin-right:6px;" />Ascending</label></div>
             </fieldset>
+
 
             <button type="submit" id="applyStepBtn">Apply</button>
           </form>
@@ -887,46 +792,6 @@
     return data;
   }
 
-  // fetch() has no reliable cross-browser upload-progress signal, so a big
-  // file's upload looks frozen with no feedback — XHR's upload.onprogress
-  // is what actually lets us show a real percentage while the bytes go
-  // over the wire, distinct from the "parsing on the server" phase after.
-  function loadFile(file, options, onUploadProgress) {
-    return new Promise((resolve, reject) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("sep", options.sep || "");
-      formData.append("encoding", options.encoding || "utf-8");
-      formData.append("header", options.header ? "true" : "false");
-      formData.append("nrows", options.nrows || "");
-      formData.append("orient", options.orient || "");
-      formData.append("lines", options.lines || "");
-      formData.append("xpath", options.xpath || "");
-      formData.append("columns", options.columns || "");
-
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", "load");
-      xhr.upload.addEventListener("progress", (e) => {
-        if (e.lengthComputable && onUploadProgress) onUploadProgress(e.loaded / e.total);
-      });
-      xhr.addEventListener("load", () => {
-        let data;
-        try {
-          data = JSON.parse(xhr.responseText);
-        } catch (e) {
-          reject(new Error("The server sent back something that wasn't valid JSON."));
-          return;
-        }
-        if (xhr.status >= 200 && xhr.status < 300 && !data.error) {
-          resolve(data);
-        } else {
-          reject(new Error(data.error || `Request failed (${xhr.status}).`));
-        }
-      });
-      xhr.addEventListener("error", () => reject(new Error("Network error during upload.")));
-      xhr.send(formData);
-    });
-  }
 
   function getCurrentSession() {
     return api("session");
@@ -1039,18 +904,68 @@
 
   const MANY_COLUMNS_THRESHOLD = 60;
 
-  function renderTable(preview) {
+  // ── Column stats in the header (roadmap L5): whole-DataFrame numbers from /column-stats, shown when toggled on
+  let lastPreview = null, colStats = null, statsOn = false;
+  try { statsOn = localStorage.getItem("dfs_stats") === "1"; } catch (e) { /* no storage: off */ }
+  const fmtNum = (v) => v == null ? "—" : Math.abs(v) >= 1e6 ? v.toExponential(2) :
+    Number(v).toLocaleString(undefined, { maximumFractionDigits: Math.abs(v) < 10 ? 4 : 2 });
+  function headerHtml(c) {
+    let h = `<div class="h-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</div><div class="h-type">${escapeHtml(c.sql_type || c.dtype)}</div>`;
+    const st = statsOn && colStats ? colStats[c.name] : null;
+    // always the same 4 lines (blank when n/a) so every header is equally tall and no filter box gets covered
+    const line = (html) => `<div class="h-line">${html || "&nbsp;"}</div>`;
+    if (statsOn && !st) h += `<div class="h-stats">${line("<span>computing…</span>")}${line()}${line()}${line()}<div class="bar"></div></div>`;
+    if (st) {
+      const v = (x) => typeof x === "number" ? fmtNum(x) : escapeHtml(String(x).slice(0, 19));
+      const full = `empty ${st.nulls.toLocaleString()} (${st.null_pct}%), distinct ${st.distinct == null ? "—" : st.distinct.toLocaleString()}` +
+        (st.min !== undefined ? `, min ${st.min}, max ${st.max}` : "") + (st.mean !== undefined ? `, avg ${st.mean}, std ${st.std}` : "");
+      h += `<div class="h-stats" title="${escapeHtml(full)}">` +
+        line(`<span>empty</span> ${st.nulls.toLocaleString()} (${st.null_pct}%)`) +
+        line(`<span>distinct</span> ${st.distinct == null ? "—" : st.distinct.toLocaleString()}`) +
+        line(st.min !== undefined ? `<span>min</span> ${v(st.min)} · <span>max</span> ${v(st.max)}` : "") +
+        line(st.mean !== undefined ? `<span>avg</span> ${fmtNum(st.mean)} · <span>std</span> ${fmtNum(st.std)}` : "") +
+        `<div class="bar" title="empty values: ${st.null_pct}%"><i style="width:${st.null_pct}%"></i></div></div>`;
+    }
+    return h;
+  }
+  async function loadColStats() {
+    colStats = null;
+    try { colStats = (await api("column-stats")).stats; } catch (e) { colStats = {}; }
+    if (lastPreview) renderTable(lastPreview, true);
+  }
+  document.getElementById("statsBtn").classList.toggle("on", statsOn);
+  document.getElementById("statsBtn").addEventListener("click", () => {
+    statsOn = !statsOn;
+    try { localStorage.setItem("dfs_stats", statsOn ? "1" : "0"); } catch (e) { /* ignore */ }
+    document.getElementById("statsBtn").classList.toggle("on", statsOn);
+    if (!lastPreview) return;
+    if (statsOn && !colStats) { renderTable(lastPreview, true); loadColStats(); } else renderTable(lastPreview, true);
+  });
+
+  function renderTable(preview, keepStats) {
     document.getElementById("emptyState").style.display = "none";
+    lastPreview = preview;
+    if (!keepStats) { colStats = null; if (statsOn) setTimeout(loadColStats, 0); }
     const manyColumns = preview.columns.length > MANY_COLUMNS_THRESHOLD;
+    const fewColumns = preview.columns.length <= 10;
+    const numeric = (c) => /int|float|double|numeric|real|smallint|bigint/i.test(c.sql_type || c.dtype);
     const columns = preview.columns.map((c) => ({
-      title: `${c.name}  ·  ${c.dtype}`,
+      title: c.name,
+      titleFormatter: () => headerHtml(c),
       field: c.name,
       sorter: tabulatorSorter(c.dtype),
       headerFilter: "input",
-      // maxWidth bounds any single very-long value (e.g. a big string) from
-      // stretching its whole column — text-overflow:ellipsis (CSS below)
-      // clips it, tooltip:true shows the full value on hover.
-      maxWidth: 280,
+      headerFilterPlaceholder: "filter…",
+      cssClass: numeric(c) ? "num" : "",
+      // dates/timestamps arrive as ISO text: show 2026-02-09, or 2026-02-09 13:05:00
+      ...(/^(date|timestamp)/.test(c.sql_type || "") ? { formatter: (cell) => {
+        const v = cell.getValue(); if (v == null) return "";
+        const t = String(v).replace("T", " ").replace(/\.000(Z)?$/, "").replace(/Z$/, "");
+        return c.sql_type === "date" ? t.slice(0, 10) : t;
+      } } : {}),
+      minWidth: 110,
+      // a few columns share the full width; with more, maxWidth bounds a very long value (ellipsis + tooltip)
+      ...(fewColumns ? {} : { maxWidth: 320 }),
       tooltip: true,
       // Fixed width skips Tabulator's per-column content-measurement pass,
       // which is what actually stalls the grid at high column counts —
@@ -1070,7 +985,7 @@
     table = new Tabulator("#table", {
       data: preview.rows,
       columns: columns,
-      layout: manyColumns ? "fitColumns" : "fitDataStretch",
+      layout: manyColumns || fewColumns ? "fitColumns" : "fitDataStretch",
       pagination: true,
       paginationSize: 50,
       paginationSizeSelector: [25, 50, 100, 250],
@@ -1182,6 +1097,7 @@
     clearError();
     renderTable(preview);
     renderPipeline(preview.steps);
+    renderFrames(preview.frames, preview.table_ref);
     document.getElementById("scriptBox").style.display = "none";
     document.getElementById("scriptCopyActions").style.display = "none";
     dismissQueryCheck(); // shared panel — stale after any pipeline change either way
@@ -1228,142 +1144,84 @@
   // ---------------------------------------------------------------------
   // EVENTS
   // ---------------------------------------------------------------------
-  const LARGE_FILE_WARNING_BYTES = 150 * 1024 * 1024; // 150 MB
-
-  const LOAD_FORMAT_GROUPS = {
-    csv: { group: "loadFieldsCsv", badge: "CSV", hint: "Row limit is read directly during parsing (low memory)." },
-    tsv: { group: "loadFieldsCsv", badge: "TSV", hint: "Row limit is read directly during parsing (low memory)." },
-    txt: { group: "loadFieldsCsv", badge: "TXT", hint: "Row limit is read directly during parsing (low memory)." },
-    json: {
-      group: "loadFieldsJson", badge: "JSON",
-      hint: "Row limit reads the whole file first, then trims — doesn't save memory for JSON.",
-    },
-    xml: {
-      group: "loadFieldsXml", badge: "XML",
-      hint: "Row limit reads the whole file first, then trims — doesn't save memory for XML.",
-    },
-    parquet: {
-      group: "loadFieldsParquet", badge: "Parquet",
-      hint: 'Row limit reads the whole file, then trims. Use "Columns to load" above for real memory savings — Parquet supports reading only chosen columns from disk.',
-    },
-  };
-  let currentLoadExt = "csv";
-
-  function updateLoadFormatFields() {
-    const input = document.getElementById("fileInput");
-    const name = input.files[0] ? input.files[0].name : "";
-    currentLoadExt = name.includes(".") ? name.split(".").pop().toLowerCase() : "csv";
-    const info = LOAD_FORMAT_GROUPS[currentLoadExt] || LOAD_FORMAT_GROUPS.csv;
-    document.querySelectorAll("#loadOptionsPanel .load-options-grid").forEach((el) => {
-      el.style.display = el.id === info.group ? "grid" : "none";
-    });
-    document.getElementById("loadFormatBadge").textContent = info.badge;
-    document.getElementById("loadFormatHint").textContent = info.hint;
-  }
-
-  document.getElementById("fileInput").addEventListener("change", updateLoadFormatFields);
-
-  document.getElementById("loadSep").addEventListener("change", (e) => {
-    document.getElementById("loadSepCustom").style.display = e.target.value === "__custom__" ? "block" : "none";
-  });
-
-  document.querySelectorAll("[data-nrows-preset]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.getElementById("loadNrows").value = btn.dataset.nrowsPreset;
-    });
-  });
-
-  function collectLoadOptions() {
-    const sepSelect = document.getElementById("loadSep").value;
-    const sep = sepSelect === "__custom__" ? document.getElementById("loadSepCustom").value : sepSelect;
-    const encodingEl =
-      currentLoadExt === "json" ? document.getElementById("loadEncodingJson") :
-      currentLoadExt === "xml" ? document.getElementById("loadEncodingXml") :
-      document.getElementById("loadEncoding");
-    return {
-      sep,
-      encoding: encodingEl.value,
-      header: document.getElementById("loadHeader").checked,
-      nrows: document.getElementById("loadNrows").value.trim(),
-      orient: document.getElementById("loadOrient").value,
-      lines: document.getElementById("loadLines").value,
-      xpath: document.getElementById("loadXpath").value.trim(),
-      columns: document.getElementById("loadColumns").value.trim(),
-    };
-  }
-
-  document.getElementById("loadBtn").addEventListener("click", async () => {
-    const input = document.getElementById("fileInput");
-    if (!input.files.length) {
-      showError("Choose a file first.");
-      return;
-    }
-    const file = input.files[0];
-    const options = collectLoadOptions();
-    if (file.size > LARGE_FILE_WARNING_BYTES && !options.nrows) {
-      showWarning(
-        `${(file.size / 1e6).toFixed(0)} MB is a big file — loading the whole thing can take a while and use a lot of memory. ` +
-          `Consider setting a row limit under "Load options" first (e.g. 5,000) to check the data looks right before loading everything.`
-      );
-    }
-
-    const loadBtn = document.getElementById("loadBtn");
-    const progress = document.getElementById("loadProgress");
-    loadBtn.disabled = true;
-    progress.style.display = "inline-block";
-    progress.value = 0;
-    const originalLabel = loadBtn.textContent;
-    loadBtn.textContent = "Uploading… 0%";
-
-    try {
-      const preview = await loadFile(file, options, (fraction) => {
-        const pct = Math.round(fraction * 100);
-        progress.value = pct;
-        if (pct < 100) {
-          loadBtn.textContent = `Uploading… ${pct}%`;
-        } else {
-          // Upload done, server is now parsing — we have no numeric progress
-          // for that phase, so switch to an indeterminate bar instead of
-          // sitting at a misleading "100%" while nothing visibly happens.
-          loadBtn.textContent = "Processing…";
-          progress.removeAttribute("value");
-        }
-      });
-      applyPreview(preview); // clears any warning/error banner on success
-      document.getElementById("loadOptionsPanel").open = false;
-    } catch (e) {
-      showError(e.message);
-    } finally {
-      loadBtn.disabled = false;
-      loadBtn.textContent = originalLabel;
-      progress.style.display = "none";
-    }
-  });
 
   // ── Load from Vault — reuses the exact /load response shape (applyPreview),
   // just sourced from core.vault instead of an HTTP upload. df-studio already
   // reads every load fully into memory as its own accepted design (see
   // engine.py), so there's no size cap here the way DataDiff Pro's "Load
   // from Vault" needs one — anything already saved to the vault is fine.
-  // Since roadmap L4 the list starts with Vault Data tables (📦 per workspace, value "lake:<ws>.<table>").
-  async function refreshVaultSelect() {
-    const select = document.getElementById("vaultSelect");
-    let html = '<option value="">— select —</option>';
-    try {
-      const cat = await api("/tools/vault/data/catalog");
-      (cat.workspaces || []).filter((w) => w.tables.length).forEach((w) => {
-        html += `<optgroup label="📦 ${escapeHtml(w.name)}">` + w.tables.map((t) =>
-          `<option value="lake:${escapeHtml(w.name)}.${escapeHtml(t.name)}">${escapeHtml(t.name)} (${Number(t.row_count).toLocaleString()} rows)</option>`).join("") + "</optgroup>";
-      });
-    } catch (e) { /* Vault Data unreachable — no table entries */ }
-    try {
-      const data = await api("/tools/vault/secrets");
-      const secrets = (data.secrets || []).filter((s) => s.has_data);
-      if (secrets.length) html += '<optgroup label="🔒 Datasets">' +
-        secrets.map((s) => `<option value="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join("") + "</optgroup>";
-    } catch (e) { /* Vault unreachable — select just stays empty, not fatal */ }
-    select.innerHTML = html;
+  // ── Tables bar (roadmap L5, Athena-style): every workspace → tables → columns with SQL types (as SQL Studio
+  // shows them: varchar(100), numeric(12,2)…). "Load" = the table becomes the DataFrame; "+ Join" = it's added by
+  // name for the Join step and as a variable in the Query box.
+  let catalog = [], frames = [], loadedRef = null;
+  const openWs = new Set(), openTb = new Set();
+  async function refreshCatalog() {
+    try { catalog = (await api("/tools/vault/data/catalog")).workspaces || []; }
+    catch (e) { document.getElementById("catTree").innerHTML = `<p class="hint">${escapeHtml(e.message)}</p>`; return; }
+    if (!openWs.size && catalog.length) openWs.add(catalog[0].name);
+    renderCatalog();
   }
+  function renderCatalog() {
+    const f = document.getElementById("catFilter").value.trim().toLowerCase();
+    const tree = document.getElementById("catTree");
+    const html = catalog.map((w) => {
+      const tables = w.tables.filter((t) => !f || (w.name + "." + t.name).includes(f) ||
+        t.columns.some((c) => c.name.toLowerCase().includes(f)));
+      if (!tables.length) return "";
+      const open = openWs.has(w.name) || !!f;
+      return `<div class="cat-ws${open ? " open" : ""}" data-ws="${escapeHtml(w.name)}">🗂 ${escapeHtml(w.name)}</div>` + (open ? tables.map((t) => {
+        const full = w.name + "." + t.name, tOpen = openTb.has(full);
+        // loaded = green. The first table is `df`; every other loaded table is a variable named after it (Query box)
+        const isMain = loadedRef === full, extra = frames.find((f) => f.ref === full), isLoaded = isMain || !!extra;
+        const varName = isMain ? "df" : extra ? extra.name : "";
+        const actions = isLoaded
+          ? `<span class="var" title="in the Query box this table is ${escapeHtml(varName)}">${escapeHtml(varName)}</span>
+             <button class="secondary" ${isMain ? 'data-clear="1"' : `data-unframe="${escapeHtml(extra.name)}"`} title="${isMain ? "Unload (start over)" : "Unload"}">✕</button>`
+          : `<button data-load="${escapeHtml(full)}" title="${loadedRef ? "Load it too — it becomes a variable named after the table" : "Load it as df"}">Load</button>`;
+        return `<div class="cat-tb${tOpen ? " open" : ""}${isLoaded ? " loaded" : ""}"><span class="nm" data-tb="${escapeHtml(full)}" title="${escapeHtml(full)}">${escapeHtml(t.name)}</span>
+          <span class="n">${Number(t.row_count).toLocaleString()}</span>${actions}</div>` +
+          (tOpen ? t.columns.map((c) => `<div class="cat-col"><span>${escapeHtml(c.name)}</span><span class="ty">${escapeHtml(c.sql_type || c.type || "")}</span></div>`).join("") : "");
+      }).join("") : "");
+    }).join("");
+    tree.innerHTML = (html || `<p class="hint">${catalog.length ? "No match." : 'No tables yet — load files in <a href="/tools/data-lake/" target="_top">Data Lake</a>.'}</p>`) +
+      (loadedRef ? '<div class="cat-legend">Green = loaded. The first is <code>df</code>; the others are variables with the table’s name — e.g. <code>df.merge(customers, on="customer_id")</code> in Query.</div>' : "");
+  }
+  document.getElementById("catFilter").addEventListener("input", renderCatalog);
+  document.getElementById("catTree").addEventListener("click", async (e) => {
+    const ws = e.target.closest("[data-ws]"), tb = e.target.closest("[data-tb]");
+    const load = e.target.closest("[data-load]"), un = e.target.closest("[data-unframe]"), clear = e.target.closest("[data-clear]");
+    if (clear) {
+      if (!confirm("Unload this table and start over? Your steps are removed too.")) return;
+      try { await api("session/clear", { method: "POST" }); location.reload(); } catch (err) { showError(err.message); }
+      return;
+    }
+    if (un) {
+      try { applyPreview(await api("frames/remove", { method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: un.dataset.unframe }) })); } catch (err) { showError(err.message); }
+      return;
+    }
+    if (ws) { openWs.has(ws.dataset.ws) ? openWs.delete(ws.dataset.ws) : openWs.add(ws.dataset.ws); renderCatalog(); return; }
+    if (tb) { openTb.has(tb.dataset.tb) ? openTb.delete(tb.dataset.tb) : openTb.add(tb.dataset.tb); renderCatalog(); return; }
+    if (load) {
+      const [w, t] = load.dataset.load.split(".");
+      load.disabled = true; load.textContent = "…";
+      try {
+        const preview = loadedRef  // already have df → this one becomes a named variable
+          ? await api("frames/add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace: w, table: t }) })
+          : await loadLakeTable(w, t);
+        if (preview) applyPreview(preview);
+      } catch (err) { showError(err.message); }
+      finally { load.disabled = false; load.textContent = "Load"; renderCatalog(); }
+    }
+  });
+  function renderFrames(list, ref) {
+    frames = list || [];
+    loadedRef = ref || null;
+    if (loadedRef) openWs.add(loadedRef.split(".")[0]);
+    renderCatalog();
+  }
+
+  refreshCatalog();
 
   async function loadLakeTable(ws, table, limit) {
     const res = await fetch("load/lake", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -1377,35 +1235,6 @@
     if (!res.ok || data.error) throw new Error(data.error || "Load from Vault Data failed.");
     return data;
   }
-  refreshVaultSelect();
-
-  document.getElementById("vaultLoadBtn").addEventListener("click", async () => {
-    const select = document.getElementById("vaultSelect");
-    const id = select.value;
-    if (!id) { showError("Choose a table or saved dataset first."); return; }
-    const name = select.selectedOptions[0].dataset.name;
-    const btn = document.getElementById("vaultLoadBtn");
-    btn.disabled = true;
-    try {
-      let preview;
-      if (id.startsWith("lake:")) {
-        const [ws, table] = id.slice(5).split(".");
-        preview = await loadLakeTable(ws, table);
-        if (!preview) return;
-      } else {
-        preview = await api("load/vault", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, name }),
-        });
-      }
-      applyPreview(preview);
-      document.getElementById("loadOptionsPanel").open = false;
-    } catch (e) {
-      showError(e.message);
-    } finally {
-      btn.disabled = false;
-    }
-  });
 
   // ── Save to Vault Data (roadmap L4): the transformed DataFrame becomes `workspace.table`; existing → ask.
   document.getElementById("saveLakeBtn").addEventListener("click", async () => {
@@ -1427,7 +1256,7 @@
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || "Save to Vault Data failed.");
       msg.textContent = `✓ Saved ${data.table.full_name} (${Number(data.table.row_count).toLocaleString()} rows).`;
-      refreshVaultSelect();
+      refreshCatalog();
     } catch (e) { msg.textContent = ""; showError(e.message); }
     finally { btn.disabled = false; }
   });
@@ -1745,7 +1574,6 @@
   populateSnippetSelect();
   refreshTemplates();
   restoreSession();
-  updateLoadFormatFields();
 })();
 </script>
 </body>

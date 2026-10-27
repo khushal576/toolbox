@@ -309,6 +309,39 @@ async def data_table_csv(ws: str, name: str, max_rows: int = DEFAULT_PREVIEW_MAX
     return JSONResponse({"ok": True, "csv": text, "row_count": info["rows"], "table": t["full_name"]})
 
 
+@app.get("/data/tables/{ws}/{name}/profile")
+async def data_profile(ws: str, name: str, refresh: bool = False) -> JSONResponse:
+    """Column profile (roadmap L5): nulls, distinct, min/max, numbers' mean/quartiles, most common values."""
+    from core import lake
+
+    return JSONResponse(await asyncio.to_thread(_lake_call, lake.profile, ws, name, refresh))
+
+
+@app.get("/data/tables/{ws}/{name}/joins")
+async def data_joins(ws: str, name: str) -> JSONResponse:
+    """Suggested joins with other tables (roadmap L5): matching names/types, checked on the data."""
+    from core import lake
+
+    return JSONResponse({"joins": await asyncio.to_thread(_lake_call, lake.suggest_joins, ws, name)})
+
+
+class TestS3Request(BaseModel):
+    data: dict
+    path: str
+
+
+@app.post("/test-s3")
+async def test_s3(body: TestS3Request) -> JSONResponse:
+    """Try an S3 location BEFORE saving it (roadmap L5): list what `path` matches with these credentials."""
+    from core import lake
+
+    try:
+        r = await asyncio.to_thread(lake.s3_match, None, body.path, body.data, 5)
+    except lake.LakeError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, **r})
+
+
 @app.post("/data/import-datasets")
 async def data_import_again() -> JSONResponse:
     from core import lake

@@ -3,7 +3,7 @@
 schema_version: 1
 name: ssh-sftp
 title: SSH & SFTP
-description: Browse, upload, download and run commands on servers saved in the Vault — host keys are pinned, uploads are verified and resumable and never overwrite unless you say so, and a server can be saved read-only
+description: Live terminal (log in once, keep typing), browse, upload, download and run commands on servers saved in the Vault — host keys are pinned, uploads are verified and resumable, a server can be saved read-only
 icon: 🔐
 category: tool
 kind: python

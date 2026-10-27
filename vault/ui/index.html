@@ -130,7 +130,7 @@
       <div class="card" id="wsCard">
         <h2 id="wsTitle">Pick a workspace</h2>
         <p class="hint" id="wsDesc">Tables are stored as Parquet in Toolbox's storage (fast to query). Loading files
-          into tables comes with the Data Lake tool (roadmap L2); tools will load from / save to here (L4).</p>
+          into tables: Data Lake tool. Duck Lab, DataFrame Studio, SQL Studio and DataDiff load from / save to here.</p>
         <div id="wsTables"></div>
         <div class="row-actions" id="wsActions" style="display:none;">
           <button class="action small" id="btnWsRename">Rename workspace</button>
@@ -143,6 +143,12 @@
         <div id="tblCols"></div>
         <h2 style="margin-top:14px;">First rows</h2>
         <div class="preview-wrap" id="tblPreview"></div>
+        <h2 style="margin-top:14px;">Profile <button class="action small" id="btnProfile" style="margin-left:8px;">Profile columns</button></h2>
+        <p class="hint">Per column: empty values, distinct values, smallest / largest, averages and the most common values.</p>
+        <div class="preview-wrap" id="tblProfile" style="display:none;"></div>
+        <h2 style="margin-top:14px;">Joins <button class="action small" id="btnJoins" style="margin-left:8px;">Suggest joins</button></h2>
+        <p class="hint">Columns that match columns of other tables — checked on the data, best first.</p>
+        <div id="tblJoins"></div>
         <div class="row-actions">
           <button class="action small" id="btnTblRename">Rename / move</button>
           <button class="action small danger" id="btnTblDelete">Delete table</button>
@@ -585,6 +591,7 @@ refresh();
     $("tblHist").innerHTML = (t.history || []).length ? `<table class="dt"><tbody>` + t.history.map((h) =>
       `<tr><td class="muted">${formatTimestamp(h.at)}</td><td>${esc(h.action)}</td><td class="mono muted">${esc(JSON.stringify(h.detail))}</td></tr>`).join("") +
       "</tbody></table>" : '<p class="empty-hint">No history.</p>';
+    $("tblProfile").style.display = "none"; $("tblProfile").innerHTML = ""; $("tblJoins").innerHTML = "";
     $("tblPreview").innerHTML = '<p class="empty-hint" style="padding:8px">Loading…</p>';
     try {
       const p = await api(`data/tables/${encodeURIComponent(curWs)}/${encodeURIComponent(curTbl)}/preview?rows=50`);
@@ -593,6 +600,39 @@ refresh();
         "</tbody></table>";
     } catch (e) { $("tblPreview").innerHTML = `<p class="empty-hint" style="padding:8px">${esc(e.message)}</p>`; }
   }
+
+  // ---- profile + suggested joins (roadmap L5) ----
+  async function showProfile(refresh) {
+    const box = $("tblProfile"); box.style.display = "block";
+    box.innerHTML = '<p class="empty-hint" style="padding:8px">Reading every row… (big tables take a few seconds)</p>';
+    try {
+      const p = await api(`data/tables/${encodeURIComponent(curWs)}/${encodeURIComponent(curTbl)}/profile${refresh ? "?refresh=true" : ""}`);
+      const n = (v) => v == null ? "" : typeof v === "number" ? v.toLocaleString(undefined, { maximumFractionDigits: 4 }) : esc(v);
+      box.innerHTML = `<table class="dt"><thead><tr><th>Column</th><th>Type</th><th class="num">Empty</th><th class="num">Distinct ≈</th>
+          <th>Smallest</th><th>Largest</th><th class="num">Average</th><th class="num">Median</th><th>Most common</th></tr></thead><tbody>` +
+        p.columns.map((c) => `<tr><td class="mono"><b>${esc(c.name)}</b></td><td class="mono muted">${esc(c.type)}</td>
+          <td class="num">${c.null_pct ? c.null_pct + "%" : "—"}</td><td class="num">${fmtN(c.distinct)}</td>
+          <td class="mono" title="${esc(c.min ?? "")}">${esc(String(c.min ?? "").slice(0, 24))}</td>
+          <td class="mono" title="${esc(c.max ?? "")}">${esc(String(c.max ?? "").slice(0, 24))}</td>
+          <td class="num">${n(c.mean)}</td><td class="num">${n(c.q50)}</td>
+          <td class="muted">${c.top.map((t) => `${esc(t.value.slice(0, 20))} <small>(${fmtN(t.count)})</small>`).join(", ")}</td></tr>`).join("") +
+        `</tbody></table><p class="hint" style="padding:6px 8px">${fmtN(p.rows)} rows` +
+        (p.top_from_sample ? ` · most common values from a sample of ${fmtN(p.top_from_sample)} rows` : "") +
+        ` · ${p.cached ? "saved " + formatTimestamp(p.created_at) + ' — <a href="#" id="profRefresh">refresh</a>' : "just now"}</p>`;
+      const r = $("profRefresh"); if (r) r.onclick = (e) => { e.preventDefault(); showProfile(true); };
+    } catch (e) { box.innerHTML = `<p class="empty-hint" style="padding:8px">${esc(e.message)}</p>`; }
+  }
+  $("btnProfile").onclick = () => showProfile(false);
+  $("btnJoins").onclick = async () => {
+    $("tblJoins").innerHTML = '<p class="empty-hint">Checking other tables…</p>';
+    try {
+      const j = (await api(`data/tables/${encodeURIComponent(curWs)}/${encodeURIComponent(curTbl)}/joins`)).joins;
+      $("tblJoins").innerHTML = j.length ? `<table class="dt"><thead><tr><th>This column</th><th>Matches</th><th class="num">Values found</th><th>SQL</th></tr></thead><tbody>` +
+        j.map((x) => `<tr><td class="mono">${esc(x.column)}</td><td class="mono">${esc(x.table)}.${esc(x.other_column)}</td>
+          <td class="num">${x.overlap_pct}% <small class="muted">of ${fmtN(x.checked_values)}</small></td><td class="mono muted">${esc(x.join)}</td></tr>`).join("") +
+        "</tbody></table>" : '<p class="empty-hint">No likely joins with other tables.</p>';
+    } catch (e) { $("tblJoins").innerHTML = `<p class="empty-hint">${esc(e.message)}</p>`; }
+  };
 
   $("wsList").addEventListener("click", async (e) => {
     const li = e.target.closest("[data-ws]"); if (!li) return;

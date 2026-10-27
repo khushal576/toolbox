@@ -80,6 +80,8 @@ def connect(connection_id: str) -> Iterator[tuple[Any, Any, dict]]:
         with dialect.checkout(pool) as conn:
             if db_type == "postgres":
                 conn.read_only = True  # staging never writes to the source
+            if db_type == "oracle":  # NUMBER(p,s>0) as exact decimals, not floats (money!) — this connection only
+                conn.outputtypehandler = _oracle_decimals
             yield conn, dialect, d
     except StageError:
         raise
@@ -92,6 +94,16 @@ def connect(connection_id: str) -> Iterator[tuple[Any, Any, dict]]:
         if tunnel is not None:
             with contextlib.suppress(Exception):
                 tunnel.stop()
+
+
+def _oracle_decimals(cursor: Any, metadata: Any) -> Any:
+    import decimal
+
+    import oracledb
+
+    if metadata.type_code is oracledb.DB_TYPE_NUMBER and (metadata.scale or 0) > 0:
+        return cursor.var(decimal.Decimal, arraysize=cursor.arraysize)
+    return None
 
 
 def list_tables(connection_id: str) -> list[dict[str, Any]]:
@@ -125,6 +137,43 @@ def _check_select(sql: str) -> str:
     if ";" in re.sub(r"'(?:[^']|'')*'", "''", body):
         raise StageError("Stage one statement at a time.")
     return sql
+
+
+def _lit(v: str) -> str:
+    return "'" + str(v).replace("'", "''") + "'"
+
+
+def declared_types(conn: Any, db_type: str, schema: str, table: str) -> dict[str, str]:
+    """{column: its declared type in the source database} — varchar(100), numeric(12,2), NVARCHAR(MAX)… — kept in
+    the table's source so every tool shows the type the way SQL Studio does (Parquet loses lengths). Best effort:
+    {} when the catalog can't be read."""
+    if db_type == "postgres":
+        sql = (f"SELECT a.attname, format_type(a.atttypid, a.atttypmod) FROM pg_attribute a JOIN pg_class c ON "
+               f"c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = {_lit(schema)} "
+               f"AND c.relname = {_lit(table)} AND a.attnum > 0 AND NOT a.attisdropped")
+    elif db_type == "mssql":
+        sql = ("SELECT column_name, data_type + CASE WHEN character_maximum_length = -1 THEN '(max)' "
+               "WHEN character_maximum_length IS NOT NULL THEN '(' + CAST(character_maximum_length AS varchar) + ')' "
+               "WHEN data_type IN ('decimal', 'numeric') THEN '(' + CAST(numeric_precision AS varchar) + ',' + "
+               "CAST(numeric_scale AS varchar) + ')' ELSE '' END FROM information_schema.columns "
+               f"WHERE table_schema = {_lit(schema)} AND table_name = {_lit(table)}")
+    elif db_type == "oracle":
+        sql = ("SELECT column_name, data_type || CASE WHEN data_type IN ('VARCHAR2', 'NVARCHAR2', 'CHAR', 'NCHAR') "
+               "THEN '(' || char_length || ')' WHEN data_type = 'NUMBER' AND data_precision IS NOT NULL THEN '(' || "
+               "data_precision || ',' || NVL(data_scale, 0) || ')' ELSE '' END FROM all_tab_columns "
+               f"WHERE owner = {_lit(schema)} AND table_name = {_lit(table)}")
+    else:
+        return {}
+    try:
+        cur = conn.cursor()
+        cur.execute(sql)
+        out = {str(r[0]): str(r[1]) for r in cur.fetchall()}
+        cur.close()
+        return out
+    except Exception:  # noqa: BLE001 — types are a nicety; staging goes on without them
+        with contextlib.suppress(Exception):
+            conn.rollback()
+        return {}
 
 
 def _cell(v: Any) -> Any:
@@ -225,9 +274,11 @@ def run_stage(ctx: Any, spec: dict[str, Any]) -> None:
             db_type = (d.get("db_type") or "postgres").lower()
             log("info", f"connected to {d.get('name') or 'database'} ({db_type}) — read-only")
             for i, (target, sql, label) in enumerate(jobs):
+                declared = {}
                 if sql is None:
                     schema, _, table = label.rpartition(".")
                     sql = f"SELECT * FROM {_quote(db_type, schema) + '.' if schema else ''}{_quote(db_type, table)}"
+                    declared = declared_types(conn, db_type, schema, table)
                 p.update(phase=f"reading {label}", current=label)
                 work = work_root / f"t{i}"
                 work.mkdir()
@@ -235,7 +286,7 @@ def run_stage(ctx: Any, spec: dict[str, Any]) -> None:
                 p["phase"] = f"storing {ws}.{target}"
                 parts = _merge(batches, cols, work / "parts", work)
                 t = lake.write_table(ws, target, parts, mode=mode, create_workspace_if_missing=True, source={
-                    "kind": "database", "connection": d.get("name"), "db_type": db_type,
+                    "kind": "database", "connection": d.get("name"), "db_type": db_type, "column_types": declared,
                     **({"table": label} if label != "query" else {"sql": sql[:4000]})})
                 shutil.rmtree(work, ignore_errors=True)
                 p.update(tables_done=i + 1, rows_done=p.get("rows_done", 0) + rows)

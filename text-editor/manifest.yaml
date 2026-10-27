@@ -1,0 +1,16 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Client-side: all editing happens in the browser (CodeMirror 6, local bundle); nothing is sent to the server.
+schema_version: 1
+name: text-editor
+title: Text Editor
+description: Notepad++-style editor for messy text — regex find/replace, multi-cursor, validate & format JSON/XML/HTML, sort/dedupe lines, split compare; 50k+ lines
+icon: 📝
+category: tool
+kind: python
+entry: text_editor.server:app
+runtime: light
+tier: 1
+state: []
+depends_on: []
+requires: []
+order: 25

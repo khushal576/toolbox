@@ -12,12 +12,26 @@ in STEP_HANDLERS, and add its UI form in ui/index.html.
 
 from __future__ import annotations
 
+import contextvars
+import re
 from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
 
 StepHandler = Callable[[pd.DataFrame, dict[str, Any]], tuple[pd.DataFrame, str]]
+
+
+# Other tables the session added by name (roadmap L5, "Add for join"): name → loader returning a DataFrame. Set by
+# engine.recompute() around a replay, read by the join step and handed to custom_code as variables.
+FRAMES: contextvars.ContextVar[dict[str, Callable[[], pd.DataFrame]]] = contextvars.ContextVar("frames", default={})
+
+
+def other_frame(name: str) -> pd.DataFrame:
+    loader = FRAMES.get().get(name)
+    if loader is None:
+        raise ValueError(f"No table named '{name}' is added — add it from the Tables list first.")
+    return loader()
 
 
 def _require_columns(df: pd.DataFrame, columns: list[str]) -> None:
@@ -92,6 +106,9 @@ def custom_code(df: pd.DataFrame, params: dict[str, Any]) -> tuple[pd.DataFrame,
         raise ValueError("Define a function named transform(df) that returns a DataFrame.")
 
     namespace: dict[str, Any] = {"pd": pd, "np": np}
+    for name in FRAMES.get():  # added tables are variables named after them — only the ones the code mentions load
+        if re.search(rf"\b{re.escape(name)}\b", code):
+            namespace[name] = other_frame(name)
     try:
         exec(code, namespace)  # noqa: S102 - trusted single-user local tool, by design (see CLAUDE.md)
     except Exception as exc:  # noqa: BLE001
@@ -121,6 +138,30 @@ def custom_code(df: pd.DataFrame, params: dict[str, Any]) -> tuple[pd.DataFrame,
     return result, generated
 
 
+def join_table(df: pd.DataFrame, params: dict[str, Any]) -> tuple[pd.DataFrame, str]:
+    """Join another added table (by name) — pd.merge with left/inner/right/outer, matching columns per side."""
+    name = str(params.get("table", "")).strip()
+    how = str(params.get("how") or "left")
+    if how not in ("left", "inner", "right", "outer"):
+        raise ValueError("Join type must be left, inner, right or outer.")
+    as_list = lambda v: [v] if isinstance(v, str) else list(v or [])  # noqa: E731 — the page sends one key pair
+    left_on = [c for c in as_list(params.get("left_on")) if c]
+    right_on = [c for c in as_list(params.get("right_on")) if c]
+    if not name or not left_on or len(left_on) != len(right_on):
+        raise ValueError("Choose a table and the same number of matching columns on each side.")
+    other = other_frame(name)
+    _require_columns(df, left_on)
+    missing = [c for c in right_on if c not in other.columns]
+    if missing:
+        raise ValueError(f"Column(s) not in {name}: {', '.join(missing)}")
+    suffix = f"_{name}"
+    out = df.merge(other, how=how, left_on=left_on, right_on=right_on, suffixes=("", suffix))
+    lo = left_on[0] if len(left_on) == 1 else left_on
+    ro = right_on[0] if len(right_on) == 1 else right_on
+    code = (f"df = df.merge({name}, how={how!r}, left_on={lo!r}, right_on={ro!r}, suffixes=('', {suffix!r}))")
+    return out, code
+
+
 STEP_HANDLERS: dict[str, StepHandler] = {
     "rename_column": rename_column,
     "drop_columns": drop_columns,
@@ -128,6 +169,7 @@ STEP_HANDLERS: dict[str, StepHandler] = {
     "filter_rows": filter_rows,
     "sort_rows": sort_rows,
     "custom_code": custom_code,
+    "join_table": join_table,
 }
 
 STEP_LABELS: dict[str, str] = {
@@ -137,4 +179,5 @@ STEP_LABELS: dict[str, str] = {
     "filter_rows": "Filter rows",
     "sort_rows": "Sort",
     "custom_code": "Custom Python",
+    "join_table": "Join table",
 }

@@ -13,6 +13,8 @@ POST /load                   start a load job → {job_id}   (body: see loader.r
 GET  /loads/{job_id}         job state: running/queued, phase, percent, log, result
 POST /loads/{job_id}/stop    stop it
 GET  /recent                 latest table changes in Vault Data
+GET  /s3/locations           saved Vault S3 locations (names only)          (roadmap L5)
+GET  /s3/match?location_id=&pattern=   which S3 objects a pattern matches (count + first 20)
 
 SQL (L3)
 GET  /catalog                every workspace → tables → columns (the editor's tree + autocomplete)
@@ -80,6 +82,7 @@ class Source(BaseModel):
     files: list[str] = Field(default_factory=list)
     pattern: Optional[str] = None
     url: Optional[str] = None
+    location_id: Optional[str] = None   # kind "s3": the Vault S3 location (roadmap L5)
 
 
 class LoadBody(BaseModel):
@@ -413,3 +416,18 @@ def stage_status(job_id: str) -> dict[str, Any]:
 @app.post("/stages/{job_id}/stop")
 def stage_stop(job_id: str) -> dict[str, Any]:
     return {"stopping": JOBS.stop("s-" + job_id)}
+
+
+# ---- AWS S3 locations (roadmap L5) -----------------------------------------------------------------------------
+
+@app.get("/s3/locations")
+def s3_locations() -> dict[str, Any]:
+    return {"locations": [{"id": s["id"], "name": s["name"]} for s in staging._vault().list_secrets(lake_store.S3_KIND)]}
+
+
+@app.get("/s3/match")
+def s3_match(location_id: str, pattern: str) -> dict[str, Any]:
+    try:
+        return lake.s3_match(location_id, pattern)
+    except lake_store.LakeError as exc:
+        raise _err(exc) from exc

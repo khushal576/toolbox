@@ -82,6 +82,12 @@ CREATE TABLE IF NOT EXISTS history (
 );
 CREATE INDEX IF NOT EXISTS idx_lake_history_table ON history(table_id, at);
 CREATE TABLE IF NOT EXISTS _lake_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS profiles (
+    table_id TEXT PRIMARY KEY,          -- roadmap L5: column profile of the table's current version (cache)
+    version INTEGER NOT NULL,
+    profile TEXT NOT NULL,              -- JSON
+    created_at TEXT NOT NULL
+);
 """
 
 STORE = SqlStore("lake", sqlite_path=DATA_DIR / "lake.db", ddl=_SCHEMA)
@@ -220,10 +226,41 @@ def delete_workspace(name: str, drop_tables: bool = False) -> int:
 
 # ---- tables -------------------------------------------------------------------------------------------------------
 
+_SQL_TYPES = {"VARCHAR": "varchar", "BIGINT": "bigint", "INTEGER": "integer", "SMALLINT": "smallint",
+              "TINYINT": "smallint", "UBIGINT": "numeric(20,0)", "UINTEGER": "bigint", "USMALLINT": "integer",
+              "UTINYINT": "smallint", "HUGEINT": "numeric(38,0)", "DOUBLE": "double precision", "FLOAT": "real",
+              "BOOLEAN": "boolean", "DATE": "date", "TIME": "time", "TIMESTAMP": "timestamp",
+              "TIMESTAMP WITH TIME ZONE": "timestamptz", "TIMESTAMP_NS": "timestamp", "TIMESTAMP_MS": "timestamp",
+              "TIMESTAMP_S": "timestamp", "INTERVAL": "interval", "BLOB": "bytea", "UUID": "uuid", "JSON": "json"}
+_PG_SHORT = [(r"^character varying", "varchar"), (r"^character\b", "char"), (r"^timestamp(\(\d\))? with time zone", "timestamptz"),
+             (r"^timestamp(\(\d\))? without time zone", "timestamp"), (r"^time(\(\d\))? without time zone", "time"),
+             (r"^double precision", "double precision")]
+
+
+def sql_type(duckdb_type: Optional[str], declared: Optional[str] = None) -> str:
+    """A column type the way SQL Studio shows it (roadmap L5): the source database's own declared type when the
+    table was copied from one (varchar(100), numeric(12,2)…), else the Parquet/DuckDB type in SQL words
+    (VARCHAR → varchar, DECIMAL(12,2) → numeric(12,2), TIMESTAMP WITH TIME ZONE → timestamptz). Parquet keeps no
+    varchar length, so file-loaded text is plain `varchar`."""
+    if declared:
+        t = str(declared).strip().lower()
+        for pat, short in _PG_SHORT:
+            t = re.sub(pat, short, t)
+        return t
+    t = str(duckdb_type or "").strip().upper()
+    m = re.match(r"^DECIMAL\((\d+),\s*(\d+)\)$", t)
+    if m:
+        return f"numeric({m.group(1)},{m.group(2)})"
+    return _SQL_TYPES.get(t, t.lower())
+
+
 def _table_dict(row: Any, ws_name: str) -> dict[str, Any]:
     d = dict(row)
     d["columns"] = json.loads(d["columns"] or "[]")
     d["source"] = json.loads(d["source"] or "{}")
+    declared = d["source"].get("column_types") or {}
+    for c in d["columns"]:
+        c["sql_type"] = sql_type(c.get("type"), declared.get(c["name"]))
     d["workspace"] = ws_name
     d["full_name"] = f"{ws_name}.{d['name']}"
     return d
@@ -404,6 +441,7 @@ def drop_table(workspace: str, name: str) -> None:
     with _connect() as con:
         t = _table(con, workspace, name)
         con.execute("DELETE FROM tables WHERE id = ?", (t["id"],))
+        con.execute("DELETE FROM profiles WHERE table_id = ?", (t["id"],))
         _history(con, t["id"], workspace, name, "drop")
     if t["kind"] == "managed":
         _remove_files(t["id"])
@@ -421,11 +459,18 @@ def register_external(workspace: str, name: str, location: str, fmt: str, *, opt
     _ready_store()
     name = check_name(name, "table name")
     opts = dict(options or {})
+    if location.startswith("s3://") and not opts.get("s3_location"):
+        raise LakeError("An s3:// table needs an S3 location from the Vault (credentials).")
     expr = build_multi_read_expr([location], fmt, header=opts.get("header"), delimiter=opts.get("delimiter"))
     con = duckdb.connect(":memory:")
     try:
-        cols = con.execute(f"DESCRIBE SELECT * FROM {expr}").fetchall()
-        rows = con.execute(f"SELECT COUNT(*) FROM {expr}").fetchone()[0]
+        if location.startswith("s3://"):
+            use_s3(con, opts["s3_location"], location)
+        try:
+            cols = con.execute(f"DESCRIBE SELECT * FROM {expr}").fetchall()
+            rows = con.execute(f"SELECT COUNT(*) FROM {expr}").fetchone()[0]
+        except duckdb.Error as exc:
+            raise LakeError(f"Could not read {location}: {str(exc).splitlines()[0][:300]}") from None
     finally:
         con.close()
     columns = [{"name": c[0], "type": c[1]} for c in cols]
@@ -457,8 +502,19 @@ def register_external(workspace: str, name: str, location: str, fmt: str, *, opt
     return get_table(workspace, name)
 
 
+def prepare(con: Any, table: dict[str, Any]) -> None:
+    """Give a DuckDB connection what it needs to read `table` (roadmap L5: an external table in S3 gets its
+    credentials as a temporary, bucket-scoped secret). Call before using read_expr() on that connection."""
+    if table.get("kind") == "external" and str(table.get("location", "")).startswith("s3://"):
+        loc = ((table.get("source") or {}).get("options") or {}).get("s3_location")
+        if not loc:
+            raise LakeError(f"{table.get('full_name', 'table')}: no S3 location (credentials) recorded.")
+        use_s3(con, loc, table["location"])
+
+
 def read_expr(workspace: str, name: str) -> str:
-    """A DuckDB expression that reads the table (managed: its Parquet parts; external: its files in place)."""
+    """A DuckDB expression that reads the table (managed: its Parquet parts; external: its files in place — for an
+    s3:// table call prepare(con, table) on the connection first)."""
     from core.file_source import build_multi_read_expr
 
     t = get_table(workspace, name)
@@ -507,6 +563,7 @@ def preview(workspace: str, name: str, limit: int = 50) -> dict[str, Any]:
         expr = read_expr(workspace, name)
     con = duckdb.connect(":memory:")
     try:
+        prepare(con, t)
         select = "*"
         if t["kind"] == "managed":  # part 0 may predate columns added by a later append: show those as NULL
             have = {r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {expr}").fetchall()}
@@ -576,6 +633,257 @@ def import_vault_datasets(again: bool = False) -> dict[str, Any]:
     return result
 
 
+# ---- AWS S3 / S3-compatible locations (roadmap L5) ----------------------------------------------------------------
+# A Vault secret of kind `s3_location` holds {access_key_id, secret_access_key, region, endpoint?, url_style?,
+# use_ssl?, session_token?}. External tables (and loads) on s3://bucket/... record its id in their options; every
+# DuckDB connection that reads them gets a TEMPORARY secret scoped to that bucket (nothing written to disk).
+
+S3_KIND = "s3_location"
+
+
+def _lit(v: Any) -> str:
+    return "'" + str(v).replace("'", "''") + "'"
+
+
+def s3_bucket(path: str) -> str:
+    m = re.match(r"^s3://([^/]+)", path or "")
+    if not m:
+        raise LakeError("An S3 path looks like s3://bucket/folder/*.parquet")
+    return m.group(1)
+
+
+def s3_secret_sql(data: dict[str, Any], name: str, scope: Optional[str] = None) -> str:
+    parts = ["TYPE S3", f"KEY_ID {_lit(data.get('access_key_id', ''))}", f"SECRET {_lit(data.get('secret_access_key', ''))}",
+             f"REGION {_lit(data.get('region') or 'us-east-1')}"]
+    if data.get("session_token"):
+        parts.append(f"SESSION_TOKEN {_lit(data['session_token'])}")
+    if data.get("endpoint"):
+        ep = re.sub(r"^https?://", "", str(data["endpoint"])).rstrip("/")
+        parts.append(f"ENDPOINT {_lit(ep)}")
+        parts.append(f"URL_STYLE {_lit(data.get('url_style') or 'path')}")
+        use_ssl = data.get("use_ssl")
+        if use_ssl is None:
+            use_ssl = not str(data["endpoint"]).startswith("http://")
+        parts.append(f"USE_SSL {'true' if use_ssl else 'false'}")
+    if scope:
+        parts.append(f"SCOPE {_lit(scope)}")
+    return f"CREATE OR REPLACE TEMPORARY SECRET {name} ({', '.join(parts)})"
+
+
+def s3_error_text(exc: Exception) -> str:
+    """DuckDB's S3 errors in plain words (the raw text names an HTTP request, not the problem)."""
+    raw = str(exc).splitlines()[0][:300]
+    if "403" in raw:
+        return "S3 said access denied (403) — check the access key / secret, the region and the bucket's permissions."
+    if "404" in raw or "NoSuchBucket" in raw:
+        return "S3 says that bucket or path doesn't exist (404)."
+    if "Could not establish connection" in raw or "resolve" in raw.lower() or "timed out" in raw.lower():
+        return f"Couldn't reach S3 — check the endpoint / network. ({raw})"
+    return f"S3: {raw}"
+
+
+def use_s3(con: Any, location_id: str, path: str, data: Optional[dict] = None) -> None:
+    """Let `con` read `path` (s3://bucket/...) with the Vault S3 location `location_id` (or explicit `data`, used
+    by the Vault's "test" button before saving)."""
+    from core import vault
+
+    if data is None:
+        try:
+            data = vault.get_secret(location_id)
+        except vault.SecretNotFound:
+            raise LakeError("The S3 location for this table is no longer in the Vault.") from None
+    bucket = s3_bucket(path)
+    con.execute("LOAD httpfs")
+    name = "s3_" + re.sub(r"[^a-z0-9]", "_", f"{(location_id or 'test')[:12]}_{bucket}".lower())
+    con.execute(s3_secret_sql(data, name, scope=f"s3://{bucket}"))
+
+
+def s3_match(location_id: Optional[str], pattern: str, data: Optional[dict] = None, limit: int = 20) -> dict[str, Any]:
+    """Which objects a pattern matches (count + first `limit`) — the Data Lake's live preview and the Vault's
+    "test" button. A folder (ending in /) means everything under it."""
+    import duckdb
+
+    pat = pattern.strip()
+    if pat.endswith("/"):
+        pat += "**"
+    con = duckdb.connect(":memory:")
+    try:
+        use_s3(con, location_id or "", pat, data)
+        try:
+            files = [r[0] for r in con.execute("SELECT file FROM glob(?) ORDER BY file", [pat]).fetchall()]
+        except duckdb.Error as exc:
+            raise LakeError(s3_error_text(exc)) from None
+    finally:
+        con.close()
+    return {"pattern": pat, "count": len(files), "sample": files[:limit]}
+
+
+# ---- column profiles (roadmap L5) ---------------------------------------------------------------------------------
+
+PROFILE_SAMPLE = int(os.environ.get("LAKE_PROFILE_SAMPLE", "200000"))
+_NUMERIC = re.compile(r"^(TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT|FLOAT|DOUBLE|"
+                      r"REAL|DECIMAL.*)$", re.I)
+
+
+def _q(ident: str) -> str:
+    return '"' + ident.replace('"', '""') + '"'
+
+
+def profile(workspace: str, name: str, refresh: bool = False) -> dict[str, Any]:
+    """Per column: type, count, nulls %, distinct (approx.), min / max, mean / std / quartiles for numbers, and the
+    most common values. Exact over the whole table (DuckDB SUMMARIZE); most-common values from a sample of
+    PROFILE_SAMPLE rows on bigger tables. Cached per table version (external tables: until refreshed)."""
+    import duckdb
+
+    _ready_store()
+    t = get_table(workspace, name)
+    if not refresh:
+        with _connect() as con:
+            r = con.execute("SELECT * FROM profiles WHERE table_id = ?", (t["id"],)).fetchone()
+        if r is not None and r["version"] == t["version"]:
+            return {**json.loads(r["profile"]), "cached": True}
+    expr = read_expr(workspace, name)
+    con = duckdb.connect(":memory:")
+    try:
+        prepare(con, t)
+        con.execute(f"SET memory_limit = '{os.environ.get('LAKE_EXPORT_MEMORY', '512MB')}'")
+        con.execute(f"SET temp_directory = '{tempfile.gettempdir()}/lake-profile-spill'")
+        cur = con.execute(f"SUMMARIZE SELECT * FROM {expr}")
+        keys = [d[0] for d in cur.description]
+        summary = [dict(zip(keys, row)) for row in cur.fetchall()]
+        total = int(summary[0]["count"]) if summary else 0
+        sampled = total > PROFILE_SAMPLE
+        con.execute(f"CREATE TEMP TABLE _s AS SELECT * FROM {expr}"
+                    + (f" USING SAMPLE {PROFILE_SAMPLE} ROWS" if sampled else ""))
+        cols = []
+        for srow in summary:
+            c = srow["column_name"]
+            top = con.execute(f"SELECT {_q(c)}::VARCHAR AS v, count(*) AS n FROM _s WHERE {_q(c)} IS NOT NULL "
+                              f"GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 5").fetchall()
+            numeric = bool(_NUMERIC.match(str(srow["column_type"])))
+            nulls = float(srow.get("null_percentage") or 0)
+            cols.append({
+                "name": c, "type": srow["column_type"], "null_pct": round(nulls, 2),
+                "distinct": int(srow["approx_unique"] or 0),
+                "min": None if srow["min"] is None else str(srow["min"]),
+                "max": None if srow["max"] is None else str(srow["max"]),
+                **({"mean": _num(srow.get("avg")), "std": _num(srow.get("std")), "q25": _num(srow.get("q25")),
+                    "q50": _num(srow.get("q50")), "q75": _num(srow.get("q75"))} if numeric else {}),
+                "top": [{"value": v[:200], "count": int(n)} for v, n in top],
+            })
+    except duckdb.Error as exc:
+        raise LakeError(f"Could not profile {t['full_name']}: {str(exc).splitlines()[0][:300]}") from None
+    finally:
+        con.close()
+    out = {"table": t["full_name"], "rows": total, "columns": cols, "version": t["version"],
+           "top_from_sample": PROFILE_SAMPLE if sampled else None, "created_at": _now()}
+    with _connect() as con:
+        con.execute("DELETE FROM profiles WHERE table_id = ?", (t["id"],))
+        con.execute("INSERT INTO profiles (table_id, version, profile, created_at) VALUES (?, ?, ?, ?)",
+                    (t["id"], t["version"], json.dumps(out, default=str), out["created_at"]))
+    return {**out, "cached": False}
+
+
+def _num(v: Any) -> Any:
+    if v is None:
+        return None
+    try:
+        return round(float(v), 6)
+    except (TypeError, ValueError):
+        return str(v)
+
+
+# ---- suggested joins (roadmap L5) ---------------------------------------------------------------------------------
+
+def _type_family(t: str) -> str:
+    t = (t or "").upper()
+    if re.match(r"^(U?TINYINT|U?SMALLINT|U?INTEGER|U?BIGINT|HUGEINT|DECIMAL\(\d+, ?0\))$", t):
+        return "int"
+    if t.startswith(("VARCHAR", "CHAR", "TEXT", "STRING")):
+        return "text"
+    if t == "UUID":
+        return "text"
+    if t.startswith(("DATE", "TIMESTAMP")):
+        return t.split()[0]
+    return t
+
+
+def _singular(name: str) -> str:
+    if name.endswith("ies"):
+        return name[:-3] + "y"
+    if name.endswith("ses"):
+        return name[:-2]
+    return name[:-1] if name.endswith("s") else name
+
+
+_GENERIC = {"id", "name", "value", "description", "status", "type", "created_at", "updated_at", "date", "note", "notes",
+            "title", "comment", "amount", "price", "count", "total", "_source_file"}   # same name ≠ same thing
+MIN_OVERLAP = 5.0   # % of my sampled values found in the other column; below that it's coincidence
+
+
+def suggest_joins(workspace: str, name: str, limit: int = 10, max_checks: int = 25) -> list[dict[str, Any]]:
+    """Columns of `workspace.name` that look joinable with columns of other tables: same / `<table>_id` ↔ `id`
+    names and a compatible type, then CHECKED on the data — the share of this column's distinct values (a sample of
+    up to 2000) found in the other column. Best first; each comes with a ready JOIN clause."""
+    import duckdb
+
+    me = get_table(workspace, name)
+    tables = [t for w in list_workspaces() for t in list_tables(w["name"])]
+    cands = []
+    for c in me["columns"]:
+        cn, cf = c["name"].lower(), _type_family(c.get("type"))
+        for u in tables:
+            if u["id"] == me["id"]:
+                continue
+            for d in u["columns"]:
+                dn = d["name"].lower()
+                if _type_family(d.get("type")) != cf:
+                    continue
+                score = 0
+                if cn == dn and cn not in _GENERIC and cf not in ("DATE", "TIMESTAMP"):  # dates rarely are keys
+                    score = 3 if cn.endswith("id") else 2
+                if dn == "id" and cn in (f"{_singular(u['name'])}_id", f"{u['name']}_id"):
+                    score = 5
+                if cn == "id" and dn in (f"{_singular(me['name'])}_id", f"{me['name']}_id"):
+                    score = 5
+                if score:
+                    cands.append((score, c, u, d))
+    cands.sort(key=lambda x: -x[0])
+    out = []
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute(f"SET memory_limit = '{os.environ.get('LAKE_EXPORT_MEMORY', '512MB')}'")
+        con.execute(f"SET temp_directory = '{tempfile.gettempdir()}/lake-joins-spill'")
+        prepare(con, me)
+        mine: dict[str, tuple[str, int]] = {}  # my column → (temp table of up to 2000 of its distinct values, count)
+        for score, c, u, d in cands[:max_checks]:
+            try:
+                if c["name"] not in mine:
+                    tmp = f"_mine_{len(mine)}"
+                    con.execute(f"CREATE TEMP TABLE {tmp} AS SELECT DISTINCT {_q(c['name'])} AS v FROM "
+                                f"{read_expr(workspace, name)} WHERE {_q(c['name'])} IS NOT NULL LIMIT 2000")
+                    mine[c["name"]] = (tmp, con.execute(f"SELECT count(*) FROM {tmp}").fetchone()[0])
+                tmp, n = mine[c["name"]]
+                if not n:
+                    continue
+                prepare(con, u)
+                found = con.execute(f"SELECT count(*) FROM {tmp} WHERE v IN (SELECT {_q(d['name'])} FROM "
+                                    f"{read_expr(u['workspace'], u['name'])})").fetchone()[0]
+            except (duckdb.Error, LakeError):
+                continue
+            if 100.0 * found / n < MIN_OVERLAP:
+                continue
+            alias = u["name"] if u["name"] != name else "other"
+            out.append({"column": c["name"], "table": u["full_name"], "other_column": d["name"],
+                        "overlap_pct": round(100.0 * found / n, 1), "checked_values": n, "name_score": score,
+                        "join": f"JOIN {u['full_name']}{' AS other' if alias == 'other' else ''} "
+                                f"ON {name}.{_q(c['name'])} = {alias}.{_q(d['name'])}"})
+    finally:
+        con.close()
+    out.sort(key=lambda j: (-j["overlap_pct"], -j["name_score"]))
+    return out[:limit]
+
+
 # ---- moving data in and out (roadmap L4: every tool's "Load from / Save to Vault Data") ---------------------------
 
 def catalog() -> list[dict[str, Any]]:
@@ -585,7 +893,8 @@ def catalog() -> list[dict[str, Any]]:
         out.append({"name": w["name"], "description": w.get("description") or "",
                     "tables": [{"name": t["name"], "full_name": t["full_name"], "kind": t["kind"],
                                 "row_count": t["row_count"], "size_bytes": t["size_bytes"],
-                                "columns": [{"name": c["name"], "type": c.get("type")} for c in t["columns"]]}
+                                "columns": [{"name": c["name"], "type": c.get("type"), "sql_type": c.get("sql_type")}
+                                            for c in t["columns"]]}
                                for t in list_tables(w["name"])]})
     return out
 
@@ -602,14 +911,15 @@ def export_table(workspace: str, name: str, dest: Path, fmt: str = "parquet", li
     dest.parent.mkdir(parents=True, exist_ok=True)
     lim = f" LIMIT {int(limit)}" if limit else ""
     opts = "FORMAT PARQUET" if fmt == "parquet" else "FORMAT CSV, HEADER"
+    t = get_table(workspace, name)
     con = duckdb.connect(":memory:")
     try:
+        prepare(con, t)
         con.execute(f"SET memory_limit = '{os.environ.get('LAKE_EXPORT_MEMORY', '512MB')}'")
         con.execute(f"SET temp_directory = '{tempfile.gettempdir()}/lake-export-spill'")
         con.execute(f"COPY (SELECT * FROM {expr}{lim}) TO '{dest}' ({opts})")
     finally:
         con.close()
-    t = get_table(workspace, name)
     rows = min(t["row_count"], int(limit)) if limit else t["row_count"]
     return {"path": dest, "rows": int(rows), "columns": [c["name"] for c in t["columns"]]}
 
@@ -722,6 +1032,22 @@ class ScopedLake:
     def import_file(self, workspace, name, path, **kw):
         self._need("write")
         return import_file(workspace, name, path, **kw)
+
+    def prepare(self, con, table):
+        self._need("read")
+        return prepare(con, table)
+
+    def profile(self, workspace, name, refresh=False):
+        self._need("read")
+        return profile(workspace, name, refresh)
+
+    def suggest_joins(self, workspace, name, limit=10):
+        self._need("read")
+        return suggest_joins(workspace, name, limit)
+
+    def s3_match(self, location_id, pattern):
+        self._need("read")
+        return s3_match(location_id, pattern)
 
 
 def scoped(plugin: str) -> ScopedLake:

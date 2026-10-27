@@ -74,6 +74,8 @@
   .tree .tb { padding: 3px 4px 3px 16px; cursor: pointer; display: flex; justify-content: space-between; gap: 6px; }
   .tree .tb:hover { background: var(--bg); } .tree .col { padding: 1px 4px 1px 32px; color: var(--muted); cursor: pointer; font-size: 0.76rem; }
   .tree .col:hover { color: var(--accent); }
+  .tree a.jn { text-decoration: none; cursor: pointer; margin-left: 4px; opacity: 0.6; } .tree a.jn:hover { opacity: 1; }
+  .tree .joins .col { padding-left: 24px; }
   .edwrap { position: relative; }
   textarea#sql { width: 100%; min-height: 170px; resize: vertical; background: #0f1222; color: #e6e9f8; border: 1px solid var(--border);
                  border-radius: 8px; padding: 10px 12px; font: 0.85rem/1.55 ui-monospace, Menlo, Consolas, monospace; tab-size: 2; }
@@ -89,6 +91,7 @@
   .list .sqltext { flex: 1; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .list .sqltext:hover { color: var(--accent); }
   .badge { font-size: 0.68rem; border-radius: 999px; padding: 1px 8px; border: 1px solid var(--border); white-space: nowrap; }
+  #chart svg text { font: 11px system-ui, sans-serif; fill: var(--muted); }
   .badge.done { color: var(--ok); } .badge.failed { color: var(--err); }
   a.x { color: var(--muted); cursor: pointer; text-decoration: none; } a.x:hover { color: var(--err); }
 </style>
@@ -111,6 +114,7 @@
       <button data-src="folder">📁 Data folder</button>
       <button data-src="url">🔗 Link</button>
       <button data-src="db">🗄 Database</button>
+      <button data-src="s3">☁ S3</button>
     </div>
 
     <div id="src-upload">
@@ -152,6 +156,34 @@
         <textarea id="dbSql" class="mono" style="width:100%;min-height:90px;border:1px solid var(--border);border-radius:6px;padding:8px;background:var(--bg)"
                   placeholder="SELECT * FROM public.orders WHERE created_at >= '2026-01-01'"></textarea>
       </div>
+    </div>
+
+    <div id="src-s3" style="display:none">
+      <p class="hint">Files in an AWS S3 bucket (or any S3-compatible storage). Credentials are kept encrypted in the
+        Vault as an <b>S3 location</b>.</p>
+      <div class="row2">
+        <div><label>S3 location</label><select id="s3Loc"></select></div>
+        <div><label>&nbsp;</label><button class="ghost" id="btnS3New">+ new S3 location</button></div>
+      </div>
+      <div id="s3New" style="display:none;border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:10px">
+        <div class="row">
+          <div><label>Name</label><input type="text" id="s3Name" placeholder="e.g. company data bucket" /></div>
+          <div><label>Access key ID</label><input type="text" id="s3Key" autocomplete="off" /></div>
+          <div><label>Secret access key</label><input type="password" id="s3Secret" autocomplete="new-password" /></div>
+        </div>
+        <div class="row">
+          <div><label>Region</label><input type="text" id="s3Region" placeholder="us-east-1" /></div>
+          <div><label>Endpoint (only for non-AWS)</label><input type="text" id="s3Endpoint" placeholder="e.g. http://minio:9000" /></div>
+          <div><label>Test with a path</label><input type="text" id="s3TestPath" placeholder="s3://bucket/folder/" /></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+          <button class="ghost" id="btnS3Test">Test</button><button class="ghost" id="btnS3Save">Save to Vault</button>
+          <span class="hint" id="s3NewMsg"></span></div>
+      </div>
+      <label>Path or pattern</label>
+      <input type="text" id="s3Pattern" placeholder="s3://bucket/sales/2026-*.parquet   or   s3://bucket/logs/   (a folder = everything in it)" />
+      <p class="hint" id="s3Info" style="margin-top:6px"></p>
+      <div class="radio"><label><input type="checkbox" id="s3External" /> Read in place (external table — stays in S3, nothing copied; csv/json/parquet)</label></div>
     </div>
 
     <div id="src-url" style="display:none">
@@ -253,6 +285,7 @@ GROUP BY 1 ORDER BY 2 DESC"></textarea>
           <span style="flex:1"></span>
           <a class="ghost" id="dlCsv" style="text-decoration:none">⬇ CSV</a>
           <a class="ghost" id="dlPq" style="text-decoration:none">⬇ Parquet</a>
+          <button class="ghost" id="btnChart">📊 Chart</button>
           <button class="ghost" id="btnSaveT">💾 Save as table</button>
           <button class="ghost" id="btnStopQ" style="display:none">Stop</button>
         </div>
@@ -264,6 +297,15 @@ GROUP BY 1 ORDER BY 2 DESC"></textarea>
             <label><input type="radio" name="smode" value="overwrite" /> overwrite</label>
             <label><input type="radio" name="smode" value="append" /> append</label></div>
             <button class="action" id="btnSaveGo" style="margin-top:8px;padding:6px 16px">Save</button></div>
+        </div>
+        <div id="chartBox" style="display:none;margin-top:10px">
+          <div class="bar2" style="margin-top:0">
+            <select id="chType" style="width:auto"><option value="bar">bars</option><option value="line">line</option><option value="scatter">points</option></select>
+            <span class="hint">X</span><select id="chX" style="width:auto"></select>
+            <span class="hint">Y</span><select id="chY" style="width:auto"></select>
+            <span class="hint" id="chNote"></span>
+          </div>
+          <div id="chart" style="margin-top:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface)"></div>
         </div>
         <div class="msg" id="resMsg"></div>
         <div class="grid" id="resGrid" style="display:none"></div>
@@ -285,7 +327,7 @@ const fmtBytes = (n) => { const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; n 
 const safeName = (t) => { let n = String(t || "").toLowerCase().replace(/\.gz$/, "").replace(/\.[a-z0-9]+$/, "").replace(/[^a-z0-9_]+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, ""); if (!n || !/^[a-z]/.test(n)) n = "t_" + n; return n.slice(0, 63); };
 async function api(path, opts) {
   const r = await fetch(path, opts); const j = await r.json().catch(() => ({}));
-  if (!r.ok) { const d = j.detail; const e = new Error((d && d.message) || (typeof d === "string" ? d : "HTTP " + r.status)); e.detail = d; throw e; }
+  if (!r.ok) { const d = j.detail; const e = new Error((d && d.message) || (typeof d === "string" ? d : j.error || "HTTP " + r.status)); e.detail = d; throw e; }
   return j;
 }
 function msg(el, text, kind) { el.textContent = text || ""; el.className = "msg " + (kind || "err") + (text ? " show" : ""); }
@@ -297,9 +339,10 @@ $("srcTabs").addEventListener("click", (e) => {
   const b = e.target.closest("[data-src]"); if (!b) return;
   src = b.dataset.src;
   document.querySelectorAll("#srcTabs button").forEach((x) => x.classList.toggle("on", x === b));
-  ["upload", "folder", "url", "db"].forEach((k) => $("src-" + k).style.display = k === src ? "" : "none");
+  ["upload", "folder", "url", "db", "s3"].forEach((k) => $("src-" + k).style.display = k === src ? "" : "none");
   if (src === "folder") browse(folderPath);
   if (src === "db") loadConnections();
+  if (src === "s3") loadS3Locations();
   updateName();
 });
 
@@ -371,6 +414,54 @@ function updateName() {
   $("fullName").textContent = (wsName() || "workspace") + "." + (multi ? "<each table>" : ($("table").value.trim() || "table"));
 }
 
+// ---- S3 source (roadmap L5) ----
+async function loadS3Locations(select) {
+  try {
+    const d = await api("s3/locations");
+    $("s3Loc").innerHTML = d.locations.length ? d.locations.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
+      : '<option value="">— none yet: “+ new S3 location” —</option>';
+    if (select) $("s3Loc").value = select;
+  } catch (e) { $("s3Loc").innerHTML = `<option value="">${esc(e.message)}</option>`; }
+}
+$("btnS3New").onclick = () => { $("s3New").style.display = $("s3New").style.display ? "" : "none"; };
+function s3Data() {
+  const d = { access_key_id: $("s3Key").value.trim(), secret_access_key: $("s3Secret").value, region: $("s3Region").value.trim() || "us-east-1" };
+  if ($("s3Endpoint").value.trim()) { d.endpoint = $("s3Endpoint").value.trim(); d.url_style = "path"; }
+  return d;
+}
+$("btnS3Test").onclick = async () => {
+  $("s3NewMsg").textContent = "testing…";
+  try {
+    const r = await api("/tools/vault/test-s3", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: s3Data(), path: $("s3TestPath").value.trim() || $("s3Pattern").value.trim() }) });
+    $("s3NewMsg").textContent = `✓ works — ${r.count} object(s)` + (r.sample.length ? `, e.g. ${r.sample[0]}` : "");
+  } catch (e) { $("s3NewMsg").textContent = "✗ " + e.message; }
+};
+$("btnS3Save").onclick = async () => {
+  const name = $("s3Name").value.trim();
+  if (!name || !$("s3Key").value.trim() || !$("s3Secret").value) { $("s3NewMsg").textContent = "Name, access key and secret are needed."; return; }
+  try {
+    const r = await api("/tools/vault/secrets", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, kind: "s3_location", data: s3Data() }) });
+    $("s3NewMsg").textContent = "✓ saved in the Vault"; $("s3Secret").value = ""; $("s3New").style.display = "none";
+    loadS3Locations(r.id);
+  } catch (e) { $("s3NewMsg").textContent = "✗ " + e.message; }
+};
+let s3Timer = null;
+$("s3Pattern").addEventListener("input", () => { clearTimeout(s3Timer); s3Timer = setTimeout(checkS3, 500); });
+$("s3Loc").onchange = () => checkS3();
+async function checkS3() {
+  const p = $("s3Pattern").value.trim(); if (!p || !$("s3Loc").value) { $("s3Info").textContent = ""; return; }
+  $("s3Info").textContent = "looking…";
+  try {
+    const m = await api(`s3/match?location_id=${encodeURIComponent($("s3Loc").value)}&pattern=${encodeURIComponent(p)}`);
+    $("s3Info").innerHTML = m.count ? `<b>${m.count.toLocaleString()} object(s)</b>, e.g. <span class="mono">${esc(m.sample[0])}</span>` +
+      (m.count > 1 ? " — loaded together as one table" : "") : "Nothing matches.";
+    if (m.count && !$("table").value) { $("table").value = safeName(m.sample[0].split("/").pop()); updateName(); }
+    $("addFile").checked = m.count > 1;
+  } catch (e) { $("s3Info").textContent = e.message; }
+}
+
 // ---- database source (roadmap L4: staging) ----
 let dbTables = [], dbChosen = new Set();
 const dbWhat = () => (document.querySelector("input[name=dbwhat]:checked") || {}).value || "tables";
@@ -436,6 +527,11 @@ $("btnLoad").onclick = async () => {
     } else if (src === "folder") {
       if (!$("pattern").value.trim()) throw new Error("Pick a file/folder or type a pattern.");
       body.source = { kind: "folder", pattern: $("pattern").value.trim() };
+    } else if (src === "s3") {
+      if (!$("s3Loc").value) throw new Error("Choose (or add) an S3 location.");
+      if (!$("s3Pattern").value.trim().startsWith("s3://")) throw new Error("The path starts with s3://bucket/…");
+      body.source = { kind: "s3", location_id: $("s3Loc").value, pattern: $("s3Pattern").value.trim() };
+      body.external = $("s3External").checked;
     } else {
       if (!$("url").value.trim()) throw new Error("Paste a link.");
       body.source = { kind: "url", url: $("url").value.trim() };
@@ -504,7 +600,9 @@ async function loadCatalog() {
     cat = (await api("catalog")).workspaces;
     $("tree").innerHTML = cat.length ? cat.map((w) => `<div class="ws" data-ins="${esc(w.name)}" title="${esc(w.description)}">🗂 ${esc(w.name)}</div>` +
       w.tables.map((t) => `<div class="tb" data-tbl="${esc(w.name + "." + t.name)}" title="click: insert · double-click: SELECT"><span class="mono">${esc(t.name)}</span>
-        <span class="muted">${t.kind === "external" ? "ext · " : ""}${Number(t.row_count || 0).toLocaleString()}</span></div>
+        <span class="muted">${t.kind === "external" ? "ext · " : ""}${Number(t.row_count || 0).toLocaleString()}
+          <a class="jn" data-joins="${esc(w.name + "." + t.name)}" title="suggest joins with other tables">🔗</a></span></div>
+        <div class="joins" data-joinsof="${esc(w.name + "." + t.name)}" style="display:none"></div>
         <div class="cols" data-of="${esc(w.name + "." + t.name)}" style="display:none">${t.columns.map((c) =>
           `<div class="col" data-ins="${esc(c.name)}">${esc(c.name)} <span>${esc(c.type || "")}</span></div>`).join("")}</div>`).join("")).join("")
       : '<p class="hint">No tables yet — load some files first (⬆ Load files).</p>';
@@ -514,11 +612,31 @@ function insert(text) {
   const ta = $("sql"), a = ta.selectionStart, b = ta.selectionEnd;
   ta.value = ta.value.slice(0, a) + text + ta.value.slice(b); ta.selectionStart = ta.selectionEnd = a + text.length; ta.focus({ preventScroll: true });
 }
-$("tree").addEventListener("click", (e) => {
+$("tree").addEventListener("click", async (e) => {
+  const jn = e.target.closest("[data-joins]"), pick = e.target.closest("[data-join]");
+  if (jn) { e.stopPropagation(); showJoins(jn.dataset.joins); return; }
+  if (pick) {
+    const ta = $("sql");
+    if (!ta.value.trim()) { ta.value = `SELECT *\nFROM ${pick.dataset.from}\n${pick.dataset.join}\nLIMIT 100`; ta.focus(); }
+    else insert("\n" + pick.dataset.join);
+    return;
+  }
   const t = e.target.closest("[data-tbl]"), i = e.target.closest("[data-ins]");
   if (t) { const c = $("tree").querySelector(`[data-of="${CSS.escape(t.dataset.tbl)}"]`); c.style.display = c.style.display ? "" : "none"; insert(t.dataset.tbl); }
   else if (i) insert(i.dataset.ins);
 });
+async function showJoins(full) {
+  const box = $("tree").querySelector(`[data-joinsof="${CSS.escape(full)}"]`);
+  if (box.style.display === "") { box.style.display = "none"; return; }
+  box.style.display = ""; box.innerHTML = '<div class="col">checking the data…</div>';
+  try {
+    const [ws, t] = full.split(".");
+    const j = (await api(`/tools/vault/data/tables/${encodeURIComponent(ws)}/${encodeURIComponent(t)}/joins`)).joins;
+    box.innerHTML = j.length ? j.map((x) => `<div class="col" data-join="${esc(x.join)}" data-from="${esc(full)}" title="${esc(x.join)}">
+        ${esc(x.column)} → ${esc(x.table)}.${esc(x.other_column)} <span class="muted">${x.overlap_pct}%</span></div>`).join("")
+      : '<div class="col">no likely joins found</div>';
+  } catch (err) { box.innerHTML = `<div class="col">${esc(err.message)}</div>`; }
+}
 $("tree").addEventListener("dblclick", (e) => {
   const t = e.target.closest("[data-tbl]"); if (!t) return;
   $("sql").value = `SELECT *\nFROM ${t.dataset.tbl}\nLIMIT 100`; run(false);
@@ -603,7 +721,8 @@ $("btnBg").onclick = () => run(true);
 function showRunning(qid) {
   cur = { id: qid }; $("resCard").style.display = ""; $("resTitle").textContent = "Running in the background…";
   $("resInfo").textContent = "You can close this page — the result is kept (History)."; $("resGrid").style.display = "none";
-  $("resActions").style.display = ""; ["pgPrev", "pgNext", "dlCsv", "dlPq", "btnSaveT"].forEach((id) => $(id).style.display = "none");
+  $("resActions").style.display = ""; ["pgPrev", "pgNext", "dlCsv", "dlPq", "btnSaveT", "btnChart"].forEach((id) => $(id).style.display = "none");
+  $("chartBox").style.display = "none";
   $("pgInfo").textContent = ""; $("btnStopQ").style.display = ""; $("saveT").style.display = "none"; msg($("resMsg"), "");
   startClock("running…"); pollQuery();
 }
@@ -625,9 +744,9 @@ function showResult(r) {
   $("resTitle").textContent = r.saved_as ? `Created ${r.saved_as}` : "Result";
   $("resInfo").innerHTML = `<b>${Number(r.row_count).toLocaleString()}</b> row(s) · ${r.seconds} s · ${r.columns.length} column(s)` +
     (r.tables.length ? ` · from <span class="mono">${r.tables.map(esc).join(", ")}</span>` : "") + ` · ${fmtBytes(r.result_bytes)} stored`;
-  $("resActions").style.display = ""; ["pgPrev", "pgNext", "dlCsv", "dlPq", "btnSaveT"].forEach((id) => $(id).style.display = "");
+  $("resActions").style.display = ""; ["pgPrev", "pgNext", "dlCsv", "dlPq", "btnSaveT", "btnChart"].forEach((id) => $(id).style.display = "");
   $("dlCsv").href = `queries/${r.id}/download?format=csv`; $("dlPq").href = `queries/${r.id}/download?format=parquet`;
-  $("saveT").style.display = "none"; msg($("resMsg"), r.result_error || "", r.result_error ? "err" : "ok");
+  $("saveT").style.display = "none"; $("chartBox").style.display = "none"; msg($("resMsg"), r.result_error || "", r.result_error ? "err" : "ok");
   if (r.saved_as) { msg($("resMsg"), `Saved as ${r.saved_as} in Vault Data.`, "ok"); loadCatalog(); }
   drawPage(r.page);
 }
@@ -646,6 +765,55 @@ async function goPage(delta) {
   offset = Math.max(0, offset + delta * PAGE);
   try { drawPage(await api(`queries/${cur.id}/rows?offset=${offset}&limit=${PAGE}`)); } catch (e) { msg($("resMsg"), e.message); }
 }
+// ---- chart (roadmap L5): the first CHART_ROWS rows of the stored result, drawn as SVG (no library) ----
+const CHART_ROWS = 1000;
+let chartData = null;
+$("btnChart").onclick = async () => {
+  if ($("chartBox").style.display === "") { $("chartBox").style.display = "none"; return; }
+  try {
+    chartData = await api(`queries/${cur.id}/rows?offset=0&limit=${CHART_ROWS}`);
+    const types = Object.fromEntries((cur.columns || []).map((c) => [c.name, c.type]));
+    const isNum = (c) => /INT|DOUBLE|FLOAT|DECIMAL|REAL|NUMERIC/i.test(types[c] || "");
+    const nums = chartData.columns.filter(isNum);
+    if (!nums.length) { msg($("resMsg"), "Nothing to chart — the result has no number column (e.g. add count(*) / sum(…))."); return; }
+    $("chX").innerHTML = chartData.columns.map((c) => `<option>${esc(c)}</option>`).join("");
+    $("chY").innerHTML = nums.map((c) => `<option>${esc(c)}</option>`).join("");
+    $("chX").value = chartData.columns.find((c) => c !== nums[0]) || chartData.columns[0];
+    $("chY").value = nums[0];
+    $("chType").value = /DATE|TIME/i.test(types[$("chX").value] || "") ? "line" : isNum($("chX").value) ? "scatter" : "bar";
+    $("chNote").textContent = cur.row_count > CHART_ROWS ? `first ${CHART_ROWS.toLocaleString()} of ${Number(cur.row_count).toLocaleString()} rows — aggregate in SQL for all` : "";
+    $("chartBox").style.display = ""; drawChart();
+  } catch (e) { msg($("resMsg"), e.message); }
+};
+["chType", "chX", "chY"].forEach((id) => $(id).addEventListener("change", drawChart));
+function drawChart() {
+  const xi = chartData.columns.indexOf($("chX").value), yi = chartData.columns.indexOf($("chY").value), type = $("chType").value;
+  const pts = chartData.rows.map((r) => [r[xi], Number(r[yi])]).filter((p) => p[0] !== null && Number.isFinite(p[1]));
+  const W = Math.max(320, $("chart").clientWidth || 700), H = 300, L = 64, R = 14, T = 12, B = 54;
+  if (!pts.length) { $("chart").innerHTML = '<p class="hint" style="padding:12px">No numbers to draw.</p>'; return; }
+  const ys = pts.map((p) => p[1]), y0 = Math.min(0, ...ys), y1 = Math.max(...ys) || 1;
+  const sy = (v) => T + (H - T - B) * (1 - (v - y0) / ((y1 - y0) || 1));
+  const numX = type === "scatter" && pts.every((p) => Number.isFinite(Number(p[0])));
+  let xs, sx;
+  if (numX) { xs = pts.map((p) => Number(p[0])); const a = Math.min(...xs), b = Math.max(...xs); sx = (v) => L + (W - L - R) * ((v - a) / ((b - a) || 1)); }
+  else { const step = (W - L - R) / pts.length; sx = (i) => L + step * (i + 0.5); }
+  const fmt = (v) => Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(1) + "M" : Math.abs(v) >= 1e3 ? (v / 1e3).toFixed(1) + "k" : +v.toFixed(2);
+  let g = "";
+  for (let k = 0; k <= 4; k++) { const v = y0 + (y1 - y0) * k / 4, y = sy(v);
+    g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="var(--border)"/><text x="${L - 6}" y="${y + 4}" text-anchor="end">${fmt(v)}</text>`; }
+  const every = Math.ceil(pts.length / 12);
+  if (!numX) pts.forEach((p, i) => { if (i % every === 0) g += `<text x="${sx(i)}" y="${H - B + 14}" text-anchor="end" transform="rotate(-35 ${sx(i)} ${H - B + 14})">${esc(String(p[0]).slice(0, 16))}</text>`; });
+  else for (let k = 0; k <= 4; k++) { const a = Math.min(...xs), b = Math.max(...xs), v = a + (b - a) * k / 4; g += `<text x="${sx(v)}" y="${H - B + 16}" text-anchor="middle">${fmt(v)}</text>`; }
+  const tip = (p) => `<title>${esc(String(p[0]))}: ${p[1].toLocaleString()}</title>`;
+  if (type === "bar") { const w = Math.max(1, (W - L - R) / pts.length * 0.8);
+    pts.forEach((p, i) => { const y = sy(Math.max(p[1], 0)), h = Math.abs(sy(p[1]) - sy(0)) || 1;
+      g += `<rect x="${sx(i) - w / 2}" y="${p[1] >= 0 ? y : sy(0)}" width="${w}" height="${h}" fill="var(--accent)" rx="2">${tip(p)}</rect>`; }); }
+  else if (type === "line") { g += `<polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${pts.map((p, i) => `${sx(i)},${sy(p[1])}`).join(" ")}"/>`;
+    if (pts.length <= 200) pts.forEach((p, i) => { g += `<circle cx="${sx(i)}" cy="${sy(p[1])}" r="3" fill="var(--accent)">${tip(p)}</circle>`; }); }
+  else pts.forEach((p, i) => { g += `<circle cx="${numX ? sx(Number(p[0])) : sx(i)}" cy="${sy(p[1])}" r="3" fill="var(--accent)" opacity="0.7">${tip(p)}</circle>`; });
+  $("chart").innerHTML = `<svg width="100%" viewBox="0 0 ${W} ${H}" role="img" aria-label="chart of ${esc($("chY").value)} by ${esc($("chX").value)}">${g}</svg>`;
+}
+
 $("pgPrev").onclick = () => goPage(-1);
 $("pgNext").onclick = () => goPage(1);
 $("btnSaveT").onclick = () => { $("saveT").style.display = $("saveT").style.display ? "" : "none"; };
@@ -696,6 +864,7 @@ $("list").addEventListener("click", async (e) => {
   if (ds && confirm("Delete this saved query?")) { await api("saved/" + ds.dataset.dels, { method: "DELETE" }).catch(() => {}); loadList(); }
 });
 if (location.hash === "#sql") showView("sql");
+window.addEventListener("hashchange", () => showView(location.hash === "#sql" ? "sql" : "load"));
 </script>
 </body>
 </html>

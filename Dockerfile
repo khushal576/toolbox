@@ -68,6 +68,9 @@ COPY environments/ ./environments/
 COPY encode-decode/server.py ./encode_decode/server.py
 COPY encode-decode/manifest.yaml ./encode_decode/manifest.yaml
 COPY encode-decode/ui/       ./encode_decode/ui/
+COPY text-editor/server.py    ./text_editor/server.py
+COPY text-editor/manifest.yaml ./text_editor/manifest.yaml
+COPY text-editor/ui/          ./text_editor/ui/
 
 # Subnet Calculator (tool #3) — same namespacing pattern.
 COPY subnet-calc/server.py ./subnet_calc/server.py
@@ -190,7 +193,7 @@ COPY core_plugins/ ./core_plugins/
 COPY main.py .
 
 # Create empty __init__.py files so Python treats these as packages.
-RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py data_lake/__init__.py
+RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py text_editor/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py data_lake/__init__.py
 
 # --- Python packages: wheelhouse + one deps stage per image ----------------------
 # wheelhouse/ (gitignored) holds pre-downloaded wheels for this exact platform/Python version — see
@@ -261,6 +264,9 @@ RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/in
 
 FROM pyslim AS data
 COPY --from=deps-data /install /usr/local
+# DuckDB's httpfs extension (roadmap L5: tables in AWS S3 / S3-compatible storage) — installed at build time into
+# /root/.duckdb, so nothing is downloaded when a query runs (queries also switch extension autoloading off)
+RUN python -c "import duckdb; duckdb.connect().execute('INSTALL httpfs')"
 COPY --from=code /app /app
 ENV TOOLBOX_ROLE=runtime TOOLBOX_RUNTIME=data
 EXPOSE 8080
@@ -274,6 +280,7 @@ RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/in
 
 FROM pyslim AS worker
 COPY --from=deps-full /install /usr/local
+RUN python -c "import duckdb; duckdb.connect().execute('INSTALL httpfs')"
 COPY --from=pgclient /opt/pgclient /opt/pgclient
 COPY --from=code /app /app
 CMD ["python", "-m", "core.jobs.worker"]

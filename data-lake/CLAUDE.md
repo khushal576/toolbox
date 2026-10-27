@@ -84,6 +84,19 @@ append (type clash refused), overwrite (new version; column changes logged). "Re
 - Target names: `public.orders` → `orders`; if two chosen schemas share a table name both become `schema_table`.
   Create refuses (409) up front when any target exists. Stop = checked between batches; nothing is written then.
 
+## L5 — S3, charts, joins, declared types
+
+- **☁ S3 source:** a Vault `s3_location` (credentials; endpoint for non-AWS) + `s3://bucket/path` or pattern (a
+  folder = everything under it). Copy in (DuckDB COPY straight from S3 → Parquet, nothing staged) or **read in place**
+  (external table; its options record the location id, `lake.prepare` gives every reading connection a temporary
+  secret scoped to the bucket — queries, previews, exports, profiles). Format from the extension (`format_from_name`;
+  csv/json/parquet, .gz ok). httpfs is installed at build time; queries still switch autoloading off.
+- **SQL tab:** 📊 Chart on a result (bars / line / points of the first 1000 rows, plain SVG), 🔗 per table in the tree
+  = suggested joins (click inserts the JOIN; an empty editor gets a full SELECT).
+- **Staging keeps declared types** (`declared_types`: varchar(100), numeric(12,2), NVARCHAR(MAX), NUMBER(12,2)…) in
+  `source.column_types` → shown as each column's `sql_type`. Oracle NUMBER with decimals is fetched as Decimal
+  (`_oracle_decimals`, that connection only). **Verified on real SQL Server 2022 and Oracle 23 free.**
+
 ## Verified (live, Postgres + S3 + worker)
 
 1.5 GB CSV (above); a folder of 500 CSV files → one 50,000-row table with `_source_file` (1.2 s); an uploaded
@@ -100,3 +113,7 @@ L3: joins across workspaces, CREATE TABLE AS (a 30 M-row table in 28 s as a back
 L4: a throwaway Postgres (300k orders with numeric/timestamptz and a column NULL for the first 200k rows, customers
 with jsonb/uuid/date/bool): 3 tables / 305k rows staged in 3.2 s, create-again 409, overwrite → version 2, query
 mode, DELETE refused, source untouched; the 🗄 Database tab in headless Chromium. Tests: `tests/unit/test_lake_l4.py`.
+
+L5: SeaweedFS as the S3 endpoint — test-before-save (and a clear 403 message for bad keys), 3 Parquet files copied
+(6000 rows), a CSV read in place, a join of both in SQL (instant and in the worker); profile of 30 M rows 12.7 s then
+cached; suggested joins; chart + tree joins in headless Chromium.

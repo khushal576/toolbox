@@ -82,7 +82,7 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | L2 | Load files into tables as Parquet (upload, data folder, links, patterns; auto-detect; append/overwrite) | M | L1 | ☑ |
 | L3 | SQL over the lake (Athena-like: instant + background queries, CREATE TABLE AS, history) | M | L2 | ☑ |
 | L4 | Load from / Save to Vault Data in every tool; stage database tables via Vault connections | M | L3 | ☑ |
-| L5 | Extras: profiles, suggested joins, charts, AWS S3 locations, notebook (later) | M | L4 | ☐ |
+| L5 | Extras: profiles, suggested joins, charts, AWS S3 locations, notebook (later) | M | L4 | ☑ (notebook deferred) |
 | F1 | Image versioning, registry, k8s manifests from plugin manifests | M | D3, E1 | ⏸ deferred |
 | F2 | k3s single-node deploy (lab) | M | F1 | ⏸ deferred |
 | F3 | KEDA scale-to-zero + queue scaling | M | F2 | ⏸ deferred |
@@ -290,6 +290,9 @@ like Athena (SQL), with pandas through the existing tools (a Jupyter-like notebo
 
 ### L5 Extras (M)
 - Column profiles, suggested joins, charts, AWS S3 locations, Jupyter-like notebook.
+- **Done** (2026-10-28) except the notebook (owner: later). Also from owner feedback in this session: tools hide the
+  workspace sidebar, Duck Lab / DataFrame Studio load only from Vault Data (Athena-style Tables bar with SQL types;
+  DataFrame Studio joins other tables by name).
 
 ## Phase E – Observability (revised 2026-10-25: lightweight, no new containers)
 
@@ -355,6 +358,40 @@ the workspace status) and shows it on ONE page in the workspace. Nothing runs or
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+- 2026-10-28 – **SSH & SFTP: live Terminal tab (owner request).** `ssh-sftp/terminal.py`: one login per terminal (Vault
+  credential, pinned host key) + a shell with a PTY held in rt-ssh's process (compose now pins rt-ssh to ONE web
+  worker); output = SSE from a byte offset (re-attach after reload/drop without gaps), keystrokes = small ordered
+  POSTs; xterm.js 5.5 as a local bundle. Read-only servers refused; 8 sessions max; 30 min idle close. Verified on a
+  real OpenSSH server in headless Chromium.
+- 2026-10-28 – **New tool: Text Editor (owner request, outside the phases).** `text-editor/` — client-side (tier 1,
+  runtime light) Notepad++-style editor on a local CodeMirror 6 bundle (+ json/xml/html, lint, merge, js-beautify;
+  715 KB, served immutable with `?v=`): tabs (kept in localStorage up to 4 MB), regex find/replace, multi-cursor
+  (Ctrl/Shift+Alt+↑/↓, Alt+drag, Ctrl+D), validation with every problem's line (own JSON scanner incl. JSON Lines,
+  DOMParser XML, CSV field counts), Format/Minify that never parses numbers, line tools, regex keep/remove/extract,
+  split compare (MergeView). Verified in headless Chromium: 200k-line / 9.7 MB file opens in 0.6 s, validates in
+  0.27 s (both bad lines found), sorts in 0.57 s; 20-digit ids exact after format; 50k-vs-50k compare 0.2 s.
+- 2026-10-28 – **L5 done (notebook deferred, owner).** `core/lake.py`: **profiles** (`profile()`: DuckDB SUMMARIZE —
+  exact count/nulls/approx distinct/min/max/mean/std/quartiles — plus top-5 values from a 200k-row sample on big
+  tables; cached per table version in `lake.profiles`; 30 M rows in 12.7 s, then 0.04 s); **suggested joins**
+  (`suggest_joins()`: `x_id`↔`id` / same-name non-generic columns of a compatible type, then checked on the data —
+  share of ≤ 2000 sampled distinct values found, < 5 % dropped; `id`=`id` and dates ignored); **S3 locations**
+  (Vault kind `s3_location`; `use_s3()` = TEMPORARY DuckDB secret scoped to the bucket on every connection that
+  reads it, `prepare(con, table)` before `read_expr`; httpfs installed at image build in data + worker;
+  `s3_match()`; Vault `POST /test-s3`; Data Lake ☁ S3 source: copy in or read in place; errors in plain words);
+  **sql_type()** (`varchar(100)`, `numeric(12,2)`… — the source DB's declared types are kept by staging in
+  `source.column_types` via `staging.declared_types`, else the DuckDB type in SQL words; every catalog column has
+  `sql_type`). Vault table page: Profile + Suggest joins; Data Lake SQL: 📊 Chart (bars/line/points, SVG, first
+  1000 rows) and 🔗 joins per table in the tree (click inserts the JOIN). **L4 gap closed:** staging verified on real
+  SQL Server 2022 (120k rows, nvarchar/bit/uniqueidentifier/datetime2, 7.7 s) and Oracle 23 free (50k rows, CLOB,
+  `NUMBER(12,2)` now exact via an output type handler on that connection). **Owner feedback in-session:** (1) inside a
+  tool the workspace sidebar slides away (☰ / Ctrl+K / Esc; `body.in-tool`); (2) Duck Lab and DataFrame Studio no
+  longer upload files (backend `/upload`, `/load` kept, unused) — an Athena-style **Tables** bar (workspaces → tables
+  → columns + SQL types, Load); DataFrame Studio "+ Join" adds tables by name (`Session.frames`, `steps.FRAMES`
+  context, variables in the Query box; after owner feedback: one Load button for every table — first = `df`, others
+  = variables, loaded rows green, no join UI; grid header with SQL types + toggleable column stats from
+  `GET /column-stats`). Fixed: Data Lake page didn't follow `#sql` changes.
+  Verified live (SeaweedFS as the S3 endpoint, throwaway mssql/oracle containers), 40 container tests, 165 host,
+  smoke 107. Test data removed (`l3test` kept). **Next:** phase F when the owner wants it, or the notebook.
 - 2026-10-27 – **L4 done.** Shared: `lake.catalog()`, `lake.export_table(ws, t, dest, csv|parquet, limit)`,
   `lake.import_file(ws, t, path)` (+ scoped versions); Vault `GET /data/catalog` (every tool's table picker) and
   `GET /data/tables/{ws}/{t}/csv` (DataDiff, ≤ 2000 rows, bigger refused like datasets). Tools (manifests `data:

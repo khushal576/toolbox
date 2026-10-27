@@ -65,6 +65,8 @@ class Session:
     sample_seed: int = field(default_factory=lambda: random.randint(0, 2**31 - 1))
     sid: str = ""
     frame_format: str = ""
+    # roadmap L5: other Vault Data tables added by name for joins — {"customers": "crm.customers"}
+    frames: dict[str, str] = field(default_factory=dict)
 
 
 BACKEND = session_store.make_backend()
@@ -91,7 +93,7 @@ def _cache_get(sid: str) -> pd.DataFrame | None:
 
 def _meta(session: Session) -> dict[str, Any]:
     return {"filename": session.filename, "steps": session.steps, "preview_mode": session.preview_mode,
-            "sample_seed": session.sample_seed, "frame_format": session.frame_format}
+            "sample_seed": session.sample_seed, "frame_format": session.frame_format, "frames": session.frames}
 
 
 def load_dataframe(
@@ -183,7 +185,7 @@ def get_session(session_id: str | None) -> Session:
         _cache_put(session_id, df)
     return Session(filename=meta["filename"], original_df=df, steps=list(meta.get("steps", [])),
                    preview_mode=meta.get("preview_mode", "head"), sample_seed=int(meta["sample_seed"]),
-                   sid=session_id, frame_format=meta.get("frame_format", ""))
+                   sid=session_id, frame_format=meta.get("frame_format", ""), frames=dict(meta.get("frames") or {}))
 
 
 def save_session(session: Session) -> None:
@@ -200,12 +202,103 @@ def delete_session(session_id: str | None) -> None:
     BACKEND.delete(session_id)
 
 
-def recompute(session: Session) -> pd.DataFrame:
-    df = session.original_df
-    for step in session.steps:
-        handler = STEP_HANDLERS[step["type"]]
-        df, _ = handler(df, step["params"])
+# ---- other tables by name (roadmap L5: "Add for join") -------------------------------------------------------
+LAKE_MAX_ROWS = int(os.environ.get("DF_STUDIO_LAKE_MAX_ROWS", "1000000"))
+_lake_cache: "OrderedDict[tuple[str, int], pd.DataFrame]" = OrderedDict()   # (ws.table, version) → frame, per process
+_RESERVED = {"df", "pd", "np", "transform"}
+
+
+def _lake():
+    from core import lake
+
+    return lake, lake.scoped("df-studio")
+
+
+def lake_frame(ref: str, limit: int | None = None) -> pd.DataFrame:
+    """A Vault Data table as a DataFrame (exported to Parquet by DuckDB, then pandas), cached per table version."""
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    lake, scoped = _lake()
+    ws, _, name = ref.partition(".")
+    t = scoped.get_table(ws, name)
+    key = (ref, int(t["version"]))
+    with _cache_lock:
+        if key in _lake_cache:
+            _lake_cache.move_to_end(key)
+            return _lake_cache[key]
+    if t["row_count"] > LAKE_MAX_ROWS and not limit:
+        raise StepError(f"{ref} has {t['row_count']:,} rows — more than the {LAKE_MAX_ROWS:,} DataFrame Studio keeps "
+                        "in memory. Make a smaller table first (Data Lake → SQL: CREATE TABLE … AS SELECT … WHERE …).")
+    tmp = Path(tempfile.mkdtemp(prefix="dfs_frame_"))
+    try:
+        scoped.export_table(ws, name, tmp / "t.parquet", "parquet", limit)
+        df = pd.read_parquet(tmp / "t.parquet")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    with _cache_lock:
+        _lake_cache[key] = df
+        while len(_lake_cache) > _CACHE_SIZE + 2:
+            _lake_cache.popitem(last=False)
     return df
+
+
+def frame_name(table: str, taken: set[str]) -> str:
+    base = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in table) or "table"
+    if base[0].isdigit() or base in _RESERVED:
+        base = "t_" + base
+    name, i = base, 2
+    while name in taken:
+        name, i = f"{base}_{i}", i + 1
+    return name
+
+
+def add_frame(session: Session, ref: str, name: str | None = None) -> str:
+    """Add another table by name (its variable in the Query box, its name in the Join step). Loads it once to check."""
+    if ref in session.frames.values():
+        return next(n for n, r in session.frames.items() if r == ref)
+    name = frame_name(name or ref.partition(".")[2], set(session.frames))
+    lake_frame(ref)
+    session.frames[name] = ref
+    save_session(session)
+    return name
+
+
+def remove_frame(session: Session, name: str) -> None:
+    used = [i + 1 for i, s in enumerate(session.steps)
+            if (s["type"] == "join_table" and s["params"].get("table") == name)
+            or (s["type"] == "custom_code" and name in str(s["params"].get("code", "")))]
+    if used:
+        raise StepError(f"'{name}' is used by step {', '.join(map(str, used))} — remove that step first.")
+    session.frames.pop(name, None)
+    save_session(session)
+
+
+def _frames_info(session: Session) -> list[dict[str, Any]]:
+    out = []
+    for name, ref in session.frames.items():
+        try:
+            ws, _, t = ref.partition(".")
+            tbl = _lake()[1].get_table(ws, t)
+            out.append({"name": name, "ref": ref, "rows": tbl["row_count"],
+                        "columns": [c["name"] for c in tbl["columns"]]})
+        except Exception as exc:  # noqa: BLE001 — a dropped table shows up as broken, not as a 500
+            out.append({"name": name, "ref": ref, "rows": None, "columns": [], "error": str(exc)})
+    return out
+
+
+def recompute(session: Session) -> pd.DataFrame:
+    loaders = {name: (lambda ref=ref: lake_frame(ref)) for name, ref in session.frames.items()}
+    token = steps_mod.FRAMES.set(loaders)
+    try:
+        df = session.original_df
+        for step in session.steps:
+            handler = STEP_HANDLERS[step["type"]]
+            df, _ = handler(df, step["params"])
+        return df
+    finally:
+        steps_mod.FRAMES.reset(token)
 
 
 def _run_step(session: Session, step_type: str, params: dict[str, Any]) -> tuple[pd.DataFrame, str]:
@@ -213,7 +306,11 @@ def _run_step(session: Session, step_type: str, params: dict[str, Any]) -> tuple
         raise StepError(f"Unknown step type '{step_type}'.")
     current = recompute(session)
     handler = STEP_HANDLERS[step_type]
-    return handler(current, params)
+    token = steps_mod.FRAMES.set({name: (lambda ref=ref: lake_frame(ref)) for name, ref in session.frames.items()})
+    try:
+        return handler(current, params)
+    finally:
+        steps_mod.FRAMES.reset(token)
 
 
 def preview_step(session: Session, step_type: str, params: dict[str, Any]) -> pd.DataFrame:
@@ -292,6 +389,8 @@ def generate_script(session: Session) -> str:
         "",
         f"df = {loader_template.format(path=session.filename)}",
     ]
+    for name, ref in session.frames.items():  # tables added for joins: export them from Vault Data next to the script
+        lines.append(f"{name} = pd.read_parquet({(ref + '.parquet')!r})")
     for step in session.steps:
         lines.append("")
         lines.append(step["code"])
@@ -334,6 +433,62 @@ def compute_insight(df: pd.DataFrame, kind: str, column: str | None = None) -> d
     raise StepError(f"Unknown insight kind '{kind}'.")
 
 
+def sql_type(s: pd.Series) -> str:
+    """The column's type in SQL words (bigint, double, varchar, date, timestamp, numeric…) — what the page shows
+    instead of pandas' int64/object (roadmap L5, owner request)."""
+    import datetime as dt
+    from decimal import Decimal
+
+    k = s.dtype
+    if pd.api.types.is_bool_dtype(k):
+        return "boolean"
+    if pd.api.types.is_integer_dtype(k):
+        return {1: "smallint", 2: "smallint", 4: "integer"}.get(k.itemsize, "bigint")
+    if pd.api.types.is_float_dtype(k):
+        return "real" if k.itemsize == 4 else "double"
+    if pd.api.types.is_datetime64_any_dtype(k):
+        return "timestamptz" if getattr(k, "tz", None) is not None else "timestamp"
+    if pd.api.types.is_timedelta64_dtype(k):
+        return "interval"
+    sample = s.dropna().head(50)
+    if len(sample):
+        v = sample.iloc[0]
+        if isinstance(v, Decimal):
+            return "numeric"
+        if isinstance(v, dt.datetime):
+            return "timestamp"
+        if isinstance(v, dt.date):
+            return "date"
+        if isinstance(v, (dict, list)):
+            return "json"
+        if isinstance(v, bytes):
+            return "bytea"
+    return "varchar"
+
+
+def column_stats(df: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    """Per column over the WHOLE DataFrame (not the preview rows): empty values, distinct values, and for numbers /
+    dates min · max (· average · std for numbers)."""
+    out: dict[str, dict[str, Any]] = {}
+    n = len(df)
+    for c in df.columns:
+        s = df[c]
+        nulls = int(s.isna().sum())
+        try:
+            distinct = int(s.nunique(dropna=True))
+        except TypeError:  # unhashable values (lists/dicts)
+            distinct = None
+        st: dict[str, Any] = {"rows": n, "nulls": nulls, "null_pct": round(100.0 * nulls / n, 1) if n else 0.0,
+                              "distinct": distinct}
+        if pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s):
+            d = s.describe()
+            st.update({k: (None if pd.isna(d.get(k)) else float(d.get(k))) for k in ("min", "max", "mean", "std")})
+        elif pd.api.types.is_datetime64_any_dtype(s) and n - nulls:
+            st.update({"min": str(s.min()), "max": str(s.max())})
+        out[str(c)] = st
+    return out
+
+
 def build_preview(session: Session, df: pd.DataFrame) -> dict[str, Any]:
     total_rows = len(df)
     num_cols = max(len(df.columns), 1)
@@ -345,7 +500,9 @@ def build_preview(session: Session, df: pd.DataFrame) -> dict[str, Any]:
         capped = df.head(shown_rows)
     return {
         "filename": session.filename,
-        "columns": [{"name": c, "dtype": str(df[c].dtype)} for c in df.columns],
+        # the Vault Data table this session started from ("ws.table") — the Tables list marks it as loaded
+        "table_ref": session.filename[:-8] if session.filename.endswith(".parquet") and session.filename.count(".") == 2 else None,
+        "columns": [{"name": c, "dtype": str(df[c].dtype), "sql_type": sql_type(df[c])} for c in df.columns],
         "row_count": total_rows,
         "shown_rows": shown_rows,
         "preview_mode": session.preview_mode,
@@ -354,4 +511,5 @@ def build_preview(session: Session, df: pd.DataFrame) -> dict[str, Any]:
             {"type": s["type"], "label": STEP_LABELS[s["type"]], "code": s["code"]}
             for s in session.steps
         ],
+        "frames": _frames_info(session),
     }

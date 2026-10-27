@@ -111,10 +111,25 @@ def run_load(ctx: Any, spec: dict[str, Any]) -> None:
     work = Path(tempfile.mkdtemp(prefix="lake_load_", dir=os.environ.get("DATA_LAKE_TMP")))
     try:
         p.update(phase="finding files")
-        files = _gather(ctx, spec, work)
-        total = sum(f.stat().st_size for f in files)
-        log("info", f"{len(files)} file(s), {total / 2**20:,.1f} MB")
+        src = spec.get("source") or {}
+        s3 = src.get("kind") == "s3"
         fmt = spec.get("format") or "auto"
+        if s3:  # roadmap L5: s3://bucket/… read by DuckDB with the Vault S3 location's credentials — nothing staged
+            pattern = (src.get("pattern") or "").strip()
+            pattern = pattern + "**" if pattern.endswith("/") else pattern
+            found_s3 = lake_store.s3_match(src.get("location_id"), pattern)
+            if not found_s3["count"]:
+                raise LoadError(f"Nothing in S3 matches '{pattern}'.")
+            files, total = [], 0
+            log("info", f"{found_s3['count']} S3 object(s) match {pattern}")
+            if fmt == "auto":
+                fmt = format_from_name(found_s3["sample"][0])
+            if fmt not in ("csv", "json", "parquet"):
+                raise LoadError("From S3: csv, json or parquet files (also .gz) — pick the format under Advanced.")
+        else:
+            files = _gather(ctx, spec, work)
+            total = sum(f.stat().st_size for f in files)
+            log("info", f"{len(files)} file(s), {total / 2**20:,.1f} MB")
         if fmt == "auto":
             found = {detect_any(str(f)) for f in files}
             if len(found) > 1:
@@ -123,28 +138,33 @@ def run_load(ctx: Any, spec: dict[str, Any]) -> None:
         if fmt not in FORMATS:
             raise LoadError(f"Unknown format '{fmt}'")
         log("info", f"format: {fmt}")
-        src = spec.get("source") or {}
-        source = {"kind": src.get("kind"), "format": fmt, "files": [f.name for f in files][:20], "file_count": len(files),
+        source = {"kind": src.get("kind"), "format": fmt,
+                  "files": found_s3["sample"] if s3 else [f.name for f in files][:20],
+                  "file_count": found_s3["count"] if s3 else len(files),
                   "bytes": total, **({"pattern": src["pattern"]} if src.get("pattern") else {}),
                   **({"url": src["url"]} if src.get("url") else {})}
         if spec.get("file"):
             source["file"] = spec["file"]
 
         if spec.get("external"):
-            if src.get("kind") != "folder" or fmt not in ("csv", "json", "parquet"):
-                raise LoadError("Read-in-place (external) tables need a data-folder source in csv, json or parquet.")
+            if src.get("kind") not in ("folder", "s3") or fmt not in ("csv", "json", "parquet"):
+                raise LoadError("Read-in-place (external) tables need a data-folder or S3 source in csv, json or "
+                                "parquet.")
             p["phase"] = "registering"
-            t = lake.register_external(ws, table, str(sources.ROOT / src["pattern"]), fmt, source=source,
-                                       options={"header": spec.get("header"), "delimiter": spec.get("delimiter")},
+            options = {"header": spec.get("header"), "delimiter": spec.get("delimiter"),
+                       **({"s3_location": src.get("location_id")} if s3 else {})}
+            t = lake.register_external(ws, table, pattern if s3 else str(sources.ROOT / src["pattern"]), fmt,
+                                       source=source, options=options,
                                        create_workspace_if_missing=True, replace=mode == "overwrite")
             p.update(phase="done", rows=t["row_count"], seconds=round(time.monotonic() - t0, 1))
             log("ok", f"registered {t['full_name']} (external, {t['row_count']:,} rows, read in place)")
             return
 
-        files, fmt = _to_readable(files, fmt, spec, work, log)
+        if not s3:
+            files, fmt = _to_readable(files, fmt, spec, work, log)
         p["phase"] = "converting to Parquet"
         add_name = bool(spec.get("add_filename"))
-        expr = build_multi_read_expr([str(f) for f in files], fmt, header=spec.get("header"),
+        expr = build_multi_read_expr([pattern] if s3 else [str(f) for f in files], fmt, header=spec.get("header"),
                                      delimiter=spec.get("delimiter") or None, with_filename=add_name)
         select = (f"SELECT * EXCLUDE (filename), regexp_extract(filename, '[^/]+$') AS _source_file FROM {expr}"
                   if add_name else f"SELECT * FROM {expr}")
@@ -152,6 +172,8 @@ def run_load(ctx: Any, spec: dict[str, Any]) -> None:
         con = duckdb.connect(":memory:")
         con.execute(f"SET memory_limit = '{MEMORY_LIMIT}'")
         con.execute(f"SET temp_directory = '{work / 'spill'}'")
+        if s3:
+            lake_store.use_s3(con, src.get("location_id"), pattern)
         stop = threading.Event()
 
         def watch():  # Stop → interrupt DuckDB (its 1.2 Python API reports no progress: the page shows elapsed time)
@@ -199,6 +221,15 @@ def run_load(ctx: Any, spec: dict[str, Any]) -> None:
         src = spec.get("source") or {}
         if src.get("kind") == "upload" and p.get("phase") == "done":
             sources.STAGE.remove_all(src["upload_id"])  # staged copies are only needed until the load succeeded
+
+
+def format_from_name(name: str) -> str:
+    """csv / json / parquet / … from a file name's extension (.gz ignored) — S3 objects aren't sniffed."""
+    from core.file_source import _EXT_FORMAT
+
+    base = re.sub(r"\.gz$", "", name.lower())
+    ext = base.rsplit(".", 1)[-1] if "." in base.rsplit("/", 1)[-1] else ""
+    return _EXT_FORMAT.get(ext, "auto")
 
 
 def default_table_name(filename: str) -> str:

@@ -1,0 +1,13 @@
+export { EditorView, basicSetup } from "codemirror";
+export { EditorState, EditorSelection, Compartment, StateEffect, StateField } from "@codemirror/state";
+export { keymap, Decoration, ViewPlugin, lineNumbers } from "@codemirror/view";
+export { addCursorAbove, addCursorBelow, indentWithTab } from "@codemirror/commands";
+export { search, openSearchPanel, SearchQuery, setSearchQuery, getSearchQuery, selectNextOccurrence } from "@codemirror/search";
+export { foldAll, unfoldAll, indentUnit, syntaxTree } from "@codemirror/language";
+export { json } from "@codemirror/lang-json";
+export { xml } from "@codemirror/lang-xml";
+export { html } from "@codemirror/lang-html";
+export { linter, lintGutter, setDiagnostics, forceLinting } from "@codemirror/lint";
+export { MergeView, goToNextChunk, goToPreviousChunk, getChunks } from "@codemirror/merge";
+import beautify from "js-beautify";
+export const html_beautify = beautify.html;

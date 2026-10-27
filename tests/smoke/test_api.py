@@ -25,6 +25,7 @@ API_CHECKS = [
     ("data-lake", "GET", "/catalog", None, "application/json"),
     ("data-lake", "GET", "/history", None, "application/json"),
     ("data-lake", "GET", "/connections", None, "application/json"),
+    ("data-lake", "GET", "/s3/locations", None, "application/json"),
     ("vault", "GET", "/data/catalog", None, "application/json"),
     ("data-syncer", "GET", "/projects", None, "application/json"),
     ("data-syncer", "GET", "/connections", None, "application/json"),
@@ -41,7 +42,7 @@ API_CHECKS = [
 # Tools with no safe backend call: client-side tools, or tools whose only API reaches outside systems
 # (curl-builder's /execute makes a real outbound HTTP request).
 PAGE_ONLY = {
-    "encode-decode", "subnet-calc", "dns-lookup", "vlan-designer", "packet-journey",
+    "encode-decode", "text-editor", "subnet-calc", "dns-lookup", "vlan-designer", "packet-journey",
     "header-reference", "http-methods-status", "cookie-lab", "curl-builder",
 }
 

@@ -38,6 +38,25 @@ result as `workspace.table`. **Copying tables out of a database** (e.g. staging 
 connection in the Vault once, then Data Lake → *Database* → pick the connection → *Show tables* → tick tables (or
 write one SELECT) → workspace → *Load*. The database is only read.
 
+**Tables in AWS S3 (or MinIO etc.):** Data Lake → *S3* → *+ new S3 location* (name, access key, secret, region; an
+endpoint only for non-AWS storage) → *Test* → *Save to Vault*. Then type `s3://bucket/folder/` or a pattern →
+*Load* (copies it in) or tick *Read in place* (stays in S3, read on every query).
+
+**Knowing your data:** Vault → 📦 Data → a table → *Profile columns* (empty values, distinct values, min/max,
+averages, most common values) and *Suggest joins* (which columns match other tables). In Data Lake → SQL, the 🔗 next
+to a table does the same and writes the JOIN for you; *📊 Chart* draws a result.
+
+**A terminal on a server (SSH & SFTP → Terminal):** save the server once in the Vault (*Add SSH server*), then pick it
+and press *Open a terminal*. It logs in once and stays logged in — type as many commands as you like; a page reload
+brings you back to the same session. It closes when you type `exit`, press ✕, or after 30 minutes without the page
+open. Servers saved as read-only get no terminal.
+
+**Duck Lab / DataFrame Studio** work only with Vault Data tables (left *Tables* list → *Load*; loaded tables turn
+green, ✕ unloads). Load as many as you need: in Duck Lab each is a SQL table (write your JOIN); in DataFrame Studio
+the first is `df` and the others are variables named after the table (`df.merge(customers, on="customer_id")` in
+Query). *📊 Column stats* shows empty / distinct / min / max / average per column in the grid header. Inside any tool
+the left menu hides — press ☰ (top left) or Ctrl+K to open it.
+
 **Never run `docker compose down -v`** unless you mean it: `-v` deletes the data volumes (database, files).
 
 What runs (one machine, Docker Compose): `toolbox` (the gateway: workspace page + routing, port 8000),

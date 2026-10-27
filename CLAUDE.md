@@ -58,7 +58,8 @@ containers/gateway pieces outside the roadmap session that owns them.
   hidden from the home page and answers a 404 "turned off" page. Missing file
   = every tool at its manifest's `enabled_by_default`; a broken file is
   logged and ignored.
-- **Workspace UI (roadmap A4):** `/` serves `core_plugins/ui/workspace.html`
+- **Workspace UI (roadmap A4):** (since L5, owner: inside a tool the tab bar is the navigation — the sidebar is
+  off-canvas, ☰ / Ctrl+K opens it, Esc closes; `body.in-tool`) `/` serves `core_plugins/ui/workspace.html`
   — sidebar (search, Ctrl+K, Tools/Learning groups, load-state dots), tools
   open in **tabs** (iframes of `/tools/<name>/`, kept alive while open,
   restored from localStorage, deep links `/#/tool/<name>`), Home tab = the
@@ -138,7 +139,16 @@ containers/gateway pieces outside the roadmap session that owns them.
   🗄 Database stages tables from a Vault connection (`data-lake/staging.py`,
   worker job, read-only source). **Gotcha fixed in L4:** the gateway's proxy
   client must never keep cookies (`core_plugins/proxy.py` `_no_cookie_jar`) —
-  it used to hand one visitor's tool session cookie to the next.
+  it used to hand one visitor's tool session cookie to the next. **L5:**
+  column profiles (`lake.profile`, cached per version), suggested joins checked
+  on the data (`lake.suggest_joins`), charts in Data Lake SQL, **S3 locations**
+  (Vault kind `s3_location` → temporary bucket-scoped DuckDB secret,
+  `lake.prepare(con, table)` before reading; httpfs baked into data + worker
+  images), SQL-style column types everywhere (`lake.sql_type`, staged tables keep
+  the source DB's declared types). Owner decisions in L5: inside a tool the
+  workspace sidebar slides away (☰/Ctrl+K); Duck Lab and DataFrame Studio take
+  data ONLY from Vault Data (Athena-style Tables bar; files come in through Data
+  Lake) — DataFrame Studio joins other tables by name.
 - **Installable app (roadmap G1):** the gateway serves `/manifest.webmanifest`
   (standalone display, Status/Settings shortcuts), `/icons/<file>` (four
   known PNGs from `core_plugins/ui/icons/`, drawn by

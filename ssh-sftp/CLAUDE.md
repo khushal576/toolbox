@@ -7,8 +7,8 @@ for the symptom→file map across every tool. This is the fast-orientation versi
 
 Browse files, upload/download, make folders, rename, delete (a file or an EMPTY folder only), and run
 commands on servers **saved in the Vault** (kind `ssh_server`; added on the Vault page's "Add SSH server"
-form, never typed here). Built to be safe and stable rather than featureful: no interactive terminal, no
-recursive delete, no port forwarding.
+form, never typed here). Built to be safe and stable rather than featureful: no recursive delete, no port
+forwarding. **Since 2026-10-28 (owner request) it has a live Terminal tab** — see "Live terminal" below.
 
 ## Where things live
 
@@ -22,6 +22,8 @@ recursive delete, no port forwarding.
 | Transfer + command history (Postgres schema `ssh_sftp`, B6; SQLite standalone) and staged uploads (S3 storage + local cache, B8) | `state_store.py` |
 | Upload/command jobs in the `worker` container + log tail (shared `../core/jobs/runner.py`) | `runner.py` |
 | API + page | `server.py`, `ui/index.html` |
+| Live terminal sessions (one login + a shell with a PTY, output buffer, idle reaper) | `terminal.py`; page: `ensureXterm`, `attach` |
+| xterm.js bundle + its CSS (served by `GET /vendor/{name}`, immutable, `?v=`) | `ui/vendor/term-bundle.js`, `ui/vendor/xterm.css`, `ui/vendor/entry.js` |
 
 ## Safety rules (each is tested — see the end)
 
@@ -84,9 +86,34 @@ parallel (`--scale worker=2`) and survived a web restart, both checksums identic
   as the Vault's trust model (one trusted user, trusted machine). Use a key with a passphrase and a read-only
   entry where you only need to look.
 
+## Live terminal (owner request 2026-10-28: "run commands without logging in again and again")
+
+- `POST /terminals {server_id, cols, rows}` logs in ONCE (`core.ssh_client.open_client`: Vault credential, pinned
+  host key — an unpinned server answers 412 and the page shows the usual trust step) and starts a login shell with a
+  PTY (`xterm-256color`). State (cd, variables, psql/top/vim) lives in that shell until it exits or is closed.
+- **Output:** a reader thread appends to a byte buffer with ABSOLUTE offsets (last `SSH_TERM_BUFFER` 512 KB kept).
+  `GET /terminals/{id}/stream?since=N` is **Server-Sent Events** (the gateway streams bodies but refuses
+  WebSockets): base64 chunks + the new offset, a keep-alive comment every 15 s, an `end` event with the exit status.
+  The page re-attaches after a reload (`localStorage` remembers the id) and after a dropped stream it reconnects from
+  the last offset it saw — no gaps, no repeats. **Input:** keystrokes are POSTed in ~6 ms batches, strictly in order.
+- **Sessions live in rt-ssh's ONE web process** (compose pins `TOOLBOX_WEB_WORKERS: "1"` for rt-ssh — an SSH channel
+  can't be shared between processes; with more workers a stream/input would land on a process without the session).
+  Limits: `SSH_TERM_MAX` 8 open; closed after `SSH_TERM_IDLE` 30 min with no page attached and no typing, or after
+  `SSH_TERM_MAX_AGE` 12 h; a container restart or the C3 idle sleep ends them too (an open page's stream counts as
+  traffic, so it keeps rt-ssh awake).
+- **Read-only servers get no terminal** (409). The Commands tab's dangerous-command confirm does NOT apply — it is a
+  real shell; the page says so. Nothing typed is stored (unlike the Commands history).
+- Verified against a real OpenSSH server (linuxserver/openssh-server): state kept between commands, an interactive
+  `read` prompt, 3000 lines of output, reload → same logged-in shell, `exit` → "session ended — exit 0", read-only
+  refused, the 8-session limit, closing logs out on the server (no sshd session left); unit tests with a fake
+  channel (`tests/unit/test_ssh_terminal.py`, run in the rt-ssh container).
+- xterm.js 5.5.0 + addon-fit 0.10.0, bundled like Text Editor's CodeMirror: `npm i @xterm/xterm@5.5.0
+  @xterm/addon-fit@0.10.0 esbuild@0.25.0`, `npx esbuild ui/vendor/entry.js --bundle --format=esm --minify
+  --target=es2022 --outfile=term-bundle.js`, copy `node_modules/@xterm/xterm/css/xterm.css` too, bump `?v=`.
+
 ## Not built (decided, not forgotten)
 
-Interactive terminal; recursive delete; resumable DOWNLOADS (they stream; a drop means starting again);
+Recursive delete; resumable DOWNLOADS (they stream; a drop means starting again);
 port forwarding / jump hosts; SSH agent; per-command allow-lists; editing a saved server in place.
 
 ## Verified (real OpenSSH server in Docker)

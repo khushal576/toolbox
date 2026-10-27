@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>SSH &amp; SFTP</title>
+<link rel="stylesheet" href="vendor/xterm.css?v=1" />
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -28,6 +29,14 @@
   input[type=text], select, textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: .85rem; font-family: inherit; }
   textarea { font-family: var(--mono); font-size: .8rem; resize: vertical; }
   .check { display: flex; align-items: center; gap: 6px; font-size: .82rem; }
+  #termBox { height: calc(100vh - 330px); min-height: 320px; background: #0f1222; border-radius: 8px; padding: 6px; }
+  #t-term.full { position: fixed; inset: 0; z-index: 50; background: var(--bg); padding: 10px; }
+  #t-term.full #termBox { height: calc(100vh - 70px); }
+  .tchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px;
+           padding: 3px 4px 3px 10px; font-size: .78rem; cursor: pointer; background: var(--surface); }
+  .tchip.sel { border-color: var(--accent); background: var(--run-bg); font-weight: 600; }
+  .tchip.ended { opacity: .55; }
+  .tchip .x { border: 0; background: none; cursor: pointer; padding: 0 6px; color: var(--muted); }
   .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
   .tab { padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: .85rem; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
   .tab.sel { color: var(--accent); border-bottom-color: var(--accent); }
@@ -70,7 +79,7 @@
     <div id="mismatchBox" class="box err hidden"></div>
   </div>
 
-  <div class="tabs"><div class="tab sel" data-tab="files">Files</div><div class="tab" data-tab="cmd">Commands</div><div class="tab" data-tab="xfer">Transfers <span class="badge hidden" id="xferN"></span></div></div>
+  <div class="tabs"><div class="tab sel" data-tab="files">Files</div><div class="tab" data-tab="term">Terminal</div><div class="tab" data-tab="cmd">Commands</div><div class="tab" data-tab="xfer">Transfers <span class="badge hidden" id="xferN"></span></div></div>
 
   <!-- ===== files ===== -->
   <section id="t-files">
@@ -88,6 +97,22 @@
   </section>
 
   <!-- ===== commands ===== -->
+  <section id="t-term" class="hidden">
+    <div class="card">
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="primary" id="btnTermOpen">▶ Open a terminal on this server</button>
+        <span id="termChips" style="display:inline-flex;gap:6px;flex-wrap:wrap"></span>
+        <span class="spacer"></span>
+        <button id="btnTermFull" title="Full screen (Esc to leave)">⛶</button>
+      </div>
+      <div class="hint" style="margin:6px 0 8px">Logs in once with the server saved in the Vault and stays logged in — type as many
+        commands as you like (cd, sudo, psql, top, vim all work). It stays connected while this page is open and comes back
+        after a reload; without the page and without typing it closes after 30 minutes. This is a real shell: the
+        “dangerous command” check of the Commands tab does not apply here.</div>
+      <div id="termBox"></div>
+    </div>
+  </section>
+
   <section id="t-cmd" class="hidden">
     <div class="card">
       <textarea id="cmd" rows="3" placeholder="one command, e.g.  df -h   or   tail -n 50 /var/log/syslog"></textarea>
@@ -236,11 +261,81 @@ $('xfers').onclick = guard(async e => { const b = e.target.closest('button'); if
   else if (b.dataset.x === 'del') { if (b.textContent === 'Discard' && !confirm('Discard this upload and its staged copy? The partial file on the server (if any) stays.')) return; await api(`transfers/${id}`, { method: 'DELETE' }); }
   await refreshXfers(); });
 
+/* ---------------- live terminal (terminal.py on the server: one login, a shell with a PTY) ---------------- */
+// Output arrives as Server-Sent Events (base64 bytes from a byte offset, so a reload re-attaches without gaps);
+// keystrokes are POSTed in tiny batches, strictly in order. xterm.js is loaded only when this tab is first opened.
+const tm = { term: null, fit: null, id: null, es: null, off: 0, buf: '', timer: null, chain: Promise.resolve(), list: [] };
+async function ensureXterm() {
+  if (tm.term) return;
+  const m = await import('./vendor/term-bundle.js?v=1');
+  tm.term = new m.Terminal({ cursorBlink: true, fontSize: 13, scrollback: 10000, convertEol: false,
+    fontFamily: "'Cascadia Code','Fira Code',ui-monospace,Menlo,Consolas,monospace", theme: { background: '#0f1222' } });
+  tm.fit = new m.FitAddon(); tm.term.loadAddon(tm.fit); tm.term.open($('termBox')); tm.fit.fit();
+  tm.term.onData(d => { if (!tm.id) return; tm.buf += d; if (!tm.timer) tm.timer = setTimeout(flushInput, 6); });
+  tm.term.onResize(({ cols, rows }) => { if (tm.id) api(`terminals/${tm.id}/resize`, { method: 'POST', body: { cols, rows } }).catch(() => {}); });
+  new ResizeObserver(() => { try { tm.fit.fit(); } catch (e) {} }).observe($('termBox'));
+  tm.term.writeln('\x1b[90mPick a server above and press “Open a terminal”, or click an open session.\x1b[0m');
+}
+function flushInput() {
+  tm.timer = null; const d = tm.buf, id = tm.id; tm.buf = ''; if (!d || !id) return;
+  tm.chain = tm.chain.then(() => api(`terminals/${id}/input`, { method: 'POST', body: { data: d } }))
+    .catch(e => { tm.term.write(`\r\n\x1b[31m${e.message}\x1b[0m\r\n`); refreshTerms(); });
+}
+function attach(id, since = 0) {
+  if (tm.es) tm.es.close();
+  if (id !== tm.id || since === 0) { tm.term.reset(); tm.off = 0; }
+  tm.id = id; try { localStorage.setItem('ssh_term', id); } catch (e) {}
+  const es = tm.es = new EventSource(`terminals/${id}/stream?since=${since}`);
+  es.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.cut && tm.off === 0) tm.term.writeln('\x1b[90m… (older output not kept)\x1b[0m');
+    const bin = atob(m.d), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    tm.term.write(bytes); tm.off = m.o;
+  };
+  es.addEventListener('end', ev => { es.close(); const x = JSON.parse(ev.data || '{}');
+    tm.term.write(`\r\n\x1b[90m[session ended${x.exit_status != null ? ' — exit ' + x.exit_status : ''}]\x1b[0m\r\n`); refreshTerms(); });
+  es.onerror = () => {   // the stream dropped (network / container restart): reconnect from where we were, no repeats
+    es.close(); if (tm.es !== es) return;
+    setTimeout(() => { if (tm.es === es && tm.list.some(t => t.id === id && !t.closed)) attach(id, tm.off); else refreshTerms(); }, 1500);
+  };
+  renderChips(); tm.term.focus(); tm.fit.fit();
+  api(`terminals/${id}/resize`, { method: 'POST', body: { cols: tm.term.cols, rows: tm.term.rows } }).catch(() => {});
+}
+async function refreshTerms() {
+  try { tm.list = (await api('terminals')).terminals; } catch (e) { return; }
+  renderChips();
+}
+function renderChips() {
+  $('termChips').innerHTML = tm.list.map(t => `<span class="tchip${t.id === tm.id ? ' sel' : ''}${t.closed ? ' ended' : ''}" data-tid="${esc(t.id)}" title="opened ${when(t.started)}">
+    ${t.closed ? '■' : '●'} ${esc(t.name)} <span class="muted">${new Date(t.started * 1000).toLocaleTimeString()}</span><button class="x" data-tclose="${esc(t.id)}" title="Close (logs out)">✕</button></span>`).join('');
+}
+$('termChips').addEventListener('click', guard(async (e) => {
+  const x = e.target.closest('[data-tclose]'), c = e.target.closest('[data-tid]');
+  if (x) { await api(`terminals/${x.dataset.tclose}`, { method: 'DELETE' }); if (x.dataset.tclose === tm.id) { if (tm.es) tm.es.close(); tm.id = null; tm.term.reset(); } await refreshTerms(); return; }
+  if (c) { await ensureXterm(); const t = tm.list.find(t => t.id === c.dataset.tid); if (t && !t.closed) attach(t.id); else toast('That session has ended — open a new one.'); }
+}));
+$('btnTermOpen').onclick = guard(async () => {
+  if (!$('srv').value || !st.servers.length) return toast('Pick a server first.');
+  st.id = $('srv').value;   // (also what the “trust this server” step uses if its key isn't pinned yet)
+  await ensureXterm(); tm.term.reset(); tm.term.writeln('\x1b[90mconnecting…\x1b[0m');
+  const r = await api('terminals', { method: 'POST', body: { server_id: st.id, cols: tm.term.cols, rows: tm.term.rows } });
+  await refreshTerms(); attach(r.id);
+});
+$('btnTermFull').onclick = () => { $('t-term').classList.toggle('full'); setTimeout(() => { try { tm.fit.fit(); } catch (e) {} tm.term && tm.term.focus(); }, 50); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('t-term').classList.contains('full') && e.target.closest && !e.target.closest('#termBox')) $('t-term').classList.remove('full'); });
+async function openTermTab() {
+  await ensureXterm(); await refreshTerms();
+  let last = null; try { last = localStorage.getItem('ssh_term'); } catch (e) {}
+  if (!tm.id && last && tm.list.some(t => t.id === last && !t.closed)) attach(last);    // re-attach after a reload
+  setTimeout(() => { try { tm.fit.fit(); } catch (e) {} }, 30);
+}
+
 /* ---------------- tabs ---------------- */
-function showTab(t) { document.querySelectorAll('.tab').forEach(x => x.classList.toggle('sel', x.dataset.tab === t)); for (const k of ['files', 'cmd', 'xfer']) $('t-' + k).classList.toggle('hidden', k !== t); if (t === 'cmd') loadHist().catch(() => {}); if (t === 'xfer') refreshXfers().catch(() => {}); }
+function showTab(t) { document.querySelectorAll('.tab').forEach(x => x.classList.toggle('sel', x.dataset.tab === t)); for (const k of ['files', 'term', 'cmd', 'xfer']) $('t-' + k).classList.toggle('hidden', k !== t); if (t === 'cmd') loadHist().catch(() => {}); if (t === 'xfer') refreshXfers().catch(() => {}); if (t === 'term') openTermTab().catch(e => toast(e.message)); }
 document.querySelectorAll('.tab').forEach(x => x.onclick = () => showTab(x.dataset.tab));
 setInterval(() => { if (!$('t-xfer').classList.contains('hidden') || !$('xferN').classList.contains('hidden')) refreshXfers().catch(() => {}); }, 1200);
 loadServers().then(refreshXfers).catch(e => toast(e.message));
+(async () => { try { const l = (await api('terminals')).terminals; if (l.some(t => !t.closed)) showTab('term'); } catch (e) {} })();   // a live session → straight back to it
 </script>
 </body>
 </html>

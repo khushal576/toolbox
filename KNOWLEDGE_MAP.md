@@ -1402,6 +1402,25 @@ experience. See `duck-lab/CLAUDE.md` for the full picture.
   extra backend module (`engine.py`) beyond `server.py`. Imports
   `core.normalizer` directly for XML, so it must be copied after `core/`.
 
+## Tool: Text Editor — mounted at `/tools/text-editor/`
+
+Notepad++-style editor for messy text, entirely in the browser (tier 1, runtime light): tabs, regex find/replace,
+multi-cursor, validate + format JSON / JSON Lines / XML / HTML / CSV with line numbers, line tools, regex line tools,
+split compare. Read `text-editor/CLAUDE.md` first.
+
+| If you need to change... | Go to |
+|---|---|
+| Serving the page and the editor bundle (cache headers, `?v=`) | `text-editor/server.py` |
+| JSON / JSON Lines check (positions, messages) | `text-editor/ui/index.html` `jsonError`, `validateJson` |
+| XML / CSV checks | `validateXml` (DOMParser), `validateCsv` (`splitCsv`) |
+| Format / Minify (JSON never parsed — big numbers stay exact; XML indenter; HTML = js-beautify) | `formatJson`, `minifyJson`, `formatXml`, `doFormat` |
+| Line tools (sort, dedupe, trim, case, SQL IN, join/split…) | `LINE_OPS`, `applyLines` |
+| Regex keep/remove/extract/count | the `#regexBar` handler (`getRx`) |
+| Split compare | `openCompare`, `buildMerge` (`MergeView`, `diffConfig`), `syncBack` |
+| Keyboard shortcuts | `extraKeys` (+ CodeMirror defaults) |
+| Tabs kept between visits (4 MB) | `persist`, `KEEP_LIMIT` |
+| The bundle's contents / rebuild | `text-editor/ui/vendor/entry.js` + `text-editor/CLAUDE.md` |
+
 ## Tool: Data Lake — mounted at `/tools/data-lake/`
 
 Loads files into **Vault Data** tables as Parquet (roadmap L2) and queries them with SQL, Athena style (L3, 🔎 SQL tab). Read `data-lake/CLAUDE.md` first.
@@ -1432,6 +1451,21 @@ Loads files into **Vault Data** tables as Parquet (roadmap L2) and queries them 
 | SQL Studio full result → table / table → database | `sql-studio/server.py` `/export/lake`, `/import/lake`; page `btnExportLake`, import dialog |
 | DataDiff "Load from Vault" with tables (2000-row limit, bigger refused) | `ui/index.html` `refreshVaultDatasetSelects` → Vault `GET /data/tables/{ws}/{t}/csv` |
 | A new visitor sees someone else's tool session | `core_plugins/proxy.py` `_no_cookie_jar` (the proxy client must never store cookies) |
+
+### Vault Data extras (roadmap L5) — symptom → file
+
+| If you need to change... | Go to |
+|---|---|
+| Column profile (what's computed, sample size, cache) | `core/lake.py` `profile`, `PROFILE_SAMPLE`, table `lake.profiles`; Vault `GET /data/tables/{ws}/{t}/profile`; page `showProfile` |
+| Suggested joins (name rules, overlap check, minimum %) | `core/lake.py` `suggest_joins`, `_GENERIC`, `MIN_OVERLAP`; Vault `/joins`; Data Lake tree `showJoins` |
+| S3 credentials / reading s3:// tables / error wording | `core/lake.py` `use_s3`, `s3_secret_sql`, `prepare`, `s3_match`, `s3_error_text`; Vault `POST /test-s3` |
+| Loading from S3 (copy or read in place) | `data-lake/loader.py` (`s3` branch, `format_from_name`); page `#src-s3` |
+| Column types shown as varchar(100) / numeric(12,2) | `core/lake.py` `sql_type` (+ `_table_dict`); staging `declared_types` → `source.column_types` |
+| Charts on a query result | `data-lake/ui/index.html` `drawChart` (SVG, first `CHART_ROWS` rows) |
+| DataFrame Studio Tables bar (green = loaded; first = `df`, others = variables by name) | `df-studio/ui/index.html` `renderCatalog`, `renderFrames`; `engine.add_frame`/`lake_frame`/`recompute`, `steps.FRAMES`; `/frames/add`, `/frames/remove`, `/session/clear` |
+| DataFrame Studio column stats in the grid header, SQL-style types | `engine.column_stats` (`GET /column-stats`), `engine.sql_type`; page `headerHtml`, `#statsBtn` |
+| Duck Lab Tables bar (green = loaded, ✕ unloads) | `duck-lab/ui/index.html` `renderCatalog` → `/load/lake`, `/table/remove` |
+| The workspace sidebar hiding inside a tool | `core_plugins/ui/workspace.html` (`body.in-tool`, `open()`, Ctrl+K / Esc handler) |
 
 ## Tool: Vault — mounted at `/tools/vault/`
 
@@ -1657,6 +1691,7 @@ destructive commands need a confirm. See `ssh-sftp/CLAUDE.md`.
 | Upload/command jobs (worker container, thread fallback), log tail with `since` paging | `ssh-sftp/runner.py` → shared `core/jobs/runner.py` (`JobRunner(quiet=True)`, batched Redis logging `_BufferedLog` → `Channel.log_many`) |
 | API endpoints and error → HTTP mapping | `ssh-sftp/server.py` |
 | The page | `ssh-sftp/ui/index.html` |
+| Live terminal (sessions, output stream, input, limits, idle close) | `ssh-sftp/terminal.py`, `server.py` `/terminals*`; page `ensureXterm`/`attach`; rt-ssh pinned to 1 web process in `docker-compose.yml` |
 
 ### Known non-obvious behavior (read before touching these areas)
 

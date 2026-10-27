@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Text Editor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+    --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --ok: #15803d; --err: #b91c1c; --warn: #b45309;
+  }
+  html, body { height: 100%; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex;
+         flex-direction: column; overflow: hidden; font-size: 14px; }
+  button, select, input { font: inherit; color: inherit; }
+
+  /* tabs */
+  #tabbar { display: flex; align-items: stretch; background: var(--surface); border-bottom: 1px solid var(--border);
+            overflow-x: auto; flex: none; scrollbar-width: thin; }
+  .brand { padding: 0 14px; display: flex; align-items: center; font-weight: 700; letter-spacing: -0.3px; white-space: nowrap; }
+  .brand span { color: var(--accent); }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; height: 36px; font-size: 0.82rem; cursor: pointer;
+         border-left: 1px solid var(--border); color: var(--muted); white-space: nowrap; max-width: 220px; user-select: none; }
+  .tab .tt { overflow: hidden; text-overflow: ellipsis; }
+  .tab.active { color: var(--text); background: var(--bg); box-shadow: inset 0 -2px 0 var(--accent); font-weight: 600; }
+  .tab .dirty { color: var(--accent); }
+  .tab .x { width: 18px; height: 18px; border-radius: 4px; text-align: center; line-height: 18px; }
+  .tab .x:hover { background: var(--border); }
+  #newTab { padding: 0 12px; border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 1.1rem; border-left: 1px solid var(--border); }
+
+  /* toolbar */
+  .toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 10px; background: var(--surface);
+             border-bottom: 1px solid var(--border); flex: none; }
+  .toolbar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+  .btn { border: 1px solid var(--border); background: var(--surface); border-radius: 6px; padding: 4px 10px; font-size: 0.8rem;
+         cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--bg); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  select.btn { padding: 3px 6px; }
+  .menu { position: relative; }
+  .menu > summary { list-style: none; }
+  .menu > summary::-webkit-details-marker { display: none; }
+  .menu-list { position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; background: var(--surface);
+               border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+               padding: 4px; min-width: 250px; max-height: 70vh; overflow-y: auto; }
+  .menu-list button { display: flex; justify-content: space-between; gap: 14px; width: 100%; text-align: left; border: 0;
+                      background: none; padding: 6px 10px; border-radius: 5px; font-size: 0.82rem; cursor: pointer; }
+  .menu-list button:hover { background: var(--bg); }
+  .menu-list button small { color: var(--muted); }
+  .menu-list .grp { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; color: var(--muted); padding: 8px 10px 2px; letter-spacing: 0.4px; }
+  .hint { color: var(--muted); font-size: 0.76rem; }
+
+  /* regex bar / compare bar */
+  .subbar { display: none; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 10px; background: #f8f9fd;
+            border-bottom: 1px solid var(--border); flex: none; font-size: 0.8rem; }
+  .subbar.show { display: flex; }
+  .subbar input[type=text] { border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; min-width: 280px;
+                             font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; background: var(--surface); }
+  .subbar input.bad { border-color: var(--err); background: #fdecea; }
+  .subbar label { display: inline-flex; align-items: center; gap: 4px; }
+
+  /* editor area */
+  #main { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+  #editor, #merge { flex: 1; min-height: 0; overflow: hidden; }
+  #merge { display: none; }
+  #main.comparing #editor { display: none; }
+  #main.comparing #merge { display: block; }
+  #editor .cm-editor, #merge .cm-mergeView { height: 100%; }
+  #merge .cm-mergeView { overflow: auto; }
+  .cm-editor { background: var(--surface); }
+  .cm-editor.cm-focused { outline: none; }
+  #drop { position: absolute; inset: 10px; border: 3px dashed var(--accent); border-radius: 12px; background: rgba(79,94,240,0.06);
+          display: none; align-items: center; justify-content: center; font-size: 1.1rem; color: var(--accent); z-index: 40; pointer-events: none; }
+  #drop.show { display: flex; }
+
+  /* problems + status */
+  #problems { flex: none; max-height: 160px; overflow-y: auto; border-top: 1px solid var(--border); background: #fffafa; display: none;
+              font-size: 0.8rem; }
+  #problems.show { display: block; }
+  #problems .p { display: flex; gap: 10px; padding: 3px 12px; cursor: pointer; border-bottom: 1px solid #f6e3e3; }
+  #problems .p:hover { background: #fdecea; }
+  #problems .ln { color: var(--err); font-family: ui-monospace, Menlo, Consolas, monospace; min-width: 90px; }
+  #problems .head { position: sticky; top: 0; background: #fdecea; color: var(--err); font-weight: 600; padding: 4px 12px;
+                    display: flex; justify-content: space-between; }
+  .status { flex: none; display: flex; gap: 16px; align-items: center; padding: 3px 12px; background: var(--surface);
+            border-top: 1px solid var(--border); font-size: 0.74rem; color: var(--muted); white-space: nowrap; overflow-x: auto; }
+  .status b { color: var(--text); font-weight: 600; }
+  .status .valid { color: var(--ok); font-weight: 600; }
+  .status .invalid { color: var(--err); font-weight: 600; cursor: pointer; }
+  #toast { position: fixed; bottom: 34px; left: 50%; transform: translateX(-50%); background: #1c2035; color: #fff;
+           padding: 7px 14px; border-radius: 8px; font-size: 0.8rem; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 60; }
+  #toast.show { opacity: 0.95; }
+  #fatal { display: none; padding: 10px 14px; background: #fdecea; color: var(--err); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div id="tabbar">
+  <div class="brand">Text<span>&nbsp;Editor</span></div>
+  <div id="tabs" style="display:flex"></div>
+  <button id="newTab" title="New tab (Alt+N)">＋</button>
+</div>
+
+<div class="toolbar">
+  <button class="btn" id="btnOpen" title="Open files from your computer (Ctrl+O) — or drop them on the editor">📂 Open</button>
+  <button class="btn" id="btnSave" title="Download this tab (Ctrl+S)">💾 Save</button>
+  <input type="file" id="fileInput" multiple style="display:none" />
+  <span class="sep"></span>
+  <select class="btn" id="mode" title="Language — Auto picks JSON / XML / HTML / CSV from the text">
+    <option value="auto">Auto</option><option value="plain">Plain text</option><option value="json">JSON / JSON Lines</option>
+    <option value="xml">XML</option><option value="html">HTML</option><option value="csv">CSV / TSV</option>
+  </select>
+  <button class="btn" id="btnValidate" title="Check the whole text and list every problem with its line (Ctrl+Shift+V)">✔ Validate</button>
+  <button class="btn" id="btnFormat" title="Pretty-print JSON / XML / HTML (Ctrl+Shift+F)">✨ Format</button>
+  <button class="btn" id="btnMinify" title="Remove the formatting whitespace">⇢ Minify</button>
+  <select class="btn" id="indent" title="Indent for Format"><option value="2">2 spaces</option><option value="4">4 spaces</option><option value="tab">tabs</option></select>
+  <span class="sep"></span>
+  <details class="menu" id="linesMenu"><summary class="btn">☰ Lines ▾</summary>
+    <div class="menu-list">
+      <div class="grp">Sort — the selected lines, or all</div>
+      <button data-op="sortAZ">Sort A → Z <small>natural: 2 before 10</small></button>
+      <button data-op="sortZA">Sort Z → A</button>
+      <button data-op="sortAZi">Sort A → Z, ignore case</button>
+      <button data-op="sortNum">Sort by number</button>
+      <button data-op="sortLen">Sort by length</button>
+      <button data-op="reverse">Reverse order</button>
+      <div class="grp">Clean</div>
+      <button data-op="dedupe">Remove duplicate lines <small>keeps the first</small></button>
+      <button data-op="dedupeI">Remove duplicates, ignore case</button>
+      <button data-op="dupesOnly">Keep only duplicated lines</button>
+      <button data-op="trim">Trim spaces (both ends)</button>
+      <button data-op="trimEnd">Remove trailing spaces</button>
+      <button data-op="noEmpty">Remove empty lines</button>
+      <button data-op="noBlank">Remove blank lines <small>also spaces-only</small></button>
+      <div class="grp">Change</div>
+      <button data-op="upper">UPPER CASE</button>
+      <button data-op="lower">lower case</button>
+      <button data-op="title">Title Case</button>
+      <button data-op="sqlIn">Quote for SQL IN ( … ) <small>'a',</small></button>
+      <button data-op="wrap">Add text before / after each line…</button>
+      <button data-op="number">Number the lines</button>
+      <button data-op="join">Join lines with…</button>
+      <button data-op="split">Split into lines at…</button>
+      <button data-op="tabsToCols">Tabs ↔ commas (TSV ⇄ CSV)</button>
+    </div>
+  </details>
+  <button class="btn" id="btnRegex" title="Keep / remove lines matching a regex, extract matches, count (Ctrl+Shift+R)">.* Regex tools</button>
+  <button class="btn" id="btnFind" title="Find / replace with regex: Ctrl+F (Ctrl+H)">🔍 Find / Replace</button>
+  <span class="sep"></span>
+  <button class="btn" id="btnCompare" title="Split view: compare this tab with another (differences highlighted)">⇆ Compare</button>
+  <button class="btn" id="btnWrap" title="Wrap long lines (Alt+Z)">↵ Wrap</button>
+  <button class="btn" id="btnFold" title="Fold all / unfold all">⊟ Fold</button>
+  <select class="btn" id="fontSize" title="Font size"><option>12</option><option selected>13</option><option>14</option><option>16</option><option>18</option></select>
+  <span class="hint" style="margin-left:auto" title="Ctrl+F find · Ctrl+H replace · Ctrl+D next match · Ctrl+Alt+↑/↓ (or Shift+Alt+↑/↓) cursor on the line above/below · Alt+drag box selection · Ctrl+click extra cursor · Ctrl+/ comment · Alt+↑/↓ move line">⌨ shortcuts</span>
+</div>
+
+<div class="subbar" id="regexBar">
+  <b>Regex</b>
+  <input type="text" id="rx" placeholder="e.g. ^\d{4}-\d{2}  or  \berror\b  or  (\w+)@(\w+)" spellcheck="false" />
+  <label><input type="checkbox" id="rxI" /> ignore case</label>
+  <button class="btn" data-rx="keep">Keep matching lines</button>
+  <button class="btn" data-rx="drop">Remove matching lines</button>
+  <button class="btn" data-rx="extract" title="Every match (or its groups, tab-separated) into a new tab">Extract matches → new tab</button>
+  <button class="btn" data-rx="count">Count</button>
+  <span class="hint" id="rxInfo"></span>
+</div>
+
+<div class="subbar" id="compareBar">
+  <b>Compare</b> <span class="hint">left:</span> <b id="cmpLeft"></b> <span class="hint">right:</span>
+  <select class="btn" id="cmpRight"></select>
+  <button class="btn" id="cmpPrev" title="Previous difference">▲</button>
+  <button class="btn" id="cmpNext" title="Next difference">▼</button>
+  <button class="btn" id="cmpSwap">⇄ Swap</button>
+  <label class="hint"><input type="checkbox" id="cmpCollapse" checked /> hide unchanged</label>
+  <span class="hint" id="cmpInfo"></span>
+  <button class="btn" id="cmpClose" style="margin-left:auto">✕ Close compare</button>
+</div>
+
+<div id="fatal"></div>
+<div id="main">
+  <div id="editor"></div>
+  <div id="merge"></div>
+  <div id="drop">Drop files to open them in new tabs</div>
+</div>
+<div id="problems"></div>
+<div class="status" id="status"></div>
+<div id="toast"></div>
+
+<script type="module">
+// One local bundle (CodeMirror 6 + JSON/XML/HTML + lint + merge + js-beautify) — see CLAUDE.md. Bump ?v= on rebuild.
+import {
+  EditorView, basicSetup, EditorState, EditorSelection, Compartment, keymap,
+  addCursorAbove, addCursorBelow, indentWithTab, search, openSearchPanel, foldAll, unfoldAll, indentUnit,
+  json, xml, html, lintGutter, setDiagnostics, MergeView, goToNextChunk, goToPreviousChunk, getChunks, html_beautify,
+} from "./vendor/editor-bundle.js?v=1";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtBytes = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
+let toastTimer;
+function toast(msg) { $("toast").textContent = msg; $("toast").classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("show"), 2600); }
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+                set(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } } };
+
+// ---------------------------------------------------------------- languages + detection
+const langComp = new Compartment(), wrapComp = new Compartment(), sizeComp = new Compartment(), indentComp = new Compartment();
+function langExt(mode) { return mode === "json" ? json() : mode === "xml" ? xml() : mode === "html" ? html() : []; }
+function detect(text) {
+  const head = text.slice(0, 4000).trimStart();
+  if (!head) return "plain";
+  if (head[0] === "{" || head[0] === "[") return "json";
+  if (/^<\?xml/i.test(head)) return "xml";
+  if (/^<!doctype html|<html[\s>]|<(div|body|head|span|p|table|script)[\s>]/i.test(head)) return "html";
+  if (head[0] === "<") return "xml";
+  const lines = head.split(/\r?\n/).slice(0, 6).filter(Boolean);
+  if (lines.length >= 2) for (const d of [",", "\t", ";", "|"]) {
+    const n = splitCsv(lines[0], d).length;
+    if (n > 1 && lines.every((l) => splitCsv(l, d).length === n)) return "csv";
+  }
+  return "plain";
+}
+const modeName = { plain: "Plain text", json: "JSON", xml: "XML", html: "HTML", csv: "CSV" };
+
+// ---------------------------------------------------------------- tabs
+let tabs = [], active = 0, view = null, merge = null;
+const theme = EditorView.theme({
+  "&": { height: "100%" }, ".cm-scroller": { fontFamily: "'Cascadia Code','Fira Code',ui-monospace,Menlo,Consolas,monospace" },
+  ".cm-gutters": { background: "#f8f9fd", borderRight: "1px solid #dde1ef" }, ".cm-activeLineGutter": { background: "#e8ebfb" },
+  ".cm-panels-top": { borderBottom: "1px solid #dde1ef" },
+});
+function fontTheme(px) { return EditorView.theme({ "&": { fontSize: px + "px" } }); }
+const extraKeys = keymap.of([
+  { key: "Shift-Alt-ArrowUp", run: addCursorAbove, preventDefault: true },     // Ctrl+Alt+↑/↓ are built in too; some
+  { key: "Shift-Alt-ArrowDown", run: addCursorBelow, preventDefault: true },   // desktops take those for workspaces
+  { key: "Mod-h", run: openSearchPanel, preventDefault: true },
+  { key: "Mod-s", run: () => { saveTab(); return true; }, preventDefault: true },
+  { key: "Mod-o", run: () => { $("fileInput").click(); return true; }, preventDefault: true },
+  { key: "Mod-Shift-f", run: () => { doFormat(); return true; }, preventDefault: true },
+  { key: "Mod-Shift-v", run: () => { validateNow(true); return true; }, preventDefault: true },
+  { key: "Mod-Shift-r", run: () => { toggleRegex(); return true; }, preventDefault: true },
+  { key: "Alt-z", run: () => { toggleWrap(); return true; }, preventDefault: true },
+  { key: "Alt-n", run: () => { addTab("untitled", ""); return true; }, preventDefault: true },
+  indentWithTab,
+]);
+let wrapOn = store.get("te_wrap") === "1", fontPx = +(store.get("te_font") || 13);
+function baseExtensions(mode) {
+  return [
+    extraKeys, basicSetup, search({ top: true }), lintGutter(), theme, EditorState.allowMultipleSelections.of(true),
+    langComp.of(langExt(mode)), wrapComp.of(wrapOn ? EditorView.lineWrapping : []), sizeComp.of(fontTheme(fontPx)),
+    indentComp.of(indentUnit.of(indentStr())),
+    EditorView.updateListener.of(onUpdate),
+  ];
+}
+function indentStr() { const v = $("indent").value; return v === "tab" ? "\t" : " ".repeat(+v); }
+function makeState(text, mode) { return EditorState.create({ doc: text, extensions: baseExtensions(mode) }); }
+function resolvedMode(t) { return t.mode === "auto" ? (t.detected || "plain") : t.mode; }
+
+function addTab(name, text, mode, background) {
+  const t = { id: Math.random().toString(36).slice(2), name, mode: mode || "auto", detected: detect(text), dirty: false, diags: [] };
+  t.state = makeState(text, resolvedMode(t));
+  tabs.push(t);
+  if (background) renderTabs(); else switchTab(tabs.length - 1);
+  return t;
+}
+function switchTab(i) {
+  if (merge) closeCompare();
+  if (view && tabs[active]) tabs[active].state = view.state;
+  active = Math.max(0, Math.min(i, tabs.length - 1));
+  const t = tabs[active];
+  view.setState(t.state);
+  $("mode").value = t.mode;
+  renderTabs(); renderProblems(); updateStatus(); view.focus();
+  scheduleValidate();
+}
+function closeTab(i) {
+  const t = tabs[i];
+  if (t.dirty && t.state.doc.length && !confirm(`Close “${t.name}”? Its text is not saved to a file.`)) return;
+  if (view && tabs[active]) tabs[active].state = view.state;
+  tabs.splice(i, 1);
+  if (!tabs.length) { addTab("untitled", ""); return; }
+  active = Math.min(active > i ? active - 1 : active, tabs.length - 1);
+  view.setState(tabs[active].state); renderTabs(); updateStatus(); renderProblems(); persistSoon();
+}
+function renderTabs() {
+  $("tabs").innerHTML = tabs.map((t, i) => `<div class="tab${i === active ? " active" : ""}" data-i="${i}" title="${esc(t.name)} — double-click to rename">
+    <span class="tt">${esc(t.name)}</span>${t.dirty ? '<span class="dirty">●</span>' : ""}<span class="x" data-close="${i}" title="Close">×</span></div>`).join("");
+}
+$("tabs").addEventListener("click", (e) => {
+  const x = e.target.closest("[data-close]"); if (x) { closeTab(+x.dataset.close); return; }
+  const t = e.target.closest("[data-i]"); if (t && +t.dataset.i !== active) switchTab(+t.dataset.i);
+});
+$("tabs").addEventListener("dblclick", (e) => {
+  const t = e.target.closest("[data-i]"); if (!t) return;
+  const tab = tabs[+t.dataset.i], n = prompt("Tab name:", tab.name); if (n) { tab.name = n.trim(); renderTabs(); persistSoon(); }
+});
+$("newTab").onclick = () => addTab("untitled", "");
+
+// ---------------------------------------------------------------- update loop: status, auto-detect, live validation
+let detectTimer, validateTimer;
+function onUpdate(u) {
+  if (u.view !== view) return;
+  if (u.docChanged) {
+    const t = tabs[active]; if (!t) return;
+    if (!t.dirty) { t.dirty = true; renderTabs(); }
+    if (t.mode === "auto") { clearTimeout(detectTimer); detectTimer = setTimeout(autoDetect, 400); }
+    scheduleValidate(); persistSoon();
+  }
+  if (u.docChanged || u.selectionSet) updateStatusSoon();
+}
+function autoDetect() {
+  const t = tabs[active]; if (!t || t.mode !== "auto") return;
+  const d = detect(view.state.sliceDoc(0, 4000));
+  if (d !== t.detected) { t.detected = d; view.dispatch({ effects: langComp.reconfigure(langExt(d)) }); updateStatus(); scheduleValidate(); }
+}
+let statusRaf = 0;
+function updateStatusSoon() { if (!statusRaf) statusRaf = requestAnimationFrame(() => { statusRaf = 0; updateStatus(); }); }
+function updateStatus() {
+  const st = view.state, t = tabs[active], sel = st.selection.main, line = st.doc.lineAt(sel.head);
+  const selChars = st.selection.ranges.reduce((a, r) => a + (r.to - r.from), 0);
+  const v = t.validity;
+  $("status").innerHTML = `<span>Ln <b>${line.number.toLocaleString()}</b>, Col <b>${sel.head - line.from + 1}</b></span>` +
+    (st.selection.ranges.length > 1 ? `<span><b>${st.selection.ranges.length}</b> cursors</span>` : "") +
+    (selChars ? `<span><b>${selChars.toLocaleString()}</b> selected</span>` : "") +
+    `<span><b>${st.doc.lines.toLocaleString()}</b> lines</span><span>${fmtBytes(st.doc.length)}</span>` +
+    `<span>${modeName[resolvedMode(t)]}${t.mode === "auto" ? " (auto)" : ""}</span>` +
+    (v ? (v.ok ? `<span class="valid">✓ ${esc(v.text)}</span>` : `<span class="invalid" id="stInvalid">✗ ${esc(v.text)}</span>`) : "") +
+    `<span style="margin-left:auto">${wrapOn ? "wrap" : "no wrap"} · ${fontPx}px</span>`;
+  const bad = $("stInvalid"); if (bad) bad.onclick = () => jumpTo(t.diags[0]);
+}
+
+// ---------------------------------------------------------------- validation (with line numbers)
+const LIVE_LIMIT = 8 * 1048576;  // above 8 MB validation runs only on the button
+function scheduleValidate() {
+  clearTimeout(validateTimer);
+  const t = tabs[active]; if (!t) return;
+  if (!["json", "xml", "csv"].includes(resolvedMode(t)) || view.state.doc.length > LIVE_LIMIT) {
+    if (t.validity || t.diags.length) { t.validity = null; t.diags = []; view.dispatch(setDiagnostics(view.state, [])); renderProblems(); updateStatus(); }
+    return;
+  }
+  validateTimer = setTimeout(() => validateNow(false), 500);
+}
+function validateNow(explicit) {
+  const t = tabs[active], mode = resolvedMode(t), text = view.state.doc.toString();
+  let res;
+  if (!text.trim()) res = { ok: true, text: "empty", diags: [] };
+  else if (mode === "json") res = validateJson(text);
+  else if (mode === "xml") res = validateXml(text);
+  else if (mode === "csv") res = validateCsv(text);
+  else { if (explicit) toast(mode === "html" ? "HTML is forgiving — there is no strict check. ✨ Format tidies it." : "Pick JSON, XML or CSV to validate."); return; }
+  t.validity = { ok: res.ok, text: res.text }; t.diags = res.diags;
+  view.dispatch(setDiagnostics(view.state, res.diags.slice(0, 2000)));
+  renderProblems(); updateStatus();
+  if (explicit) toast(res.ok ? "✓ " + res.text : "✗ " + res.text);
+}
+function posToLineCol(text, pos) {
+  let line = 1, last = -1;
+  for (let i = text.indexOf("\n"); i !== -1 && i < pos; i = text.indexOf("\n", i + 1)) { line++; last = i; }
+  return { line, col: pos - last };
+}
+// A small JSON checker of our own: exact position + a plain message on every browser (JSON.parse's wording/position
+// differs per engine), and it never turns numbers into floats.
+function jsonError(s, start, end) {
+  let i = start;
+  const fail = (msg) => { throw { pos: i, msg }; };
+  const ws = () => { while (i < end) { const c = s.charCodeAt(i); if (c === 32 || c === 10 || c === 13 || c === 9) i++; else break; } };
+  const str = () => {
+    i++;
+    while (i < end) {
+      const c = s.charCodeAt(i);
+      if (c === 34) { i++; return; }
+      if (c === 92) {
+        const n = s[i + 1];
+        if ('"\\/bfnrt'.includes(n)) i += 2;
+        else if (n === "u" && /^[0-9a-fA-F]{4}$/.test(s.substr(i + 2, 4))) i += 6;
+        else fail("Bad escape in a string (\\" + (n || "") + ")");
+        continue;
+      }
+      if (c < 32) fail(c === 10 ? "Line break inside a string — a closing \" is missing?" : "Control character inside a string");
+      i++;
+    }
+    fail("The string is never closed — a \" is missing");
+  };
+  const NUM = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+  const value = (depth) => {
+    if (depth > 1000) fail("Nested too deep");
+    ws();
+    if (i >= end) fail("Unexpected end — a value is missing");
+    const c = s[i];
+    if (c === "{") {
+      i++; ws(); if (s[i] === "}") { i++; return; }
+      for (;;) {
+        ws();
+        if (s[i] !== '"') fail(s[i] === "'" ? "Property names need double quotes" : s[i] === "}" ? "Trailing comma before }" : 'Expected a "quoted" property name');
+        str(); ws();
+        if (s[i] !== ":") fail("Expected : after the property name");
+        i++; value(depth + 1); ws();
+        if (s[i] === ",") { i++; continue; }
+        if (s[i] === "}") { i++; return; }
+        fail(i >= end ? "Unexpected end — a } is missing" : "Expected , or } after a value — a comma is missing?");
+      }
+    }
+    if (c === "[") {
+      i++; ws(); if (s[i] === "]") { i++; return; }
+      for (;;) {
+        ws(); if (s[i] === "]") fail("Trailing comma before ]");
+        value(depth + 1); ws();
+        if (s[i] === ",") { i++; continue; }
+        if (s[i] === "]") { i++; return; }
+        fail(i >= end ? "Unexpected end — a ] is missing" : "Expected , or ] after an item — a comma is missing?");
+      }
+    }
+    if (c === '"') return str();
+    if (c === "-" || (c >= "0" && c <= "9")) {
+      NUM.lastIndex = i; const m = NUM.exec(s);
+      if (!m || !m[0] || m[0] === "-") fail("Bad number");
+      i += m[0].length; return;
+    }
+    for (const w of ["true", "false", "null"]) if (s.startsWith(w, i)) { i += w.length; return; }
+    if (c === "'") fail("Strings need double quotes, not '");
+    if (/[A-Za-z]/.test(c)) fail(`Unexpected word — text values need "double quotes"`);
+    fail(`Unexpected character ${JSON.stringify(c)}`);
+  };
+  try { value(0); ws(); if (i < end) fail("Unexpected text after the JSON value"); return null; }
+  catch (e) { if (e && e.msg) return e; throw e; }
+}
+function validateJson(text) {
+  const e = jsonError(text, 0, text.length);
+  if (!e) return { ok: true, text: "valid JSON", diags: [] };
+  // more than one value, one per line → JSON Lines: check every line on its own
+  if (e.msg.startsWith("Unexpected text after") && text.indexOf("\n") !== -1 && text.indexOf("\n") < e.pos + 1) {
+    const diags = []; let from = 0, n = 0, lines = 0;
+    while (from <= text.length) {
+      let to = text.indexOf("\n", from); if (to === -1) to = text.length;
+      n++;
+      if (text.slice(from, to).trim()) {
+        lines++;
+        const le = jsonError(text, from, to);
+        if (le) diags.push({ from: Math.min(le.pos, to), to: Math.min(le.pos + 1, to), severity: "error", message: `line ${n}: ${le.msg}`, line: n });
+      }
+      from = to + 1;
+    }
+    return diags.length ? { ok: false, text: `JSON Lines: ${diags.length.toLocaleString()} bad line(s) of ${lines.toLocaleString()}`, diags }
+      : { ok: true, text: `valid JSON Lines (${lines.toLocaleString()} records)`, diags: [] };
+  }
+  const lc = posToLineCol(text, e.pos);
+  return { ok: false, text: `JSON error at line ${lc.line}, col ${lc.col}`, diags: [{ from: e.pos, to: Math.min(e.pos + 1, text.length), severity: "error", message: e.msg, line: lc.line, col: lc.col }] };
+}
+function validateXml(text) {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  const pe = doc.getElementsByTagName("parsererror")[0];
+  if (!pe) return { ok: true, text: "valid XML", diags: [] };
+  const raw = pe.textContent || "";
+  let m = raw.match(/line (\d+) at column (\d+):?\s*(.*)/i);                    // Chromium / WebKit
+  const ff = raw.match(/Line Number (\d+), Column (\d+)/i);                       // Firefox
+  let line = 1, col = 1, msg = raw.replace(/\s+/g, " ").trim();
+  if (m) { line = +m[1]; col = +m[2]; msg = m[3].split("\n")[0].trim() || msg; }
+  else if (ff) { line = +ff[1]; col = +ff[2]; msg = raw.split("\n")[0].replace(/^XML Parsing Error:\s*/i, ""); }
+  const st = view.state, ln = st.doc.line(Math.min(line, st.doc.lines));
+  const from = Math.min(ln.from + Math.max(col - 1, 0), ln.to);
+  return { ok: false, text: `XML error at line ${line}, col ${col}`, diags: [{ from, to: Math.min(from + 1, st.doc.length), severity: "error", message: msg, line, col }] };
+}
+function splitCsv(line, d) {  // quote-aware field split ("a, b" stays one field)
+  const out = []; let cur = "", q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) { if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true; else if (c === d) { out.push(cur); cur = ""; } else cur += c;
+  }
+  out.push(cur); return out;
+}
+function validateCsv(text) {
+  const lines = text.split(/\r?\n/), first = lines[0];
+  const d = [",", "\t", ";", "|"].map((x) => [x, splitCsv(first, x).length]).sort((a, b) => b[1] - a[1])[0][0];
+  const want = splitCsv(first, d).length, diags = [];
+  let pos = 0, rows = 0;
+  for (let n = 0; n < lines.length; n++) {
+    const l = lines[n];
+    if (l.trim()) {
+      rows++;
+      const k = splitCsv(l, d).length;
+      if (k !== want) diags.push({ from: pos, to: pos + l.length, severity: "error", message: `line ${n + 1}: ${k} fields, the header has ${want}`, line: n + 1 });
+    }
+    pos += l.length + (text[pos + l.length] === "\r" ? 2 : 1);
+  }
+  const dn = { ",": "comma", "\t": "tab", ";": "semicolon", "|": "pipe" }[d];
+  return diags.length ? { ok: false, text: `CSV: ${diags.length.toLocaleString()} row(s) with the wrong number of fields (${dn}, ${want} columns)`, diags }
+    : { ok: true, text: `CSV ok — ${rows.toLocaleString()} rows × ${want} columns (${dn})`, diags: [] };
+}
+function renderProblems() {
+  const t = tabs[active], box = $("problems");
+  if (!t || !t.diags.length) { box.classList.remove("show"); box.innerHTML = ""; return; }
+  const shown = t.diags.slice(0, 500);
+  box.innerHTML = `<div class="head"><span>${t.diags.length.toLocaleString()} problem(s)${t.diags.length > 500 ? " — first 500 listed" : ""}</span><span class="hint">click to jump</span></div>` +
+    shown.map((d, k) => `<div class="p" data-k="${k}"><span class="ln">line ${d.line}${d.col ? ", col " + d.col : ""}</span><span>${esc(d.message.replace(/^line \d+: /, ""))}</span></div>`).join("");
+  box.classList.add("show");
+}
+$("problems").addEventListener("click", (e) => { const p = e.target.closest("[data-k]"); if (p) jumpTo(tabs[active].diags[+p.dataset.k]); });
+function jumpTo(d) {
+  if (!d) return;
+  view.dispatch({ selection: EditorSelection.cursor(d.from), effects: EditorView.scrollIntoView(d.from, { y: "center" }) });
+  view.focus();
+}
+$("btnValidate").onclick = () => validateNow(true);
+
+// ---------------------------------------------------------------- format / minify (no number parsing: big ids stay exact)
+function formatJson(s, ind) {
+  const out = []; let lvl = 0, inStr = false, escp = false;
+  const nl = () => "\n" + ind.repeat(lvl);
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) { out.push(c); if (escp) escp = false; else if (c === "\\") escp = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') { inStr = true; out.push(c); continue; }
+    if (c === " " || c === "\n" || c === "\r" || c === "\t") continue;
+    if (c === "{" || c === "[") {
+      let j = i + 1; while (j < s.length && /\s/.test(s[j])) j++;
+      if (s[j] === (c === "{" ? "}" : "]")) { out.push(c + s[j]); i = j; continue; }
+      lvl++; out.push(c + nl()); continue;
+    }
+    if (c === "}" || c === "]") { lvl = Math.max(0, lvl - 1); out.push(nl() + c); continue; }
+    if (c === ",") { out.push("," + nl()); continue; }
+    if (c === ":") { out.push(": "); continue; }
+    out.push(c);
+  }
+  return out.join("");
+}
+function minifyJson(s) {
+  const out = []; let inStr = false, escp = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) { out.push(c); if (escp) escp = false; else if (c === "\\") escp = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    if (c === " " || c === "\n" || c === "\r" || c === "\t") continue;
+    out.push(c);
+  }
+  return out.join("");
+}
+function formatXml(s, ind) {
+  const toks = s.match(/<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<![^>]*>|<[^>]+>|[^<]+/g) || [];
+  const out = []; let lvl = 0;
+  const isOpen = (t) => t[0] === "<" && !t.startsWith("</") && !t.endsWith("/>") && !/^<[?!]/.test(t);
+  for (let k = 0; k < toks.length; k++) {
+    const t = toks[k];
+    if (t[0] !== "<" || /^<!\[CDATA\[/.test(t)) { const txt = t[0] === "<" ? t : t.trim(); if (txt) out.push(ind.repeat(lvl) + txt); continue; }
+    if (t.startsWith("</")) { lvl = Math.max(0, lvl - 1); out.push(ind.repeat(lvl) + t); continue; }
+    if (isOpen(t)) {
+      const a = toks[k + 1], b = toks[k + 2];
+      if (a && a.startsWith("</")) { out.push(ind.repeat(lvl) + t + a); k += 1; continue; }          // <a></a>
+      if (a && a[0] !== "<" && b && b.startsWith("</")) { out.push(ind.repeat(lvl) + t + a.trim() + b); k += 2; continue; }  // <a>text</a>
+      out.push(ind.repeat(lvl) + t); lvl++; continue;
+    }
+    out.push(ind.repeat(lvl) + t);
+  }
+  return out.join("\n");
+}
+function replaceAll(text, note) {
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, userEvent: "input.format" });
+  toast(note + " — Ctrl+Z to undo");
+}
+function doFormat(minify) {
+  const t = tabs[active], text = view.state.doc.toString(), mode = resolvedMode(t), ind = indentStr();
+  if (!text.trim()) return;
+  if (mode === "json") {
+    const v = validateJson(text);
+    if (!v.ok) { validateNow(false); toast("Fix the JSON first: " + v.text); return; }
+    if (v.text.startsWith("valid JSON Lines")) {
+      if (!minify) { toast("JSON Lines — each line is one record; Minify cleans every line, Format would break the format."); return; }
+      replaceAll(text.split(/\r?\n/).map((l) => l.trim() ? minifyJson(l) : l).join("\n"), "Minified every line");
+      return;
+    }
+    replaceAll(minify ? minifyJson(text) : formatJson(text, ind), minify ? "Minified" : "Formatted");
+  } else if (mode === "xml") {
+    const v = validateXml(text);
+    if (!v.ok && !confirm(v.text + " — format anyway?")) return;
+    replaceAll(minify ? text.replace(/>\s+</g, "><").trim() : formatXml(text, ind), minify ? "Minified" : "Formatted");
+  } else if (mode === "html") {
+    replaceAll(minify ? text.replace(/>\s+</g, "><").replace(/\s{2,}/g, " ").trim()
+      : html_beautify(text, { indent_size: ind === "\t" ? 1 : ind.length, indent_char: ind === "\t" ? "\t" : " ", wrap_line_length: 0, preserve_newlines: true, max_preserve_newlines: 1 }),
+      minify ? "Minified" : "Formatted");
+  } else toast("Format works on JSON, XML and HTML — pick the language at the left of the toolbar.");
+}
+$("btnFormat").onclick = () => doFormat(false);
+$("btnMinify").onclick = () => doFormat(true);
+$("indent").onchange = () => view.dispatch({ effects: indentComp.reconfigure(indentUnit.of(indentStr())) });
+$("mode").onchange = () => {
+  const t = tabs[active]; t.mode = $("mode").value;
+  if (t.mode === "auto") t.detected = detect(view.state.sliceDoc(0, 4000));
+  view.dispatch({ effects: langComp.reconfigure(langExt(resolvedMode(t))) });
+  updateStatus(); scheduleValidate(); persistSoon();
+};
+
+// ---------------------------------------------------------------- line tools (selection or whole text, one undo step)
+function lineRange() {
+  const st = view.state, sel = st.selection.main;
+  if (sel.empty && st.selection.ranges.length === 1) return { from: 0, to: st.doc.length, whole: true };
+  const a = st.doc.lineAt(st.selection.ranges.reduce((m, r) => Math.min(m, r.from), Infinity));
+  const b = st.doc.lineAt(st.selection.ranges.reduce((m, r) => Math.max(m, r.to), 0));
+  return { from: a.from, to: b.to };
+}
+function applyLines(fn, label) {
+  const r = lineRange(), lines = view.state.sliceDoc(r.from, r.to).split(/\r?\n/);
+  const trailing = lines.length > 1 && lines[lines.length - 1] === "";   // a final newline stays at the end
+  if (trailing) lines.pop();
+  const before = lines.length, out = fn(lines);
+  if (out == null) return;
+  view.dispatch({ changes: { from: r.from, to: r.to, insert: out.join("\n") + (trailing ? "\n" : "") }, userEvent: "input.lines" });
+  toast(`${label}: ${before.toLocaleString()} → ${out.length.toLocaleString()} lines${r.whole ? "" : " (selection)"} — Ctrl+Z to undo`);
+}
+const natural = new Intl.Collator(undefined, { numeric: true, sensitivity: "variant" });
+const naturalI = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+const num = (s) => { const m = s.match(/-?\d+(?:[.,]\d+)?/); return m ? parseFloat(m[0].replace(",", ".")) : Infinity; };
+const dedupe = (lines, key) => { const seen = new Set(); return lines.filter((l) => { const k = key(l); if (seen.has(k)) return false; seen.add(k); return true; }); };
+const LINE_OPS = {
+  sortAZ: ["Sorted A → Z", (l) => l.sort(natural.compare)],
+  sortZA: ["Sorted Z → A", (l) => l.sort((a, b) => natural.compare(b, a))],
+  sortAZi: ["Sorted, ignoring case", (l) => l.sort(naturalI.compare)],
+  sortNum: ["Sorted by number", (l) => l.sort((a, b) => num(a) - num(b) || natural.compare(a, b))],
+  sortLen: ["Sorted by length", (l) => l.sort((a, b) => a.length - b.length || natural.compare(a, b))],
+  reverse: ["Reversed", (l) => l.reverse()],
+  dedupe: ["Removed duplicates", (l) => dedupe(l, (x) => x)],
+  dedupeI: ["Removed duplicates (ignore case)", (l) => dedupe(l, (x) => x.toLowerCase())],
+  dupesOnly: ["Kept duplicated lines", (l) => { const c = new Map(); l.forEach((x) => c.set(x, (c.get(x) || 0) + 1)); return dedupe(l.filter((x) => c.get(x) > 1), (x) => x); }],
+  trim: ["Trimmed", (l) => l.map((x) => x.trim())],
+  trimEnd: ["Removed trailing spaces", (l) => l.map((x) => x.replace(/\s+$/, ""))],
+  noEmpty: ["Removed empty lines", (l) => l.filter((x) => x !== "")],
+  noBlank: ["Removed blank lines", (l) => l.filter((x) => x.trim() !== "")],
+  upper: ["UPPER CASE", (l) => l.map((x) => x.toUpperCase())],
+  lower: ["lower case", (l) => l.map((x) => x.toLowerCase())],
+  title: ["Title Case", (l) => l.map((x) => x.toLowerCase().replace(/(^|[\s\-_/(])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()))],
+  sqlIn: ["Quoted for SQL IN", (l) => { const v = l.filter((x) => x.trim()).map((x) => `'${x.trim().replace(/'/g, "''")}'`); return v.map((x, i) => x + (i < v.length - 1 ? "," : "")); }],
+  wrap: ["Added text", (l) => { const pre = prompt("Text BEFORE each line (can be empty):", "\""); if (pre === null) return null;
+                                 const suf = prompt("Text AFTER each line (can be empty):", "\","); if (suf === null) return null; return l.map((x) => pre + x + suf); }],
+  number: ["Numbered", (l) => { const w = String(l.length).length; return l.map((x, i) => String(i + 1).padStart(w, " ") + "  " + x); }],
+  join: ["Joined", (l) => { const d = prompt("Join the lines with (\\t = tab):", ", "); if (d === null) return null; return [l.join(d.replace(/\\t/g, "\t"))]; }],
+  split: ["Split", (l) => { const d = prompt("Split at (text or /regex/):", ","); if (!d) return null;
+                            const sep = /^\/.+\/$/.test(d) ? new RegExp(d.slice(1, -1)) : d.replace(/\\t/g, "\t"); return l.flatMap((x) => x.split(sep)); }],
+  tabsToCols: ["Converted", (l) => { const tabbed = l.some((x) => x.includes("\t"));
+                                     return l.map((x) => tabbed ? splitCsv(x, "\t").map(csvCell).join(",") : splitCsv(x, ",").join("\t")); }],
+};
+const csvCell = (v) => /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+$("linesMenu").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-op]"); if (!b) return;
+  $("linesMenu").open = false;
+  const [label, fn] = LINE_OPS[b.dataset.op]; applyLines(fn, label);
+});
+document.addEventListener("click", (e) => { if (!e.target.closest("#linesMenu")) $("linesMenu").open = false; });
+
+// ---------------------------------------------------------------- regex tools
+function toggleRegex() { $("regexBar").classList.toggle("show"); if ($("regexBar").classList.contains("show")) $("rx").focus(); }
+$("btnRegex").onclick = toggleRegex;
+function getRx(global) {
+  const src = $("rx").value; if (!src) { $("rxInfo").textContent = "type a regex first"; return null; }
+  try { const r = new RegExp(src, ($("rxI").checked ? "i" : "") + (global ? "g" : "")); $("rx").classList.remove("bad"); return r; }
+  catch (e) { $("rx").classList.add("bad"); $("rxInfo").textContent = e.message; return null; }
+}
+$("rx").addEventListener("input", () => { $("rx").classList.remove("bad"); $("rxInfo").textContent = ""; });
+$("rx").addEventListener("keydown", (e) => { if (e.key === "Enter") $("regexBar").querySelector('[data-rx="count"]').click(); });
+$("regexBar").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-rx]"); if (!b) return;
+  const op = b.dataset.rx, rx = getRx(op === "extract" || op === "count"); if (!rx) return;
+  if (op === "keep") applyLines((l) => l.filter((x) => rx.test(x)), "Kept matching lines");
+  if (op === "drop") applyLines((l) => l.filter((x) => !rx.test(x)), "Removed matching lines");
+  if (op === "count" || op === "extract") {
+    const r = lineRange(), text = view.state.sliceDoc(r.from, r.to), out = [];
+    let n = 0, linesHit = 0;
+    for (const line of text.split(/\r?\n/)) {
+      let hit = false;
+      for (const m of line.matchAll(rx)) { n++; hit = true; if (op === "extract") out.push(m.length > 1 ? m.slice(1).map((g) => g ?? "").join("\t") : m[0]); if (out.length > 2e6) break; }
+      if (hit) linesHit++;
+    }
+    $("rxInfo").textContent = `${n.toLocaleString()} match(es) on ${linesHit.toLocaleString()} line(s)`;
+    if (op === "extract") { if (!n) return; addTab(`matches of ${tabs[active].name}`, out.join("\n"), "plain"); toast(`${n.toLocaleString()} match(es) → new tab`); }
+  }
+});
+$("btnFind").onclick = () => { openSearchPanel(view); };
+
+// ---------------------------------------------------------------- view options
+function toggleWrap() {
+  wrapOn = !wrapOn; store.set("te_wrap", wrapOn ? "1" : "0"); $("btnWrap").classList.toggle("on", wrapOn);
+  view.dispatch({ effects: wrapComp.reconfigure(wrapOn ? EditorView.lineWrapping : []) }); updateStatus();
+}
+$("btnWrap").onclick = toggleWrap; $("btnWrap").classList.toggle("on", wrapOn);
+let folded = false;
+$("btnFold").onclick = () => { folded = !folded; (folded ? foldAll : unfoldAll)(view); $("btnFold").textContent = folded ? "⊞ Unfold" : "⊟ Fold"; };
+$("fontSize").value = String(fontPx);
+$("fontSize").onchange = () => { fontPx = +$("fontSize").value; store.set("te_font", String(fontPx)); view.dispatch({ effects: sizeComp.reconfigure(fontTheme(fontPx)) }); updateStatus(); };
+
+// ---------------------------------------------------------------- files: open / drop / save
+const BIG = 60 * 1048576;
+function openFiles(files) {
+  const cur = tabs[active];   // an empty, untouched "untitled" tab is replaced by the first file
+  const replace = cur && !cur.dirty && !cur.state.doc.length && cur.name === "untitled" ? cur : null;
+  [...files].forEach((f) => {
+    if (f.size > BIG && !confirm(`${f.name} is ${fmtBytes(f.size)} — very big files can make the browser slow. Open it anyway?`)) return;
+    const r = new FileReader();
+    r.onload = () => {
+      const t = addTab(f.name, r.result);
+      t.dirty = false;
+      const k = replace ? tabs.indexOf(replace) : -1;
+      if (k !== -1 && tabs.length > 1) { tabs.splice(k, 1); active = tabs.indexOf(t); }
+      renderTabs(); persistSoon();
+      const ext = (f.name.split(".").pop() || "").toLowerCase();
+      const byExt = { json: "json", jsonl: "json", ndjson: "json", xml: "xml", html: "html", htm: "html", csv: "csv", tsv: "csv" }[ext];
+      if (byExt && byExt !== t.detected) { t.mode = byExt; $("mode").value = byExt; view.dispatch({ effects: langComp.reconfigure(langExt(byExt)) }); updateStatus(); scheduleValidate(); }
+    };
+    r.readAsText(f);
+  });
+}
+$("btnOpen").onclick = () => $("fileInput").click();
+$("fileInput").onchange = () => { openFiles($("fileInput").files); $("fileInput").value = ""; };
+let dragDepth = 0;
+document.addEventListener("dragenter", (e) => { if ([...e.dataTransfer.types].includes("Files")) { dragDepth++; $("drop").classList.add("show"); } });
+document.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; $("drop").classList.remove("show"); } });
+document.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
+document.addEventListener("drop", (e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); dragDepth = 0; $("drop").classList.remove("show"); openFiles(e.dataTransfer.files); });
+function saveTab() {
+  const t = tabs[active], text = (merge ? merge.a.state : view.state).doc.toString();
+  let name = t.name; if (!/\.\w{1,6}$/.test(name)) name += { json: ".json", xml: ".xml", html: ".html", csv: ".csv" }[resolvedMode(t)] || ".txt";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" })); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  t.dirty = false; renderTabs();
+}
+$("btnSave").onclick = saveTab;
+
+// ---------------------------------------------------------------- compare (split view, differences highlighted)
+let cmpRight = -1;
+function openCompare() {
+  if (tabs.length < 2) addTab("right side", "", "auto", true);   // nothing to compare with yet: an empty tab to paste into
+  if (view && tabs[active]) tabs[active].state = view.state;
+  $("cmpLeft").textContent = tabs[active].name;
+  const others = tabs.map((t, i) => i).filter((i) => i !== active);
+  if (!others.includes(cmpRight)) cmpRight = others[others.length - 1];
+  $("cmpRight").innerHTML = others.map((i) => `<option value="${i}">${esc(tabs[i].name)}</option>`).join("");
+  $("cmpRight").value = String(cmpRight);
+  buildMerge();
+  $("compareBar").classList.add("show"); $("main").classList.add("comparing"); $("btnCompare").classList.add("on");
+}
+function mergeExt(t) { return [basicSetup, search({ top: true }), theme, langExt(resolvedMode(t)), wrapComp.of(wrapOn ? EditorView.lineWrapping : []), sizeComp.of(fontTheme(fontPx))]; }
+function buildMerge() {
+  if (merge) { syncBack(); merge.destroy(); merge = null; }
+  const L = tabs[active], R = tabs[cmpRight];
+  merge = new MergeView({
+    a: { doc: L.state.doc, extensions: mergeExt(L) }, b: { doc: R.state.doc, extensions: mergeExt(R) },
+    parent: $("merge"), highlightChanges: true, gutter: true,
+    collapseUnchanged: $("cmpCollapse").checked ? { margin: 3, minSize: 6 } : undefined,
+    diffConfig: { scanLimit: 20000, timeout: 3000 },   // huge, very different texts: a rougher diff instead of a frozen tab
+  });
+  const n = getChunks(merge.b.state)?.chunks.length ?? 0;
+  $("cmpInfo").textContent = n ? `${n.toLocaleString()} difference(s)` : "identical";
+}
+function syncBack() {  // edits made in the split view go back into their tabs
+  if (!merge) return;
+  for (const [ed, i] of [[merge.a, active], [merge.b, cmpRight]]) {
+    const t = tabs[i]; if (!t) continue;
+    if (ed.state.doc.toString() !== t.state.doc.toString()) {
+      t.state = t.state.update({ changes: { from: 0, to: t.state.doc.length, insert: ed.state.doc } }).state; t.dirty = true;
+    }
+  }
+}
+function closeCompare() {
+  syncBack(); merge.destroy(); merge = null;
+  $("compareBar").classList.remove("show"); $("main").classList.remove("comparing"); $("btnCompare").classList.remove("on");
+  view.setState(tabs[active].state); renderTabs(); updateStatus(); persistSoon();
+}
+$("btnCompare").onclick = () => merge ? closeCompare() : openCompare();
+$("cmpClose").onclick = closeCompare;
+$("cmpRight").onchange = () => { syncBack(); cmpRight = +$("cmpRight").value; buildMerge(); };
+$("cmpCollapse").onchange = () => buildMerge();
+$("cmpSwap").onclick = () => { syncBack(); const l = active; active = cmpRight; cmpRight = l; $("cmpLeft").textContent = tabs[active].name;
+  merge.destroy(); merge = null; openCompare(); renderTabs(); };
+$("cmpNext").onclick = () => { goToNextChunk(merge.b); merge.b.focus(); };
+$("cmpPrev").onclick = () => { goToPreviousChunk(merge.b); merge.b.focus(); };
+
+// ---------------------------------------------------------------- keep the tabs between visits (this browser only)
+const KEEP_LIMIT = 4 * 1048576;
+let persistTimer;
+function persistSoon() { clearTimeout(persistTimer); persistTimer = setTimeout(persist, 1200); }
+function persist() {
+  if (view && tabs[active] && !merge) tabs[active].state = view.state;
+  let budget = KEEP_LIMIT;
+  const saved = tabs.map((t) => {
+    const text = t.state.doc.toString(), keep = text.length <= budget; if (keep) budget -= text.length;
+    return { name: t.name, mode: t.mode, text: keep ? text : "", dropped: !keep };
+  });
+  store.set("te_tabs_v1", JSON.stringify({ tabs: saved, active }));
+}
+window.addEventListener("beforeunload", persist);
+
+// ---------------------------------------------------------------- start
+window.textEditor = { get view() { return view; }, get tabs() { return tabs; } };   // for tests / the console
+try {
+  view = new EditorView({ parent: $("editor"), state: makeState("", "plain") });
+  let restored = null;
+  try { restored = JSON.parse(store.get("te_tabs_v1") || "null"); } catch (e) { restored = null; }
+  if (restored && restored.tabs && restored.tabs.length) {
+    restored.tabs.forEach((s) => {
+      const t = addTab(s.name, s.text, s.mode); t.dirty = false;
+      if (s.dropped && !t.name.endsWith("(too big to keep)")) t.name += " (too big to keep)";
+    });
+    switchTab(Math.min(restored.active || 0, tabs.length - 1));
+  } else {
+    addTab("untitled", "");
+    tabs[0].dirty = false;
+  }
+  renderTabs();
+} catch (e) {
+  $("fatal").style.display = "block"; $("fatal").textContent = "The editor could not start: " + e.message;
+  throw e;
+}
+</script>
+</body>
+</html>

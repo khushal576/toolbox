@@ -135,6 +135,11 @@ the entry's id.
   /data/tables/{ws}/{name}/csv?max_rows=` (default 2000) is DataDiff's loader: a bigger table is refused with a
   400, never cut (same rule as `/datasets/{id}/preview`). Tools now save new results as tables; the old datasets
   stay listed (🔒) and keep working.
+- **L5:** `GET /data/tables/{ws}/{name}/profile[?refresh=true]` (column profile, cached per table version) and
+  `/joins` (suggested joins, checked on the data) — the table page's "Profile columns" / "Suggest joins" buttons.
+  New secret kind **`s3_location`** `{access_key_id, secret_access_key, region, endpoint?, url_style?, use_ssl?}`
+  (created from Data Lake's ☁ S3 tab via `POST /secrets`); `POST /test-s3 {data, path}` lists what a path matches
+  with those credentials before saving. Columns now carry `sql_type` (varchar(100), numeric(12,2)…).
 - Verified live: dataset → `datasets.<name>` table + preview; a 200k-row table written to S3 storage as one
   Parquet file, renamed/moved (files stay — stored by table id), history kept; non-empty workspace protected; bad
   names refused; Data tab screenshot checked.

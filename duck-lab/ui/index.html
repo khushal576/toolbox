@@ -29,6 +29,22 @@
     border-radius: 10px; padding: 18px; margin-bottom: 16px;
   }
   .card h2 { font-size: 1rem; font-weight: 700; margin-bottom: 4px; }
+  /* Tables (Vault Data), Athena-style — roadmap L5 */
+  .cat-tree { max-height: 340px; overflow-y: auto; font-size: 0.8rem; margin: 8px -6px 0; }
+  .cat-ws { font-weight: 700; padding: 5px 6px; cursor: pointer; user-select: none; }
+  .cat-ws::before { content: "▸ "; color: var(--muted); } .cat-ws.open::before { content: "▾ "; }
+  .cat-tb { display: flex; align-items: center; gap: 4px; padding: 3px 6px 3px 16px; border-radius: 6px; }
+  .cat-tb:hover { background: var(--bg); }
+  .cat-tb .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+                font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .cat-tb .nm::before { content: "▸ "; color: var(--muted); } .cat-tb.open .nm::before { content: "▾ "; }
+  .cat-tb .n { color: var(--muted); font-size: 0.7rem; }
+  .cat-col { display: flex; justify-content: space-between; gap: 6px; padding: 1px 6px 1px 34px; font-size: 0.74rem;
+             font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .cat-col .ty { color: var(--muted); white-space: nowrap; }
+  .cat-tb.loaded { background: rgba(21,128,61,0.12); box-shadow: inset 3px 0 0 #15803d; }
+  .cat-tb.loaded .nm { color: #15803d; font-weight: 700; }
+  .cat-tb .var { font-size: 0.68rem; color: #15803d; font-family: ui-monospace, Menlo, Consolas, monospace; }
   .card .hint { font-size: 0.78rem; color: var(--muted); margin-bottom: 12px; line-height: 1.5; }
 
   .col-left { position: sticky; top: 20px; }
@@ -99,15 +115,13 @@
 <div class="layout">
   <div class="col-left">
     <div class="card">
-      <h2>Load data</h2>
-      <p class="hint">Upload a CSV, JSON, Parquet, or XML file. Each becomes a queryable table.</p>
-      <input type="file" id="fileInput" accept=".csv,.tsv,.json,.parquet,.xml" />
-      <span class="stats" id="uploadStatus" style="display:block;margin-top:4px;"></span>
-      <div class="btn-row" style="margin:8px 0 0;">
-        <select id="vaultSelect" style="flex:1;font-size:0.8rem;"><option value="">— load from Vault —</option></select>
-        <button class="action secondary small" id="btnVaultLoad">Load</button>
-      </div>
-      <p class="hint" style="margin:6px 0 0;">Click a loaded source's name for a quick preview.</p>
+      <h2>Tables</h2>
+      <p class="hint">Every Vault Data table. <b>Load</b> makes it a table here, named after it — load several and
+        join them in SQL. New files? Load them in <a href="/tools/data-lake/" target="_top">Data Lake</a> first.</p>
+      <input type="search" id="catFilter" placeholder="filter tables or columns…" style="width:100%;font-size:0.8rem;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);" />
+      <div class="cat-tree" id="catTree"><p class="hint">Loading…</p></div>
+      <h2 style="margin-top:12px;">Loaded</h2>
+      <p class="hint" style="margin:0;">Click a loaded table's name for a quick preview.</p>
       <ul class="table-list" id="tableList"></ul>
       <p class="empty-hint" id="emptyHint">No sources loaded yet.</p>
     </div>
@@ -196,14 +210,6 @@ const API = {
     const res = await fetch("tables");
     return res.json();
   },
-  async upload(file) {
-    const form = new FormData();
-    form.append("file", file);
-    const res = await fetch("upload", { method: "POST", body: form });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Upload failed");
-    return data;
-  },
   async loadFromLake(workspace, table) {
     const res = await fetch("load/lake", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -211,15 +217,6 @@ const API = {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Load from Vault Data failed.");
-    return data;
-  },
-  async loadFromVault(id, name) {
-    const res = await fetch("load/vault", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, name }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Load from Vault failed.");
     return data;
   },
   async removeTable(name) {
@@ -369,79 +366,58 @@ async function refreshTables() {
   STATE.tables = data.tables || [];
   renderTables();
   refreshSchemaAutocomplete();
+  if (typeof renderCatalog === "function" && catalog.length) renderCatalog();   // green = loaded
 }
 
-document.getElementById("fileInput").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  showError(null);
-  const input = e.target;
-  const status = document.getElementById("uploadStatus");
-  input.disabled = true;
-  status.textContent = `Uploading ${file.name}…`;
-  try {
-    await API.upload(file);
-    await refreshTables();
-  } catch (err) {
-    showError(err.message);
-  } finally {
-    input.disabled = false;
-    status.textContent = "";
-    input.value = "";
-  }
-});
 
-// ── Load from Vault — the consumer-side counterpart to "Save to Vault"
-// (see btnSaveToVault below). No size cap here, unlike DataDiff Pro's own
-// "Load from Vault" — DuckDB reads the decrypted file lazily off disk the
-// same way an upload does, never materializing it in Python memory.
-// Since roadmap L4 the list also has Vault Data tables (📦, one group per workspace) — value "lake:<ws>.<table>".
-async function refreshVaultSelect() {
-  const select = document.getElementById("vaultSelect");
-  let html = '<option value="">— load from Vault —</option>';
-  try {
-    const cat = await (await fetch("/tools/vault/data/catalog")).json();
-    (cat.workspaces || []).filter((w) => w.tables.length).forEach((w) => {
-      html += `<optgroup label="📦 ${escapeHtml(w.name)}">` + w.tables.map((t) =>
-        `<option value="lake:${escapeHtml(w.name)}.${escapeHtml(t.name)}">${escapeHtml(t.name)} (${Number(t.row_count).toLocaleString()} rows)</option>`).join("") + "</optgroup>";
-    });
-  } catch (e) { /* Vault Data unreachable — just no table entries */ }
-  try {
-    const res = await fetch("/tools/vault/secrets");
-    const data = await res.json();
-    const secrets = (data.secrets || []).filter((s) => s.has_data);
-    if (secrets.length) html += '<optgroup label="🔒 Datasets">' +
-      secrets.map((s) => `<option value="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join("") + "</optgroup>";
-  } catch (e) { /* Vault unreachable — select just stays empty, not fatal */ }
-  select.innerHTML = html;
+// ── Tables (roadmap L5, Athena-style): every workspace → tables → columns with SQL types (varchar(100),
+// numeric(12,2)… like SQL Studio). "Load" registers the table here under its own name (lazy view, nothing in
+// Python memory). Old Vault datasets were imported into workspace `datasets`, so they show up here too.
+let catalog = [];
+const openWs = new Set(), openTb = new Set();
+async function refreshCatalog() {
+  try { catalog = (await (await fetch("/tools/vault/data/catalog")).json()).workspaces || []; }
+  catch (e) { document.getElementById("catTree").innerHTML = '<p class="hint">Vault Data is unreachable.</p>'; return; }
+  if (!openWs.size && catalog.length) openWs.add(catalog[0].name);
+  renderCatalog();
 }
-refreshVaultSelect();
-
-document.getElementById("btnVaultLoad").addEventListener("click", async () => {
-  const select = document.getElementById("vaultSelect");
-  const id = select.value;
-  if (!id) return;
-  const name = select.selectedOptions[0].dataset.name;
+function renderCatalog() {
+  const f = document.getElementById("catFilter").value.trim().toLowerCase();
+  const html = catalog.map((w) => {
+    const tables = w.tables.filter((t) => !f || (w.name + "." + t.name).includes(f) || t.columns.some((c) => c.name.toLowerCase().includes(f)));
+    if (!tables.length) return "";
+    const open = openWs.has(w.name) || !!f;
+    return `<div class="cat-ws${open ? " open" : ""}" data-ws="${escapeHtml(w.name)}">🗂 ${escapeHtml(w.name)}</div>` + (open ? tables.map((t) => {
+      const full = w.name + "." + t.name, tOpen = openTb.has(full);
+      // loaded = green; the SQL name is shown (a clash with another loaded table gets _2)
+      const here = (STATE.tables || []).find((x) => x.source_file === t.name + ".parquet");
+      const action = here
+        ? `<span class="var" title="query it as ${escapeHtml(here.name)}">${escapeHtml(here.name)}</span>
+           <button class="action secondary small" data-unload="${escapeHtml(here.name)}" style="padding:2px 7px;font-size:0.7rem;" title="Unload">✕</button>`
+        : `<button class="action secondary small" data-load="${escapeHtml(full)}" style="padding:2px 8px;font-size:0.7rem;">Load</button>`;
+      return `<div class="cat-tb${tOpen ? " open" : ""}${here ? " loaded" : ""}"><span class="nm" data-tb="${escapeHtml(full)}" title="${escapeHtml(full)}">${escapeHtml(t.name)}</span>
+        <span class="n">${Number(t.row_count).toLocaleString()}</span>${action}</div>` +
+        (tOpen ? t.columns.map((c) => `<div class="cat-col"><span>${escapeHtml(c.name)}</span><span class="ty">${escapeHtml(c.sql_type || c.type || "")}</span></div>`).join("") : "");
+    }).join("") : "");
+  }).join("");
+  document.getElementById("catTree").innerHTML = html || `<p class="hint">${catalog.length ? "No match." : "No tables yet."}</p>`;
+}
+document.getElementById("catFilter").addEventListener("input", renderCatalog);
+document.getElementById("catTree").addEventListener("click", async (e) => {
+  const ws = e.target.closest("[data-ws]"), tb = e.target.closest("[data-tb]"), load = e.target.closest("[data-load]");
+  const unload = e.target.closest("[data-unload]");
+  if (unload) { try { await API.removeTable(unload.dataset.unload); await refreshTables(); } catch (err) { showError(err.message); } return; }
+  if (ws) { openWs.has(ws.dataset.ws) ? openWs.delete(ws.dataset.ws) : openWs.add(ws.dataset.ws); renderCatalog(); return; }
+  if (tb) { openTb.has(tb.dataset.tb) ? openTb.delete(tb.dataset.tb) : openTb.add(tb.dataset.tb); renderCatalog(); return; }
+  if (!load) return;
+  const [w, t] = load.dataset.load.split(".");
   showError(null);
-  const btn = document.getElementById("btnVaultLoad");
-  const originalText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = "Loading…";
-  try {
-    if (id.startsWith("lake:")) {
-      const [ws, table] = id.slice(5).split(".");
-      await API.loadFromLake(ws, table);
-    } else {
-      await API.loadFromVault(id, name);
-    }
-    await refreshTables();
-  } catch (err) {
-    showError(err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = originalText;
-  }
+  load.disabled = true; load.textContent = "…";
+  try { await API.loadFromLake(w, t); await refreshTables(); }
+  catch (err) { showError(err.message); }
+  finally { load.disabled = false; load.textContent = "Load"; }
 });
+refreshCatalog();
 
 document.getElementById("tableList").addEventListener("click", async (e) => {
   const removeBtn = e.target.closest("button[data-remove]");
@@ -587,7 +563,7 @@ document.getElementById("btnSaveToLake").addEventListener("click", async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Save to Vault Data failed.");
     btn.textContent = `✓ ${data.table.full_name}`;
-    refreshVaultSelect();
+    refreshCatalog();
     setTimeout(() => { btn.textContent = originalText; }, 2500);
     return;
   } catch (err) {
