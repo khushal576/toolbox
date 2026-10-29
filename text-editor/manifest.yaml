@@ -3,7 +3,7 @@
 schema_version: 1
 name: text-editor
 title: Text Editor
-description: Notepad++-style editor for messy text — regex find/replace, multi-cursor, validate & format JSON/XML/HTML, sort/dedupe lines, split compare; 50k+ lines
+description: Notepad++-style editor for messy text — regex find/replace, multi-cursor, validate & format JSON/XML/HTML/Python/SQL, mask sensitive data, live HTML preview, sort/dedupe lines, split compare; 50k+ lines
 icon: 📝
 category: tool
 kind: python

@@ -11,3 +11,11 @@ export { linter, lintGutter, setDiagnostics, forceLinting } from "@codemirror/li
 export { MergeView, goToNextChunk, goToPreviousChunk, getChunks } from "@codemirror/merge";
 import beautify from "js-beautify";
 export const html_beautify = beautify.html;
+export { python } from "@codemirror/lang-python";
+export { sql, PostgreSQL } from "@codemirror/lang-sql";
+export { format as sqlFormat } from "sql-formatter";
+import ruffInit, { format as ruffFormat } from "@wasm-fmt/ruff_fmt/web";
+// Python is formatted by ruff compiled to WebAssembly (Black-compatible); the .wasm is a separate file the page names.
+let ruffReady;
+export function pyLoad(wasmUrl) { return (ruffReady = ruffReady || ruffInit(wasmUrl)); }
+export async function pyFormat(code, opts) { await ruffReady; return ruffFormat(code, "a.py", opts); }

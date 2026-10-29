@@ -76,6 +76,31 @@
           display: none; align-items: center; justify-content: center; font-size: 1.1rem; color: var(--accent); z-index: 40; pointer-events: none; }
   #drop.show { display: flex; }
 
+  /* visualize (live HTML preview next to the editor) */
+  #preview { display: none; flex: 1 1 50%; min-width: 0; flex-direction: column; border-left: 2px solid var(--border); background: #e9ecf6; }
+  #main.previewing { flex-direction: row; }
+  #main.previewing #editor { flex: 1 1 50%; min-width: 0; }
+  #main.previewing #preview { display: flex; }
+  #pvBar { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #f8f9fd; border-bottom: 1px solid var(--border); font-size: 0.8rem; flex: none; }
+  #pvScroll { flex: 1; min-height: 0; overflow: auto; display: flex; justify-content: center; }
+  #pvFrame { border: 0; background: #fff; height: 100%; width: 100%; flex: none; }
+  #pvScroll.sized #pvFrame { box-shadow: 0 2px 14px rgba(0,0,0,0.18); margin: 10px 0; height: calc(100% - 20px); }
+
+  /* mask dialog */
+  #maskDlg { position: fixed; inset: 0; z-index: 50; background: rgba(20,24,45,0.45); display: none; align-items: center; justify-content: center; }
+  #maskDlg.show { display: flex; }
+  #maskBox { background: var(--surface); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); width: min(820px, 94vw); height: min(640px, 88vh);
+             display: flex; flex-direction: column; overflow: hidden; }
+  #maskBox header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  #maskBox header b { font-size: 0.95rem; }
+  #maskBox header .x { margin-left: auto; cursor: pointer; width: 26px; height: 26px; line-height: 26px; text-align: center; border-radius: 6px; }
+  #maskBox header .x:hover { background: var(--border); }
+  #maskEditor { flex: 1; min-height: 0; overflow: hidden; }
+  #maskEditor .cm-editor { height: 100%; }
+  #maskBox footer { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid var(--border); background: #f8f9fd; }
+  #maskInfo { font-size: 0.78rem; color: var(--muted); margin-right: auto; }
+  #maskInfo.bad { color: var(--err); font-weight: 600; }
+
   /* problems + status */
   #problems { flex: none; max-height: 160px; overflow-y: auto; border-top: 1px solid var(--border); background: #fffafa; display: none;
               font-size: 0.8rem; }
@@ -93,6 +118,7 @@
   #toast { position: fixed; bottom: 34px; left: 50%; transform: translateX(-50%); background: #1c2035; color: #fff;
            padding: 7px 14px; border-radius: 8px; font-size: 0.8rem; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 60; }
   #toast.show { opacity: 0.95; }
+  body.masking #toast { bottom: auto; top: 64px; }
   #fatal { display: none; padding: 10px 14px; background: #fdecea; color: var(--err); font-size: 0.85rem; }
 </style>
 </head>
@@ -111,9 +137,10 @@
   <select class="btn" id="mode" title="Language — Auto picks JSON / XML / HTML / CSV from the text">
     <option value="auto">Auto</option><option value="plain">Plain text</option><option value="json">JSON / JSON Lines</option>
     <option value="xml">XML</option><option value="html">HTML</option><option value="csv">CSV / TSV</option>
+    <option value="python">Python</option><option value="sql">SQL</option>
   </select>
   <button class="btn" id="btnValidate" title="Check the whole text and list every problem with its line (Ctrl+Shift+V)">✔ Validate</button>
-  <button class="btn" id="btnFormat" title="Pretty-print JSON / XML / HTML (Ctrl+Shift+F)">✨ Format</button>
+  <button class="btn" id="btnFormat" title="Pretty-print JSON / XML / HTML / Python / SQL (Ctrl+Shift+F)">✨ Format</button>
   <button class="btn" id="btnMinify" title="Remove the formatting whitespace">⇢ Minify</button>
   <select class="btn" id="indent" title="Indent for Format"><option value="2">2 spaces</option><option value="4">4 spaces</option><option value="tab">tabs</option></select>
   <span class="sep"></span>
@@ -148,6 +175,8 @@
   </details>
   <button class="btn" id="btnRegex" title="Keep / remove lines matching a regex, extract matches, count (Ctrl+Shift+R)">.* Regex tools</button>
   <button class="btn" id="btnFind" title="Find / replace with regex: Ctrl+F (Ctrl+H)">🔍 Find / Replace</button>
+  <button class="btn" id="btnMask" title="Find sensitive data (emails, phones, cards, keys, passwords…), review the value → mask JSON, then mask the text (Ctrl+Shift+M)">🛡 Mask</button>
+  <button class="btn" id="btnVisualize" title="Show how this HTML / CSS renders, live, next to the editor (Ctrl+Shift+P)">👁 Visualize</button>
   <span class="sep"></span>
   <button class="btn" id="btnCompare" title="Split view: compare this tab with another (differences highlighted)">⇆ Compare</button>
   <button class="btn" id="btnWrap" title="Wrap long lines (Alt+Z)">↵ Wrap</button>
@@ -182,31 +211,63 @@
 <div id="main">
   <div id="editor"></div>
   <div id="merge"></div>
+  <div id="preview">
+    <div id="pvBar">
+      <b>Preview</b>
+      <select class="btn" id="pvSize" title="Page width">
+        <option value="fit">Fit</option><option value="375">Phone 375</option><option value="768">Tablet 768</option><option value="1280">Laptop 1280</option>
+      </select>
+      <label title="Let the page run its own JavaScript (isolated from this editor, but it can still call the network). Off by default."><input type="checkbox" id="pvScripts" /> run scripts</label>
+      <button class="btn" id="pvReload" title="Reload the preview">⟳</button>
+      <span class="hint" id="pvInfo"></span>
+      <button class="btn" id="pvClose" style="margin-left:auto" title="Close preview">✕</button>
+    </div>
+    <div id="pvScroll"><iframe id="pvFrame" sandbox="" title="HTML preview"></iframe></div>
+  </div>
   <div id="drop">Drop files to open them in new tabs</div>
+</div>
+<div id="maskDlg">
+  <div id="maskBox" role="dialog" aria-label="Mask sensitive data">
+    <header><b>🛡 Mask sensitive data</b><span class="hint" id="maskScope"></span><span class="x" id="maskX" title="Close (Esc)">×</span></header>
+    <div id="maskEditor"></div>
+    <footer>
+      <span id="maskInfo"></span>
+      <input type="file" id="maskFile" accept=".json,application/json" style="display:none" />
+      <button class="btn" id="maskScan" title="Scan the text again and add anything new (your edits are kept)">↻ Scan</button>
+      <button class="btn" id="maskLoad" title="Load a mask JSON you downloaded earlier">📂 Load JSON</button>
+      <button class="btn" id="maskDown" title="Download this mask JSON (original → masked)">⬇ Download JSON</button>
+      <button class="btn" id="maskUndo" title="Put the original values back, using this JSON (masked → original)">↩ Restore text</button>
+      <button class="btn primary" id="maskApply" title="Replace every original value in the text with its masked value (Ctrl+Z undoes)">Mask text</button>
+    </footer>
+  </div>
 </div>
 <div id="problems"></div>
 <div class="status" id="status"></div>
 <div id="toast"></div>
 
 <script type="module">
-// One local bundle (CodeMirror 6 + JSON/XML/HTML + lint + merge + js-beautify) — see CLAUDE.md. Bump ?v= on rebuild.
+// One local bundle (CodeMirror 6 + JSON/XML/HTML/Python/SQL + lint + merge + js-beautify + sql-formatter + ruff loader) — see CLAUDE.md. Bump ?v= on rebuild.
 import {
   EditorView, basicSetup, EditorState, EditorSelection, Compartment, keymap,
   addCursorAbove, addCursorBelow, indentWithTab, search, openSearchPanel, foldAll, unfoldAll, indentUnit,
   json, xml, html, lintGutter, setDiagnostics, MergeView, goToNextChunk, goToPreviousChunk, getChunks, html_beautify,
-} from "./vendor/editor-bundle.js?v=1";
+  python, sql, PostgreSQL, sqlFormat, pyLoad, pyFormat,
+} from "./vendor/editor-bundle.js?v=2";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmtBytes = (n) => n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
 let toastTimer;
-function toast(msg) { $("toast").textContent = msg; $("toast").classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("show"), 2600); }
+function toast(msg, ms) { $("toast").textContent = msg; $("toast").classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("show"), ms || 2600); }
 const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
                 set(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } } };
 
 // ---------------------------------------------------------------- languages + detection
 const langComp = new Compartment(), wrapComp = new Compartment(), sizeComp = new Compartment(), indentComp = new Compartment();
-function langExt(mode) { return mode === "json" ? json() : mode === "xml" ? xml() : mode === "html" ? html() : []; }
+function langExt(mode) {
+  return mode === "json" ? json() : mode === "xml" ? xml() : mode === "html" ? html() : mode === "python" ? python()
+    : mode === "sql" ? sql({ dialect: PostgreSQL }) : [];
+}
 function detect(text) {
   const head = text.slice(0, 4000).trimStart();
   if (!head) return "plain";
@@ -214,6 +275,8 @@ function detect(text) {
   if (/^<\?xml/i.test(head)) return "xml";
   if (/^<!doctype html|<html[\s>]|<(div|body|head|span|p|table|script)[\s>]/i.test(head)) return "html";
   if (head[0] === "<") return "xml";
+  if (/^(?:\s*(?:--[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/)\n)*\s*(?:select\b[\s\S]*\bfrom\b|select\s+[\w*'"(]|insert\s+into\s|update\s+[\w."]+\s+set\s|delete\s+from\s|with\s+[\w"]+\s+as\s*\(|create\s+(?:or\s+replace\s+)?(?:temp(?:orary)?\s+)?(?:table|view|function|procedure|index|schema)\b|alter\s+table\s|drop\s+(?:table|view|index|schema)\b)/i.test(head)) return "sql";
+  if (/^#!.*python|^(?:import [\w., ]+$|from [\w.]+ import .+|(?:async )?def \w+\(.*\)\s*(?:->.*)?:|class \w+(?:\(.*\))?:)/m.test(head)) return "python";
   const lines = head.split(/\r?\n/).slice(0, 6).filter(Boolean);
   if (lines.length >= 2) for (const d of [",", "\t", ";", "|"]) {
     const n = splitCsv(lines[0], d).length;
@@ -221,7 +284,7 @@ function detect(text) {
   }
   return "plain";
 }
-const modeName = { plain: "Plain text", json: "JSON", xml: "XML", html: "HTML", csv: "CSV" };
+const modeName = { plain: "Plain text", json: "JSON", xml: "XML", html: "HTML", csv: "CSV", python: "Python", sql: "SQL" };
 
 // ---------------------------------------------------------------- tabs
 let tabs = [], active = 0, view = null, merge = null;
@@ -240,6 +303,8 @@ const extraKeys = keymap.of([
   { key: "Mod-Shift-f", run: () => { doFormat(); return true; }, preventDefault: true },
   { key: "Mod-Shift-v", run: () => { validateNow(true); return true; }, preventDefault: true },
   { key: "Mod-Shift-r", run: () => { toggleRegex(); return true; }, preventDefault: true },
+  { key: "Mod-Shift-m", run: () => { openMask(); return true; }, preventDefault: true },
+  { key: "Mod-Shift-p", run: () => { togglePreview(); return true; }, preventDefault: true },
   { key: "Alt-z", run: () => { toggleWrap(); return true; }, preventDefault: true },
   { key: "Alt-n", run: () => { addTab("untitled", ""); return true; }, preventDefault: true },
   indentWithTab,
@@ -272,7 +337,7 @@ function switchTab(i) {
   view.setState(t.state);
   $("mode").value = t.mode;
   renderTabs(); renderProblems(); updateStatus(); view.focus();
-  scheduleValidate();
+  scheduleValidate(); previewSoon();
 }
 function closeTab(i) {
   const t = tabs[i];
@@ -281,7 +346,7 @@ function closeTab(i) {
   tabs.splice(i, 1);
   if (!tabs.length) { addTab("untitled", ""); return; }
   active = Math.min(active > i ? active - 1 : active, tabs.length - 1);
-  view.setState(tabs[active].state); renderTabs(); updateStatus(); renderProblems(); persistSoon();
+  view.setState(tabs[active].state); renderTabs(); updateStatus(); renderProblems(); persistSoon(); previewSoon();
 }
 function renderTabs() {
   $("tabs").innerHTML = tabs.map((t, i) => `<div class="tab${i === active ? " active" : ""}" data-i="${i}" title="${esc(t.name)} — double-click to rename">
@@ -305,7 +370,7 @@ function onUpdate(u) {
     const t = tabs[active]; if (!t) return;
     if (!t.dirty) { t.dirty = true; renderTabs(); }
     if (t.mode === "auto") { clearTimeout(detectTimer); detectTimer = setTimeout(autoDetect, 400); }
-    scheduleValidate(); persistSoon();
+    scheduleValidate(); persistSoon(); previewSoon();
   }
   if (u.docChanged || u.selectionSet) updateStatusSoon();
 }
@@ -558,7 +623,13 @@ function replaceAll(text, note) {
   view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, userEvent: "input.format" });
   toast(note + " — Ctrl+Z to undo");
 }
-function doFormat(minify) {
+function pyWhere(msg, text) {   // ruff reports UTF-8 byte offsets: turn them into line/col and put the cursor there
+  const m = /\s+at byte range (\d+)\.\.(\d+)/.exec(msg); if (!m) return msg;
+  const pos = new TextDecoder().decode(new TextEncoder().encode(text).slice(0, +m[1])).length, lc = posToLineCol(text, pos);
+  jumpTo({ from: Math.min(pos, view.state.doc.length) });
+  return `line ${lc.line}, col ${lc.col} — ${msg.slice(0, m.index)}`;
+}
+async function doFormat(minify) {
   const t = tabs[active], text = view.state.doc.toString(), mode = resolvedMode(t), ind = indentStr();
   if (!text.trim()) return;
   if (mode === "json") {
@@ -578,7 +649,23 @@ function doFormat(minify) {
     replaceAll(minify ? text.replace(/>\s+</g, "><").replace(/\s{2,}/g, " ").trim()
       : html_beautify(text, { indent_size: ind === "\t" ? 1 : ind.length, indent_char: ind === "\t" ? "\t" : " ", wrap_line_length: 0, preserve_newlines: true, max_preserve_newlines: 1 }),
       minify ? "Minified" : "Formatted");
-  } else toast("Format works on JSON, XML and HTML — pick the language at the left of the toolbar.");
+  } else if (mode === "sql") {
+    if (minify) { toast("Minify works on JSON, XML and HTML."); return; }
+    let out;
+    try { out = sqlFormat(text, { language: "postgresql", tabWidth: ind === "\t" ? 2 : ind.length, useTabs: ind === "\t", keywordCase: "upper", linesBetweenQueries: 2 }); }
+    catch (e) { toast("Can't format this SQL: " + String(e.message || e).split("\n")[0], 7000); return; }
+    replaceAll(out, "Formatted SQL (PostgreSQL style, like SQL Studio)");
+  } else if (mode === "python") {
+    if (minify) { toast("Minify works on JSON, XML and HTML."); return; }
+    toast("Formatting Python…", 15000);
+    let out;
+    try {
+      await pyLoad("./vendor/ruff_fmt_bg.wasm?v=1");
+      out = await pyFormat(text, ind === "\t" ? { indent_style: "tab" } : { indent_style: "space", indent_width: 4 });   // PEP 8: 4 spaces, whatever the 2-space default says
+    } catch (e) { toast("Can't format this Python: " + pyWhere(String(e.message || e).split("\n")[0], text), 7000); return; }
+    if (view.state.doc.toString() !== text) { toast("The text changed while formatting — nothing applied."); return; }
+    replaceAll(out, "Formatted Python (ruff, Black style)");
+  } else toast("Format works on JSON, XML, HTML, Python and SQL — pick the language at the left of the toolbar.");
 }
 $("btnFormat").onclick = () => doFormat(false);
 $("btnMinify").onclick = () => doFormat(true);
@@ -587,7 +674,7 @@ $("mode").onchange = () => {
   const t = tabs[active]; t.mode = $("mode").value;
   if (t.mode === "auto") t.detected = detect(view.state.sliceDoc(0, 4000));
   view.dispatch({ effects: langComp.reconfigure(langExt(resolvedMode(t))) });
-  updateStatus(); scheduleValidate(); persistSoon();
+  updateStatus(); scheduleValidate(); persistSoon(); previewSoon();
 };
 
 // ---------------------------------------------------------------- line tools (selection or whole text, one undo step)
@@ -686,6 +773,204 @@ $("btnFold").onclick = () => { folded = !folded; (folded ? foldAll : unfoldAll)(
 $("fontSize").value = String(fontPx);
 $("fontSize").onchange = () => { fontPx = +$("fontSize").value; store.set("te_font", String(fontPx)); view.dispatch({ effects: sizeComp.reconfigure(fontTheme(fontPx)) }); updateStatus(); };
 
+// ---------------------------------------------------------------- visualize: how the HTML / CSS renders (live, next to the editor)
+// The page is shown in an iframe with an empty sandbox: no scripts, no same-origin, no forms, no top navigation — so a
+// pasted page can't touch this editor or the Toolbox origin. "run scripts" adds allow-scripts only (still no same-origin).
+const previewing = () => $("main").classList.contains("previewing");
+let pvTimer, pvLast = null;
+function togglePreview() {
+  if (previewing()) { $("main").classList.remove("previewing"); $("btnVisualize").classList.remove("on"); $("pvFrame").srcdoc = ""; pvLast = null; return; }
+  if (merge) closeCompare();
+  if (resolvedMode(tabs[active]) !== "html") { toast("Visualize shows HTML (with its CSS) — pick HTML as the language, or paste a page."); return; }
+  $("main").classList.add("previewing"); $("btnVisualize").classList.add("on");
+  renderPreview(true);
+}
+function previewSoon() { if (previewing()) { clearTimeout(pvTimer); pvTimer = setTimeout(() => renderPreview(false), 300); } }
+function renderPreview(force) {
+  if (!previewing()) return;
+  const t = tabs[active], isHtml = resolvedMode(t) === "html", text = isHtml ? view.state.doc.toString() : "";
+  const doc = isHtml ? text : '<body style="font:14px system-ui;color:#6b7180;padding:18px">This tab is not HTML — nothing to show.</body>';
+  if (!force && doc === pvLast) return;
+  pvLast = doc;
+  const f = $("pvFrame"), sb = $("pvScripts").checked ? "allow-scripts" : "";
+  if (f.getAttribute("sandbox") !== sb) f.setAttribute("sandbox", sb);
+  f.srcdoc = doc;
+  $("pvInfo").textContent = isHtml ? fmtBytes(text.length) : "";
+}
+$("btnVisualize").onclick = togglePreview;
+$("pvClose").onclick = togglePreview;
+$("pvReload").onclick = () => renderPreview(true);
+$("pvScripts").onchange = () => renderPreview(true);
+$("pvSize").onchange = () => {
+  const v = $("pvSize").value, f = $("pvFrame");
+  $("pvScroll").classList.toggle("sized", v !== "fit"); f.style.width = v === "fit" ? "100%" : v + "px";
+};
+
+// ---------------------------------------------------------------- mask: find sensitive values → a JSON (original → masked) you can edit → mask the text
+// Detectors run most-specific first; a character claimed by one detector is never claimed again (so a JWT is not also
+// a "long token" and a card number is not also a phone). The mapping is applied by exact text, longest key first, in ONE pass
+// (a masked value is never masked again). Everything stays in the browser.
+const luhn = (d) => { let sum = 0, alt = false; for (let i = d.length - 1; i >= 0; i--) { let n = +d[i]; if (alt) { n *= 2; if (n > 9) n -= 9; } sum += n; alt = !alt; } return sum % 10 === 0; };
+const ibanOk = (s) => { const r = (s.slice(4) + s.slice(0, 4)).replace(/[A-Z]/g, (c) => c.charCodeAt(0) - 55); let m = 0; for (const ch of r) m = (m * 10 + +ch) % 97; return m === 1; };
+const SECRET_WORDS = [["password", "PASSWORD"], ["passwd", "PASSWORD"], ["passphrase", "PASSWORD"], ["secret", "SECRET"], ["token", "TOKEN"], ["apikey", "KEY"],
+  ["accesskey", "KEY"], ["privatekey", "KEY"], ["authorization", "TOKEN"], ["credential", "SECRET"], ["sessionid", "TOKEN"], ["signature", "SECRET"], ["connectionstring", "SECRET"]];
+const SECRET_EXACT = { pwd: "PASSWORD", pass: "PASSWORD", auth: "TOKEN", cookie: "TOKEN", bearer: "TOKEN", key: "KEY", salt: "SECRET", otp: "SECRET", pin: "SECRET", cvv: "CARD", cvc: "CARD" };
+const PII_EXACT = { email: "EMAIL", emailaddress: "EMAIL", mail: "EMAIL", phone: "PHONE", phonenumber: "PHONE", mobile: "PHONE", mobilenumber: "PHONE", tel: "PHONE", telephone: "PHONE", cell: "PHONE", contactnumber: "PHONE",
+  ssn: "SSN", socialsecuritynumber: "SSN", aadhaar: "AADHAAR", aadhar: "AADHAAR", pan: "PAN", pannumber: "PAN", passport: "ID", passportnumber: "ID", licensenumber: "ID", nationalid: "ID", taxid: "ID",
+  name: "NAME", firstname: "NAME", lastname: "NAME", fullname: "NAME", surname: "NAME", givenname: "NAME", familyname: "NAME", middlename: "NAME", username: "NAME", customername: "NAME", displayname: "NAME", contactname: "NAME",
+  address: "ADDRESS", streetaddress: "ADDRESS", street: "ADDRESS", addressline1: "ADDRESS", addressline2: "ADDRESS", postcode: "ADDRESS", postalcode: "ADDRESS", zip: "ADDRESS", zipcode: "ADDRESS",
+  dob: "DOB", dateofbirth: "DOB", birthdate: "DOB", birthday: "DOB", card: "CARD", cardnumber: "CARD", creditcard: "CARD", iban: "IBAN", accountnumber: "ACCOUNT", bankaccount: "ACCOUNT", ip: "IP", ipaddress: "IP" };
+function keyCategory(key) {
+  const n = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (SECRET_EXACT[n]) return [SECRET_EXACT[n], false];
+  for (const [w, c] of SECRET_WORDS) if (n.includes(w)) return [c, false];
+  if (PII_EXACT[n]) return [PII_EXACT[n], true];       // second item: the value may contain spaces ("Jane Q. Smith")
+  return null;
+}
+const SKIP_VALUE = /^(?:null|none|true|false|undefined|nil|n\/a|\[[A-Z_]+_\d+\]|\$\{.*\}|\{\{.*\}\}|<.*>|\*+|x+)$/i;
+const DETECTORS = [
+  ["PRIVATE_KEY", /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g],
+  ["JWT", /\beyJ[\w-]{8,}\.eyJ[\w-]{8,}\.[\w-]{8,}\b/g],
+  ["KEY", /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\bAIza[\w-]{35}\b|\bgh[pousr]_[A-Za-z0-9]{36,}\b|\bgithub_pat_\w{40,}\b|\bxox[abprs]-[\w-]{10,}\b|\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}\b|\bsk-[A-Za-z0-9_-]{32,}\b|\bglpat-[\w-]{20,}\b/g],
+  ["PASSWORD", /(?<=:\/\/[^\s:@\/'"]+:)[^\s@\/'"]+(?=@)/g],                                          // user:PASSWORD@host
+  ["TOKEN", /(?<=\bBearer\s+)[\w.~+\/-]{8,}=*/gi],
+  ["EMAIL", /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g],
+  ["CARD", /\b\d(?:[ -]?\d){12,18}\b/g, (m) => { const d = m.replace(/\D/g, ""); return /^[2-6]/.test(d) && (d.length >= 14 || /[ -]/.test(m)) && d.length <= 19 && luhn(d); }],
+  ["IBAN", /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/g, (m) => { const c = m.replace(/ /g, ""); return c.length >= 15 && c.length <= 34 && ibanOk(c); }],
+  ["SSN", /\b\d{3}-\d{2}-\d{4}\b/g, (m) => !/^(000|666|9)/.test(m)],
+  ["AADHAAR", /\b[2-9]\d{3} \d{4} \d{4}\b/g],
+  ["PAN", /\b[A-Z]{5}\d{4}[A-Z]\b/g],
+  ["MAC", /\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b/g],
+  ["IP", /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, (m) => m.split(".").every((x) => +x <= 255)],
+  ["IP", /\b(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}\b|\b(?:[0-9A-Fa-f]{1,4}:){1,7}:(?:[0-9A-Fa-f]{1,4})?\b/g, (m) => /[a-fA-F]|::/.test(m) || m.split(":").length === 8],
+  ["PHONE", /(?<![\w.])\+?\d[\d ().-]{8,17}\d(?![\w])/g, (m) => {
+    const d = m.replace(/\D/g, "");
+    if (d.length < 10 || d.length > 15) return false;
+    if (/^\d{4}-\d{2}-\d{2}/.test(m)) return false;                 // a date
+    return m.startsWith("+") || /[ ().-]/.test(m) || /^[6-9]\d{9}$/.test(d);   // bare 10 digits only as an Indian mobile (epoch seconds start with 1)
+  }],
+];
+function scanSensitive(text, offset) {
+  const taken = new Uint8Array(text.length), found = [];
+  const free = (s, e) => { for (let i = s; i < e; i++) if (taken[i]) return false; return true; };
+  const claim = (s, e, cat) => { if (e <= s || !free(s, e)) return; taken.fill(1, s, e); found.push({ s, value: text.slice(s, e), cat }); };
+  for (const [cat, rx, ok] of DETECTORS.slice(0, 3)) for (const m of text.matchAll(rx)) if (!ok || ok(m[0])) claim(m.index, m.index + m[0].length, cat);
+  // key = value pairs ("password": "x", PASSWORD=x, name: Jane) — the key decides what the value is
+  const KV = /(["']?)\b([A-Za-z_][\w.-]{0,40})\1[ \t]*[:=][ \t]*(?:"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|([^\s,;&"'}\])][^\n,;&"'}\]]*))/g;
+  for (const m of text.matchAll(KV)) {
+    const kc = keyCategory(m[2]); if (!kc) continue;
+    let val = m[3] ?? m[4] ?? m[5] ?? "";
+    if (m[5] != null) { val = kc[1] ? val.replace(/\s+$/, "") : val.split(/\s/)[0]; }
+    val = val.replace(/^(?:bearer|basic)\s+/i, "");                  // Authorization: Bearer <token> — mask the token only
+    if (!val || val.length > 300 || SKIP_VALUE.test(val.trim())) continue;
+    const at = m.index + m[0].lastIndexOf(val, m[0].length);
+    claim(at, at + val.length, kc[0]);
+  }
+  for (const [cat, rx, ok] of DETECTORS.slice(3)) for (const m of text.matchAll(rx)) if (!ok || ok(m[0])) claim(m.index, m.index + m[0].length, cat);
+  const TOK = /\b[A-Za-z0-9_-]{32,}\b/g;                         // anything long and key-looking that nothing else claimed
+  for (const m of text.matchAll(TOK)) {
+    const v = m[0];
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) || !/\d/.test(v) || !/[A-Za-z]/.test(v) || /^(.)\1+$/.test(v)) continue;
+    claim(m.index, m.index + v.length, "TOKEN");
+  }
+  found.sort((a, b) => a.s - b.s);
+  return found;
+}
+let maskView = null, maskScope = null;
+const maskTpl = (cat, n) => `[${cat}_${n}]`;
+function maskParse(text) {   // → { map } or { error }
+  const err = jsonError(text, 0, text.length);
+  if (err) { const lc = posToLineCol(text, err.pos); return { error: `JSON error at line ${lc.line}, col ${lc.col}: ${err.msg}` }; }
+  let o; try { o = JSON.parse(text); } catch (e) { return { error: String(e.message || e) }; }
+  if (!o || typeof o !== "object" || Array.isArray(o)) return { error: 'The JSON must be an object like { "original": "masked" }' };
+  for (const [k, v] of Object.entries(o)) if (typeof v !== "string") return { error: `The value for ${JSON.stringify(k.slice(0, 30))} must be a string` };
+  return { map: o };
+}
+function maskInfo(msg, bad) { $("maskInfo").textContent = msg; $("maskInfo").classList.toggle("bad", !!bad); }
+function maskStatus() {
+  const r = maskParse(maskView.state.doc.toString());
+  if (r.error) maskInfo(r.error, true); else maskInfo(`${Object.keys(r.map).length.toLocaleString()} value(s) to mask`);
+  return r;
+}
+function maskScan(addTo) {   // add every sensitive value in the scope that the mapping doesn't know yet
+  const text = view.state.sliceDoc(maskScope.from, maskScope.to), map = { ...addTo }, counters = {};
+  for (const v of Object.values(map)) { const m = /^\[([A-Z_]+?)_(\d+)\]$/.exec(v); if (m) counters[m[1]] = Math.max(counters[m[1]] || 0, +m[2]); }
+  const used = new Set(Object.values(map));
+  let added = 0;
+  for (const f of scanSensitive(text)) {
+    if (f.value in map) continue;
+    let mask; do { counters[f.cat] = (counters[f.cat] || 0) + 1; mask = maskTpl(f.cat, counters[f.cat]); } while (used.has(mask));
+    used.add(mask); map[f.value] = mask; added++;
+  }
+  return { map, added };
+}
+function openMask() {
+  if (merge) { toast("Close the compare view first."); return; }
+  const t = tabs[active], sel = view.state.selection.main;
+  maskScope = sel.empty ? { from: 0, to: view.state.doc.length, whole: true } : { from: sel.from, to: sel.to };
+  $("maskScope").textContent = maskScope.whole ? "whole text" : "selection only";
+  const base = t.maskMap || {};
+  const { map, added } = maskScan(base);
+  const doc = JSON.stringify(map, null, 2);
+  if (!maskView) {
+    maskView = new EditorView({ parent: $("maskEditor"), state: EditorState.create({ doc, extensions: [basicSetup, json(), theme, EditorView.lineWrapping,
+      EditorView.updateListener.of((u) => { if (u.docChanged) { maskStatus(); } })] }) });
+  } else maskView.dispatch({ changes: { from: 0, to: maskView.state.doc.length, insert: doc } });
+  $("maskDlg").classList.add("show"); document.body.classList.add("masking");
+  maskStatus();
+  if (!Object.keys(map).length) maskInfo('Nothing sensitive found — add your own: { "original": "masked" }');
+  else if (added) $("maskInfo").textContent += ` (${added} found)`;
+  maskView.focus();
+}
+function closeMask() { $("maskDlg").classList.remove("show"); document.body.classList.remove("masking"); view.focus(); }
+function maskReplace(map, label) {   // apply {from: to} on the scope, one pass, longest key first, one undo step
+  const keys = Object.keys(map).filter((k) => k !== "").sort((a, b) => b.length - a.length);
+  if (!keys.length) { toast("The JSON has no values."); return; }
+  const rx = new RegExp(keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
+  const text = view.state.sliceDoc(maskScope.from, maskScope.to), changes = []; let n = 0;
+  for (const m of text.matchAll(rx)) { const to = map[m[0]]; if (to === m[0]) continue; changes.push({ from: maskScope.from + m.index, to: maskScope.from + m.index + m[0].length, insert: to }); n++; }
+  if (!n) { toast("No such value in the text" + (maskScope.whole ? "." : " selection.")); return; }
+  view.dispatch({ changes, userEvent: "input.mask" });
+  toast(`${label} ${n.toLocaleString()} place(s) — Ctrl+Z to undo`);
+  return n;
+}
+$("btnMask").onclick = openMask;
+$("maskX").onclick = closeMask;
+$("maskDlg").addEventListener("mousedown", (e) => { if (e.target === $("maskDlg")) closeMask(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("maskDlg").classList.contains("show")) { e.preventDefault(); closeMask(); } });
+$("maskScan").onclick = () => {
+  const r = maskParse(maskView.state.doc.toString()); if (r.error) { maskStatus(); return; }
+  const { map, added } = maskScan(r.map);
+  maskView.dispatch({ changes: { from: 0, to: maskView.state.doc.length, insert: JSON.stringify(map, null, 2) } });
+  maskStatus(); $("maskInfo").textContent += added ? ` (${added} new)` : " (nothing new)";
+};
+$("maskApply").onclick = () => {
+  const r = maskStatus(); if (r.error) return;
+  tabs[active].maskMap = r.map;
+  if (maskReplace(r.map, "Masked")) closeMask();
+};
+$("maskUndo").onclick = () => {
+  const r = maskStatus(); if (r.error) return;
+  const back = {}, dup = [];
+  for (const [orig, mask] of Object.entries(r.map)) { if (mask in back) dup.push(mask); else back[mask] = orig; }
+  if (dup.length) { maskInfo(`Can't restore: ${dup.length} masked value(s) are used for more than one original (${dup[0]})`, true); return; }
+  if (maskReplace(back, "Restored")) closeMask();
+};
+$("maskDown").onclick = () => {
+  const r = maskStatus(); if (r.error) return;
+  const a = document.createElement("a"), base = tabs[active].name.replace(/\.\w{1,6}$/, "");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(r.map, null, 2)], { type: "application/json" })); a.download = base + ".mask.json"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  tabs[active].maskMap = r.map;
+};
+$("maskLoad").onclick = () => $("maskFile").click();
+$("maskFile").onchange = () => {
+  const f = $("maskFile").files[0]; $("maskFile").value = ""; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { maskView.dispatch({ changes: { from: 0, to: maskView.state.doc.length, insert: String(rd.result) } }); maskStatus(); };
+  rd.readAsText(f);
+};
+
 // ---------------------------------------------------------------- files: open / drop / save
 const BIG = 60 * 1048576;
 function openFiles(files) {
@@ -701,7 +986,7 @@ function openFiles(files) {
       if (k !== -1 && tabs.length > 1) { tabs.splice(k, 1); active = tabs.indexOf(t); }
       renderTabs(); persistSoon();
       const ext = (f.name.split(".").pop() || "").toLowerCase();
-      const byExt = { json: "json", jsonl: "json", ndjson: "json", xml: "xml", html: "html", htm: "html", csv: "csv", tsv: "csv" }[ext];
+      const byExt = { json: "json", jsonl: "json", ndjson: "json", xml: "xml", html: "html", htm: "html", csv: "csv", tsv: "csv", py: "python", pyw: "python", sql: "sql", psql: "sql" }[ext];
       if (byExt && byExt !== t.detected) { t.mode = byExt; $("mode").value = byExt; view.dispatch({ effects: langComp.reconfigure(langExt(byExt)) }); updateStatus(); scheduleValidate(); }
     };
     r.readAsText(f);
@@ -716,7 +1001,7 @@ document.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].inc
 document.addEventListener("drop", (e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); dragDepth = 0; $("drop").classList.remove("show"); openFiles(e.dataTransfer.files); });
 function saveTab() {
   const t = tabs[active], text = (merge ? merge.a.state : view.state).doc.toString();
-  let name = t.name; if (!/\.\w{1,6}$/.test(name)) name += { json: ".json", xml: ".xml", html: ".html", csv: ".csv" }[resolvedMode(t)] || ".txt";
+  let name = t.name; if (!/\.\w{1,6}$/.test(name)) name += { json: ".json", xml: ".xml", html: ".html", csv: ".csv", python: ".py", sql: ".sql" }[resolvedMode(t)] || ".txt";
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" })); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
@@ -727,6 +1012,7 @@ $("btnSave").onclick = saveTab;
 // ---------------------------------------------------------------- compare (split view, differences highlighted)
 let cmpRight = -1;
 function openCompare() {
+  if (previewing()) togglePreview();
   if (tabs.length < 2) addTab("right side", "", "auto", true);   // nothing to compare with yet: an empty tab to paste into
   if (view && tabs[active]) tabs[active].state = view.state;
   $("cmpLeft").textContent = tabs[active].name;
