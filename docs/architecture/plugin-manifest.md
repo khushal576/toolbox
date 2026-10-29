@@ -18,7 +18,7 @@ icon: "🔍"
 category: tool                # tool | learn
 kind: python                  # static | python | external | service
 entry: api.app:app            # python → "module:attribute" (an ASGI app)
-runtime: data                 # light | data | pgtools | latex | ssh
+runtime: data                 # light | data | pgtools | latex | ssh | notebook
 tier: 3                       # 1 static/client-side · 2 light · 3 data-heavy · 4 special image
 state: []                     # any of: session, durable, jobs   (empty = stateless)
 resources: {cpu: 1.0, memory_mb: 512}
@@ -40,7 +40,7 @@ order: 10                     # display order: lower first, ties by title
 | `category` | no (default `tool`) | `tool` \| `learn` | `learn` = educational/reference (hidden by default on the home page). |
 | `kind` | yes | `static` \| `python` \| `external` \| `service` | How the workspace loads it (below). |
 | `entry` | depends on kind | text | See kinds. |
-| `runtime` | python/service: yes | `light` \| `data` \| `pgtools` \| `latex` \| `ssh` \| `datadiff` | Which runtime image hosts it: Dockerfile target + `requirements/<runtime>.txt` (roadmap C1); the gateway routes there from C2. Until then the `full` image serves every tool. |
+| `runtime` | python/service: yes | `light` \| `data` \| `pgtools` \| `latex` \| `ssh` \| `datadiff` \| `notebook` | Which runtime image hosts it: Dockerfile target + `requirements/<runtime>.txt` (roadmap C1); the gateway routes there from C2. Until then the `full` image serves every tool. |
 | `tier` | no (default 2) | 1–4 | Cost class from ADR-001. |
 | `state` | no (default `[]`) | list of `session`, `durable`, `jobs` | What state it keeps; drives phase B work and replica rules. |
 | `resources.cpu` / `resources.memory_mb` | no | number / int | Since roadmap C3 the runtime container's compose `cpus`/`mem_limit` = the SUM over its plugins (`tests/unit/test_runtimes.py` keeps them equal). No value anywhere in a runtime = no limit. |

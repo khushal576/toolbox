@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Kind = Literal["static", "python", "external", "service"]
-Runtime = Literal["light", "data", "pgtools", "latex", "ssh", "datadiff"]
+Runtime = Literal["light", "data", "pgtools", "latex", "ssh", "datadiff", "notebook"]
 StateKind = Literal["session", "durable", "jobs"]
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")

@@ -70,7 +70,7 @@ services:
       TOOLBOX_PLUGINS_DIR: /app/plugins
       TOOLBOX_WEB_WORKERS: ${TOOLBOX_WEB_WORKERS:-4}
       # where each manifest `runtime:` is served (roadmap C2); singletons separately (roadmap B9)
-      TOOLBOX_RUNTIME_URLS: light=http://rt-light:8080,data=http://rt-data:8080,pgtools=http://rt-pgtools:8080,ssh=http://rt-ssh:8080,latex=http://rt-latex:8080,datadiff=http://rt-datadiff:8080
+      TOOLBOX_RUNTIME_URLS: light=http://rt-light:8080,data=http://rt-data:8080,pgtools=http://rt-pgtools:8080,ssh=http://rt-ssh:8080,notebook=http://rt-notebook:8080,latex=http://rt-latex:8080,datadiff=http://rt-datadiff:8080
       TOOLBOX_SINGLETON_URL: http://singletons:8080
       # roadmap C3: start/stop on-demand runtimes (tier-4 ones: latex, pgtools, ssh) through the docker-proxy
       TOOLBOX_DOCKER_URL: http://docker-proxy:2375
@@ -94,6 +94,8 @@ services:
       rt-pgtools:
         condition: service_started
       rt-ssh:
+        condition: service_started
+      rt-notebook:
         condition: service_started
       rt-latex:
         condition: service_started
@@ -178,6 +180,32 @@ services:
     volumes:
       - workspace_data:/app/data/workspace:ro
       - ssh_sftp_data:/app/data/ssh-sftp          # legacy SQLite + local stage cache
+
+  # Notebook: runs USER CODE (kernels), so unlike every other runtime it gets no state credentials — no Postgres, S3
+  # or Vault key, only Redis for the workspace load-state. One web process: kernels live in its memory. Workspaces
+  # (files + per-workspace venv) are on the notebook_data volume.
+  rt-notebook:
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      redis:
+        condition: service_started
+    mem_limit: 2048m
+    cpus: 2.0
+    build: {context: ., target: notebook}
+    image: toolbox-rt-notebook
+    environment:
+      PYTHONUNBUFFERED: "1"
+      TOOLBOX_REDIS_URL: ${TOOLBOX_REDIS_URL:-redis://redis:6379/0}
+    volumes:
+      - workspace_data:/app/data/workspace:ro
+      - notebook_data:/app/data/notebook
 
   rt-latex:
     <<: *tool-service
@@ -363,6 +391,7 @@ volumes:
   data_dumper_data:
   ssh_sftp_data:
   workspace_data:
+  notebook_data:
   redis_data:
   postgres_data:
   seaweedfs_data:

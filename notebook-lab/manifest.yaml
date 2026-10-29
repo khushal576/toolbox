@@ -1,0 +1,20 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Workspaces (files on the notebook_data volume) + one kernel process per workspace in this runtime's memory.
+schema_version: 1
+name: notebook
+title: Notebook
+description: Colab-style Python notebooks — workspaces you can upload files or whole .zip projects into, cells that run real Python (pandas, matplotlib, .to_csv…), packages like TensorFlow pip-installed per workspace, and download of any file or folder
+icon: 📓
+category: tool
+kind: python
+entry: notebook_lab.server:app
+runtime: notebook
+tier: 4
+state: [session, durable]
+depends_on: []
+requires: []
+order: 195
+# Roadmap: runs USER CODE, so no vault: access and (compose) no Postgres/S3/Vault credentials in rt-notebook.
+resources: {cpu: 2.0, memory_mb: 2048}   # limit of the on-demand rt-notebook container (kernels + pip installs)
+# 30 min: a cell can train for a while after the tab is closed; rt-notebook sleeps (and its kernels die) after this idle time
+scaling: {idle_timeout_s: 1800}

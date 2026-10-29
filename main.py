@@ -79,8 +79,8 @@ RUNTIME_URLS = {k.strip(): v.strip() for k, v in
                 (p.split("=", 1) for p in (os.environ.get("TOOLBOX_RUNTIME_URLS") or "").split(",") if "=" in p)}
 if ROLE not in ("web", "singletons", "runtime"):
     raise SystemExit(f"TOOLBOX_ROLE must be 'web', 'singletons' or 'runtime', not {ROLE!r}")
-if ROLE == "runtime" and RUNTIME not in ("light", "data", "pgtools", "latex", "ssh", "datadiff"):
-    raise SystemExit(f"TOOLBOX_ROLE=runtime needs TOOLBOX_RUNTIME=light|data|pgtools|latex|ssh|datadiff, not {RUNTIME!r}")
+if ROLE == "runtime" and RUNTIME not in ("light", "data", "pgtools", "latex", "ssh", "datadiff", "notebook"):
+    raise SystemExit(f"TOOLBOX_ROLE=runtime needs TOOLBOX_RUNTIME=light|data|pgtools|latex|ssh|datadiff|notebook, not {RUNTIME!r}")
 
 # Discovered once at startup: mounting happens at startup too, so a manifest
 # change needs a restart either way. Errors/warnings are logged, never raised.

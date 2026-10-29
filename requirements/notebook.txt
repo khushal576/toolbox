@@ -1,0 +1,12 @@
+# Runtime "notebook": the Jupyter-like Notebook tool. Deliberately NOT based on state.txt: the container that runs
+# user code gets no Postgres/S3/Vault clients (and compose gives it none of their credentials) — only redis for
+# the workspace load-state, which light.txt already carries.
+-r light.txt
+pandas==2.2.2
+numpy==1.26.4
+pyarrow==16.1.0
+duckdb==1.2.2
+openpyxl==3.1.5
+ipykernel==6.29.5
+jupyter_client==8.6.3
+matplotlib==3.9.4

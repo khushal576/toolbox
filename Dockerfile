@@ -180,6 +180,10 @@ COPY ssh-sftp/ ./ssh_sftp/
 # worker; reads the shared data folder (/data, mounted read-only in compose).
 COPY data-lake/ ./data_lake/
 
+# Notebook (Jupyter-like) — whole-folder copy. Workspaces, a per-workspace venv and ipykernel kernels; runs in the
+# `notebook` runtime, which gets no Postgres/S3/Vault credentials because it executes user code.
+COPY notebook-lab/ ./notebook_lab/
+
 # LaTeX to PDF (tool #20) — same namespacing pattern. Shells out to pdflatex from the TeX Live
 # layer above; fully offline.
 COPY latex-pdf/server.py ./latex_pdf/server.py
@@ -193,7 +197,7 @@ COPY core_plugins/ ./core_plugins/
 COPY main.py .
 
 # Create empty __init__.py files so Python treats these as packages.
-RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py text_editor/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py data_lake/__init__.py
+RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py text_editor/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py data_lake/__init__.py notebook_lab/__init__.py
 
 # --- Python packages: wheelhouse + one deps stage per image ----------------------
 # wheelhouse/ (gitignored) holds pre-downloaded wheels for this exact platform/Python version — see
@@ -247,6 +251,17 @@ COPY --from=code /app /app
 ENV TOOLBOX_ROLE=runtime TOOLBOX_RUNTIME=ssh
 EXPOSE 8080
 CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers ${TOOLBOX_WEB_WORKERS:-1}"]
+
+FROM wheels AS deps-notebook
+RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/install -r requirements/notebook.txt
+
+FROM pyslim AS notebook
+COPY --from=deps-notebook /install /usr/local
+COPY --from=code /app /app
+ENV TOOLBOX_ROLE=runtime TOOLBOX_RUNTIME=notebook
+EXPOSE 8080
+# ONE web process: kernels are child processes held in this process's memory (notebook_lab/kernels.py)
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers 1"]
 
 FROM wheels AS deps-pgtools
 RUN pip install --no-cache-dir --no-index --find-links=./wheelhouse --prefix=/install -r requirements/pgtools.txt

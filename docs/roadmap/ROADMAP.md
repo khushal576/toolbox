@@ -83,6 +83,7 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | L3 | SQL over the lake (Athena-like: instant + background queries, CREATE TABLE AS, history) | M | L2 | ☑ |
 | L4 | Load from / Save to Vault Data in every tool; stage database tables via Vault connections | M | L3 | ☑ |
 | L5 | Extras: profiles, suggested joins, charts, AWS S3 locations, notebook (later) | M | L4 | ☑ (notebook deferred) |
+| N1 | Notebook tool: Colab-style workspaces, kernels, per-workspace pip, zip/folder upload + download (own `rt-notebook` runtime, no credentials) | M | C3 | ☑ |
 | F1 | Image versioning, registry, k8s manifests from plugin manifests | M | D3, E1 | ⏸ deferred |
 | F2 | k3s single-node deploy (lab) | M | F1 | ⏸ deferred |
 | F3 | KEDA scale-to-zero + queue scaling | M | F2 | ⏸ deferred |
@@ -392,6 +393,15 @@ the workspace status) and shows it on ONE page in the workspace. Nothing runs or
   `GET /column-stats`). Fixed: Data Lake page didn't follow `#sql` changes.
   Verified live (SeaweedFS as the S3 endpoint, throwaway mssql/oracle containers), 40 container tests, 165 host,
   smoke 107. Test data removed (`l3test` kept). **Next:** phase F when the owner wants it, or the notebook.
+- 2026-10-29 – **N1 done (owner request: "another tool same as Jupyter/Colab").** New tool **Notebook** (`notebook-lab/`, package
+  `notebook_lab`) in a NEW runtime `notebook` / service `rt-notebook` (on-demand, tier 4, 2 GB / 2 CPU, idle 30 min, ONE uvicorn
+  worker: kernels are child processes in its memory). Owner decisions: own cells UI (not embedded JupyterLab — the gateway refuses
+  websockets, so cells are polled), TensorFlow NOT baked in (pip per workspace into `<ws>/.venv`, `--system-site-packages`, Reset
+  forgets it), named workspaces on volume `notebook_data`. Because it runs user code the container gets NO Postgres/S3/Vault
+  credentials (only `TOOLBOX_REDIS_URL`) and kernels get an allow-listed env. Touched outside the tool: `core_plugins/manifest.py`
+  + `main.py` (runtime allow-lists), Dockerfile (`notebook` target), compose (`rt-notebook`, gateway URL, volume),
+  `requirements*` (ipykernel, jupyter_client, matplotlib), runtime tests. **Deferred:** Vault Data tables as DataFrames in a cell
+  (needs a credential-free bridge), autocomplete, `input()`, GPU.
 - 2026-10-27 – **L4 done.** Shared: `lake.catalog()`, `lake.export_table(ws, t, dest, csv|parquet, limit)`,
   `lake.import_file(ws, t, path)` (+ scoped versions); Vault `GET /data/catalog` (every tool's table picker) and
   `GET /data/tables/{ws}/{t}/csv` (DataDiff, ≤ 2000 rows, bigger refused like datasets). Tools (manifests `data:

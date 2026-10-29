@@ -35,6 +35,7 @@ API_CHECKS = [
     ("data-dumper", "GET", "/dumps", None, "application/json"),
     ("ssh-sftp", "GET", "/servers", None, "application/json"),
     ("ssh-sftp", "GET", "/transfers", None, "application/json"),
+    ("notebook", "GET", "/workspaces", None, "application/json"),
     ("latex-pdf", "GET", "/health", None, "application/json"),
     ("latex-pdf", "POST", "/compile", {"source": LATEX}, "application/pdf"),
 ]

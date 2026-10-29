@@ -60,7 +60,7 @@ the left menu hides — press ☰ (top left) or Ctrl+K to open it.
 **Never run `docker compose down -v`** unless you mean it: `-v` deletes the data volumes (database, files).
 
 What runs (one machine, Docker Compose): `toolbox` (the gateway: workspace page + routing, port 8000),
-`rt-light` / `rt-data` / `rt-datadiff` (×2–4) / `rt-pgtools` / `rt-ssh` / `rt-latex` (the tools, grouped by what
+`rt-light` / `rt-data` / `rt-datadiff` (×2–4) / `rt-pgtools` / `rt-ssh` / `rt-notebook` / `rt-latex` (the tools, grouped by what
 they need), `singletons` (SQL Studio + Schema Map), `worker` (×1–3, background jobs), `postgres`, `redis`,
 `seaweedfs` (file storage), `docker-proxy` (lets the gateway start/stop tool containers — nothing else).
 
@@ -140,7 +140,7 @@ identical; a secret decrypted with the restored key).
 | `TOOLBOX_WEB_WORKERS` | 4 | Gateway processes (1 = less memory, ~40 MB each) |
 | `TOOLBOX_DATA_WORKERS` | 2 | Processes of the data tools container |
 | `TOOLBOX_WORKER_SCALING` | `1:3` | Min:max background-job workers |
-| `TOOLBOX_IDLE_TIMEOUT_S` | (manifests: 900) | Minutes-unused before LaTeX/SSH/pgtools sleep, in seconds |
+| `TOOLBOX_IDLE_TIMEOUT_S` | (manifests: 900) | Minutes-unused before LaTeX/SSH/pgtools/Notebook sleep, in seconds (overrides Notebook's own 30 min too) |
 | `TOOLBOX_SLOW_MS` | 2000 | When a request counts as "slow" on the Status page |
 | `TOOLBOX_DATA_DIR` | `~/toolbox-data` | The folder Data Lake can load from (shared read-only) |
 | `TOOLBOX_DATABASE_URL` | bundled Postgres | Use your own Postgres instead (a dedicated `toolbox` database) |

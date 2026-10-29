@@ -23,3 +23,9 @@ redis==5.2.1
 boto3==1.35.99
 # Roadmap B4: background job queue (core/jobs) — worker container runs `python -m core.jobs.worker`.
 rq==2.1.0
+# Notebook (runtime "notebook"): Python kernels for the Jupyter-like notebook tool. pandas/numpy/pyarrow/duckdb/openpyxl
+# above double as the notebook's preinstalled data stack; anything else (tensorflow, scikit-learn…) is pip-installed
+# per workspace at run time.
+ipykernel==6.29.5
+jupyter_client==8.6.3
+matplotlib==3.9.4

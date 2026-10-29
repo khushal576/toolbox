@@ -18,7 +18,7 @@ its status + handoff log.
 **Since roadmap C2:** one repo, one Dockerfile, several images (build
 targets). Compose runs `toolbox` = the **gateway** (workspace UI + proxy, no
 tool code, the only host port), one container per runtime (`rt-light`,
-`rt-data`, `rt-pgtools`, `rt-ssh`, `rt-latex`, `rt-datadiff` ×2 — each
+`rt-data`, `rt-pgtools`, `rt-ssh`, `rt-notebook`, `rt-latex`, `rt-datadiff` ×2 — each
 serving only the tools of its manifest `runtime:`), `singletons` (sql-studio
 + schema-map, one process, data image), `worker` (jobs, worker image),
 `docker-proxy` (C3) and the state services. (An earlier per-tool-container idea was rejected by
@@ -149,6 +149,9 @@ containers/gateway pieces outside the roadmap session that owns them.
   workspace sidebar slides away (☰/Ctrl+K); Duck Lab and DataFrame Studio take
   data ONLY from Vault Data (Athena-style Tables bar; files come in through Data
   Lake) — DataFrame Studio joins other tables by name.
+- **Notebook (roadmap N1):** `notebook-lab/` — Colab-style workspaces + Jupyter kernels in its OWN runtime `rt-notebook`
+  (on-demand, one uvicorn worker, volume `notebook_data`). It executes user code, so that container has **no
+  Postgres/S3/Vault credentials** (compose gives it only `TOOLBOX_REDIS_URL`) — keep it that way; see `notebook-lab/CLAUDE.md`.
 - **Installable app (roadmap G1):** the gateway serves `/manifest.webmanifest`
   (standalone display, Status/Settings shortcuts), `/icons/<file>` (four
   known PNGs from `core_plugins/ui/icons/`, drawn by
@@ -201,7 +204,7 @@ containers/gateway pieces outside the roadmap session that owns them.
   with plain `up -d toolbox` starts every pool member again (depends_on) —
   use `--no-deps`, or let the autoscaler bring them back down; a recreated
   gateway waits up to 45 s for the old leader lock to expire.
-- **On-demand runtimes (roadmap C3):** `rt-latex`, `rt-pgtools`, `rt-ssh`
+- **On-demand runtimes (roadmap C3):** `rt-latex`, `rt-pgtools`, `rt-ssh`, `rt-notebook`
   (all-tier-4 runtimes) sleep when idle: the gateway's supervisor
   (`core_plugins/supervisor.py`) stops a container after its manifests'
   `scaling.idle_timeout_s` (900 s) without traffic and starts it again on the
@@ -285,7 +288,7 @@ datadiff-pro/                (repo root)
 ├── Dockerfile                  build targets: full (default, what compose runs) + one per runtime (C1)
 ├── docker-compose.yml          one service, host port 8000
 ├── requirements.txt             full dependency set (the `full` image)
-├── requirements/                per-runtime subsets: light, state, data, pgtools, ssh, latex (C1)
+├── requirements/                per-runtime subsets: light, state, data, pgtools, ssh, latex, notebook (C1, N1)
 ├── README.md
 ├── CLAUDE.md                   (this file)
 ├── GITHUB_AUTH.md

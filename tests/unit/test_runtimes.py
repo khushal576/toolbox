@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO))
 
 from core_plugins import discover  # noqa: E402
 
-RUNTIMES = ("light", "data", "pgtools", "ssh", "latex", "datadiff")
+RUNTIMES = ("light", "data", "pgtools", "ssh", "latex", "datadiff", "notebook")
 
 
 def _pins(path: Path, seen: set | None = None) -> dict[str, str]:
@@ -80,7 +80,8 @@ def test_on_demand_runtimes_are_the_all_tier_4_ones(monkeypatch):
 
     monkeypatch.delenv("TOOLBOX_IDLE_TIMEOUT_S", raising=False)
     od = on_demand_runtimes(discover(REPO).ordered())
-    assert set(od) == {"latex", "pgtools", "ssh"} and all(v == 900 for v in od.values())
+    assert set(od) == {"latex", "pgtools", "ssh", "notebook"}
+    assert od["notebook"] == 1800 and all(v == 900 for k, v in od.items() if k != "notebook")  # notebook: cells outlive the tab
     monkeypatch.setenv("TOOLBOX_IDLE_TIMEOUT_S", "60")
     assert set(on_demand_runtimes(discover(REPO).ordered()).values()) == {60}
 
