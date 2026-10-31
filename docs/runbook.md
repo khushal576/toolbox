@@ -71,6 +71,22 @@ Some containers stop on purpose:
   load.
 A plain `docker compose up -d` starts all of them again; they go back to sleep by themselves.
 
+### Connecting SharePoint (SharePoint Lists tool)
+
+In the Microsoft Entra admin center create an **app registration** (this tenant only), then in the tool press **+**:
+- **Sign in as me, no app registration** — just a name and the site URL(s) (copy them from the browser's address bar).
+  The tool uses Microsoft's own public sign-in app; you type your username and password (and MFA) on Microsoft's page
+  at microsoft.com/devicelogin, never into the tool. If Microsoft says it needs administrator approval, your IT admin
+  must approve "Microsoft Graph Command Line Tools" once — or use the next option with your own registration.
+- **Sign in as me, with your own app registration** — app registration → *Authentication* → *Allow public client flows* = Yes; *API permissions* →
+  Microsoft Graph → **Delegated** → `Sites.ReadWrite.All` (or `Sites.Read.All` for a read-only connection; your admin may
+  need to consent). Paste the *Directory (tenant) ID* and *Application (client) ID*, add the site URLs, Save, then enter the
+  shown code at microsoft.com/devicelogin.
+- **App secret** — *Certificates & secrets* → new client secret; *API permissions* → **Application** → `Sites.Selected`
+  (an admin then grants the app each site) or `Sites.ReadWrite.All`. Paste tenant id, client id and the secret value.
+Connections are stored in the Vault (back up `.env` as usual). Nothing is written to SharePoint until you press
+*Approve & write* in the Review screen, and the tool never deletes anything.
+
 ## 2. Update after pulling new code
 
 ```bash

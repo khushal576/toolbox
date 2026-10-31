@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SharePoint Lists</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+    --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --ok: #15803d; --err: #b91c1c; --warn: #b45309;
+    --stage: #fff7d6; --stage-b: #f0c94a; --old: #fde8e8; --new: #e3f6e8;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 13px; display: flex; overflow: hidden; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  svg.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  .ib { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 30px; height: 30px; padding: 0 7px; border: 1px solid transparent; border-radius: 7px;
+        background: none; cursor: pointer; color: var(--muted); white-space: nowrap; }
+  .ib:hover { background: #e9ecf8; color: var(--text); }
+  .ib.on { background: #e5e8ff; color: var(--accent); }
+  .ib.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .ib.primary:hover { background: #4250dc; }
+  .ib.danger { background: var(--err); color: #fff; border-color: var(--err); }
+  .ib:disabled { opacity: 0.45; cursor: default; pointer-events: none; }
+  .badge { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--stage-b); color: #5b4300; font-size: 0.72rem; font-weight: 700; text-align: center; line-height: 17px; }
+  .chip { display: inline-block; padding: 0 7px; border-radius: 9px; background: #e8ebf8; font-size: 0.74rem; line-height: 18px; margin-right: 3px; white-space: nowrap; }
+  .chip.ro { background: #ffe9c7; color: #7a4a00; }
+
+  /* sidebar */
+  #side { width: 290px; min-width: 200px; max-width: 520px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex: none; }
+  body.collapsed #side, body.collapsed #resizer { display: none; }
+  #sideHead { display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--border); font-weight: 700; }
+  #sideHead span { flex: 1; letter-spacing: -0.2px; }
+  #tree { flex: 1; overflow: auto; padding: 6px 4px 20px; }
+  .node { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 6px; cursor: pointer; min-height: 28px; }
+  .node:hover { background: #eef0fb; }
+  .node.active { background: #e5e8ff; font-weight: 600; }
+  .node .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node .car { width: 14px; color: var(--muted); transition: transform 0.1s; }
+  .node .car.open { transform: rotate(90deg); }
+  .node .acts { display: none; gap: 0; }
+  .node:hover .acts { display: inline-flex; }
+  .lvl1 { margin-left: 14px; } .lvl2 { margin-left: 30px; }
+  .err { color: var(--err); font-size: 0.78rem; padding: 2px 8px 4px 40px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #c9cde0; flex: none; }
+  .dot.ok { background: #2fb457; } .dot.warn { background: #e0a100; }
+  #resizer { width: 5px; cursor: col-resize; background: transparent; flex: none; margin-left: -3px; z-index: 2; }
+  #resizer:hover { background: #c8ceef; }
+
+  /* main */
+  #main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #tabs { display: flex; align-items: stretch; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; flex: none; scrollbar-width: thin; }
+  #tabs .lead { display: flex; align-items: center; padding: 0 4px 0 6px; }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 0 6px 0 12px; height: 36px; cursor: pointer; border-left: 1px solid var(--border); color: var(--muted); white-space: nowrap; max-width: 260px; }
+  .tab .tt { overflow: hidden; text-overflow: ellipsis; }
+  .tab.active { color: var(--text); background: var(--bg); box-shadow: inset 0 -2px 0 var(--accent); font-weight: 600; }
+  .tab .x { width: 18px; height: 18px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; }
+  .tab .x:hover { background: var(--border); }
+  #bar { display: flex; align-items: center; gap: 2px; padding: 4px 8px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; flex-wrap: wrap; }
+  #bar .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  #bar input[type=search] { border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; width: 220px; background: var(--bg); }
+  #bar .grow { flex: 1; }
+  #stage { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+  #empty { margin: auto; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #empty svg { width: 46px; height: 46px; stroke-width: 1.2; }
+  #gridWrap { flex: 1; min-height: 0; overflow: auto; background: var(--surface); }
+  table.grid { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+  .grid th { position: sticky; top: 0; z-index: 2; background: #f8f9fd; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); padding: 0; text-align: left; font-weight: 600; white-space: nowrap; }
+  .grid th .hd { display: flex; align-items: center; gap: 5px; padding: 6px 8px; cursor: pointer; user-select: none; }
+  .grid th .ty { font-weight: 400; color: var(--muted); font-size: 0.68rem; }
+  .grid th.ro .hd { color: var(--muted); }
+  .grid td { border-bottom: 1px solid #edeff8; border-right: 1px solid #f1f2fa; padding: 0 8px; height: 28px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; position: relative; }
+  .grid td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .grid td.id, .grid th.id { position: sticky; left: 0; z-index: 1; background: #f8f9fd; color: var(--muted); width: 54px; min-width: 54px; text-align: right; }
+  .grid th.id { z-index: 3; }
+  .grid tr:hover td { background: #f6f7fe; }
+  .grid tr:hover td.id { background: #eef0fb; }
+  .grid td.edit { cursor: cell; }
+  .grid td.staged { background: var(--stage) !important; box-shadow: inset 0 0 0 1px var(--stage-b); }
+  .grid td.bad { box-shadow: inset 0 0 0 2px var(--err); }
+  .grid tr.draft td.id::after { content: "new"; color: var(--accent); font-size: 0.66rem; }
+  .grid td input, .grid td select, .grid td textarea { position: absolute; inset: 0; width: 100%; height: 100%; border: 2px solid var(--accent); border-radius: 0; padding: 0 6px; background: #fff; outline: none; }
+  .grid td textarea { height: 120px; z-index: 5; padding: 6px; resize: vertical; box-shadow: 0 8px 22px rgba(0,0,0,.18); }
+  .grid td .pop { position: absolute; top: 100%; left: 0; z-index: 6; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.18); padding: 6px; min-width: 140px; }
+  .grid td .pop label { display: flex; gap: 6px; padding: 3px 6px; cursor: pointer; border-radius: 5px; }
+  .grid td .pop label:hover { background: var(--bg); }
+  .grid td .undo { position: absolute; right: 2px; top: 3px; display: none; background: #fff; border: 1px solid var(--stage-b); border-radius: 5px; height: 20px; width: 20px; align-items: center; justify-content: center; cursor: pointer; }
+  .grid td.staged:hover .undo { display: flex; }
+  .muted { color: var(--muted); }
+  .bool { font-size: 1rem; line-height: 1; }
+  #status { flex: none; display: flex; gap: 14px; align-items: center; padding: 3px 12px; background: var(--surface); border-top: 1px solid var(--border); font-size: 0.74rem; color: var(--muted); }
+  #status b { color: var(--text); font-weight: 600; }
+
+  /* dialogs */
+  dialog { border: 0; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.3); padding: 0; width: min(820px, 94vw); max-height: 90vh; color: var(--text); background: var(--surface); margin: auto; }
+  dialog::backdrop { background: rgba(20,24,45,.45); }
+  dialog[open] { display: flex; flex-direction: column; }
+  .dh { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 0.95rem; }
+  .dh .grow { flex: 1; }
+  .db { padding: 12px 14px; overflow: auto; flex: 1; }
+  .df { display: flex; gap: 6px; align-items: center; justify-content: flex-end; padding: 8px 14px; border-top: 1px solid var(--border); background: #f8f9fd; }
+  .df .grow { flex: 1; color: var(--muted); font-size: 0.8rem; }
+  .form { display: grid; grid-template-columns: 120px 1fr; gap: 8px 10px; align-items: center; }
+  .form label.l { color: var(--muted); }
+  .form input[type=text], .form input[type=password], .form select, .form textarea { width: 100%; border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; background: #fff; }
+  .form textarea { min-height: 80px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: #fff; padding: 5px 12px; cursor: pointer; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .code { font: 700 1.9rem ui-monospace, Menlo, Consolas, monospace; letter-spacing: 4px; text-align: center; padding: 14px; background: var(--bg); border-radius: 10px; user-select: all; }
+  table.t { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+  table.t th, table.t td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
+  table.t th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: #fff; }
+  .rv { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+  .rv .rh { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #f8f9fd; font-weight: 600; }
+  .rv .rh .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv.bad { border-color: #e9b3b3; } .rv.conflict { border-color: #f0c94a; } .rv.ok { border-color: #a7dcb6; }
+  .ov { white-space: pre-wrap; word-break: break-word; padding: 2px 6px; border-radius: 5px; display: inline-block; max-width: 100%; }
+  .ov.old { background: var(--old); text-decoration: line-through; text-decoration-color: #b91c1c88; }
+  .ov.new { background: var(--new); }
+  .ov.live { background: #fff1c2; }
+  .arrow { color: var(--muted); padding: 0 6px; }
+  .msg { padding: 4px 10px 8px; color: var(--err); font-size: 0.8rem; }
+  .msg.warn { color: var(--warn); } .msg.good { color: var(--ok); }
+  #toast { position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%); background: #1c2035; color: #fff; padding: 7px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 100; max-width: 80vw; }
+  #toast.show { opacity: .96; } #toast.err { background: #8f1d1d; }
+</style>
+</head>
+<body>
+<aside id="side">
+  <div id="sideHead"><span>SharePoint</span>
+    <button class="ib" id="btnAddConn" title="Add a connection"></button>
+    <button class="ib" id="btnHide" title="Hide the sidebar (Ctrl+B)"></button>
+  </div>
+  <div id="tree"></div>
+</aside>
+<div id="resizer"></div>
+<section id="main">
+  <div id="tabs"><span class="lead"><button class="ib" id="btnShow" title="Show the sidebar (Ctrl+B)" hidden></button></span><span id="tabList" style="display:flex"></span></div>
+  <div id="bar" hidden>
+    <button class="ib" id="btnReload" title="Reload this list"></button>
+    <input type="search" id="filter" placeholder="Filter loaded rows" />
+    <span class="sep"></span>
+    <button class="ib" id="btnSystem" title="Show system and hidden columns"></button>
+    <button class="ib" id="btnSchema" title="All columns — names, types, choices"></button>
+    <button class="ib" id="btnAddRow" title="Add a new item (staged until you approve)"></button>
+    <button class="ib" id="btnCsv" title="Download the whole list as CSV"></button>
+    <button class="ib" id="btnAudit" title="What was written, and when"></button>
+    <span class="grow"></span>
+    <button class="ib" id="btnReview" title="Review staged changes and approve them"></button>
+  </div>
+  <div id="stage">
+    <div id="empty"><div id="emptyIcon"></div><div>Add a connection, then open a list</div></div>
+    <div id="gridWrap" hidden></div>
+  </div>
+  <div id="status" hidden></div>
+</section>
+<div id="toast"></div>
+
+<dialog id="dlgConn"></dialog>
+<dialog id="dlgSignin"></dialog>
+<dialog id="dlgSchema"></dialog>
+<dialog id="dlgReview"></dialog>
+<dialog id="dlgAudit"></dialog>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------- helpers
+const $ = (id) => document.getElementById(id);
+const P = { // inline icons (stroke), 24-box paths
+  plus: "M12 5v14M5 12h14", refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7", panel: "M3 4h18v16H3zM9 4v16", x: "M6 6l12 12M18 6L6 18",
+  list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01", cols: "M3 4h18v16H3zM9 4v16M15 4v16", eye: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+  schema: "M4 5h16M4 10h16M4 15h10M4 20h6", dl: "M12 4v11M7 11l5 5 5-5M5 20h14", clock: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2",
+  check: "M5 12l5 5 9-10", key: "M14 10a4 4 0 1 1-3.5 6L4 22v-3h-2v-2h2v-2l4.5-4.5A4 4 0 0 1 14 10z", edit: "M4 20h4L19 9l-4-4L4 16zM13 7l4 4",
+  undo: "M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3", caret: "M9 6l6 6-6 6", site: "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",
+  review: "M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9", sheet: "M4 4h16v16H4zM4 10h16M4 15h16M10 4v16",
+};
+const icon = (n) => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", "i");
+  const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", P[n]); s.appendChild(p); return s; };
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v; else if (k === "text") e.textContent = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "value") e.value = v; else if (k in e && typeof v !== "string") e[k] = v; else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return e;
+}
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } } };
+let toastT;
+function toast(msg, err) { const t = $("toast"); t.textContent = msg; t.className = "show" + (err ? " err" : ""); clearTimeout(toastT); toastT = setTimeout(() => (t.className = ""), err ? 6000 : 2600); }
+async function api(method, path, body) {
+  const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+  const text = await r.text();
+  let j = null; try { j = JSON.parse(text); } catch (e) { /* not JSON */ }
+  if (!r.ok) { const err = new Error((j && j.detail) || `Request failed (${r.status})`); err.status = r.status; err.needsSignin = !!(j && j.needs_signin); throw err; }
+  return j;
+}
+const fill = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));   // replaceChildren(null) would insert the text "null"
+const qs = (o) => "?" + new URLSearchParams(Object.entries(o).filter(([, v]) => v != null && v !== "")).toString();
+const lq = (t) => ({ conn: t.conn, site: t.site, list: t.list });
+
+// ---------------------------------------------------------------- values (display + dates in the browser's time zone)
+const pad = (n) => String(n).padStart(2, "0");
+function localDate(iso) { const d = new Date(iso); return isNaN(d) ? String(iso) : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function localDateTime(iso) { const d = new Date(iso); return isNaN(d) ? String(iso) : `${localDate(iso)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function toIso(d) { return d.toISOString().replace(/\.\d{3}Z$/, "Z"); }
+function fromDateInput(v) { if (!v) return null; const [y, m, d] = v.split("-").map(Number); return toIso(new Date(y, m - 1, d)); }       // local midnight → UTC instant
+function fromDateTimeInput(v) { return v ? toIso(new Date(v)) : null; }
+function toDateTimeInput(iso) { const d = new Date(iso); return `${localDate(iso)}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function text(col, v) {  // plain text of a value, for filtering / sorting / the review
+  if (v == null || v === "") return "";
+  if (Array.isArray(v)) return v.map((x) => text(col, x)).join("; ");
+  if (col) {
+    if (col.kind === "date") return localDate(v);
+    if (col.kind === "datetime") return localDateTime(v);
+    if (col.kind === "boolean") return v ? "yes" : "no";
+    if ((col.kind === "person" || col.kind === "lookup")) return "#" + v;
+  }
+  if (typeof v === "object") return v.Url ? (v.Description ? `${v.Description} (${v.Url})` : v.Url) : JSON.stringify(v);
+  return String(v);
+}
+
+// ---------------------------------------------------------------- state
+const S = { conns: [], lists: {}, open: new Set(JSON.parse(store.get("sp.open") || "[]")), tabs: [], active: -1, loading: {} };
+const T = () => S.tabs[S.active];
+function saveUi() { store.set("sp.open", JSON.stringify([...S.open])); store.set("sp.tabs", JSON.stringify(S.tabs.map((t) => ({ conn: t.conn, site: t.site, list: t.list, name: t.name })))); store.set("sp.active", String(S.active)); }
+
+// ---------------------------------------------------------------- sidebar tree
+async function loadConns() {
+  try { S.conns = (await api("GET", "connections")).connections; } catch (e) { toast(e.message, true); S.conns = []; }
+  renderTree();
+}
+async function loadLists(cid, refresh) {
+  S.loading[cid] = true; renderTree();
+  try { S.lists[cid] = (await api("GET", `connections/${cid}/lists` + (refresh ? "?refresh=1" : ""))).sites; }
+  catch (e) { S.lists[cid] = [{ site: { url: "", error: e.message, needs_signin: e.needsSignin }, lists: [] }]; }
+  S.loading[cid] = false; renderTree();
+}
+function renderTree() {
+  const tree = $("tree"); tree.replaceChildren();
+  if (!S.conns.length) tree.append(h("div", { class: "muted", style: "padding:14px" }, "No connections yet."));
+  const cur = T();
+  for (const c of S.conns) {
+    const open = S.open.has(c.id);
+    const needs = c.auth === "device_code" && !c.signed_in;
+    tree.append(h("div", { class: "node", onclick: () => { open ? S.open.delete(c.id) : S.open.add(c.id); saveUi(); if (!open && !S.lists[c.id]) loadLists(c.id); renderTree(); } },
+      h("span", { class: "car" + (open ? " open" : "") }, icon("caret")), h("span", { class: "dot " + (needs ? "warn" : "ok") }),
+      h("span", { class: "nm", title: `${c.tenant_id}` }, c.name), c.read_only ? h("span", { class: "chip ro", title: "Read-only: nothing can be written" }, "RO") : null,
+      c.staged ? h("span", { class: "badge", title: "Staged changes" }, c.staged) : null,
+      h("span", { class: "acts" },
+        needs || c.auth === "device_code" ? h("button", { class: "ib", title: needs ? "Sign in" : "Sign in again", onclick: (e) => { e.stopPropagation(); signIn(c); } }, icon("key")) : null,
+        h("button", { class: "ib", title: "Reload its lists", onclick: (e) => { e.stopPropagation(); loadLists(c.id, true); } }, icon("refresh")),
+        h("button", { class: "ib", title: "Edit sites / read-only", onclick: (e) => { e.stopPropagation(); connDialog(c); } }, icon("edit")))));
+    if (!open) continue;
+    if (S.loading[c.id]) { tree.append(h("div", { class: "muted lvl1", style: "padding:4px 10px" }, "Loading…")); continue; }
+    if (needs && !S.lists[c.id]) { tree.append(h("div", { class: "err" }, "Not signed in")); continue; }
+    for (const o of S.lists[c.id] || []) {
+      if (o.site.error) { tree.append(h("div", { class: "err" }, o.site.url ? `${o.site.url.replace(/^https:\/\//, "")} — ${o.site.error}` : o.site.error)); continue; }
+      tree.append(h("div", { class: "node lvl1", title: o.site.url }, h("span", { class: "muted" }, icon("site")), h("span", { class: "nm" }, o.site.name)));
+      for (const l of o.lists) {
+        const on = cur && cur.conn === c.id && cur.list === l.id && cur.site === o.site.id;
+        tree.append(h("div", { class: "node lvl2" + (on ? " active" : ""), title: l.description || l.name, onclick: () => openList(c.id, o.site.id, l.id, l.name, c) },
+          h("span", { class: "muted" }, icon("sheet")), h("span", { class: "nm" }, l.name), l.staged ? h("span", { class: "badge" }, l.staged) : null));
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------- connection dialog
+function connDialog(existing) {
+  const dlg = $("dlgConn");
+  const st = { auth: existing ? existing.auth : "device_code", ro: existing ? existing.read_only : false };
+  const f = {
+    name: h("input", { type: "text", placeholder: "e.g. Contoso production", value: existing ? existing.name : "", disabled: !!existing }),
+    tenant: h("input", { type: "text", placeholder: "tenant id (GUID) or contoso.onmicrosoft.com", value: existing ? existing.tenant_id : "", disabled: !!existing }),
+    client: h("input", { type: "text", placeholder: "application (client) id", value: existing ? existing.client_id : "", disabled: !!existing }),
+    secret: h("input", { type: "password", placeholder: existing ? "leave empty to keep the saved secret" : "client secret value", autocomplete: "off" }),
+    sites: h("textarea", { placeholder: "One site per line\nhttps://contoso.sharepoint.com/sites/Team", value: existing ? existing.sites.map((s) => s.url).join("\n") : "" }),
+    cloud: h("select", { disabled: !!existing }, ["global", "us_gov", "china"].map((c) => h("option", { value: c, selected: existing && existing.cloud === c }, c))),
+  };
+  const ro = h("input", { type: "checkbox", checked: st.ro });
+  const seg = h("div", { class: "seg" }), segBtns = {};
+  for (const [k, label] of [["device_code", "Sign in as me"], ["client_secret", "App secret"]]) { segBtns[k] = h("button", { type: "button", disabled: !!existing, onclick: () => { st.auth = k; sync(); } }, label); seg.append(segBtns[k]); }
+  const secretRow = [h("label", { class: "l" }, "Client secret"), f.secret];
+  const sync = () => {
+    for (const k in segBtns) segBtns[k].className = st.auth === k ? "on" : "";
+    secretRow.forEach((e) => (e.hidden = st.auth !== "client_secret"));
+    if (!existing) { const me = st.auth === "device_code"; f.tenant.placeholder = me ? "optional — leave empty" : "tenant id (GUID) or contoso.onmicrosoft.com"; f.client.placeholder = me ? "optional — leave empty" : "application (client) id"; }
+  };
+  const err = h("div", { class: "msg" });
+  const save = async () => {
+    err.textContent = "";
+    try {
+      const sites = f.sites.value.split("\n").map((s) => s.trim()).filter(Boolean);
+      if (existing) {
+        const body = { sites, read_only: ro.checked }; if (f.secret.value) body.client_secret = f.secret.value;
+        await api("PUT", `connections/${existing.id}`, body);
+      } else {
+        await api("POST", "connections", { name: f.name.value.trim(), auth: st.auth, tenant_id: f.tenant.value.trim(), client_id: f.client.value.trim(),
+          client_secret: st.auth === "client_secret" ? f.secret.value : undefined, cloud: f.cloud.value, read_only: ro.checked, sites });
+      }
+      dlg.close(); await loadConns();
+      const c = S.conns.find((x) => existing ? x.id === existing.id : x.name === f.name.value.trim());
+      if (c) { S.open.add(c.id); delete S.lists[c.id]; saveUi(); c.auth === "device_code" && !c.signed_in ? signIn(c) : loadLists(c.id, true); }
+    } catch (e) { err.textContent = e.message; }
+  };
+  dlg.replaceChildren(
+    h("div", { class: "dh" }, h("span", { class: "grow" }, existing ? `Edit “${existing.name}”` : "Add a SharePoint connection"), h("button", { class: "ib", title: "Close", onclick: () => dlg.close() }, icon("x"))),
+    h("div", { class: "db" }, h("div", { class: "form" },
+      h("label", { class: "l" }, "Name"), f.name, h("label", { class: "l" }, "Sign-in"), seg,
+      h("label", { class: "l" }, "Tenant"), f.tenant, h("label", { class: "l" }, "Client id"), f.client, ...secretRow,
+      h("label", { class: "l" }, "Sites"), f.sites, h("label", { class: "l" }, "Cloud"), f.cloud,
+      h("label", { class: "l" }, "Read-only"), h("label", { style: "display:flex;gap:6px;align-items:center" }, ro, "nothing can be written through this connection")), err),
+    h("div", { class: "df" }, h("span", { class: "grow" }), h("button", { class: "ib", onclick: () => dlg.close() }, "Cancel"), h("button", { class: "ib primary", onclick: save }, "Save")));
+  sync(); dlg.showModal();
+}
+
+// ---------------------------------------------------------------- device-code sign-in
+async function signIn(c) {
+  const dlg = $("dlgSignin");
+  let info, stop = false;
+  const close = () => { stop = true; dlg.close(); };
+  try { info = await api("POST", `connections/${c.id}/signin`); } catch (e) { toast(e.message, true); return; }
+  dlg.replaceChildren(
+    h("div", { class: "dh" }, h("span", { class: "grow" }, `Sign in — ${c.name}`), h("button", { class: "ib", title: "Cancel", onclick: close }, icon("x"))),
+    h("div", { class: "db" }, h("div", { class: "code" }, info.user_code),
+      h("div", { style: "text-align:center;margin-top:12px" }, h("a", { href: info.verification_uri, target: "_blank", rel: "noopener" }, info.verification_uri)),
+      h("div", { class: "muted", id: "siMsg", style: "text-align:center;margin-top:10px" }, "Waiting for you to finish in the browser…")));
+  dlg.showModal();
+  const until = Date.now() + info.expires_in * 1000; let wait = Math.max(2, info.interval);
+  while (!stop && Date.now() < until) {
+    await new Promise((r) => setTimeout(r, wait * 1000));
+    if (stop) return;
+    try {
+      const r = await api("GET", `signin/${info.flow}`);
+      if (r.status === "done") { dlg.close(); toast("Signed in"); await loadConns(); loadLists(c.id, true); return; }
+      if (r.status === "slow_down") wait += 5;
+      if (r.status === "declined" || r.status === "expired") { $("siMsg").textContent = r.status === "declined" ? "Declined." : "The code expired."; return; }
+    } catch (e) { $("siMsg").textContent = e.message; return; }
+  }
+}
+
+// ---------------------------------------------------------------- tabs / list loading
+const key = (t) => `${t.conn}|${t.site}|${t.list}`;
+async function openList(conn, site, list, name, c) {
+  let i = S.tabs.findIndex((t) => t.conn === conn && t.site === site && t.list === list);
+  if (i < 0) {
+    S.tabs.push({ conn, site, list, name, connName: c ? c.name : "", readOnly: c ? c.read_only : false, cols: null, items: [], next: null, staged: { byItem: {}, creates: [], digest: "" }, filter: "", showSystem: false, sort: null, loaded: false, busy: false });
+    i = S.tabs.length - 1;
+  }
+  S.active = i; saveUi(); renderTabs(); renderTree();
+  const t = T(); if (!t.loaded) await loadTab(t);
+}
+async function loadTab(t, reset = true) {
+  t.busy = true; render();
+  try {
+    if (reset) { t.items = []; t.next = null; }
+    const [sch, page, rv] = await Promise.all([api("GET", "schema" + qs(lq(t))), api("GET", "items" + qs({ ...lq(t), top: 200 })), api("GET", "staged" + qs(lq(t)))]);
+    t.cols = sch.columns; t.readOnly = sch.read_only; t.items = page.items; t.next = page.next; t.loaded = true; setStaged(t, rv);
+  } catch (e) { toast(e.message, true); if (e.needsSignin) loadConns(); }
+  t.busy = false; render();
+}
+async function loadMore(t, all) {
+  if (!t.next || t.busy) return;
+  t.busy = true; statusBar();
+  try {
+    do { const page = await api("GET", "items" + qs({ ...lq(t), top: 500, cursor: t.next })); t.items.push(...page.items); t.next = page.next; if (all) statusBar(); } while (all && t.next && t.items.length < 50000);
+  } catch (e) { toast(e.message, true); }
+  t.busy = false; renderGrid();
+}
+function setStaged(t, rv) {
+  t.staged = { byItem: {}, creates: [], digest: rv.digest, counts: rv.counts, review: rv };
+  for (const r of rv.rows) { if (r.op === "create") t.staged.creates.push(r); else t.staged.byItem[r.item_id] = r; }
+}
+function renderTabs() {
+  const box = $("tabList"); box.replaceChildren();
+  S.tabs.forEach((t, i) => box.append(h("div", { class: "tab" + (i === S.active ? " active" : ""), title: `${t.connName} — ${t.name}`, onclick: () => { S.active = i; saveUi(); renderTabs(); renderTree(); render(); if (!t.loaded) loadTab(t); } },
+    h("span", { class: "tt" }, t.name), h("span", { class: "x", title: "Close", onclick: (e) => { e.stopPropagation(); closeTab(i); } }, icon("x")))));
+}
+function closeTab(i) { S.tabs.splice(i, 1); if (i < S.active) S.active--; S.active = Math.min(S.active, S.tabs.length - 1); saveUi(); renderTabs(); renderTree(); render(); }
+
+// ---------------------------------------------------------------- grid
+const visibleCols = (t) => (t.cols || []).filter((c) => t.showSystem || (!c.hidden && !c.system) || c.name === "ID" || c.name === "Modified");
+function stagedFor(t, item, col) { const r = t.staged.byItem[item.id]; return r && r.changes && r.fields.find((f) => f.field === col.name) ? r : null; }
+function render() {
+  const t = T();
+  $("bar").hidden = !t; $("gridWrap").hidden = !t || !t.cols; $("empty").hidden = !!t && !!t.cols; $("status").hidden = !t;
+  if (!t) return;
+  const n = (t.staged.counts && t.staged.counts.fields) || 0;
+  const rb = $("btnReview"); fill(rb, icon("review"), n ? h("span", { class: "badge" }, n) : null, n ? "Review" : null); rb.className = "ib" + (n ? " primary" : ""); rb.title = n ? `Review ${n} staged change(s) and approve them` : "No staged changes";
+  rb.disabled = !n; $("btnAddRow").disabled = t.readOnly; $("btnSystem").className = "ib" + (t.showSystem ? " on" : "");
+  $("filter").value = t.filter || "";
+  t.cols ? renderGrid() : ($("empty").hidden = false, $("empty").lastChild.textContent = t.busy ? "Loading…" : "Add a connection, then open a list");
+  statusBar();
+}
+function statusBar() {
+  const t = T(); if (!t) return;
+  const n = t.items.length, staged = (t.staged.counts && t.staged.counts.rows) || 0;
+  fill($("status"), h("span", null, h("b", null, n.toLocaleString()), t.next ? "+ rows loaded" : " rows"), h("span", null, t.connName),
+    t.readOnly ? h("span", { class: "chip ro" }, "read-only") : null, staged ? h("span", null, h("b", null, staged), " staged row(s)") : null, t.busy ? h("span", null, "loading…") : null);
+}
+function sorted(t, items, cols) {
+  if (!t.sort) return items;
+  const c = cols.find((x) => x.name === t.sort.name); if (!c) return items;
+  const val = (it) => { const v = it.fields[c.key]; return v == null ? "" : (c.kind === "number" || c.kind === "currency") ? Number(v) : text(c, v).toLowerCase(); };
+  const dir = t.sort.dir;
+  return [...items].sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+}
+function renderGrid() {
+  const t = T(); const wrap = $("gridWrap"); if (!t || !t.cols) return;
+  const cols = visibleCols(t), q = (t.filter || "").toLowerCase();
+  const head = h("tr", null, h("th", { class: "id" }, h("div", { class: "hd", style: "justify-content:flex-end" }, "ID")),
+    cols.filter((c) => c.name !== "ID").map((c) => h("th", { class: c.editable && !t.readOnly ? "" : "ro", title: `${c.display}${c.name !== c.display ? ` (${c.name})` : ""} · ${c.kind}${c.editable ? "" : " · " + c.why}` },
+      h("div", { class: "hd", onclick: () => { t.sort = t.sort && t.sort.name === c.name ? (t.sort.dir === 1 ? { name: c.name, dir: -1 } : null) : { name: c.name, dir: 1 }; renderGrid(); } },
+        c.display, h("span", { class: "ty" }, c.kind + (t.sort && t.sort.name === c.name ? (t.sort.dir === 1 ? " ▲" : " ▼") : ""))))));
+  const body = h("tbody");
+  for (const r of t.staged.creates) body.append(rowEl(t, { id: "", fields: {}, draft: r }, cols));
+  let shown = 0, total = 0;
+  for (const it of sorted(t, t.items, cols)) {
+    if (q) { const hit = cols.some((c) => text(c, it.fields[c.key]).toLowerCase().includes(q)) || it.id === q; if (!hit) continue; }
+    total++; if (shown >= 3000) continue; shown++;
+    body.append(rowEl(t, it, cols));
+  }
+  const keepTop = wrap.scrollTop;
+  wrap.replaceChildren(h("table", { class: "grid" }, h("thead", null, head), body)); wrap.scrollTop = keepTop;
+  if (total > shown) wrap.append(h("div", { class: "muted", style: "padding:8px 12px" }, `Showing the first ${shown.toLocaleString()} of ${total.toLocaleString()} — filter to narrow`));
+  wrap.onscroll = () => { if (t.next && !t.busy && wrap.scrollTop + wrap.clientHeight > wrap.scrollHeight - 300) loadMore(t); };
+  if (t.next && wrap.scrollHeight <= wrap.clientHeight + 40) loadMore(t);
+}
+function rowEl(t, item, cols) {
+  const draft = item.draft, tr = h("tr", { class: draft ? "draft" : "", "data-id": item.id });
+  tr.append(h("td", { class: "id", title: item.url ? "Open in SharePoint" : "", onclick: () => item.url && window.open(item.url, "_blank", "noopener") }, item.id));
+  for (const c of cols) {
+    if (c.name === "ID") continue;
+    const srow = draft ? draft : t.staged.byItem[item.id];
+    const sf = srow ? srow.fields.find((f) => f.field === c.name) : null;
+    const raw = sf ? sf.new : item.fields[c.key];
+    const td = h("td", { class: (c.kind === "number" || c.kind === "currency" ? "num " : "") + (c.editable && !t.readOnly ? "edit " : "") + (sf ? "staged " : "") + (sf && sf.error ? "bad" : ""),
+      title: sf ? `was: ${text(c, sf.old) || "(empty)"}${sf.error ? "\n" + sf.error : ""}` : c.editable ? "" : text(c, item.fields[c.key]) });
+    fillCell(td, c, raw);
+    if (sf) td.append(h("button", { class: "undo", title: "Un-stage this change", onclick: (e) => { e.stopPropagation(); unstage(t, srow, c.name); } }, icon("undo")));
+    if (c.editable && !t.readOnly) td.addEventListener("click", (e) => { if (e.target.closest(".undo") || td.querySelector("input,select,textarea,.pop")) return; startEdit(t, item, c, td, srow, sf, raw); });
+    tr.append(td);
+  }
+  return tr;
+}
+function fillCell(td, c, v) {
+  td.replaceChildren();
+  if (v == null || v === "" || (Array.isArray(v) && !v.length)) return;
+  if (c.kind === "boolean") td.append(h("span", { class: "bool" }, v ? "✓" : "✗"));
+  else if (c.kind === "choice") (Array.isArray(v) ? v : [v]).forEach((x) => td.append(h("span", { class: "chip" }, x)));
+  else if (c.kind === "person" || c.kind === "lookup") td.append(h("span", { class: "muted" }, Array.isArray(v) ? v.map((x) => "#" + x).join(", ") : "#" + v));
+  else if (c.kind === "link" && v && v.Url) td.append(h("a", { href: v.Url, target: "_blank", rel: "noopener" }, v.Description || v.Url));
+  else td.append(text(c, v).split("\n")[0]);
+}
+
+// ---------------------------------------------------------------- editing (stages only — nothing is sent to SharePoint)
+async function commit(t, item, c, srow, sf, newVal) {
+  const body = { ...lq(t), field: c.name, new: newVal, old: item.fields ? item.fields[c.key] : null };
+  if (item.draft) body.row_id = item.draft.id || undefined; else body.item_id = item.id;
+  if (sf && !item.draft) body.old = sf.old;
+  try {
+    await api("PUT", "staged", body);
+    setStaged(t, await api("GET", "staged" + qs(lq(t)))); loadConnsQuiet(); render();
+  } catch (e) { toast(e.message, true); render(); }
+}
+async function loadConnsQuiet() { try { const l = (await api("GET", "connections")).connections; S.conns = l; renderTree(); } catch (e) { /* ignore */ } }
+async function unstage(t, srow, field) {
+  try { await api("POST", "staged/discard", { ...lq(t), row_id: srow.id, field }); setStaged(t, await api("GET", "staged" + qs(lq(t)))); loadConnsQuiet(); render(); } catch (e) { toast(e.message, true); }
+}
+function startEdit(t, item, c, td, srow, sf, cur) {
+  const done = (v) => commit(t, item, c, srow, sf, v);
+  const cancel = () => fillCell(td, c, cur);
+  td.replaceChildren();
+  const k = c.kind; let ed;
+  const finish = (get) => { let fin = false; return (e) => { if (fin) return; if (e.type === "keydown") { if (e.key === "Escape") { fin = true; cancel(); return; } if (e.key !== "Enter" || (e.target.tagName === "TEXTAREA" && !e.ctrlKey)) { if (e.key === "Tab") { /* blur commits */ } return; } e.preventDefault(); } fin = true; const v = get(); String(v ?? "") === String(cur ?? "") && !sf ? cancel() : done(v); }; };
+  if (k === "boolean") { done(!(cur === true)); return; }
+  if (k === "choice" && !c.multi) {
+    ed = h("select", null, h("option", { value: "" }, ""), c.choices.map((x) => h("option", { value: x, selected: x === cur }, x)));
+    const f = finish(() => ed.value); ed.addEventListener("change", f); ed.addEventListener("blur", f); ed.addEventListener("keydown", f);
+  } else if (k === "choice") {
+    const sel = new Set(Array.isArray(cur) ? cur : cur ? [cur] : []);
+    ed = h("div", { class: "pop" }, c.choices.map((x) => h("label", null, h("input", { type: "checkbox", checked: sel.has(x), style: "position:static;width:auto;height:auto;border:0", onchange: (e) => (e.target.checked ? sel.add(x) : sel.delete(x)) }), x)));
+    const f = finish(() => c.choices.filter((x) => sel.has(x)));
+    const away = (e) => { if (!td.contains(e.target)) { document.removeEventListener("mousedown", away); f({ type: "away" }); } };
+    setTimeout(() => document.addEventListener("mousedown", away), 0);
+    ed.addEventListener("keydown", f); td.append(h("span", { class: "muted" }, "…")); td.append(ed); ed.querySelector("input").focus(); return;
+  } else {
+    const type = k === "number" || k === "currency" ? "number" : k === "date" ? "date" : k === "datetime" ? "datetime-local" : "text";
+    const init = cur == null ? "" : k === "date" ? localDate(cur) : k === "datetime" ? toDateTimeInput(cur) : cur;
+    ed = k === "note" ? h("textarea", { value: init }) : h("input", { type, value: init, step: type === "number" ? "any" : undefined, maxLength: c.max_length || undefined });
+    const get = () => k === "date" ? fromDateInput(ed.value) : k === "datetime" ? fromDateTimeInput(ed.value) : ed.value;
+    const f = finish(get); ed.addEventListener("blur", f); ed.addEventListener("keydown", f);
+  }
+  td.append(ed); ed.focus(); if (ed.select && ed.tagName === "INPUT" && ed.type === "text") ed.select();
+}
+$("btnAddRow").onclick = () => {
+  const t = T(); if (!t || !t.cols) return;
+  const first = visibleCols(t).find((c) => c.editable); if (!first) return;
+  t.staged.creates.unshift({ id: "", op: "create", fields: [], draft: true }); renderGrid();
+  const td = $("gridWrap").querySelector("tr.draft td.edit"); if (td) td.click();
+};
+
+// ---------------------------------------------------------------- review → approve → write
+async function openReview(afterApply) {
+  const t = T(); if (!t) return; const dlg = $("dlgReview");
+  let rv; try { rv = await api("GET", "staged" + qs(lq(t))); } catch (e) { toast(e.message, true); return; }
+  setStaged(t, rv); render();
+  const titleOf = (r) => { const it = t.items.find((i) => i.id === r.item_id); return it && it.fields.Title ? it.fields.Title : ""; };
+  const colOf = (n) => (t.cols || []).find((c) => c.name === n);
+  const valEl = (f, v, cls) => h("span", { class: "ov " + cls }, text(colOf(f.field), v) || "(empty)");
+  const rowsEl = rv.rows.map((r) => {
+    const bad = r.errors.length || r.fields.some((f) => f.error);
+    return h("div", { class: "rv" + (bad ? " bad" : "") },
+      h("div", { class: "rh" }, h("span", { class: "grow" }, r.op === "create" ? "New item" : `Item #${r.item_id}`, titleOf(r) ? ` · ${titleOf(r)}` : "", r.source === "python" ? " · from Python" : ""),
+        h("button", { class: "ib", title: "Un-stage this whole row", onclick: async () => { await api("POST", "staged/discard", { ...lq(t), row_id: r.id }); openReview(); } }, icon("undo"))),
+      h("table", { class: "t" }, h("tbody", null, r.fields.map((f) => h("tr", null,
+        h("td", { style: "width:26%" }, f.display, f.display !== f.field ? h("div", { class: "muted" }, f.field) : null),
+        h("td", null, r.op === "create" ? null : [valEl(f, f.old, "old"), h("span", { class: "arrow" }, "→")], valEl(f, f.new, "new"), f.error ? h("div", { class: "msg", style: "padding:2px 0" }, f.error) : null),
+        h("td", { style: "width:34px" }, h("button", { class: "ib", title: "Un-stage this change", onclick: async () => { await api("POST", "staged/discard", { ...lq(t), row_id: r.id, field: f.field }); openReview(); } }, icon("x"))))))),
+      r.errors.map((m) => h("div", { class: "msg" }, m)));
+  });
+  const n = rv.counts.fields, badRows = rv.counts.invalid_rows;
+  dlg.replaceChildren(
+    h("div", { class: "dh" }, h("span", { class: "grow" }, `Review — ${t.name}`), h("button", { class: "ib", title: "Close", onclick: () => dlg.close() }, icon("x"))),
+    h("div", { class: "db" }, rv.rows.length ? rowsEl : h("div", { class: "muted" }, "Nothing is staged.")),
+    h("div", { class: "df" }, h("span", { class: "grow" }, rv.read_only ? "This connection is read-only." : `${n} change(s) in ${rv.counts.rows} row(s)${badRows ? ` — ${badRows} row(s) have problems and will be skipped` : ""}. Nothing has been written yet.`),
+      h("button", { class: "ib", onclick: async () => { if (confirm("Discard every staged change for this list? Nothing has been sent to SharePoint.")) { await api("POST", "staged/discard", lq(t)); setStaged(t, await api("GET", "staged" + qs(lq(t)))); loadConnsQuiet(); render(); dlg.close(); } } }, "Discard all"),
+      h("button", { class: "ib danger", disabled: rv.read_only || !rv.rows.length || badRows === rv.rows.length, onclick: () => approve(rv) }, icon("check"), `Approve & write ${n - 0}`)));
+  if (!dlg.open) dlg.showModal();
+}
+async function approve(rv) {
+  const t = T(), dlg = $("dlgReview"); const btn = dlg.querySelector(".ib.danger"); btn.disabled = true;
+  let out; try { out = await api("POST", "apply", { ...lq(t), digest: rv.digest }); } catch (e) { toast(e.message, true); if (e.status === 409) openReview(); else btn.disabled = false; return; }
+  const colOf = (n) => (t.cols || []).find((c) => c.name === n);
+  const icons = { applied: "✓", unchanged: "＝", conflict: "⚠", failed: "✗", invalid: "✗" };
+  const items = out.results.map((r) => h("div", { class: "rv " + (r.outcome === "applied" || r.outcome === "unchanged" ? "ok" : r.outcome === "conflict" ? "conflict" : "bad") },
+    h("div", { class: "rh" }, h("span", { class: "grow" }, `${icons[r.outcome]} ${r.op === "create" ? "New item" : "Item"} ${r.item_id ? "#" + r.item_id : ""} — ${r.outcome}`)),
+    h("table", { class: "t" }, h("tbody", null, r.fields.map((f) => h("tr", null, h("td", { style: "width:26%" }, f.display),
+      h("td", null, r.op === "create" ? null : [h("span", { class: "ov old" }, text(colOf(f.field), f.old) || "(empty)"), h("span", { class: "arrow" }, "→")],
+        h("span", { class: "ov new" }, text(colOf(f.field), f.new) || "(empty)"),
+        f.stored !== undefined ? h("span", { class: "muted", style: "margin-left:8px" }, "stored: ", text(colOf(f.field), f.stored) || "(empty)") : null,
+        f.live !== undefined && r.outcome === "conflict" ? h("div", null, "SharePoint now has: ", h("span", { class: "ov live" }, text(colOf(f.field), f.live) || "(empty)")) : null))))),
+    r.message ? h("div", { class: "msg" + (r.outcome === "applied" ? " warn" : "") }, r.message) : null));
+  const conflicts = out.conflict, left = out.conflict + out.failed + out.invalid;
+  dlg.replaceChildren(h("div", { class: "dh" }, h("span", { class: "grow" }, "Result"), h("button", { class: "ib", title: "Close", onclick: () => dlg.close() }, icon("x"))),
+    h("div", { class: "db" }, items),
+    h("div", { class: "df" }, h("span", { class: "grow" }, `${out.applied} row(s) written (${out.fields_written} field(s))${out.unchanged ? `, ${out.unchanged} already up to date` : ""}${left ? `, ${left} not written` : ""}.`),
+      conflicts ? h("button", { class: "ib", title: "Take SharePoint's current values as the 'old' side, then review again", onclick: async () => { await api("POST", "staged/rebase", lq(t)); openReview(); } }, icon("refresh"), "Refresh old values") : null,
+      h("button", { class: "ib primary", onclick: () => dlg.close() }, "Done")));
+  dlg.addEventListener("close", () => loadTab(t), { once: true });
+}
+$("btnReview").onclick = () => openReview();
+
+// ---------------------------------------------------------------- schema + audit + csv + toolbar
+$("btnSchema").onclick = () => {
+  const t = T(); if (!t || !t.cols) return; const dlg = $("dlgSchema");
+  dlg.replaceChildren(h("div", { class: "dh" }, h("span", { class: "grow" }, `Columns — ${t.name} (${t.cols.length})`), h("button", { class: "ib", title: "Close", onclick: () => dlg.close() }, icon("x"))),
+    h("div", { class: "db" }, h("table", { class: "t" }, h("thead", null, h("tr", null, ["Name", "Internal name", "Type", "Flags", "Choices / notes"].map((x) => h("th", null, x)))),
+      h("tbody", null, t.cols.map((c) => h("tr", null, h("td", null, c.display), h("td", { class: "muted" }, c.name === c.display ? "" : c.name), h("td", null, c.kind + (c.multi ? " (multi)" : "")),
+        h("td", null, [c.required ? "required" : "", c.hidden ? "hidden" : "", c.system ? "system" : "", c.indexed ? "indexed" : "", c.editable ? "editable" : "read-only"].filter(Boolean).map((f) => h("span", { class: "chip" }, f))),
+        h("td", { class: "muted" }, c.choices.length ? c.choices.join(", ") : (!c.editable ? c.why : c.max_length ? `max ${c.max_length} chars` : ""))))))));
+  dlg.showModal();
+};
+$("btnAudit").onclick = async () => {
+  const t = T(); if (!t) return; const dlg = $("dlgAudit");
+  let r; try { r = await api("GET", "audit" + qs({ conn: t.conn, list: t.list })); } catch (e) { toast(e.message, true); return; }
+  const colOf = (n) => (t.cols || []).find((c) => c.name === n);
+  dlg.replaceChildren(h("div", { class: "dh" }, h("span", { class: "grow" }, `Written to ${t.name}`), h("button", { class: "ib", title: "Close", onclick: () => dlg.close() }, icon("x"))),
+    h("div", { class: "db" }, r.entries.length ? h("table", { class: "t" }, h("thead", null, h("tr", null, ["When", "Item", "Column", "Old → new", "Result"].map((x) => h("th", null, x)))),
+      h("tbody", null, r.entries.map((e) => h("tr", null, h("td", { class: "muted" }, new Date(e.ts).toLocaleString()), h("td", null, e.item_id ? "#" + e.item_id : "new"), h("td", null, e.field),
+        h("td", null, [e.old == null ? "" : text(colOf(e.field), e.old), " → ", text(colOf(e.field), e.new)]), h("td", null, e.outcome + (e.source === "python" ? " (python)" : "") + (e.detail ? " — " + e.detail : ""))))))
+      : h("div", { class: "muted" }, "Nothing has been written from this tool yet.")));
+  dlg.showModal();
+};
+$("btnCsv").onclick = () => { const t = T(); if (t) { const a = h("a", { href: "export.csv" + qs(lq(t)), download: `${t.name}.csv` }); document.body.append(a); a.click(); a.remove(); } };
+$("btnReload").onclick = () => { const t = T(); if (t) { t.loaded = false; loadTab(t); } };
+$("btnSystem").onclick = () => { const t = T(); if (t) { t.showSystem = !t.showSystem; render(); } };
+let ft; $("filter").oninput = (e) => { const t = T(); if (!t) return; t.filter = e.target.value; clearTimeout(ft); ft = setTimeout(renderGrid, 120); };
+$("btnAddConn").onclick = () => connDialog(null);
+const setCollapsed = (on) => { document.body.classList.toggle("collapsed", on); $("btnShow").hidden = !on; store.set("sp.collapsed", on ? "1" : "0"); };
+$("btnHide").onclick = () => setCollapsed(true); $("btnShow").onclick = () => setCollapsed(false);
+document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") { e.preventDefault(); setCollapsed(!document.body.classList.contains("collapsed")); } });
+(() => { const r = $("resizer"), side = $("side"); let drag = false;
+  const w = +store.get("sp.sideW"); if (w >= 200 && w <= 520) side.style.width = w + "px";
+  r.addEventListener("mousedown", (e) => { drag = true; e.preventDefault(); });
+  window.addEventListener("mousemove", (e) => { if (drag) side.style.width = Math.max(200, Math.min(520, e.clientX)) + "px"; });
+  window.addEventListener("mouseup", () => { if (drag) { drag = false; store.set("sp.sideW", parseInt(side.style.width)); } }); })();
+
+// ---------------------------------------------------------------- start
+for (const [id, name] of [["btnAddConn", "plus"], ["btnHide", "panel"], ["btnShow", "panel"], ["btnReload", "refresh"], ["btnSystem", "cols"], ["btnSchema", "schema"], ["btnAddRow", "plus"], ["btnCsv", "dl"], ["btnAudit", "clock"]]) $(id).append(icon(name));
+$("emptyIcon").append(icon("sheet"));
+(async () => {
+  if (store.get("sp.collapsed") === "1") setCollapsed(true);
+  await loadConns();
+  for (const c of S.conns) if (S.open.has(c.id)) loadLists(c.id);
+  let saved = []; try { saved = JSON.parse(store.get("sp.tabs") || "[]"); } catch (e) { /* ignore */ }
+  for (const s of saved) { const c = S.conns.find((x) => x.id === s.conn); if (c) S.tabs.push({ ...s, connName: c.name, readOnly: c.read_only, cols: null, items: [], next: null, staged: { byItem: {}, creates: [], digest: "" }, filter: "", showSystem: false, sort: null, loaded: false, busy: false }); }
+  S.active = Math.min(Math.max(+store.get("sp.active") || 0, 0), S.tabs.length - 1);
+  renderTabs(); render(); const t = T(); if (t) loadTab(t);
+})();
+</script>
+</body>
+</html>

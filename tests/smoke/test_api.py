@@ -29,6 +29,7 @@ API_CHECKS = [
     ("vault", "GET", "/data/catalog", None, "application/json"),
     ("data-syncer", "GET", "/projects", None, "application/json"),
     ("data-syncer", "GET", "/connections", None, "application/json"),
+    ("sharepoint", "GET", "/connections", None, "application/json"),
     ("schema-copy", "GET", "/tools", None, "application/json"),
     ("schema-copy", "GET", "/projects", None, "application/json"),
     ("data-dumper", "GET", "/tools", None, "application/json"),

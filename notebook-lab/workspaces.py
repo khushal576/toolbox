@@ -380,6 +380,9 @@ def kernel_env(ws: str) -> dict[str, str]:
         "PIP_NO_CACHE_DIR": "1",
         "PIP_DISABLE_PIP_VERSION_CHECK": "1",
         "TF_CPP_MIN_LOG_LEVEL": "2",
+        # the credential-free SharePoint bridge (lib/toolbox_sharepoint.py): a URL, never a token
+        "PYTHONPATH": str(Path(__file__).resolve().parent / "lib"),
+        "SP_BRIDGE_URL": os.environ.get("SP_BRIDGE_URL", ""),
     }
 
 

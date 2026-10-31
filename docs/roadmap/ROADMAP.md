@@ -84,6 +84,7 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | L4 | Load from / Save to Vault Data in every tool; stage database tables via Vault connections | M | L3 | ☑ |
 | L5 | Extras: profiles, suggested joins, charts, AWS S3 locations, notebook (later) | M | L4 | ☑ (notebook deferred) |
 | N1 | Notebook tool: Colab-style workspaces, kernels, per-workspace pip, zip/folder upload + download (own `rt-notebook` runtime, no credentials) | M | C3 | ☑ |
+| S1 | SharePoint Lists tool: many sites via Microsoft Graph, all columns, grid editing + Python staging, reviewed approval before any write, no delete | L | B7, N1 | ☑ (not yet run on a real tenant) |
 | F1 | Image versioning, registry, k8s manifests from plugin manifests | M | D3, E1 | ⏸ deferred |
 | F2 | k3s single-node deploy (lab) | M | F1 | ⏸ deferred |
 | F3 | KEDA scale-to-zero + queue scaling | M | F2 | ⏸ deferred |
@@ -393,6 +394,15 @@ the workspace status) and shows it on ONE page in the workspace. Nothing runs or
   `GET /column-stats`). Fixed: Data Lake page didn't follow `#sql` changes.
   Verified live (SeaweedFS as the S3 endpoint, throwaway mssql/oracle containers), 40 container tests, 165 host,
   smoke 107. Test data removed (`l3test` kept). **Next:** phase F when the owner wants it, or the notebook.
+- 2026-10-30 – **S1 done (owner request: "edit SharePoint easily, many lists at once, UI or Python").** New tool **SharePoint Lists**
+  (`sharepoint-lab/`, package `sharepoint_lab`, tool `sharepoint`, runtime `data`, Vault kind `sharepoint_connection`, Postgres schema
+  `sharepoint_lab`). Owner decisions: Microsoft Graph; every change is shown old → new and written ONLY after approval; no destructive
+  operations (no delete code path; `graph._check_write` allows only GET, PATCH …/fields, POST …/items, POST /$batch). Sign-in: client secret
+  (app-only) or device code (delegated, refresh token in the Vault). Apply needs the review's digest, re-reads each item and skips rows
+  changed in SharePoint since staging (conflict), reads back stored values, audits every field. Python: `notebook-lab/lib/toolbox_sharepoint.py`
+  (`sp.read` → DataFrame, `sp.stage(df)`); the kernel gets only `SP_BRIDGE_URL`, never a credential. 68 unit tests against
+  `tests/unit/fake_graph.py` (+ page driven in headless Chrome against `sp_dev_server.py`). **NOT verified on a real tenant** — first real
+  use: read-only connection, then one edit. Uncommitted. **Next:** real-tenant shakedown; resolve lookup/person names; Mirror to Vault Data.
 - 2026-10-29 – **N1 done (owner request: "another tool same as Jupyter/Colab").** New tool **Notebook** (`notebook-lab/`, package
   `notebook_lab`) in a NEW runtime `notebook` / service `rt-notebook` (on-demand, tier 4, 2 GB / 2 CPU, idle 30 min, ONE uvicorn
   worker: kernels are child processes in its memory). Owner decisions: own cells UI (not embedded JupyterLab — the gateway refuses

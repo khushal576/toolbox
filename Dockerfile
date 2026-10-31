@@ -158,6 +158,10 @@ COPY vault/ ./vault/
 # as a job in the `worker` service (roadmap B4).
 COPY data-syncer/ ./data_syncer/
 
+# SharePoint Lists — whole-folder copy. Talks to Microsoft Graph (httpx); connections come from the Vault via
+# core.vault (copied above), staged edits + audit live in Postgres schema `sharepoint_lab` (core/state/sqlstore.py).
+COPY sharepoint-lab/ ./sharepoint_lab/
+
 # Schema Copy (tool #17) — whole-folder copy. Copies a database's STRUCTURE
 # (no rows) into a new empty database via the real pg_dump/psql from the
 # 'pgclient' stage above. Imports core.db_endpoint (Vault -> connection,
@@ -197,7 +201,7 @@ COPY core_plugins/ ./core_plugins/
 COPY main.py .
 
 # Create empty __init__.py files so Python treats these as packages.
-RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py text_editor/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py data_lake/__init__.py notebook_lab/__init__.py
+RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py text_editor/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py data_lake/__init__.py notebook_lab/__init__.py sharepoint_lab/__init__.py
 
 # --- Python packages: wheelhouse + one deps stage per image ----------------------
 # wheelhouse/ (gitignored) holds pre-downloaded wheels for this exact platform/Python version — see

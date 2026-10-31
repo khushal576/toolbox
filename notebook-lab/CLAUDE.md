@@ -46,6 +46,12 @@ are temporary: Reset / deleting the workspace removes them).
   and wrapping or the colours drift off the caret.
 - `[hidden]` needs the global `!important` rule: component display rules (`textarea.plain`) otherwise beat it.
 
+## SharePoint bridge (S1)
+
+`lib/toolbox_sharepoint.py` is on every kernel's `PYTHONPATH` (`kernel_env`) and talks to the SharePoint tool through the
+gateway at `SP_BRIDGE_URL` (compose sets it; a URL only, never a token — this container must keep holding no credentials).
+`sp.read` → DataFrame, `sp.stage(df)` records changed cells; approval happens in the SharePoint tool. See `../sharepoint-lab/CLAUDE.md`.
+
 ## Testing
 
 `tests/unit/test_notebook.py` — safety tests run anywhere; the real-kernel tests need the runtime image:

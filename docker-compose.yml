@@ -203,6 +203,9 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       TOOLBOX_REDIS_URL: ${TOOLBOX_REDIS_URL:-redis://redis:6379/0}
+      # SharePoint Lists bridge for notebook cells (notebook-lab/lib/toolbox_sharepoint.py): a URL only — the kernel
+      # gets it (and no credential); the SharePoint tool holds the connections
+      SP_BRIDGE_URL: http://toolbox:8080/tools/sharepoint
     volumes:
       - workspace_data:/app/data/workspace:ro
       - notebook_data:/app/data/notebook

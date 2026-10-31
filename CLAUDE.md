@@ -151,7 +151,12 @@ containers/gateway pieces outside the roadmap session that owns them.
   Lake) — DataFrame Studio joins other tables by name.
 - **Notebook (roadmap N1):** `notebook-lab/` — Colab-style workspaces + Jupyter kernels in its OWN runtime `rt-notebook`
   (on-demand, one uvicorn worker, volume `notebook_data`). It executes user code, so that container has **no
-  Postgres/S3/Vault credentials** (compose gives it only `TOOLBOX_REDIS_URL`) — keep it that way; see `notebook-lab/CLAUDE.md`.
+  Postgres/S3/Vault credentials** (compose gives it only `TOOLBOX_REDIS_URL` and a bridge URL) — keep it that way; see `notebook-lab/CLAUDE.md`.
+- **SharePoint Lists (roadmap S1):** `sharepoint-lab/` (runtime `data`) — many SharePoint sites via Microsoft Graph, connections in the
+  Vault (kind `sharepoint_connection`), edits are STAGED (Postgres schema `sharepoint_lab`) and written only after a reviewed approval
+  (digest-checked, conflict-checked, audited); **no delete anywhere** (owner decision — `graph._check_write`). Python staging from a
+  notebook through `notebook-lab/lib/toolbox_sharepoint.py`; `rt-notebook` still has no credential (it gets a URL, `SP_BRIDGE_URL`).
+  See `sharepoint-lab/CLAUDE.md`.
 - **Installable app (roadmap G1):** the gateway serves `/manifest.webmanifest`
   (standalone display, Status/Settings shortcuts), `/icons/<file>` (four
   known PNGs from `core_plugins/ui/icons/`, drawn by

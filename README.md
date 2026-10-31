@@ -48,6 +48,7 @@ docker-compose down
 | 🗺️ | **Schema Map** (`schema-map`) | Explore a Postgres database's tables and foreign-key structure as a graph — optional SSH tunnel, save/load connections via Vault |
 | 🦆 | **Duck Lab** (`duck-lab`) | Load CSV/JSON/Parquet/XML files and join/analyze them with SQL (DuckDB) — schema-aware autocomplete, table preview, paginated results that never flood the page |
 | 🔒 | **Vault** (`vault`) | Shared encrypted secret store — save DB connections (and anything else) from any tool so you stop retyping credentials after every disconnect |
+| 📋 | **SharePoint Lists** (`sharepoint`) | Connect many SharePoint sites (Microsoft Graph), browse every list with all its columns, edit cells or stage edits from Python — nothing is written until you review the old → new changes and approve; never deletes |
 | 🔄 | **Data Syncer** (`data-syncer`) | Copy or upsert whole tables between Vault-saved Postgres databases in resumable chunks — progress saved after every chunk, stop/restart any time, shows only progress and a short log |
 | 🧬 | **Schema Copy** (`schema-copy`) | Copy a Postgres database's whole structure (tables, partitions, indexes, views, materialized views, functions, triggers…) into a new empty database — no rows; preflight, one-transaction apply, verification report |
 | 💾 | **Data Dumper** (`data-dumper`) | Take a Postgres dump you can download, and restore a dump into any database — whole, or only what you pick (structure, data, a phase, schemas, tables, single objects); one-transaction restores |

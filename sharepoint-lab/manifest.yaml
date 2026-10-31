@@ -1,0 +1,17 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# Talks to Microsoft Graph; connections in the Vault, staged edits + audit in Postgres (schema sharepoint_lab).
+schema_version: 1
+name: sharepoint
+title: SharePoint Lists
+description: Connect many SharePoint sites at once, browse every list with all its columns, edit cells or rows (or stage changes from Python) — nothing is written until you review the exact changes and approve; never deletes
+icon: 📋
+category: tool
+kind: python
+entry: sharepoint_lab.server:app
+runtime: data
+tier: 3
+state: [durable]
+depends_on: [vault]
+requires: []
+order: 175
+vault: {read: [sharepoint_connection], write: [sharepoint_connection]}   # connections; write = save them + keep the refresh token of a device-code sign-in
