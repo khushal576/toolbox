@@ -2746,7 +2746,7 @@ async function exportFullResultToVault() {
 }
 $("btnExportVault").addEventListener("click", exportFullResultToVault);
 
-// ---- Export the FULL result as a Vault Data table (roadmap L4) — staging data for migrations, Data Lake SQL, …
+// ---- Export the FULL result as a Vault Data table (roadmap L4) — staging data for migrations, Vault Data SQL, …
 $("btnExportLake").addEventListener("click", async () => {
   const selection = view.state.selection.main;
   const sqlText = selection.empty ? view.state.doc.toString() : view.state.sliceDoc(selection.from, selection.to);
@@ -2755,16 +2755,16 @@ $("btnExportLake").addEventListener("click", async () => {
     showResultsError(`Export works on exactly one statement at a time (found ${statements.length}).`);
     return;
   }
-  const full = (prompt("Save the FULL result (no 500-row cap) to Vault Data as workspace.table (e.g. staging.customers):") || "").trim();
+  const full = (prompt("Save the FULL result (no 500-row cap) to Vault Data as table, or workspace.table (e.g. customers, or staging.customers). No workspace = system:") || "").trim();
   if (!full) return;
-  const m = full.match(/^([a-z][a-z0-9_]*)\.([a-z][a-z0-9_]*)$/);
-  if (!m) { showResultsError("Use workspace.table — lowercase letters, digits and _ (e.g. staging.customers)."); return; }
+  const m = full.match(/^(?:([a-z][a-z0-9_]*)\.)?([a-z][a-z0-9_]*)$/);
+  if (!m) { showResultsError("Use table or workspace.table — lowercase letters, digits and _ (e.g. staging.customers)."); return; }
   const btn = $("btnExportLake");
   btn.disabled = true;
   const originalText = btn.textContent;
   btn.textContent = "Exporting…";
   const send = (mode) => fetch("export/lake", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sql: statements[0], workspace: m[1], table: m[2], mode }) });
+    body: JSON.stringify({ sql: statements[0], workspace: m[1] || "system", table: m[2], mode }) });
   try {
     let res = await send("create");
     let data = await res.json();
@@ -2814,7 +2814,7 @@ $("btnImportVault").addEventListener("click", async () => {
     if (datasets.length) html += '<optgroup label="🔒 Datasets">' +
       datasets.map((s) => `<option value="${escHtml(s.id)}">${escHtml(s.name)}</option>`).join("") + "</optgroup>";
     if (!html) {
-      showResultsError("The Vault has no tables or datasets yet — use \"Export FULL result → Vault Data\" (or Data Lake) first.");
+      showResultsError("The Vault has no tables or datasets yet — use \"Export FULL result → Vault Data\" (or Vault Data → Load files) first.");
       return;
     }
     select.innerHTML = html;

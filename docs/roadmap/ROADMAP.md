@@ -296,6 +296,31 @@ like Athena (SQL), with pandas through the existing tools (a Jupyter-like notebo
   workspace sidebar, Duck Lab / DataFrame Studio load only from Vault Data (Athena-style Tables bar with SQL types;
   DataFrame Studio joins other tables by name).
 
+### L6 One Vault Data front door (S)
+- Owner request (2026-10-31): the UI should know only two things, **Vault** (secrets) and **Vault Data** — no "Data Lake" /
+  "Lakehouse". Every table lives in a workspace; a built-in **`system`** workspace catches everything saved without one.
+- **Done** (2026-10-31): Vault → Vault Data has sub-tabs **Tables | ⬆ Load files** (the old Data Lake page
+  ported into `vault/ui/index.html`, deep links `#data`, `#data/load`; the 🔎 SQL tab was dropped later that day — Duck Lab does SQL); `data-lake/` stays as the backend with manifest
+  `hidden: true` (new manifest flag: no card / sidebar / Settings switch) and `GET /tools/data-lake/` redirects; `core/lake.py`
+  `SYSTEM_WORKSPACE` (auto-created, no rename/delete, default for empty workspace in write/import/external); Duck Lab,
+  DataFrame Studio, SQL Studio saves accept a bare `table`; links/wording in df-studio, duck-lab, sql-studio, runbook updated.
+  Tests: `tests/unit/test_lake_system.py`, `test_hidden_plugin.py`, smoke additions.
+
+### L7 Column map + protection on load (M)
+- Owner request (2026-10-31): when loading, sometimes only 3 columns are needed, or under other names, or empty values need filling,
+  or a type cast; data may be sensitive → mask / substitute (shuffle values between rows); the same structure comes again → map once.
+- **Done** (2026-10-31, rebuild needed): Load files step 2 "Columns" — preview (`POST /inspect`: DESCRIBE + 5 sample rows of the first files),
+  editable grid (keep, rename, type incl. decimal(p,s) and date formats, "if empty", cast failures → NULL + warning count, or stop the
+  load), protection **mask / hash / redact / empty / shuffle** with one-line explanations, PII guesses (email, Aadhaar, PAN, card, phone,
+  SSN, names, address, DOB) pre-selected but confirmed by pressing Load, **templates** (apply by name or position), **masked copy** of
+  an existing table (`POST /copy-table`, Tables → "Copy with column map…"). Backend `data-lake/colmap.py` compiles the map into one DuckDB
+  SELECT (cast → fill → protect) used by `run_load` and `run_copy`; typed CSV columns are read as raw text first (leading zeros,
+  explicit date formats). Secrets (salt/seed) never reach the catalog/templates/job args; protected loads hide DuckDB's own error text.
+  Not for read-in-place tables or database copies. Tests: `tests/unit/test_colmap.py`, smoke `test_data_lake_column_map_api`.
+- **Ideas not built (Athena/Snowflake-style, from the owner's "suggest more")**: reject table for bad rows, incremental loads (remember
+  loaded files), dedupe on load, data-quality rules, time travel / restore version, zero-copy clone, JSON flattening, partitioned
+  tables, schema evolution on append, PII column tags that mask in every tool, scheduled loads.
+
 ## Phase E – Observability (revised 2026-10-25: lightweight, no new containers)
 
 Owner decision: Prometheus + Grafana (two always-on containers, ~150–250 MiB, own storage) are too heavy for one
@@ -360,7 +385,19 @@ the workspace status) and shows it on ONE page in the workspace. Nothing runs or
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
-- 2026-10-28 – **SSH & SFTP: live Terminal tab (owner request).** `ssh-sftp/terminal.py`: one login per terminal (Vault
+
+- 2026-10-31 – **L7 done (code + docs + tests, not yet rebuilt/verified live).** Column map + protection on Load files (see L7 above).
+  Verified here: `tests/unit/test_colmap.py` (22 tests) on DuckDB 1.2.2 AND 2.0, the whole unit suite on the host, the grid driven in
+  headless Chromium against a stub API (preview, edit, load body, templates, copy), 5 M rows mask+shuffle in 11 s (peak RSS ≈ 1.6 GB).
+  **Also fixed:** the Load page's source tabs threw (`dl_src-*` panes had no `dl_` prefix, so switching sources failed) — L6 bug.
+  **Next:** `docker compose up -d --build`, `scripts/smoke.sh`, then load a real CSV with a map (rename, cast, mask, shuffle), save/apply a
+  template, make a masked copy; check the worker's memory on a big shuffle.
+- 2026-10-31 – **L6 done (code + docs, not yet rebuilt/verified live).** Data Lake page → Vault → Vault Data sub-tabs; `system`
+  workspace; manifest `hidden`. Verified here: JS syntax, page rendered in headless Chromium against a stub API (all three
+  sub-tabs), host unit tests (211 passed; `test_sharepoint.py` is container-only), lake tests incl. new ones in a scratch venv.
+  **Next:** `docker compose up -d --build`, run `scripts/smoke.sh`, click through Load (upload + data folder + DB + S3) and SQL
+  (run, background, save as table → `system` default) once against real data; the container's own DuckDB 1.2.2 runs
+  `tests/unit/test_lake*.py` (2 tests in `test_lake_l4.py` fail only on the newer host DuckDB).- 2026-10-28 – **SSH & SFTP: live Terminal tab (owner request).** `ssh-sftp/terminal.py`: one login per terminal (Vault
   credential, pinned host key) + a shell with a PTY held in rt-ssh's process (compose now pins rt-ssh to ONE web
   worker); output = SSE from a byte offset (re-attach after reload/drop without gaps), keystrokes = small ordered
   POSTs; xterm.js 5.5 as a local bundle. Read-only servers refused; 8 sessions max; 30 min idle close. Verified on a

@@ -26,6 +26,7 @@ API_CHECKS = [
     ("data-lake", "GET", "/history", None, "application/json"),
     ("data-lake", "GET", "/connections", None, "application/json"),
     ("data-lake", "GET", "/s3/locations", None, "application/json"),
+    ("data-lake", "GET", "/colmaps", None, "application/json"),
     ("vault", "GET", "/data/catalog", None, "application/json"),
     ("data-syncer", "GET", "/projects", None, "application/json"),
     ("data-syncer", "GET", "/connections", None, "application/json"),
@@ -118,3 +119,34 @@ def test_vault_data_catalog():
     assert request("GET", f"/tools/vault/data/workspaces/{name}/tables").json()["tables"] == []
     assert request("POST", "/tools/vault/data/workspaces", {"name": "Bad Name"}).status == 400
     assert request("DELETE", f"/tools/vault/data/workspaces/{name}").status == 200
+    # roadmap L6: `system` is built in — listed first-class, can't be renamed or deleted
+    assert any(w["name"] == "system" for w in request("GET", "/tools/vault/data").json()["workspaces"])
+    assert request("DELETE", "/tools/vault/data/workspaces/system").status == 400
+    assert request("PATCH", "/tools/vault/data/workspaces/system", {"name": "other"}).status == 400
+
+
+def test_data_lake_page_moved_into_vault():
+    """Roadmap L6: the Data Lake page is a redirect to Vault → Vault Data (its API stays); the Vault page has the tabs."""
+    assert "/tools/vault/#data" in request("GET", "/tools/data-lake/").text
+    page = request("GET", "/tools/vault/").text
+    assert 'data-sub="load"' in page and 'data-sub="sql"' not in page   # the SQL tab was dropped: SQL is Duck Lab's job
+
+
+def test_data_lake_column_map_api():
+    """Roadmap L7: templates keep no salts/seeds; a malformed map and unknown tables are clean 4xx errors (nothing loads)."""
+    import uuid
+
+    tag = uuid.uuid4().hex[:8]
+    r = request("POST", "/tools/data-lake/colmaps", {"name": "smoke " + tag, "only_listed": True,
+                                                       "columns": [{"source": "a", "protect": {"kind": "hash", "salt": "SMOKE-SECRET"}}]})
+    assert r.status == 200 and "SMOKE-SECRET" not in r.text
+    tid = r.json()["template"]["id"]
+    assert "SMOKE-SECRET" not in request("GET", "/tools/data-lake/colmaps").text
+    assert request("DELETE", f"/tools/data-lake/colmaps/{tid}").status == 200
+    assert request("POST", "/tools/data-lake/colmaps", {"name": "bad", "columns": [{"nosource": 1}]}).status == 400
+    bad = {"source": {"kind": "folder", "pattern": "x.csv"}, "workspace": "system", "table": "smoke_cm_" + tag,
+           "columns": [{"source": "a", "type": "integer); DROP TABLE x; --"}]}
+    assert request("POST", "/tools/data-lake/load", bad).status == 400
+    assert request("POST", "/tools/data-lake/load", {**bad, "columns": [{"source": "a"}], "external": True}).status == 400
+    assert request("POST", "/tools/data-lake/inspect", {"source": {"kind": "table", "table": "system.nope_" + tag}}).status == 404
+    assert request("POST", "/tools/data-lake/copy-table", {"from": "system.nope_" + tag, "to": "system.copy_" + tag}).status == 404

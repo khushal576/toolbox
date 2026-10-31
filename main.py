@@ -204,7 +204,7 @@ def _load_registry() -> list[dict[str, Any]]:
     return [
         {"name": m.name, "title": m.title, "description": m.description, "icon": m.icon, "category": m.category}
         for m in _registry.ordered()
-        if _workspace.is_enabled(m)
+        if _workspace.is_enabled(m) and not m.hidden
     ]
 
 
@@ -252,7 +252,7 @@ async def home() -> HTMLResponse:
     cards = "".join(_render_card(t) for t in tools) or (
         '<p class="empty">No tools registered yet — add a plugin folder with a manifest.yaml.</p>'
     )
-    data = {"plugins": [_card_data(m) for m in _registry.ordered() if _workspace.is_enabled(m)]}
+    data = {"plugins": [_card_data(m) for m in _registry.ordered() if _workspace.is_enabled(m) and not m.hidden]}
     # "</" must not appear raw inside <script>; JSON stays valid with the escaped slash.
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     return HTMLResponse(_WORKSPACE_HTML.replace("{{CARDS}}", cards).replace("{{DATA}}", payload))
@@ -473,7 +473,7 @@ async def workspace_status() -> dict[str, Any]:
             state = "not_mounted"  # kind: service — routed by the gateway from roadmap C2/D1
         plugins.append({
             "name": m.name, "title": m.title, "kind": m.kind, "runtime": m.runtime, "tier": m.tier,
-            "enabled": _workspace.is_enabled(m), "state": state,
+            "enabled": _workspace.is_enabled(m), "hidden": m.hidden, "state": state,
             "load_seconds": round(lazy.load_seconds, 3) if lazy and lazy.load_seconds else loaded_anywhere.get(m.name),
             # turned off after it was already imported: memory is only freed by a restart
             "restart_to_free_memory": state == "disabled" and bool((lazy and lazy.state == "loaded")

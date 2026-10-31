@@ -253,7 +253,7 @@
   <div class="wrap">
     <div class="card upload-bar">
       <span class="meta" id="fileMeta">Pick a table on the left and press <b>Load</b>.</span>
-      <a class="meta" href="/tools/data-lake/" target="_top" title="Upload / data folder / S3 / database → Vault Data tables">New files? Load them in Data Lake →</a>
+      <a class="meta" href="/tools/vault/#data/load" target="_top" title="Upload / data folder / S3 / database → Vault Data tables">New files? Load them in Vault Data →</a>
       <button type="button" class="secondary" id="statsBtn" title="Show / hide per-column stats in the header (whole table, not just the rows shown)">📊 Column stats</button>
       <div class="preview-mode-group">
         <span class="meta">Preview:</span>
@@ -1183,7 +1183,7 @@
           (tOpen ? t.columns.map((c) => `<div class="cat-col"><span>${escapeHtml(c.name)}</span><span class="ty">${escapeHtml(c.sql_type || c.type || "")}</span></div>`).join("") : "");
       }).join("") : "");
     }).join("");
-    tree.innerHTML = (html || `<p class="hint">${catalog.length ? "No match." : 'No tables yet — load files in <a href="/tools/data-lake/" target="_top">Data Lake</a>.'}</p>`) +
+    tree.innerHTML = (html || `<p class="hint">${catalog.length ? "No match." : 'No tables yet — load files in <a href="/tools/vault/#data/load" target="_top">Vault Data</a>.'}</p>`) +
       (loadedRef ? '<div class="cat-legend">Green = loaded. The first is <code>df</code>; the others are variables with the table’s name — e.g. <code>df.merge(customers, on="customer_id")</code> in Query.</div>' : "");
   }
   document.getElementById("catFilter").addEventListener("input", renderCatalog);
@@ -1229,7 +1229,7 @@
     const data = await res.json();
     if (res.status === 413 && !limit) {
       if (!confirm(`${data.error}\n\nLoad the first ${Number(data.max_rows).toLocaleString()} rows instead?\n` +
-                   "(Or make a smaller table first in Data Lake → SQL.)")) return null;
+                   "(Or make a smaller table first in Vault Data → SQL.)")) return null;
       return loadLakeTable(ws, table, data.max_rows);
     }
     if (!res.ok || data.error) throw new Error(data.error || "Load from Vault Data failed.");
@@ -1238,15 +1238,15 @@
 
   // ── Save to Vault Data (roadmap L4): the transformed DataFrame becomes `workspace.table`; existing → ask.
   document.getElementById("saveLakeBtn").addEventListener("click", async () => {
-    const full = (prompt("Save the transformed data to Vault Data as workspace.table (e.g. staging.customers_clean):") || "").trim();
+    const full = (prompt("Save the transformed data to Vault Data as table, or workspace.table (e.g. customers_clean, or staging.customers_clean). No workspace = system:") || "").trim();
     if (!full) return;
-    const m = full.match(/^([a-z][a-z0-9_]*)\.([a-z][a-z0-9_]*)$/);
+    const m = full.match(/^(?:([a-z][a-z0-9_]*)\.)?([a-z][a-z0-9_]*)$/);
     const msg = document.getElementById("saveLakeMsg");
-    if (!m) { showError("Use workspace.table — lowercase letters, digits and _ (e.g. staging.customers_clean)."); return; }
+    if (!m) { showError("Use table or workspace.table — lowercase letters, digits and _ (e.g. staging.customers_clean)."); return; }
     const btn = document.getElementById("saveLakeBtn");
     btn.disabled = true; msg.textContent = "Saving…";
     const send = (mode) => fetch("export/lake", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ workspace: m[1], table: m[2], mode }) });
+      body: JSON.stringify({ workspace: m[1] || "system", table: m[2], mode }) });
     try {
       let res = await send("create");
       if (res.status === 409) {

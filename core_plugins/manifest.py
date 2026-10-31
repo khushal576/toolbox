@@ -66,6 +66,8 @@ class Manifest(_Strict):
     depends_on: list[str] = Field(default_factory=list)
     requires: list[str] = Field(default_factory=list)
     enabled_by_default: bool = True
+    # Mounted and working (its API is used by other pages) but no home card, no sidebar entry, no Settings switch.
+    hidden: bool = False
     order: int = Field(default=1000, ge=0)  # display order (lower first); ties sorted by title
     # Must run in exactly ONE process (e.g. a single live DB pool + "password never stored"): B9 routes all its
     # requests to one dedicated process when the rest of the workspace runs several workers.

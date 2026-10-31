@@ -1,4 +1,10 @@
-# Data Lake — tool-local notes
+# Vault Data loader (folder `data-lake/`, formerly the "Data Lake" tool) — tool-local notes
+
+> **Roadmap L6:** this folder is now only the BACKEND (load jobs, SQL, staging, S3). Its page was moved into **Vault → Vault Data**
+> (`../vault/ui/index.html`: sub-tabs Tables | ⬆ Load files (the 🔎 SQL tab was dropped — Duck Lab does SQL; `query.py` stays but no page calls it), calling `/tools/data-lake/<endpoint>`); the manifest is
+> `hidden: true` and `GET /` redirects to `/tools/vault/#data` . Wherever this file says "the page" or
+> "tab", read: the Vault Data page. The names "Data Lake"/"Lakehouse" are not used in the UI any more. Default workspace
+> for every picker is `system` (`core/lake.py` `SYSTEM_WORKSPACE`).
 
 Part of the Toolbox monorepo — see `../CLAUDE.md` for repo-wide architecture and `../KNOWLEDGE_MAP.md` for the
 symptom→file map. Plan and decisions: `../docs/roadmap/ROADMAP.md`, phase L.
@@ -28,7 +34,9 @@ append (type clash refused), overwrite (new version; column changes logged). "Re
 | Catalog, managed/external tables, preview | `../core/lake.py` |
 | SQL: read-only check, mounting tables, instant/background runs, stored results, history, saved queries | `query.py` |
 | Staging from a database (L4): Vault connection → tables or one SELECT → workspace | `staging.py` (`run_stage`) |
-| The page (⬆ Load files / 🔎 SQL views, `#sql` opens SQL; 🗄 Database source = staging) | `ui/index.html` |
+| **Column map (L7)**: validate + compile keep/rename/cast/fill/protect into one SELECT, guess sensitive columns, templates, secret hand-off | `colmap.py` |
+| Preview columns (`inspect_source`), the converter shared by load and copy (`_copy_to_parquet`), masked copy of a table (`run_copy`) | `loader.py` |
+| The page — moved to `../vault/ui/index.html` (L6); `ui/index.html` here is only the redirect | `ui/index.html` |
 
 ## Things that will bite you
 
@@ -117,3 +125,37 @@ mode, DELETE refused, source untouched; the 🗄 Database tab in headless Chromi
 L5: SeaweedFS as the S3 endpoint — test-before-save (and a clear 403 message for bad keys), 3 Parquet files copied
 (6000 rows), a CSV read in place, a join of both in SQL (instant and in the worker); profile of 30 M rows 12.7 s then
 cached; suggested joins; chart + tree joins in headless Chromium.
+
+
+## Column map + protection (L7) — how it works and what bites
+
+- **One SELECT over the reader.** `colmap.compile_select(source_sql, available, columns, only_listed)` wraps whatever
+  `run_load` (or `run_copy`) would have SELECTed. Per column: **cast → fill empty → protect**. Everything streams through DuckDB's
+  COPY to Parquet — nothing is held in Python. Quick path (no map, or a map that changes nothing) is exactly the old load.
+- **Never SQL by concatenation of user text:** identifiers via `qi()`, strings via `ql()`, types from an allow-list
+  (`text|integer|bigint|decimal(p,s)|double|boolean|date|timestamp|json`), numeric/date defaults pattern-checked in `typed_literal`,
+  date formats from a character allow-list, target names `^[A-Za-z_][A-Za-z0-9_]{0,62}$`, `__rn` reserved (shuffle's row id).
+- **Typed CSV columns are read as raw text first** (`varchar_columns` → `read_csv(types={…: 'VARCHAR'})`): "00123" stays "00123",
+  a date is parsed with the map's format instead of the sniffer's guess. Text is `trim()`ed before the cast — besides being what a
+  cast ignores anyway, it keeps `TRY_CAST` out of DuckDB's CSV-reader push-down (DuckDB 2.0 raises instead of giving NULL otherwise).
+- **Bad values:** `cast_mode: null` → NULL + a warning with the COUNT (one extra pass over the source, `failing_count_sql`; shown in the
+  job result and `GET /loads/{id}` → `warnings`); `fail` → the load stops BEFORE anything is written, naming the column — never the value.
+  A default also fills values that failed to convert (cast → fill order).
+- **Protection** (output of mask/hash/redact is text; nullify and shuffle keep the type): `mask` keeps first/last N, fully masks values too
+  short to show anything, `email: true` keeps the domain; `hash` = left(sha256(salt|value), length) — same input, same code; `redact` =
+  fixed text; `nullify` = typed NULL; `shuffle` = permute a column's values across rows (`row_number()` over a random — or, with a seed,
+  `hash(rn|seed)` — key, joined back; `MATERIALIZED` CTE so the row ids can't change between reads; a window ORDER BY can't be volatile,
+  so the key is computed one level down). Under mask/hash/redact a NULL stays NULL; nullify makes every value NULL. A shuffle may leave a row with its own value (random permutation); it is not a derangement.
+- **Memory:** shuffle needs the shuffled columns + row ids materialized (spills to `temp_directory`). Measured (DuckDB 1.2.2, 1 GB limit):
+  5 M rows, mask + shuffle + cast → 11 s, peak RSS ≈ 1.6 GB (DuckDB's limit is soft). Plain loads stay ≈ 0.5 GB.
+- **Secrets:** salts/seeds are removed from the job args (`split_secrets`) and put under Redis `data-lake-secrets:<job id>` for 30 min
+  (`stash_secrets`), taken by the worker (`take_columns`) and deleted when the job ends (`drop_secrets`). Without Redis they stay in the
+  args. The catalog stores only `source.column_map` = names, types, protect KINDS (`public_summary`); templates drop salts/seeds and
+  the "if empty" value of protected columns (`template_columns`). A salt that expired before the worker started → clear failure.
+- **No leaks in logs/errors:** logs name columns and counts only. When a load protects columns, DuckDB's own error text is replaced by a
+  generic message (it can quote data rows). Inspect samples go to the browser only.
+- **Not for read-in-place (external) tables** — nothing is copied, so there is nothing to rename/mask: a map + `external` is refused
+  (HTTP 400 / job failure).
+- Endpoints: `POST /inspect`, `GET/POST /colmaps`, `DELETE /colmaps/{id}`, `POST /copy-table` (polled with `GET /loads/{job_id}`).
+- Tests: `tests/unit/test_colmap.py` (compile/injection/mask/hash/shuffle/cast/fill/templates/secret hand-off/loader/copy/inspect; passes on
+  DuckDB 1.2.2 and 2.0), smoke `test_data_lake_column_map_api`. UI driven in headless Chromium against a stub API.

@@ -98,25 +98,134 @@
   .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   .pill { display: inline-block; background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
           padding: 2px 9px; font-size: 0.72rem; color: var(--muted); margin-right: 4px; }
+  .subtabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .subtabs button { cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 8px;
+                    padding: 7px 16px; font: inherit; font-size: 0.88rem; font-weight: 600; }
+  .subtabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ws-list .pill { margin: 0 0 0 6px; font-size: 0.64rem; padding: 0 7px; vertical-align: 1px; }
+  /* ---- Load files (moved in from the old Data Lake page; everything scoped under .dl) ---- */
+  .dl .card h2 { font-size: 1rem; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .dl .step { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+          font-size: 0.75rem; align-items: center; justify-content: center; }
+  .dl .hint { color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
+  .dl .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .dl .tabs button { border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 7px; padding: 6px 12px;
+                 font: inherit; font-size: 0.84rem; cursor: pointer; }
+  .dl .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .dl label { display: block; font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin: 10px 0 4px; }
+  .dl input[type=text], .dl input[type=password], .dl select { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
+                             font: inherit; font-size: 0.86rem; color: var(--text); }
+  .dl .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .dl .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 760px) { .dl .row, .dl .row2 { grid-template-columns: 1fr; } }
+  .dl .drop { border: 2px dashed var(--border); border-radius: 10px; padding: 22px; text-align: center; color: var(--muted);
+          font-size: 0.86rem; cursor: pointer; }
+  .dl .drop.over { border-color: var(--accent); background: rgba(79,94,240,0.05); }
+  .dl .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .dl .chip { background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: 0.75rem; }
+  .dl .browser { border: 1px solid var(--border); border-radius: 8px; max-height: 280px; overflow: auto; font-size: 0.84rem; }
+  .dl .browser div { padding: 6px 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 8px; cursor: pointer; }
+  .dl .browser div:hover { background: var(--bg); }
+  .dl .crumbs { font-size: 0.8rem; margin-bottom: 6px; }
+  .dl .crumbs a { color: var(--accent); cursor: pointer; text-decoration: none; }
+  .dl .radio { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.86rem; margin-top: 4px; }
+  .dl .radio label { display: flex; align-items: center; gap: 5px; text-transform: none; font-size: 0.86rem; color: var(--text);
+                 letter-spacing: 0; font-weight: 400; margin: 0; }
+  .dl details summary { cursor: pointer; font-size: 0.86rem; color: var(--accent); margin-top: 12px; }
+  .dl button.action { border: none; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; font-weight: 600;
+                  font-size: 0.9rem; padding: 10px 22px; cursor: pointer; }
+  .dl button.action:disabled { opacity: 0.5; cursor: wait; }
+  .dl .ghost { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 7px; padding: 6px 12px; font: inherit;
+                 font-size: 0.8rem; cursor: pointer; }
+  .dl .msg { border-radius: 8px; padding: 9px 12px; font-size: 0.84rem; margin-top: 12px; display: none; }
+  .dl .msg.show { display: block; }
+  .dl .msg.err { background: #fdecea; color: var(--err); border: 1px solid #f5c6c0; }
+  .dl .msg.ok { background: #eaf7f0; color: var(--ok); border: 1px solid #bfe5cf; }
+  .dl .bar { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; margin: 10px 0; }
+  .dl .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.4s; }
+  .dl pre.log { background: #0f1222; color: #d7dbf0; border-radius: 8px; padding: 10px 12px; font: 0.76rem/1.5 ui-monospace, Menlo, Consolas, monospace;
+            max-height: 220px; overflow: auto; white-space: pre-wrap; }
+  .dl table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  /* column map (roadmap L7) */
+  .dl .cm-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: 10px; }
+  .dl table.cm { min-width: 860px; }
+  .dl table.cm td { vertical-align: top; }
+  .dl table.cm input[type=text], .dl table.cm select { padding: 4px 6px; font-size: 0.8rem; }
+  .dl table.cm input.s { width: 64px; display: inline-block; } .dl table.cm input.m { width: 120px; display: inline-block; }
+  .dl table.cm tr.off td { opacity: 0.45; }
+  .dl table.cm tr.sugg > td:first-child { box-shadow: inset 3px 0 0 #d97706; }
+  .dl table.cm tr.detail td { background: var(--bg); border-bottom: 1px solid var(--border); padding: 6px 8px 8px 34px; }
+  .dl table.cm .smp { color: var(--muted); font-size: 0.72rem; max-width: 230px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dl .tag { display: inline-block; font-size: 0.68rem; border-radius: 999px; padding: 1px 8px; border: 1px solid #f3d29b; background: #fff7e6; color: #92520b; margin-top: 3px; }
+  .dl .pl { display: inline-flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 0.78rem; }
+  .dl .pl label { display: inline-flex; align-items: center; gap: 4px; margin: 0; text-transform: none; letter-spacing: 0; font-size: 0.78rem; color: var(--text); font-weight: 500; }
+  .dl .banner { background: #fff7e6; border: 1px solid #f3d29b; color: #92520b; border-radius: 8px; padding: 8px 12px; font-size: 0.8rem; margin-top: 10px; }
+  .dl .tplbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .dl .tplbar select { width: auto; min-width: 180px; }
+  .dl #dl_jobNotes { font-size: 0.82rem; margin-top: 8px; line-height: 1.6; }
+  .dl th, .dl td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .dl th { font-size: 0.68rem; text-transform: uppercase; color: var(--muted); }
+  .dl .sqlgrid { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .dl .sqlgrid > * { min-width: 0; }
+  @media (max-width: 860px) { .dl .sqlgrid { grid-template-columns: 1fr; } }
+  .dl .tree { font-size: 0.82rem; max-height: 620px; overflow: auto; }
+  .dl .tree .ws { font-weight: 700; padding: 5px 4px; cursor: pointer; }
+  .dl .tree .ws:hover { color: var(--accent); }
+  .dl .tree .tb { padding: 3px 4px 3px 16px; cursor: pointer; display: flex; justify-content: space-between; gap: 6px; }
+  .dl .tree .tb:hover { background: var(--bg); }
+  .dl .tree .col { padding: 1px 4px 1px 32px; color: var(--muted); cursor: pointer; font-size: 0.76rem; }
+  .dl .tree .col:hover { color: var(--accent); }
+  .dl .tree a.jn { text-decoration: none; cursor: pointer; margin-left: 4px; opacity: 0.6; }
+  .dl .tree a.jn:hover { opacity: 1; }
+  .dl .tree .joins .col { padding-left: 24px; }
+  .dl .edwrap { position: relative; }
+  .dl textarea#dl_sql { width: 100%; min-height: 170px; resize: vertical; background: #0f1222; color: #e6e9f8; border: 1px solid var(--border);
+                 border-radius: 8px; padding: 10px 12px; font: 0.85rem/1.55 ui-monospace, Menlo, Consolas, monospace; tab-size: 2; }
+  .dl #dl_ac { position: absolute; z-index: 5; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; min-width: 220px;
+        max-height: 220px; overflow: auto; box-shadow: 0 6px 20px rgba(0,0,0,0.12); display: none; font-size: 0.8rem; }
+  .dl #dl_ac div { padding: 4px 10px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+  .dl #dl_ac div.on, .dl #dl_ac div:hover { background: var(--accent); color: #fff; }
+  .dl #dl_ac div.on .muted, .dl #dl_ac div:hover .muted { color: #e6e9f8; }
+  .dl .bar2 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .dl .grid { overflow: auto; max-height: 460px; border: 1px solid var(--border); border-radius: 8px; margin-top: 10px; }
+  .dl .grid table th { position: sticky; top: 0; background: var(--surface); }
+  .dl .grid td { white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+  .dl .grid td.null { color: var(--muted); font-style: italic; }
+  .dl .list > div { padding: 7px 4px; border-bottom: 1px solid var(--border); font-size: 0.8rem; display: flex; gap: 10px; align-items: baseline; }
+  .dl .list .sqltext { flex: 1; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dl .list .sqltext:hover { color: var(--accent); }
+  .dl .qbadge { font-size: 0.68rem; border-radius: 999px; padding: 1px 8px; border: 1px solid var(--border); white-space: nowrap; }
+  .dl #dl_chart svg text { font: 11px system-ui, sans-serif; fill: var(--muted); }
+  .dl .qbadge.done { color: var(--ok); }
+  .dl .qbadge.failed { color: var(--err); }
+  .dl a.x { color: var(--muted); cursor: pointer; text-decoration: none; }
+  .dl a.x:hover { color: var(--err); }
+  .dl { --ok: #15803d; --err: #b91c1c; }
+  .dl .qbadge.done { color: var(--ok); } .dl .qbadge.failed { color: var(--err); }
 </style>
 </head>
 <body>
 <header>
   <h1>Vault<span>.</span></h1>
-  <p>One place for what Toolbox keeps: 🔑 <b>Secrets</b> (connections, servers, keys — encrypted at rest) and 📦 <b>Data</b> (workspaces → tables, stored as Parquet). See vault/CLAUDE.md for the trust model.</p>
+  <p>One place for what Toolbox keeps: 🔑 <b>Secrets</b> (connections, servers, keys — encrypted at rest) and 📦 <b>Vault Data</b> (workspaces → tables, stored as Parquet — load files; run SQL on it in Duck Lab). Anything saved without a workspace goes to <span class="mono">system</span>. See vault/CLAUDE.md for the trust model.</p>
 </header>
 
 <nav class="vtabs" role="tablist">
   <button id="tabSecrets" class="on" role="tab">🔑 Secrets</button>
-  <button id="tabData" role="tab">📦 Data</button>
+  <button id="tabData" role="tab">📦 Vault Data</button>
 </nav>
 
 <div id="dataView">
+  <nav class="subtabs" id="subTabs">
+    <button data-sub="tables" class="on">🗂 Tables</button>
+    <button data-sub="load">⬆ Load files</button>
+  </nav>
+  <div id="paneTables">
   <div class="data-grid">
     <div class="card">
       <h2>Workspaces</h2>
-      <p class="hint">Like Glue databases: group tables, e.g. <span class="mono">migration_staging</span>. Tables are
-        named <span class="mono">workspace.table</span> everywhere.</p>
+      <p class="hint">Every table lives in a workspace and is named <span class="mono">workspace.table</span>.
+        <b>system</b> is built in: it catches everything saved without choosing a workspace.</p>
       <ul class="ws-list" id="wsList"></ul>
       <div class="form-grid" style="margin-top:10px;">
         <div class="full"><label>New workspace</label><input type="text" id="wsNew" placeholder="e.g. sales_analysis" /></div>
@@ -129,10 +238,11 @@
     <div>
       <div class="card" id="wsCard">
         <h2 id="wsTitle">Pick a workspace</h2>
-        <p class="hint" id="wsDesc">Tables are stored as Parquet in Toolbox's storage (fast to query). Loading files
-          into tables: Data Lake tool. Duck Lab, DataFrame Studio, SQL Studio and DataDiff load from / save to here.</p>
+        <p class="hint" id="wsDesc">Tables are stored as Parquet in Toolbox's storage (fast to query). Add data with
+          <b>⬆ Load files</b>; run SQL on it in <b>Duck Lab</b>; DataFrame Studio, SQL Studio and DataDiff load from / save to here too.</p>
         <div id="wsTables"></div>
         <div class="row-actions" id="wsActions" style="display:none;">
+          <button class="action small" id="btnTblNew">＋ New table</button>
           <button class="action small" id="btnWsRename">Rename workspace</button>
           <button class="action small danger" id="btnWsDelete">Delete workspace</button>
         </div>
@@ -150,6 +260,7 @@
         <p class="hint">Columns that match columns of other tables — checked on the data, best first.</p>
         <div id="tblJoins"></div>
         <div class="row-actions">
+          <button class="action small" id="btnTblCopy" title="Copy this table into a new one — keep some columns, rename, cast, fill, mask, hash or shuffle">Copy with column map…</button>
           <button class="action small" id="btnTblRename">Rename / move</button>
           <button class="action small danger" id="btnTblDelete">Delete table</button>
         </div>
@@ -158,6 +269,189 @@
         <div id="tblHist"></div>
       </div>
     </div>
+  </div>
+  </div>
+  <div class="dl" id="paneLoad" style="display:none">
+  <div class="card">
+    <h2><span class="step">1</span> Where is the data?</h2>
+    <div class="tabs" id="dl_srcTabs">
+      <button data-src="upload" class="on">⬆ Upload files</button>
+      <button data-src="folder">📁 Data folder</button>
+      <button data-src="url">🔗 Link</button>
+      <button data-src="db">🗄 Database</button>
+      <button data-src="s3">☁ S3</button>
+      <button data-src="table">📦 Vault Data table</button>
+    </div>
+
+    <div id="dl_src-upload">
+      <div class="drop" id="dl_drop">Drop files here or <u>choose files</u> — several files of the same kind become one table
+        <input type="file" id="dl_fileInput" multiple style="display:none" /></div>
+      <div class="chips" id="dl_fileChips"></div>
+    </div>
+
+    <div id="dl_src-folder" style="display:none">
+      <p class="hint" id="dl_folderHint">Files in your shared data folder (<span class="mono">~/toolbox-data</span> on this
+        machine, read-only). Click a file or folder, or type a pattern.</p>
+      <div class="crumbs" id="dl_crumbs"></div>
+      <div class="browser" id="dl_browser"></div>
+      <label>File, folder or pattern</label>
+      <input type="text" id="dl_pattern" placeholder="e.g. sales/2026-*.csv   or   logs/**/*.json.gz" />
+      <p class="hint" id="dl_matchInfo" style="margin-top:6px"></p>
+      <div class="radio"><label><input type="checkbox" id="dl_external" /> Read in place (external table — nothing copied; csv/json/parquet)</label></div>
+    </div>
+
+    <div id="dl_src-db" style="display:none">
+      <p class="hint">Copy tables from a database saved in the Vault (Postgres, SQL Server, Oracle — SSH tunnels work)
+        into a workspace, e.g. to stage data for a migration. The database is only read.</p>
+      <div class="row2">
+        <div><label>Saved connection</label><select id="dl_dbConn"></select></div>
+        <div><label>What to copy</label><div class="radio">
+          <label><input type="radio" name="dl_dbwhat" value="tables" checked /> tables</label>
+          <label><input type="radio" name="dl_dbwhat" value="sql" /> a query</label></div></div>
+      </div>
+      <div id="dl_dbTablesBox">
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="ghost" id="dl_btnDbTables">Show tables</button>
+          <input type="text" id="dl_dbFilter" placeholder="filter…" style="flex:1" />
+        </div>
+        <div class="browser" id="dl_dbTables" style="margin-top:8px"><div class="muted" style="cursor:default">Pick a connection, then “Show tables”.</div></div>
+        <p class="hint" id="dl_dbPicked" style="margin-top:6px"></p>
+      </div>
+      <div id="dl_dbSqlBox" style="display:none">
+        <label>Query (one SELECT)</label>
+        <textarea id="dl_dbSql" class="mono" style="width:100%;min-height:90px;border:1px solid var(--border);border-radius:6px;padding:8px;background:var(--bg)"
+                  placeholder="SELECT * FROM public.orders WHERE created_at >= '2026-01-01'"></textarea>
+      </div>
+    </div>
+
+    <div id="dl_src-s3" style="display:none">
+      <p class="hint">Files in an AWS S3 bucket (or any S3-compatible storage). Credentials are kept encrypted in the
+        Vault as an <b>S3 location</b>.</p>
+      <div class="row2">
+        <div><label>S3 location</label><select id="dl_s3Loc"></select></div>
+        <div><label>&nbsp;</label><button class="ghost" id="dl_btnS3New">+ new S3 location</button></div>
+      </div>
+      <div id="dl_s3New" style="display:none;border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:10px">
+        <div class="row">
+          <div><label>Name</label><input type="text" id="dl_s3Name" placeholder="e.g. company data bucket" /></div>
+          <div><label>Access key ID</label><input type="text" id="dl_s3Key" autocomplete="off" /></div>
+          <div><label>Secret access key</label><input type="password" id="dl_s3Secret" autocomplete="new-password" /></div>
+        </div>
+        <div class="row">
+          <div><label>Region</label><input type="text" id="dl_s3Region" placeholder="us-east-1" /></div>
+          <div><label>Endpoint (only for non-AWS)</label><input type="text" id="dl_s3Endpoint" placeholder="e.g. http://minio:9000" /></div>
+          <div><label>Test with a path</label><input type="text" id="dl_s3TestPath" placeholder="s3://bucket/folder/" /></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+          <button class="ghost" id="dl_btnS3Test">Test</button><button class="ghost" id="dl_btnS3Save">Save to Vault</button>
+          <span class="hint" id="dl_s3NewMsg"></span></div>
+      </div>
+      <label>Path or pattern</label>
+      <input type="text" id="dl_s3Pattern" placeholder="s3://bucket/sales/2026-*.parquet   or   s3://bucket/logs/   (a folder = everything in it)" />
+      <p class="hint" id="dl_s3Info" style="margin-top:6px"></p>
+      <div class="radio"><label><input type="checkbox" id="dl_s3External" /> Read in place (external table — stays in S3, nothing copied; csv/json/parquet)</label></div>
+    </div>
+
+    <div id="dl_src-table" style="display:none">
+      <p class="hint">Copy a table that is already in Vault Data into a new table — most useful with the column map below:
+        keep only some columns, rename, change types, fill empty values, or hide sensitive data (a masked copy to share).</p>
+      <label>Table to copy</label>
+      <select id="dl_tableSrc"></select>
+    </div>
+
+    <div id="dl_src-url" style="display:none">
+      <label>Link to a file</label>
+      <input type="text" id="dl_url" placeholder="https://example.com/data/orders.csv.gz" />
+      <p class="hint" style="margin-top:6px">Downloaded once by the worker, then loaded like an upload.</p>
+    </div>
+  </div>
+
+  <div class="card" id="dl_colCard">
+    <h2><span class="step">2</span> Columns <span class="hint" style="font-weight:400">(optional)</span></h2>
+    <p class="hint" id="dl_colIntro">Load everything as it is, or preview the columns first: keep only some, load under another name,
+      change the type, fill empty values — and protect sensitive columns (mask, hash, shuffle…).</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+      <button class="ghost" id="dl_btnPreview">🔍 Preview columns</button>
+      <button class="ghost" id="dl_btnReset" style="display:none">✕ Load everything as is</button>
+      <span class="hint" id="dl_colStatus"></span>
+    </div>
+    <div class="msg err" id="dl_colErr"></div>
+    <div id="dl_colBox" style="display:none">
+      <div class="banner" id="dl_colBanner" style="display:none"></div>
+      <div class="cm-wrap"><table class="cm" id="dl_cm"></table></div>
+      <div class="radio" style="margin-top:10px"><label><input type="checkbox" id="dl_onlyListed" /> Drop any other column that
+        is not in this list (for example extra columns that only some files have)</label></div>
+      <div class="tplbar">
+        <span class="hint">Same structure again?</span>
+        <select id="dl_tplSel"></select>
+        <button class="ghost" id="dl_btnTplApply">Apply template</button>
+        <label style="display:inline-flex;align-items:center;gap:4px;margin:0;text-transform:none;font-size:0.78rem;letter-spacing:0">match by
+          <select id="dl_tplBy" style="width:auto"><option value="name">column name</option><option value="pos">position</option></select></label>
+        <button class="ghost" id="dl_btnTplSave">Save as template…</button>
+        <button class="ghost" id="dl_btnTplDel">Delete template</button>
+      </div>
+      <p class="hint" style="margin-top:6px">A template remembers names, types, fill values and the kind of protection — never salts or
+        seeds, so type those again when you use it.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">3</span> Into which table?</h2>
+    <div class="row">
+      <div><label>Workspace</label>
+        <select id="dl_ws"></select>
+        <input type="text" id="dl_wsNew" placeholder="new workspace name" style="display:none;margin-top:6px" /></div>
+      <div><label>Table name</label><input type="text" id="dl_table" placeholder="e.g. orders" /></div>
+      <div><label>If the table exists</label>
+        <div class="radio">
+          <label><input type="radio" name="dl_mode" value="create" checked /> new only</label>
+          <label><input type="radio" name="dl_mode" value="append" /> append</label>
+          <label><input type="radio" name="dl_mode" value="overwrite" /> overwrite</label>
+        </div></div>
+    </div>
+    <p class="hint" style="margin-top:8px">Names: lowercase letters, digits and <span class="mono">_</span>. The table
+      will be <b class="mono" id="dl_fullName">workspace.table</b>.</p>
+    <details>
+      <summary>Advanced: format, header, delimiter…</summary>
+      <div class="row">
+        <div><label>Format</label><select id="dl_format">
+          <option value="auto">detect automatically</option><option value="csv">CSV / TSV / text</option>
+          <option value="json">JSON / JSON Lines</option><option value="parquet">Parquet</option>
+          <option value="xml">XML</option><option value="excel">Excel (.xlsx)</option></select></div>
+        <div><label>Header row (CSV)</label><select id="dl_header">
+          <option value="">detect</option><option value="true">yes</option><option value="false">no</option></select></div>
+        <div><label>Delimiter (CSV)</label><input type="text" id="dl_delim" placeholder="detect (e.g. , ; | \t)" /></div>
+      </div>
+      <div class="row2">
+        <div><label>Excel sheet</label><input type="text" id="dl_sheet" placeholder="first sheet" /></div>
+        <div><label>&nbsp;</label><div class="radio"><label><input type="checkbox" id="dl_addFile" /> Add a
+          <span class="mono">_source_file</span> column (which file each row came from)</label></div></div>
+      </div>
+    </details>
+    <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+      <button class="action" id="dl_btnLoad">Load into table</button>
+      <span class="hint" id="dl_loadHint"></span>
+    </div>
+    <div class="msg err" id="dl_err"></div>
+  </div>
+
+  <div class="card" id="dl_jobCard" style="display:none">
+    <h2><span class="step">4</span> <span id="dl_jobTitle">Loading…</span></h2>
+    <div class="bar"><i id="dl_bar"></i></div>
+    <p class="hint" id="dl_jobPhase"></p>
+    <pre class="log" id="dl_jobLog"></pre>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button class="ghost" id="dl_btnStop">Stop</button>
+      <button class="ghost" id="dl_openVault" style="display:none">Show in Tables</button>
+    </div>
+    <div class="msg" id="dl_jobMsg"></div>
+    <div id="dl_jobNotes"></div>
+  </div>
+
+  <div class="card">
+    <h2>Recent changes</h2>
+    <div id="dl_recent"><p class="hint">Loading…</p></div>
+  </div>
   </div>
 </div>
 
@@ -522,7 +816,7 @@ refresh();
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = escapeHtml;
-  let curWs = null, curTbl = null;
+  let curWs = "system", curTbl = null;
   const fmtBytes = (n) => { const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; n = Number(n || 0);
     while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : n.toFixed(0)) + " " + u[i]; };
   const fmtN = (n) => Number(n || 0).toLocaleString();
@@ -534,16 +828,45 @@ refresh();
   function sourceText(src) {
     if (!src || !src.kind) return "–";
     if (src.kind === "vault_dataset") return "imported Vault dataset “" + src.dataset + "”";
+    if (src.kind === "copy") return "copy of " + src.from;
     return src.kind + (src.file ? " · " + src.file : "") + (src.detail ? " · " + src.detail : "");
   }
 
+  // roadmap L7: a load/copy that used a column map records which columns were protected (kinds only, never secrets)
+  function protectedNote(src) {
+    const cm = src && src.column_map;
+    const prot = cm ? (cm.columns || []).filter((c) => c.protect && c.protect !== "none") : [];
+    return prot.length ? `<br>🔒 Protected when loaded: ${prot.map((c) => `<span class="mono">${esc(c.name)}</span> (${esc(c.protect)})`).join(", ")}` : "";
+  }
+
+  let sub = "tables";
+  function showSub(which) {
+    sub = which;
+    document.querySelectorAll("#subTabs button").forEach((b) => b.classList.toggle("on", b.dataset.sub === which));
+    $("paneTables").style.display = which === "tables" ? "" : "none";
+    $("paneLoad").style.display = which === "load" ? "" : "none";
+    if (which === "tables") loadWorkspaces();
+    if (which === "load" && window.vaultDl) window.vaultDl.showLoad();
+    const h = which === "tables" ? "#data" : "#data/" + which;
+    if (location.hash !== h) history.replaceState(null, "", h);
+  }
   function showTab(which) {
     $("tabSecrets").classList.toggle("on", which === "secrets"); $("tabData").classList.toggle("on", which === "data");
     $("secretsView").style.display = which === "secrets" ? "" : "none";
     $("dataView").style.display = which === "data" ? "block" : "none";
     try { localStorage.setItem("vault_tab", which); } catch (e) {}
-    if (which === "data") loadWorkspaces();
+    if (which === "data") showSub(sub);
+    else if (location.hash.startsWith("#data")) history.replaceState(null, "", "#");
   }
+  function route() {   // #data · #data/load (#data/sql from old bookmarks opens Tables)
+    const m = location.hash.match(/^#data(?:\/(load|sql))?$/);
+    if (m) { sub = m[1] === "load" ? "load" : "tables"; showTab("data"); return true; }
+    return false;
+  }
+  $("subTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-sub]"); if (b) showSub(b.dataset.sub); });
+  window.addEventListener("hashchange", route);
+  document.addEventListener("vaultdl:ready", () => { if (sub !== "tables" && $("dataView").style.display === "block") showSub(sub); });
+  document.addEventListener("vaultdata:changed", () => { if (sub === "tables") loadWorkspaces(); });
   $("tabSecrets").onclick = () => showTab("secrets");
   $("tabData").onclick = () => showTab("data");
 
@@ -553,10 +876,11 @@ refresh();
       const imp = d.import || {};
       $("importNote").textContent = (imp.imported || []).length || (imp.failed || []).length
         ? `Vault datasets imported as tables: ${(imp.imported || []).length}` + ((imp.failed || []).length ? `, failed: ${imp.failed.length}` : "")
-        : "Saved Vault datasets are copied into the “datasets” workspace (originals stay).";
-      $("wsList").innerHTML = d.workspaces.map((w) => `<li data-ws="${esc(w.name)}" class="${w.name === curWs ? "on" : ""}">
-          <div class="n">${esc(w.name)}</div><div class="m">${w.tables} table(s) · ${fmtN(w.row_count)} rows · ${fmtBytes(w.size_bytes)}</div></li>`).join("")
-        || '<li class="muted" style="cursor:default">No workspaces yet — create one below.</li>';
+        : "Older saved Vault datasets are copied into the “datasets” workspace (originals stay).";
+      const wss = d.workspaces.slice().sort((a, b) => (a.name === "system" ? -1 : b.name === "system" ? 1 : a.name.localeCompare(b.name)));
+      $("wsList").innerHTML = wss.map((w) => `<li data-ws="${esc(w.name)}" class="${w.name === curWs ? "on" : ""}">
+          <div class="n">${esc(w.name)}${w.name === "system" ? '<span class="pill">built-in</span>' : ""}</div><div class="m">${w.tables} table(s) · ${fmtN(w.row_count)} rows · ${fmtBytes(w.size_bytes)}</div></li>`).join("")
+        || '<li class="muted" style="cursor:default">No workspaces yet.</li>';
       if (curWs && !d.workspaces.some((w) => w.name === curWs)) { curWs = null; curTbl = null; }
       if (curWs) await loadTables(); else renderNoWs();
     } catch (e) { err($("wsErr"), e.message); }
@@ -567,7 +891,8 @@ refresh();
   }
   async function loadTables() {
     const d = await api(`data/workspaces/${encodeURIComponent(curWs)}/tables`);
-    $("wsTitle").textContent = "📦 " + curWs; $("wsActions").style.display = "flex";
+    $("wsTitle").textContent = "📦 " + curWs + (curWs === "system" ? " (built-in)" : ""); $("wsActions").style.display = "flex";
+    const builtin = curWs === "system"; $("btnWsRename").style.display = $("btnWsDelete").style.display = builtin ? "none" : "";
     $("wsTables").innerHTML = d.tables.length ? `<table class="dt"><thead><tr><th>Table</th><th class="num">Rows</th>
         <th class="num">Columns</th><th class="num">Size</th><th>From</th><th>Updated</th></tr></thead><tbody>` +
         d.tables.map((t) => `<tr class="click" data-tbl="${esc(t.name)}"><td><b>${esc(t.name)}</b>
@@ -585,6 +910,7 @@ refresh();
     $("tblMeta").innerHTML = `<span class="pill">${esc(t.kind)}</span><span class="pill">${esc(t.format)}</span>` +
       `<span class="pill">${fmtN(t.row_count)} rows</span><span class="pill">${fmtBytes(t.size_bytes)}</span>` +
       `<span class="pill">version ${t.version} · ${t.parts} file(s)</span><br>From: ${esc(sourceText(t.source))}` +
+      protectedNote(t.source) +
       (t.description ? `<br>${esc(t.description)}` : "");
     $("tblCols").innerHTML = `<table class="dt"><thead><tr><th>Column</th><th>Type</th></tr></thead><tbody>` +
       t.columns.map((c) => `<tr><td class="mono">${esc(c.name)}</td><td class="mono muted">${esc(c.type)}</td></tr>`).join("") + "</tbody></table>";
@@ -660,6 +986,11 @@ refresh();
     try { await api(`data/workspaces/${encodeURIComponent(curWs)}?drop_tables=true`, { method: "DELETE" });
           curWs = null; curTbl = null; await loadWorkspaces(); } catch (e) { err($("wsErr"), e.message); }
   };
+  $("btnTblCopy").onclick = () => {
+    if (!curWs || !curTbl) return;
+    showSub("load");
+    if (window.vaultDl) window.vaultDl.copyFrom(curWs, curTbl);
+  };
   $("btnTblRename").onclick = async () => {
     const v = prompt("New name, or workspace.name to move it:", `${curWs}.${curTbl}`); if (!v) return;
     const [ws, name] = v.includes(".") ? v.split(".", 2) : [curWs, v];
@@ -672,13 +1003,14 @@ refresh();
     try { await api(`data/tables/${encodeURIComponent(curWs)}/${encodeURIComponent(curTbl)}`, { method: "DELETE" });
           curTbl = null; await loadWorkspaces(); } catch (e) { err($("tblErr"), e.message); }
   };
+  $("btnTblNew").onclick = () => { showSub("load"); window.vaultDl.newTable(curWs); };
   $("btnImport").onclick = async () => {
     try { const r = await api("data/import-datasets", { method: "POST" });
           $("importNote").textContent = `Imported ${r.imported.length} dataset(s)` + (r.failed.length ? `, ${r.failed.length} failed` : "") + ".";
           await loadWorkspaces(); } catch (e) { err($("wsErr"), e.message); }
   };
   let start = "secrets"; try { start = localStorage.getItem("vault_tab") || "secrets"; } catch (e) {}
-  showTab(location.hash === "#data" ? "data" : start);
+  if (!route()) showTab(start === "data" ? "data" : "secrets");
 })();
 
 /* ---------- Add SSH server ---------- */
@@ -724,6 +1056,536 @@ refresh();
       show($("sOk"), `Saved “${name}”. It now appears in the SSH & SFTP tool.`); await refresh();
     } catch (e) { show($("sErr"), e.message); }
   };
+})();
+
+// ================= ⬆ Load files (moved in from the old Data Lake page) =================
+(function () {
+"use strict";
+const DL = "/tools/data-lake/";
+const $ = (id) => document.getElementById("dl_" + id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtBytes = (n) => { const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; n = Number(n || 0); while (n >= 1024 && i < 4) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + " " + u[i]; };
+const safeName = (t) => { let n = String(t || "").toLowerCase().replace(/\.gz$/, "").replace(/\.[a-z0-9]+$/, "").replace(/[^a-z0-9_]+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, ""); if (!n || !/^[a-z]/.test(n)) n = "t_" + n; return n.slice(0, 63); };
+async function api(path, opts) {
+  const r = await fetch(path.startsWith("/") ? path : DL + path, opts); const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const d = j.detail; const e = new Error((d && d.message) || (typeof d === "string" ? d : j.error || "HTTP " + r.status)); e.detail = d; throw e; }
+  return j;
+}
+function msg(el, text, kind) { el.textContent = text || ""; el.className = "msg " + (kind || "err") + (text ? " show" : ""); }
+
+let src = "upload", picked = [], folderPath = "";
+
+// ---- source tabs ----
+$("srcTabs").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-src]"); if (!b) return;
+  src = b.dataset.src;
+  $("srcTabs").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  ["upload", "folder", "url", "db", "s3", "table"].forEach((k) => $("src-" + k).style.display = k === src ? "" : "none");
+  if (src === "folder") browse(folderPath);
+  if (src === "db") loadConnections();
+  if (src === "s3") loadS3Locations();
+  if (src === "table") loadTableChoices();
+  updateName();
+  sourceChanged();
+});
+
+// ---- upload ----
+$("drop").onclick = () => $("fileInput").click();
+$("fileInput").onchange = () => pick([...$("fileInput").files]);
+["dragover", "dragenter"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => $("drop").addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
+$("drop").addEventListener("drop", (e) => pick([...e.dataTransfer.files]));
+function pick(files) {
+  picked = files;
+  $("fileChips").innerHTML = files.map((f) => `<span class="chip">${esc(f.name)} · ${fmtBytes(f.size)}</span>`).join("");
+  if (files.length && !$("table").value) { $("table").value = safeName(files[0].name); updateName(); }
+  $("addFile").checked = files.length > 1;
+  sourceChanged();
+}
+
+// ---- data folder ----
+async function browse(path) {
+  try {
+    const d = await api("folder?path=" + encodeURIComponent(path));
+    folderPath = d.path;
+    const parts = d.path ? d.path.split("/") : [];
+    $("crumbs").innerHTML = `<a data-go="">data</a>` + parts.map((p, i) => ` / <a data-go="${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</a>`).join("");
+    $("browser").innerHTML = d.dirs.map((x) => `<div data-dir="${esc(x.path)}"><span>📁 ${esc(x.name)}</span><span class="muted">folder</span></div>`).join("") +
+      d.files.map((x) => `<div data-file="${esc(x.path)}"><span>📄 ${esc(x.name)}</span><span class="muted">${fmtBytes(x.size)}</span></div>`).join("") ||
+      '<div class="muted" style="cursor:default">Empty — put files into the data folder on your machine.</div>';
+  } catch (e) { $("browser").innerHTML = `<div class="muted" style="cursor:default">${esc(e.message)}</div>`; $("crumbs").innerHTML = ""; }
+}
+$("crumbs").addEventListener("click", (e) => { const a = e.target.closest("[data-go]"); if (a) browse(a.dataset.go); });
+$("browser").addEventListener("click", (e) => {
+  const d = e.target.closest("[data-dir]"), f = e.target.closest("[data-file]");
+  if (d) { browse(d.dataset.dir); setPattern(d.dataset.dir); }
+  if (f) setPattern(f.dataset.file);
+});
+let matchTimer = null;
+function setPattern(p) { $("pattern").value = p; checkPattern(); sourceChanged(); }
+$("pattern").addEventListener("input", () => { clearTimeout(matchTimer); matchTimer = setTimeout(checkPattern, 350); });
+async function checkPattern() {
+  const p = $("pattern").value.trim(); if (!p) { $("matchInfo").textContent = ""; return; }
+  try {
+    const m = await api("folder/match?pattern=" + encodeURIComponent(p));
+    $("matchInfo").innerHTML = m.count ? `<b>${m.count.toLocaleString()} file(s)</b>, ${fmtBytes(m.bytes)} · ` +
+      Object.entries(m.formats).map(([k, v]) => `${v} ${esc(k)}`).join(", ") + (m.count > 1 ? " — loaded together as one table" : "")
+      : "No files match.";
+    if (m.count && !$("table").value) { $("table").value = safeName(m.sample[0].split("/").pop()); updateName(); }
+    $("addFile").checked = m.count > 1;
+  } catch (e) { $("matchInfo").textContent = e.message; }
+}
+
+// ---- target ----
+async function loadWorkspaces() {
+  const d = await api("workspaces");
+  const cur = $("ws").value;
+  const list = d.workspaces.slice().sort((a, b) => (a.name === "system" ? -1 : b.name === "system" ? 1 : a.name.localeCompare(b.name)));
+  $("ws").innerHTML = list.map((w) => `<option value="${esc(w.name)}">${esc(w.name)}${w.name === "system" ? " (default)" : ""} · ${w.tables} table(s)</option>`).join("") +
+    `<option value="__new">+ new workspace…</option>`;
+  $("ws").value = cur && [...$("ws").options].some((o) => o.value === cur) ? cur : "system";
+  $("wsNew").style.display = $("ws").value === "__new" ? "" : "none";
+  if (!d.data_folder) $("folderHint").textContent = "The data folder isn't mounted — see docs/runbook.md (TOOLBOX_DATA_DIR).";
+  updateName();
+}
+$("ws").onchange = () => { $("wsNew").style.display = $("ws").value === "__new" ? "" : "none"; updateName(); };
+["wsNew", "table"].forEach((id) => $(id).addEventListener("input", updateName));
+function wsName() { return $("ws").value === "__new" ? $("wsNew").value.trim() : $("ws").value; }
+function updateName() {
+  const multi = src === "db" && dbWhat() === "tables";
+  $("table").disabled = multi;
+  $("table").placeholder = multi ? "named after each source table" : "e.g. orders";
+  $("fullName").textContent = (wsName() || "workspace") + "." + (multi ? "<each table>" : ($("table").value.trim() || "table"));
+}
+
+// ---- S3 source (roadmap L5) ----
+async function loadS3Locations(select) {
+  try {
+    const d = await api("s3/locations");
+    $("s3Loc").innerHTML = d.locations.length ? d.locations.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
+      : '<option value="">— none yet: “+ new S3 location” —</option>';
+    if (select) $("s3Loc").value = select;
+  } catch (e) { $("s3Loc").innerHTML = `<option value="">${esc(e.message)}</option>`; }
+}
+$("btnS3New").onclick = () => { $("s3New").style.display = $("s3New").style.display ? "" : "none"; };
+function s3Data() {
+  const d = { access_key_id: $("s3Key").value.trim(), secret_access_key: $("s3Secret").value, region: $("s3Region").value.trim() || "us-east-1" };
+  if ($("s3Endpoint").value.trim()) { d.endpoint = $("s3Endpoint").value.trim(); d.url_style = "path"; }
+  return d;
+}
+$("btnS3Test").onclick = async () => {
+  $("s3NewMsg").textContent = "testing…";
+  try {
+    const r = await api("/tools/vault/test-s3", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: s3Data(), path: $("s3TestPath").value.trim() || $("s3Pattern").value.trim() }) });
+    $("s3NewMsg").textContent = `✓ works — ${r.count} object(s)` + (r.sample.length ? `, e.g. ${r.sample[0]}` : "");
+  } catch (e) { $("s3NewMsg").textContent = "✗ " + e.message; }
+};
+$("btnS3Save").onclick = async () => {
+  const name = $("s3Name").value.trim();
+  if (!name || !$("s3Key").value.trim() || !$("s3Secret").value) { $("s3NewMsg").textContent = "Name, access key and secret are needed."; return; }
+  try {
+    const r = await api("/tools/vault/secrets", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, kind: "s3_location", data: s3Data() }) });
+    $("s3NewMsg").textContent = "✓ saved in the Vault"; $("s3Secret").value = ""; $("s3New").style.display = "none";
+    loadS3Locations(r.id);
+  } catch (e) { $("s3NewMsg").textContent = "✗ " + e.message; }
+};
+let s3Timer = null;
+$("s3Pattern").addEventListener("input", () => { clearTimeout(s3Timer); s3Timer = setTimeout(checkS3, 500); });
+$("s3Loc").onchange = () => checkS3();
+async function checkS3() {
+  const p = $("s3Pattern").value.trim(); if (!p || !$("s3Loc").value) { $("s3Info").textContent = ""; return; }
+  $("s3Info").textContent = "looking…";
+  try {
+    const m = await api(`s3/match?location_id=${encodeURIComponent($("s3Loc").value)}&pattern=${encodeURIComponent(p)}`);
+    $("s3Info").innerHTML = m.count ? `<b>${m.count.toLocaleString()} object(s)</b>, e.g. <span class="mono">${esc(m.sample[0])}</span>` +
+      (m.count > 1 ? " — loaded together as one table" : "") : "Nothing matches.";
+    if (m.count && !$("table").value) { $("table").value = safeName(m.sample[0].split("/").pop()); updateName(); }
+    $("addFile").checked = m.count > 1;
+  } catch (e) { $("s3Info").textContent = e.message; }
+}
+
+// ---- database source (roadmap L4: staging) ----
+let dbTables = [], dbChosen = new Set();
+const dbWhat = () => (document.querySelector("input[name=dl_dbwhat]:checked") || {}).value || "tables";
+async function loadConnections() {
+  try {
+    const d = await api("connections");
+    $("dbConn").innerHTML = d.connections.length ? d.connections.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")
+      : '<option value="">— no saved connections (save one in the Vault or SQL Studio) —</option>';
+  } catch (e) { $("dbConn").innerHTML = `<option value="">${esc(e.message)}</option>`; }
+}
+document.querySelectorAll("input[name=dl_dbwhat]").forEach((r) => r.addEventListener("change", () => {
+  $("dbTablesBox").style.display = dbWhat() === "tables" ? "" : "none";
+  $("dbSqlBox").style.display = dbWhat() === "sql" ? "" : "none";
+  updateName();
+}));
+$("dbConn").onchange = () => { dbTables = []; dbChosen.clear(); drawDbTables(); };
+$("btnDbTables").onclick = async () => {
+  if (!$("dbConn").value) return;
+  $("dbTables").innerHTML = '<div class="muted" style="cursor:default">Connecting…</div>';
+  try { dbTables = (await api(`connections/${encodeURIComponent($("dbConn").value)}/tables`)).tables; dbChosen.clear(); drawDbTables(); }
+  catch (e) { $("dbTables").innerHTML = `<div class="muted" style="cursor:default">${esc(e.message)}</div>`; }
+};
+$("dbFilter").addEventListener("input", () => drawDbTables());
+function drawDbTables() {
+  const f = $("dbFilter").value.trim().toLowerCase();
+  const shown = dbTables.filter((t) => !f || t.full_name.toLowerCase().includes(f));
+  $("dbTables").innerHTML = dbTables.length ? (shown.map((t) => `<div data-t="${esc(t.full_name)}"><span><input type="checkbox" ${dbChosen.has(t.full_name) ? "checked" : ""} style="pointer-events:none" />
+      <span class="mono">${esc(t.full_name)}</span></span><span class="muted">${t.columns} col</span></div>`).join("") || '<div class="muted" style="cursor:default">No match.</div>')
+    : '<div class="muted" style="cursor:default">Pick a connection, then “Show tables”.</div>';
+  $("dbPicked").textContent = dbChosen.size ? `${dbChosen.size} table(s) chosen` : "";
+}
+$("dbTables").addEventListener("click", (e) => {
+  const d = e.target.closest("[data-t]"); if (!d) return;
+  dbChosen.has(d.dataset.t) ? dbChosen.delete(d.dataset.t) : dbChosen.add(d.dataset.t); drawDbTables();
+});
+
+// ---- load ----
+let jobId = null, poll = null, jobKind = "loads", jobT0 = 0;
+$("btnLoad").onclick = async () => {
+  msg($("err"), "");
+  const mode = document.querySelector("input[name=dl_mode]:checked").value;
+  const body = { workspace: wsName(), table: $("table").value.trim(), mode, format: $("format").value,
+    header: $("header").value === "" ? null : $("header").value === "true", delimiter: $("delim").value.replace("\\t", "\t") || null,
+    add_filename: $("addFile").checked, sheet: $("sheet").value.trim() || null, external: src === "folder" && $("external").checked };
+  $("btnLoad").disabled = true;
+  try {
+    if (src === "db") {
+      const sbody = { connection_id: $("dbConn").value, workspace: body.workspace, mode };
+      if (!sbody.connection_id) throw new Error("Choose a saved connection.");
+      if (dbWhat() === "sql") { sbody.sql = $("dbSql").value.trim(); sbody.table = body.table; if (!sbody.sql) throw new Error("Write the query."); }
+      else { sbody.tables = [...dbChosen]; if (!sbody.tables.length) throw new Error("Choose at least one table."); }
+      const r = await api("stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sbody) });
+      jobId = r.job_id; jobKind = "stages";
+      showJob({ workspace: body.workspace, table: dbWhat() === "sql" ? body.table : `${sbody.tables.length} table(s)` });
+      return;
+    }
+    if (src === "table") {
+      const from = $("tableSrc").value;
+      if (!from) throw new Error("Choose the table to copy.");
+      if (!body.table) throw new Error("Give the new table a name.");
+      const r = await api("copy-table", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from, to: body.workspace + "." + body.table, mode, ...mapBody() }) });
+      jobId = r.job_id; jobKind = "loads"; showJob(body);
+      return;
+    }
+    body.source = await currentSource();
+    if (src === "s3") body.external = $("s3External").checked;
+    const mb = mapBody();
+    if (mb.columns && body.external) throw new Error("A column map can't be used on a read-in-place table — untick “Read in place”, or load everything as is.");
+    Object.assign(body, mb);
+    $("loadHint").textContent = "";
+    const r = await api("load", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    staged = null;   // the worker removes the staged upload once the load succeeded
+    jobId = r.job_id; jobKind = "loads"; showJob(body);
+  } catch (e) { msg($("err"), e.message); $("loadHint").textContent = ""; }
+  finally { $("btnLoad").disabled = false; }
+};
+function showJob(body) {
+  jobT0 = Date.now();
+  $("jobCard").style.display = ""; $("jobTitle").textContent = jobKind === "stages"
+    ? `Copying into ${body.workspace} (${body.table})` : `Loading into ${body.workspace}.${body.table}`;
+  $("bar").style.width = "3%"; $("jobLog").textContent = ""; msg($("jobMsg"), ""); $("jobNotes").innerHTML = ""; $("openVault").style.display = "none"; $("btnStop").style.display = "";
+  $("jobCard").scrollIntoView({ behavior: "smooth" });
+  clearTimeout(poll); tick();
+}
+async function tick() {
+  try {
+    const s = await api(`${jobKind}/${jobId}`);
+    const secs = Math.round((Date.now() - jobT0) / 1000);
+    const extra = s.tables_total ? ` · table ${Math.min((s.tables_done || 0) + 1, s.tables_total)} of ${s.tables_total}` : "";
+    $("jobPhase").textContent = (s.state === "queued" ? "waiting for a worker…" : s.phase || s.state) + extra +
+      (s.rows ? ` · ${Number(s.rows).toLocaleString()} rows` : "") + (s.state === "running" ? ` · ${secs} s` : "");
+    const pct = s.tables_total ? 5 + 95 * (s.tables_done || 0) / s.tables_total : (s.state === "running" ? 10 : 3);
+    $("bar").style.width = (s.state === "done" ? 100 : Math.max(3, pct)) + "%";
+    $("jobLog").textContent = s.logs.map((l) => `${l.ts.slice(11, 19)}  ${l.msg}`).join("\n");
+    const notes = [];
+    (s.warnings || []).forEach((w) => notes.push(`⚠ ${Number(w.count).toLocaleString()} value(s) in <b>${esc(w.column)}</b> couldn't be converted to ${esc(w.type)} — left empty (NULL).`));
+    if ((s.protected || []).length) notes.push("🔒 Protected: " + s.protected.map((p) => `<span class="mono">${esc(p.name)}</span> (${esc(p.kind)})`).join(", ") + ".");
+    $("jobNotes").innerHTML = notes.join("<br>");
+    if (s.state === "done") {
+      msg($("jobMsg"), jobKind === "stages"
+        ? `Done: ${s.tables.map((t) => `${t.table} (${Number(t.rows).toLocaleString()})`).join(", ")} — ${s.seconds} s.`
+        : `Done: ${s.table} — ${Number(s.rows || 0).toLocaleString()} rows in ${s.seconds} s.`, "ok");
+      $("openVault").style.display = ""; $("btnStop").style.display = "none"; loadWorkspaces(); loadRecent(); document.dispatchEvent(new Event("vaultdata:changed")); return;
+    }
+    if (s.state === "failed") { msg($("jobMsg"), s.error || "The load failed — see the log."); $("btnStop").style.display = "none"; loadRecent(); return; }
+  } catch (e) { msg($("jobMsg"), e.message); }
+  poll = setTimeout(tick, 1000);
+}
+$("btnStop").onclick = () => jobId && api(`${jobKind}/${jobId}/stop`, { method: "POST" }).catch(() => {});
+
+async function loadRecent() {
+  try {
+    const d = await api("recent");
+    $("recent").innerHTML = d.recent.length ? "<table><thead><tr><th>When</th><th>Table</th><th>What</th><th>Rows</th></tr></thead><tbody>" +
+      d.recent.map((h) => `<tr><td class="muted">${new Date(h.at).toLocaleString()}</td><td class="mono">${esc(h.workspace)}.${esc(h.table_name)}</td>
+        <td>${esc(h.action)}${h.detail.source && h.detail.source.file_count ? ` · ${h.detail.source.file_count} file(s)` : ""}</td>
+        <td>${h.detail.rows != null ? Number(h.detail.rows).toLocaleString() : ""}</td></tr>`).join("") + "</tbody></table>"
+      : '<p class="hint">Nothing loaded yet.</p>';
+  } catch (e) { $("recent").innerHTML = `<p class="hint">${esc(e.message)}</p>`; }
+}
+
+
+// ---- staged uploads, the current source, change tracking ----
+let staged = null;
+const tri = (v) => (v === "" ? null : v === "true");
+const jsonHdr = { "Content-Type": "application/json" };
+const fileSig = () => JSON.stringify(picked.map((f) => [f.name, f.size, f.lastModified]));
+async function ensureStaged() {
+  if (staged && staged.sig === fileSig()) return staged;
+  const fd = new FormData(); picked.forEach((f) => fd.append("files", f));
+  const up = await api("upload", { method: "POST", body: fd });
+  staged = { sig: fileSig(), upload_id: up.upload_id, files: up.files.map((f) => f.name) };
+  return staged;
+}
+async function currentSource() {
+  if (src === "upload") {
+    if (!picked.length) throw new Error("Choose at least one file.");
+    $("loadHint").textContent = "uploading…";
+    try { const st = await ensureStaged(); return { kind: "upload", upload_id: st.upload_id, files: st.files }; }
+    finally { $("loadHint").textContent = ""; }
+  }
+  if (src === "folder") {
+    if (!$("pattern").value.trim()) throw new Error("Pick a file/folder or type a pattern.");
+    return { kind: "folder", pattern: $("pattern").value.trim() };
+  }
+  if (src === "s3") {
+    if (!$("s3Loc").value) throw new Error("Choose (or add) an S3 location.");
+    if (!$("s3Pattern").value.trim().startsWith("s3://")) throw new Error("The path starts with s3://bucket/…");
+    return { kind: "s3", location_id: $("s3Loc").value, pattern: $("s3Pattern").value.trim() };
+  }
+  if (src === "table") {
+    if (!$("tableSrc").value) throw new Error("Choose the table to copy.");
+    return { kind: "table", table: $("tableSrc").value };
+  }
+  if (src === "db") throw new Error("The column map isn't available for database copies yet.");
+  if (!$("url").value.trim()) throw new Error("Paste a link.");
+  return { kind: "url", url: $("url").value.trim() };
+}
+function srcSig() {
+  const o = { src, f: $("format").value, h: $("header").value, d: $("delim").value, sh: $("sheet").value };
+  if (src === "upload") o.u = fileSig(); else if (src === "folder") o.p = $("pattern").value.trim();
+  else if (src === "s3") o.p = [$("s3Loc").value, $("s3Pattern").value.trim()]; else if (src === "url") o.u = $("url").value.trim();
+  else if (src === "table") o.t = $("tableSrc").value;
+  return JSON.stringify(o);
+}
+const readInPlace = () => (src === "folder" && $("external").checked) || (src === "s3" && $("s3External").checked);
+function sourceChanged() {
+  if (cmap && cmap.sig !== srcSig()) dropMap("The source changed — preview the columns again if you still want a column map.");
+  const off = src === "db" || readInPlace();
+  $("btnPreview").disabled = off;
+  if (!cmap) $("colStatus").textContent = src === "db" ? "Not available for database copies yet." : readInPlace() ? "Not available for read-in-place tables (nothing is copied)." : $("colStatus").dataset.keep || "";
+}
+["pattern", "url", "s3Pattern", "delim", "sheet"].forEach((id) => $(id).addEventListener("input", sourceChanged));
+["format", "header", "s3Loc", "tableSrc", "external", "s3External"].forEach((id) => $(id).addEventListener("change", sourceChanged));
+
+async function loadTableChoices() {
+  try {
+    const cat = (await api("catalog")).workspaces;
+    const cur = $("tableSrc").value;
+    $("tableSrc").innerHTML = cat.filter((w) => w.tables.length).map((w) => `<optgroup label="${esc(w.name)}">` +
+      w.tables.map((t) => `<option value="${esc(w.name + "." + t.name)}">${esc(t.name)} · ${Number(t.row_count || 0).toLocaleString()} rows</option>`).join("") + "</optgroup>").join("")
+      || '<option value="">— no tables yet —</option>';
+    if (cur) $("tableSrc").value = cur;
+  } catch (e) { $("tableSrc").innerHTML = `<option value="">${esc(e.message)}</option>`; }
+}
+
+// ================= the column map (roadmap L7) =================
+let cmap = null;   // {sig, cols: [{source, sql, samples, keep, name, type, prec, fmt, def, cast, prot, pm, sugg}]}
+let tpls = [];
+const PM0 = { kf: 0, kl: 0, ch: "*", em: false, salt: "", len: 64, text: "[REDACTED]", seed: "" };
+const TYPE_OPTS = [["", "keep as is"], ["text", "text"], ["integer", "integer"], ["bigint", "bigint"], ["decimal", "decimal(p,s)"], ["double", "double"],
+  ["boolean", "boolean"], ["date", "date"], ["timestamp", "timestamp"], ["json", "json"]];
+const PROT_OPTS = [["none", "none"], ["mask", "mask"], ["hash", "hash (one-way code)"], ["redact", "redact (fixed text)"], ["nullify", "empty (NULL)"], ["shuffle", "shuffle between rows"]];
+const EXPLAIN = {
+  mask: "Hides characters with a symbol; the first or last few can stay visible (an e-mail can keep its domain). Values too short to show anything are hidden completely. The column becomes text.",
+  hash: "Replaces each value with a one-way code. The same value always gives the same code, so joins and counts still work. The salt (kept secret, never stored) stops others guessing values. The column becomes text.",
+  redact: "Replaces every value with the same fixed text. The column becomes text.",
+  nullify: "Empties the column — every value becomes NULL — but keeps its type.",
+  shuffle: "Moves the values around between the rows of this column: each row gets another row's value. Values stay realistic but no longer belong to the right person. The type is kept. The same seed gives the same shuffle.",
+};
+const opt = (list, cur) => list.map(([v, l]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(l)}</option>`).join("");
+
+function dropMap(note) {
+  cmap = null; $("onlyListed").checked = false;
+  $("colBox").style.display = "none"; $("btnReset").style.display = "none"; $("btnPreview").textContent = "🔍 Preview columns";
+  $("colStatus").textContent = note || ""; $("colStatus").dataset.keep = note || "";
+  msg($("colErr"), "");
+}
+$("btnReset").onclick = () => dropMap("");
+
+$("btnPreview").onclick = async () => {
+  msg($("colErr"), ""); $("btnPreview").disabled = true; $("colStatus").textContent = "reading the first rows…";
+  try {
+    const source = await currentSource();
+    const d = await api("inspect", { method: "POST", headers: jsonHdr, body: JSON.stringify({ source, format: $("format").value,
+      header: tri($("header").value), delimiter: $("delim").value.replace("\\t", "\t") || null, sheet: $("sheet").value.trim() || null }) });
+    buildMap(d);
+  } catch (e) { msg($("colErr"), e.message); $("colStatus").textContent = ""; }
+  finally { $("btnPreview").disabled = false; sourceChanged(); }
+};
+
+function buildMap(d) {
+  const cols = d.columns.map((c) => {
+    const sg = c.suggestion, p = (sg && sg.params) || {};
+    return { source: c.name, sql: c.sql_type, samples: c.samples, keep: true, name: c.name, type: "", prec: "18,2", fmt: "", def: "", cast: "null",
+      prot: sg ? sg.kind : "none", sugg: sg ? sg.reason : "",
+      pm: { ...PM0, kf: p.keep_first ?? 0, kl: p.keep_last ?? 0, ch: p.char || "*", em: !!p.email, text: p.text || PM0.text } };
+  });
+  cmap = { sig: srcSig(), cols }; $("onlyListed").checked = false;
+  $("colBox").style.display = ""; $("btnReset").style.display = ""; $("btnPreview").textContent = "↻ Preview again";
+  const files = d.format === "table" ? "" : ` from ${d.files.length} of ${d.file_count} file(s)`;
+  $("colStatus").textContent = `${cols.length} column(s)${files}. Nothing is loaded yet.`; $("colStatus").dataset.keep = "";
+  renderGrid();
+}
+
+function renderGrid() {
+  const n = cmap.cols.filter((c) => c.sugg && c.prot !== "none").length;
+  $("colBanner").style.display = n ? "" : "none";
+  $("colBanner").innerHTML = n ? `🛡 ${n} column(s) <b>look sensitive</b> and are already set to be protected (marked orange). That is only a guess —
+    check each one, change the protection or set it to “none”. Nothing is applied until you press Load.` : "";
+  const head = '<thead><tr><th style="width:44px">Keep</th><th>Column in the data</th><th>Load as</th><th>Type</th><th>If empty</th><th>Protect</th></tr></thead>';
+  const rows = cmap.cols.map((c, i) => {
+    const dis = c.keep ? "" : " disabled";
+    const main = `<tr data-i="${i}" class="${c.keep ? "" : "off"} ${c.sugg && c.prot !== "none" ? "sugg" : ""}">
+      <td><input type="checkbox" data-f="keep"${c.keep ? " checked" : ""} /></td>
+      <td><b class="mono">${esc(c.source)}</b> <span class="muted">${esc(c.sql)}</span><div class="smp" title="${esc(c.samples.map((v) => v == null ? "NULL" : v).join(" | "))}">${c.samples.map((v) => v == null ? "<i>NULL</i>" : esc(v)).join(" · ")}</div>
+        ${c.sugg && c.prot !== "none" ? `<span class="tag">🛡 ${esc(c.sugg)}</span>` : ""}</td>
+      <td><input type="text" data-f="name" value="${esc(c.name)}"${dis} /></td>
+      <td><select data-f="type"${dis}>${opt(TYPE_OPTS, c.type)}</select></td>
+      <td><input type="text" data-f="def" value="${esc(c.def)}" placeholder="leave empty"${dis} /></td>
+      <td><select data-f="prot"${dis}>${opt(PROT_OPTS, c.prot)}</select></td></tr>`;
+    return main + detailRow(c, i);
+  }).join("");
+  $("cm").innerHTML = head + "<tbody>" + rows + "</tbody>";
+}
+function detailRow(c, i) {
+  if (!c.keep || (!c.type && c.prot === "none")) return "";
+  const parts = [];
+  if (c.type) {
+    let t = `<span class="pl"><label>if a value doesn't convert <select data-f="cast"><option value="null"${c.cast === "null" ? " selected" : ""}>leave it empty (NULL) and warn me</option>
+      <option value="fail"${c.cast === "fail" ? " selected" : ""}>stop the load</option></select></label>`;
+    if (c.type === "decimal") t += `<label>precision,scale <input type="text" class="s" data-f="prec" value="${esc(c.prec)}" /></label>`;
+    if (c.type === "date" || c.type === "timestamp") t += `<label>text format <input type="text" class="m" data-f="fmt" value="${esc(c.fmt)}" placeholder="e.g. %d/%m/%Y" /></label>`;
+    parts.push(t + "</span>");
+  }
+  if (c.prot !== "none") {
+    const p = c.pm; let t = `<div class="hint">${esc(EXPLAIN[c.prot])}</div><span class="pl">`;
+    if (c.prot === "mask") t += `<label>keep first <input type="text" class="s" data-f="pm.kf" value="${esc(p.kf)}" /></label><label>keep last <input type="text" class="s" data-f="pm.kl" value="${esc(p.kl)}" /></label>
+      <label>symbol <input type="text" class="s" data-f="pm.ch" value="${esc(p.ch)}" maxlength="1" /></label><label><input type="checkbox" data-f="pm.em"${p.em ? " checked" : ""} /> e-mail: keep the part after @</label>`;
+    if (c.prot === "hash") t += `<label>salt <input type="password" class="m" data-f="pm.salt" value="${esc(p.salt)}" autocomplete="new-password" /></label><label>code length <input type="text" class="s" data-f="pm.len" value="${esc(p.len)}" /></label>`;
+    if (c.prot === "redact") t += `<label>replace with <input type="text" class="m" data-f="pm.text" value="${esc(p.text)}" /></label>`;
+    if (c.prot === "shuffle") t += `<label>seed (optional) <input type="password" class="m" data-f="pm.seed" value="${esc(p.seed)}" autocomplete="new-password" /></label>`;
+    parts.push(t + "</span>");
+  }
+  return `<tr class="detail" data-i="${i}"><td></td><td colspan="5">${parts.join("")}</td></tr>`;
+}
+function onGrid(e) {
+  const el = e.target, f = el.dataset.f, row = el.closest("[data-i]"); if (!f || !row) return;
+  const c = cmap.cols[+row.dataset.i], v = el.type === "checkbox" ? el.checked : el.value;
+  if (f.startsWith("pm.")) c.pm[f.slice(3)] = v; else c[f] = v;
+  if (e.type === "change" && ["keep", "type", "prot"].includes(f)) renderGrid();
+}
+$("cm").addEventListener("input", onGrid);
+$("cm").addEventListener("change", onGrid);
+
+function isIdentity() {
+  return !$("onlyListed").checked && cmap.cols.every((c) => c.keep && c.name === c.source && !c.type && c.def === "" && c.prot === "none");
+}
+function toMap(forTemplate) {
+  return cmap.cols.map((c) => {
+    const o = { source: c.source };
+    if (!c.keep) return { ...o, include: false };
+    if (c.name && c.name !== c.source) o.name = c.name.trim();
+    if (c.type) {
+      o.type = c.type === "decimal" ? `decimal(${c.prec.replace(/\s/g, "") || "18,2"})` : c.type; o.cast_mode = c.cast;
+      if (c.fmt.trim() && (c.type === "date" || c.type === "timestamp")) o.format = c.fmt.trim();
+    }
+    if (c.def !== "") o.default = c.def;
+    if (c.prot !== "none") {
+      const p = c.pm, n = (x) => parseInt(x, 10) || 0;
+      o.protect = { kind: c.prot, ...(c.prot === "mask" ? { keep_first: n(p.kf), keep_last: n(p.kl), char: p.ch || "*", email: !!p.em }
+        : c.prot === "hash" ? { length: n(p.len) || 64, ...(forTemplate ? {} : { salt: p.salt }) }
+        : c.prot === "redact" ? { text: p.text } : c.prot === "shuffle" ? (forTemplate ? {} : { seed: p.seed }) : {}) };
+    }
+    return o;
+  });
+}
+function mapBody() {
+  if (!cmap) return {};
+  if (!cmap.cols.some((c) => c.keep)) throw new Error("Keep at least one column.");
+  const seen = new Set();
+  for (const c of cmap.cols.filter((x) => x.keep)) {
+    const nm = (c.name || c.source).toLowerCase();
+    if (seen.has(nm)) throw new Error(`Two columns are called “${nm}” — give one a different name.`);
+    seen.add(nm);
+  }
+  if (isIdentity()) return {};
+  return { columns: toMap(false), only_listed: $("onlyListed").checked };
+}
+
+// ---- templates ----
+async function loadTemplates(select) {
+  try {
+    tpls = (await api("colmaps")).templates;
+    $("tplSel").innerHTML = tpls.length ? tpls.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("") : '<option value="">— no templates yet —</option>';
+    if (select) $("tplSel").value = select;
+  } catch (e) { $("tplSel").innerHTML = `<option value="">${esc(e.message)}</option>`; }
+}
+$("btnTplApply").onclick = () => {
+  msg($("colErr"), "");
+  const t = tpls.find((x) => x.id === $("tplSel").value);
+  if (!cmap) return msg($("colErr"), "Preview the columns first, then apply a template.");
+  if (!t) return msg($("colErr"), "Choose a template.");
+  const byPos = $("tplBy").value === "pos";
+  let hit = 0, miss = 0;
+  t.columns.forEach((e, k) => {
+    const c = byPos ? cmap.cols[k] : cmap.cols.find((x) => x.source === e.source);
+    if (!c) { miss++; return; }
+    hit++;
+    c.keep = e.include !== false; c.name = e.name || c.source; c.def = e.default == null ? "" : String(e.default);
+    c.cast = e.cast_mode || "null"; c.fmt = e.format || "";
+    const m = /^decimal\((.+)\)$/.exec(e.type || "");
+    c.type = m ? "decimal" : (e.type || ""); c.prec = m ? m[1] : "18,2";
+    const p = e.protect || {}; c.prot = p.kind || "none"; c.sugg = c.prot === "none" ? c.sugg : "";
+    c.pm = { ...PM0, kf: p.keep_first ?? 0, kl: p.keep_last ?? 0, ch: p.char || "*", em: !!p.email, len: p.length || 64, text: p.text || PM0.text, salt: "", seed: "" };
+  });
+  $("onlyListed").checked = !!t.only_listed;
+  renderGrid();
+  $("colStatus").textContent = `Template “${t.name}” applied to ${hit} column(s)` + (miss ? `; ${miss} template column(s) had no match` : "") +
+    (cmap.cols.some((c) => c.prot === "hash" || c.prot === "shuffle") ? ". Re-enter any salt / seed." : ".");
+};
+$("btnTplSave").onclick = async () => {
+  msg($("colErr"), "");
+  if (!cmap) return msg($("colErr"), "Preview the columns first, then save the map as a template.");
+  const name = (prompt("Name this template (it remembers names, types, fill values and the kind of protection — not salts or seeds):") || "").trim();
+  if (!name) return;
+  try { const r = await api("colmaps", { method: "POST", headers: jsonHdr, body: JSON.stringify({ name, columns: toMap(true), only_listed: $("onlyListed").checked }) });
+        await loadTemplates(r.template.id); $("colStatus").textContent = `Saved template “${name}”.`; }
+  catch (e) { msg($("colErr"), e.message); }
+};
+$("btnTplDel").onclick = async () => {
+  const t = tpls.find((x) => x.id === $("tplSel").value); if (!t || !confirm(`Delete template “${t.name}”?`)) return;
+  try { await api("colmaps/" + t.id, { method: "DELETE" }); await loadTemplates(); } catch (e) { msg($("colErr"), e.message); }
+};
+
+// ---- the Vault page drives this part: tab switches (lazy first load), "New table" preset, refresh ----
+let started = false;
+window.vaultDl = {
+  showLoad() { if (!started) { started = true; } loadWorkspaces().catch((e) => msg($("err"), e.message)); loadRecent(); loadTemplates(); },
+  async copyFrom(ws, tbl) {   // Tables tab → "Copy with column map…": this table as the source, columns previewed
+    document.querySelector("#dl_srcTabs [data-src=table]").click();
+    await loadTableChoices(); $("tableSrc").value = ws + "." + tbl;
+    await loadWorkspaces(); $("ws").value = ws; $("table").value = tbl + "_copy"; updateName(); sourceChanged();
+    $("btnPreview").click();
+  },
+  newTable(ws) { this.showLoad(); setTimeout(() => { if ([...$("ws").options].some((o) => o.value === ws)) { $("ws").value = ws; $("wsNew").style.display = "none"; updateName(); } }, 400); $("table").focus(); },
+};
+$("openVault").onclick = () => { location.hash = "#data"; };
+document.dispatchEvent(new Event("vaultdl:ready"));   // the Tables part (earlier script) may have been opened on #data/load or #data/sql
 })();
 </script>
 </body>

@@ -117,7 +117,7 @@
     <div class="card">
       <h2>Tables</h2>
       <p class="hint">Every Vault Data table. <b>Load</b> makes it a table here, named after it — load several and
-        join them in SQL. New files? Load them in <a href="/tools/data-lake/" target="_top">Data Lake</a> first.</p>
+        join them in SQL. New files? Load them in <a href="/tools/vault/#data/load" target="_top">Vault → Vault Data → Load files</a> first.</p>
       <input type="search" id="catFilter" placeholder="filter tables or columns…" style="width:100%;font-size:0.8rem;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);" />
       <div class="cat-tree" id="catTree"><p class="hint">Loading…</p></div>
       <h2 style="margin-top:12px;">Loaded</h2>
@@ -542,20 +542,20 @@ document.getElementById("btnSaveToVault").addEventListener("click", async () => 
 });
 
 // ── Save to Vault Data (roadmap L4): the full result becomes a table `workspace.table` (Parquet), usable from
-// Data Lake SQL and every other tool. A name that exists → asks, then overwrites.
+// Vault Data SQL and every other tool. A name that exists → asks, then overwrites.
 document.getElementById("btnSaveToLake").addEventListener("click", async () => {
   if (!STATE.totalRows && STATE.totalRows !== 0) { showError("Run a query first."); return; }
-  const full = (prompt("Save the full result to Vault Data as workspace.table (e.g. staging.orders_clean):") || "").trim();
+  const full = (prompt("Save the full result to Vault Data as table, or workspace.table (e.g. orders_clean, or staging.orders_clean). No workspace = system:") || "").trim();
   if (!full) return;
-  const m = full.match(/^([a-z][a-z0-9_]*)\.([a-z][a-z0-9_]*)$/);
-  if (!m) { showError("Use workspace.table — lowercase letters, digits and _ (e.g. staging.orders_clean)."); return; }
+  const m = full.match(/^(?:([a-z][a-z0-9_]*)\.)?([a-z][a-z0-9_]*)$/);
+  if (!m) { showError("Use table or workspace.table — lowercase letters, digits and _ (e.g. staging.orders_clean)."); return; }
   showError(null);
   const btn = document.getElementById("btnSaveToLake");
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = "Saving…";
   const send = (mode) => fetch("export/lake", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ workspace: m[1], table: m[2], mode }) });
+    body: JSON.stringify({ workspace: m[1] || "system", table: m[2], mode }) });
   try {
     let res = await send("create");
     if (res.status === 409 && confirm(`${full} already exists. Replace it with this result?`)) res = await send("overwrite");

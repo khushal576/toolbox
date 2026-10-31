@@ -116,6 +116,25 @@ Save. The confirmed key is stored in the entry (`host_key`), and every later con
 (`core/ssh_client.py`). `core/vault.update_secret()` exists so a key can be pinned later without changing
 the entry's id.
 
+## Since roadmap L6/L7 — one front door: 📦 Vault Data = Tables | ⬆ Load files
+
+- The Data section has two sub-tabs (the 🔎 SQL tab was dropped — SQL is Duck Lab's job). **Tables** = the workspace → table
+  browser (`system` pinned first, marked built-in, no rename/delete; "＋ New table" jumps to Load files with that workspace chosen;
+  "Copy with column map…" copies the table through the map editor; a 🔒 line lists columns protected when it was loaded).
+  **⬆ Load files** is the former Data Lake page, ported natively into this file (second `<script>` IIFE at the end; every id is
+  prefixed `dl_` — including the `dl_src-*` source panes — CSS scoped under `.dl`, radio names `dl_*`) and calling the backend at
+  `/tools/data-lake/<endpoint>` (absolute path; Vault's own endpoints stay relative). Deep links: `#data`, `#data/load`.
+- **Column map (L7)** = step 2 of Load files: "🔍 Preview columns" calls `/inspect` (first files only; uploads are staged first and
+  reused by the load), then an editable grid (Keep | Load as | Type | If empty | Protect + params/explanations), orange rows are
+  PII guesses that are pre-selected but only applied when you press Load, templates (save / apply by name or position — salts and
+  seeds are never saved), "Drop other columns". A grid left unchanged sends no map (the quick path). Changing the source drops the
+  preview. Not offered for database copies or read-in-place tables. Job notes show cast warnings and protected columns.
+- The Tables part and the Load part talk through two DOM events (`vaultdl:ready`, `vaultdata:changed`) and
+  `window.vaultDl` (`showLoad`, `newTable(ws)`, `copyFrom(ws, table)`) — the first script runs before the second, so don't call
+  `vaultDl` at parse time.
+- Everything is `workspace.table`; no table exists outside a workspace. `system` is built in (`core/lake.py`).
+- UI naming: only **Vault** (🔑 Secrets) and **Vault Data**; the words "Data Lake"/"Lakehouse" are gone.
+
 ## Since roadmap L1 — 📦 Data (the lake catalog)
 
 - The Vault page has two tabs: **🔑 Secrets** (everything below) and **📦 Data** — workspaces → tables, like the
@@ -138,7 +157,7 @@ the entry's id.
 - **L5:** `GET /data/tables/{ws}/{name}/profile[?refresh=true]` (column profile, cached per table version) and
   `/joins` (suggested joins, checked on the data) — the table page's "Profile columns" / "Suggest joins" buttons.
   New secret kind **`s3_location`** `{access_key_id, secret_access_key, region, endpoint?, url_style?, use_ssl?}`
-  (created from Data Lake's ☁ S3 tab via `POST /secrets`); `POST /test-s3 {data, path}` lists what a path matches
+  (created from the Load files → ☁ S3 source via `POST /secrets`); `POST /test-s3 {data, path}` lists what a path matches
   with those credentials before saving. Columns now carry `sql_type` (varchar(100), numeric(12,2)…).
 - Verified live: dataset → `datasets.<name>` table + preview; a 200k-row table written to S3 storage as one
   Parquet file, renamed/moved (files stay — stored by table id), history kept; non-empty workspace protected; bad

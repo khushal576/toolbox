@@ -58,7 +58,7 @@ def test_import_file_and_export_round_trip(L, tmp_path):
     assert out["rows"] == 3 and duckdb.sql(f"SELECT sum(id) FROM '{out['path']}'").fetchone()[0] == 6
     out = L.export_table("staging", "people", tmp_path / "p.csv", "csv", limit=2)
     assert out["rows"] == 2 and out["path"].read_text().splitlines() == ["id,name,amount", "1,a,1.5", "2,b,2.5"]
-    assert [w["name"] for w in L.catalog()] == ["staging"] and L.catalog()[0]["tables"][0]["row_count"] == 3
+    assert [w["name"] for w in L.catalog()] == ["staging", "system"] and L.catalog()[0]["tables"][0]["row_count"] == 3  # `system` is built in (L6)
     with pytest.raises(L.ScopeError):
         L.ScopedLake("t", "read").import_file("staging", "x", csv)
     assert L.ScopedLake("t", "read").export_table("staging", "people", tmp_path / "r.parquet")["rows"] == 3
@@ -205,7 +205,7 @@ def test_staged_tables_keep_declared_types(L, tmp_path):
     duckdb.sql(f"COPY (SELECT 'a' AS name, 1.5::DECIMAL(6,2) AS amount, 1 AS n) TO '{out}' (FORMAT PARQUET)")
     L.write_table("w", "t", [out], create_workspace_if_missing=True,
                   source={"kind": "database", "column_types": {"name": "character varying(100)", "amount": "numeric(12,2)"}})
-    cols = {c["name"]: c["sql_type"] for c in L.catalog()[0]["tables"][0]["columns"]}
+    cols = {c["name"]: c["sql_type"] for c in next(w for w in L.catalog() if w["name"] == "w")["tables"][0]["columns"]}
     assert cols == {"name": "varchar(100)", "amount": "numeric(12,2)", "n": "integer"}
 
 

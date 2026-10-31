@@ -120,7 +120,7 @@ containers/gateway pieces outside the roadmap session that owns them.
   `lake.scoped("<tool>")` with manifest `vault: {data: none|read|write}`. Old
   Vault datasets are imported once into workspace `datasets`. Phase L plan
   (load files L2, SQL L3, every tool L4): `docs/roadmap/ROADMAP.md`. **L2:**
-  new tool **Data Lake** (`data-lake/`, runtime data) loads uploads, the
+  new tool **Data Lake** (`data-lake/`, runtime data; its page lives in the Vault since L6) loads uploads, the
   shared **data folder** (`~/toolbox-data` → `/data` read-only in rt-data +
   worker, `TOOLBOX_DATA_DIR`), links and patterns into tables — worker job,
   DuckDB streams to Parquet with a memory cap (1.5 GB CSV → 530 MiB peak);
@@ -148,7 +148,20 @@ containers/gateway pieces outside the roadmap session that owns them.
   the source DB's declared types). Owner decisions in L5: inside a tool the
   workspace sidebar slides away (☰/Ctrl+K); Duck Lab and DataFrame Studio take
   data ONLY from Vault Data (Athena-style Tables bar; files come in through Data
-  Lake) — DataFrame Studio joins other tables by name.
+  Lake) — DataFrame Studio joins other tables by name. **L6 (owner, 2026-10-31):** only two names are left in the UI —
+  **Vault** (secrets) and **Vault Data** (the word "Data Lake"/"Lakehouse" is gone). The Data Lake page was moved
+  into the Vault page's 📦 Vault Data section as sub-tabs **Tables | ⬆ Load files** (`vault/ui/index.html`, deep links `#data`, `#data/load`;
+  the SQL tab was dropped later the same day — SQL is Duck Lab's job; `data-lake/query.py` endpoints remain unused by the UI); `data-lake/` stays as the backend (runtime data, worker jobs,
+  endpoints unchanged, called by the Vault page at `/tools/data-lake/…`) with manifest `hidden: true` (no card /
+  sidebar / Settings switch) and `GET /tools/data-lake/` just redirects to Vault → Vault Data. Every table lives
+  in a workspace; the built-in **`system`** workspace (`lake.SYSTEM_WORKSPACE`) always exists, can't be renamed
+  or deleted, and is where anything saved without a workspace goes (`write_table` / `import_file` /
+  `register_external` treat an empty workspace as `system`; Duck Lab / DataFrame Studio / SQL Studio accept a bare
+  `table` when saving; every workspace picker in Load/SQL defaults to it). The SQL tab was dropped the same day (Duck Lab does SQL).
+  **L7 (owner, 2026-10-31): column map + protection on Load files** — keep only some columns, rename, cast types, fill empty values,
+  and mask / hash / redact / empty / shuffle sensitive ones (`data-lake/colmap.py`, one DuckDB SELECT over the reader; `POST /inspect`
+  previews columns, templates in Postgres `data_lake.colmaps`, `POST /copy-table` = masked copy of an existing table). Salts/seeds
+  never reach the catalog, templates or job args (Redis side channel, 30 min). See `data-lake/CLAUDE.md`.
 - **Notebook (roadmap N1):** `notebook-lab/` — Colab-style workspaces + Jupyter kernels in its OWN runtime `rt-notebook`
   (on-demand, one uvicorn worker, volume `notebook_data`). It executes user code, so that container has **no
   Postgres/S3/Vault credentials** (compose gives it only `TOOLBOX_REDIS_URL` and a bridge URL) — keep it that way; see `notebook-lab/CLAUDE.md`.

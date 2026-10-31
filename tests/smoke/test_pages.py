@@ -2,7 +2,7 @@
 
 import pytest
 
-from conftest import mounted_tools, request
+from conftest import mounted_tools, request, visible_tools
 
 TOOLS = mounted_tools()
 
@@ -20,7 +20,7 @@ def test_home_page_has_no_unavailable_tools():
         "a tool failed to load — check `docker compose logs toolbox`"
 
 
-@pytest.mark.parametrize("tool", TOOLS)
+@pytest.mark.parametrize("tool", visible_tools())
 def test_home_page_links_tool(tool):
     assert f'href="/tools/{tool}/"' in request("GET", "/").text
 

@@ -1,16 +1,19 @@
 """
-data-lake/server.py — the Data Lake tool (roadmap phase L): load files into Vault Data tables (L2), query them with
+data-lake/server.py — backend of Vault → Vault Data (roadmap phase L; the page moved into the Vault in L6): load files into Vault Data tables (L2), query them with
 SQL (L3, Athena style — query.py).
 
 Endpoints
 ---------
-GET  /                       the page
+GET  /                       redirects to Vault → Vault Data (the page lives in vault/ui)
 GET  /workspaces             workspaces (Vault Data) to load into
 GET  /folder?path=           list a folder of the shared data folder (read-only mount)
 GET  /folder/match?pattern=  which files a pattern matches (count, size, formats, first 20)
 POST /upload                 stage browser files (multipart, several) → {upload_id, files}
 POST /load                   start a load job → {job_id}   (body: see loader.run_load's spec)
-GET  /loads/{job_id}         job state: running/queued, phase, percent, log, result
+GET  /loads/{job_id}         job state: running/queued, phase, percent, log, result (+ warnings, protected columns)
+POST /inspect                {source, format, header, delimiter, sheet} → columns + sample values + protection guesses
+GET/POST /colmaps  DELETE /colmaps/{id}   saved column maps (templates; salts/seeds never stored)       (roadmap L7)
+POST /copy-table             {from, to, mode, columns, only_listed} → {job_id}: a (masked) copy of a table
 POST /loads/{job_id}/stop    stop it
 GET  /recent                 latest table changes in Vault Data
 GET  /s3/locations           saved Vault S3 locations (names only)          (roadmap L5)
@@ -48,12 +51,13 @@ from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from starlette.background import BackgroundTask
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 try:
-    from data_lake import loader, query, sources, staging
+    from data_lake import colmap, loader, query, sources, staging
 except ImportError:  # standalone: cd data-lake && uvicorn server:app
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import colmap
     import loader
     import query
     import sources
@@ -62,7 +66,7 @@ except ImportError:  # standalone: cd data-lake && uvicorn server:app
 from core import lake as lake_store
 from core.jobs.runner import AlreadyRunning, JobRunner
 
-app = FastAPI(title="Data Lake", description="Load files into Vault Data tables (Parquet) and query them with SQL.")
+app = FastAPI(title="Vault Data loader", description="Backend of Vault → Vault Data: load files into tables (Parquet) and query them with SQL.")
 _UI = Path(__file__).resolve().parent / "ui" / "index.html"
 JOBS = JobRunner("data-lake", log_size=200)
 lake = lake_store.scoped("data-lake")
@@ -83,6 +87,7 @@ class Source(BaseModel):
     pattern: Optional[str] = None
     url: Optional[str] = None
     location_id: Optional[str] = None   # kind "s3": the Vault S3 location (roadmap L5)
+    table: Optional[str] = None         # kind "table" (inspect only): "workspace.table" (roadmap L7)
 
 
 class LoadBody(BaseModel):
@@ -96,6 +101,8 @@ class LoadBody(BaseModel):
     add_filename: bool = False
     sheet: Optional[str] = None
     external: bool = False
+    columns: Optional[list[dict[str, Any]]] = None   # roadmap L7: the column map (colmap.py); None = load everything as is
+    only_listed: bool = False
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -142,6 +149,21 @@ async def upload(files: list[UploadFile]) -> dict[str, Any]:
     return {"upload_id": uid, "files": out}
 
 
+def _prepare_columns(columns: Optional[list[dict[str, Any]]], ref: str) -> tuple[Optional[list[dict[str, Any]]], Optional[str]]:
+    """Validate the column map's shape (400 on a mistake) and take its salts / seeds out of the job arguments — they go
+    to the worker through a short-lived Redis key instead (`loader.stash_secrets`); without Redis they stay inline."""
+    if not columns:
+        return None, None
+    try:
+        colmap.normalize_entries(columns)
+    except colmap.ColmapError as exc:
+        raise HTTPException(400, f"Column map: {exc}") from exc
+    clean, secrets = colmap.split_secrets(columns)
+    if secrets and loader.stash_secrets(ref, secrets):
+        return clean, ref
+    return columns, None
+
+
 @app.post("/load")
 def load(body: LoadBody) -> dict[str, Any]:
     try:
@@ -157,14 +179,18 @@ def load(body: LoadBody) -> dict[str, Any]:
             raise HTTPException(409, f"'{body.workspace}.{body.table}' already exists — choose append or overwrite.")
         except lake_store.NotFound:
             pass
+    if body.columns and body.external:
+        raise HTTPException(400, "A column map can't be used on a read-in-place (external) table — it is never copied.")
     spec = body.model_dump()
     if body.source.kind == "upload" and body.source.files:
         spec["file"] = body.source.files[0].split(".", 2)[-1]
     job_id = sources.new_upload_id()
+    spec["columns"], spec["secrets_ref"] = _prepare_columns(body.columns, job_id)
     try:
         JOBS.start(job_id, "load", loader.run_load, spec,
                    description=f"data-lake: load {body.workspace}.{body.table}")
     except AlreadyRunning as exc:
+        loader.drop_secrets(spec["secrets_ref"])
         raise HTTPException(409, str(exc)) from exc
     return {"job_id": job_id}
 
@@ -179,6 +205,7 @@ def load_status(job_id: str) -> dict[str, Any]:
         "done", "failed") else "failed"
     return {"job_id": job_id, "state": state, "phase": p.get("phase"), "percent": p.get("percent"),
             "rows": p.get("rows"), "table": p.get("table"), "seconds": p.get("seconds"),
+            "warnings": p.get("warnings") or [], "protected": p.get("protected") or [],
             "error": p.get("error") or v["error"], "logs": v["logs"]}
 
 
@@ -190,6 +217,101 @@ def load_stop(job_id: str) -> dict[str, Any]:
 @app.get("/recent")
 def recent() -> dict[str, Any]:
     return {"recent": lake.recent_history(15)}
+
+
+# ---- column map: preview, templates, masked copy (roadmap L7) --------------------------------------------------
+
+class InspectBody(BaseModel):
+    source: Source
+    format: str = "auto"
+    header: Optional[bool] = None
+    delimiter: Optional[str] = None
+    sheet: Optional[str] = None
+
+
+class TemplateBody(BaseModel):
+    name: str
+    columns: list[dict[str, Any]]
+    only_listed: bool = False
+
+
+class CopyBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    from_: str = Field(alias="from")                # "workspace.table"
+    to: str                                         # "workspace.table" (a bare table name goes to `system`)
+    mode: str = "create"
+    columns: Optional[list[dict[str, Any]]] = None
+    only_listed: bool = False
+
+
+@app.post("/inspect")
+def inspect(body: InspectBody) -> dict[str, Any]:
+    """Columns, types and sample values of what a load would read (first files only; nothing is loaded or stored)."""
+    try:
+        return loader.inspect_source(body.model_dump())
+    except (loader.LoadError, sources.SourceError, lake_store.LakeError) as exc:
+        raise _err(exc) from exc
+
+
+@app.get("/colmaps")
+def colmap_list() -> dict[str, Any]:
+    return {"templates": colmap.list_templates()}
+
+
+@app.post("/colmaps")
+def colmap_save(body: TemplateBody) -> dict[str, Any]:
+    try:
+        return {"template": colmap.save_template(body.name, body.columns, body.only_listed)}
+    except colmap.ColmapError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.delete("/colmaps/{tid}")
+def colmap_delete(tid: str) -> dict[str, Any]:
+    colmap.delete_template(tid)
+    return {"ok": True}
+
+
+def _split_name(full: str, what: str) -> tuple[str, str]:
+    ws, dot, name = (full or "").strip().partition(".")
+    if not dot:
+        ws, name = lake_store.SYSTEM_WORKSPACE, ws
+    try:
+        return lake_store.check_name(ws, f"{what} workspace"), lake_store.check_name(name, f"{what} table name")
+    except lake_store.LakeError as exc:
+        raise _err(exc) from exc
+
+
+@app.post("/copy-table")
+def copy_table(body: CopyBody) -> dict[str, Any]:
+    """A copy of a Vault Data table through a column map (keep / rename / cast / fill / mask / hash / shuffle) → a new
+    table, e.g. a masked copy to share. Worker job; poll it with GET /loads/{job_id}."""
+    if body.mode not in ("create", "append", "overwrite"):
+        raise HTTPException(400, "mode must be create, append or overwrite")
+    fws, fname = _split_name(body.from_, "source")
+    tws, tname = _split_name(body.to, "target")
+    if (fws, fname) == (tws, tname):
+        raise HTTPException(400, "The copy must go to a different table than its source.")
+    try:
+        lake.get_table(fws, fname)
+    except lake_store.LakeError as exc:
+        raise _err(exc) from exc
+    if body.mode == "create":
+        try:
+            lake.get_table(tws, tname)
+            raise HTTPException(409, f"'{tws}.{tname}' already exists — choose append or overwrite.")
+        except lake_store.NotFound:
+            pass
+    job_id = sources.new_upload_id()
+    cols, ref = _prepare_columns(body.columns, job_id)
+    spec = {"from": f"{fws}.{fname}", "workspace": tws, "table": tname, "mode": body.mode, "columns": cols,
+            "only_listed": body.only_listed, "secrets_ref": ref}
+    try:
+        JOBS.start(job_id, "copy", loader.run_copy, spec, description=f"data-lake: copy {fws}.{fname} → {tws}.{tname}")
+    except AlreadyRunning as exc:
+        loader.drop_secrets(ref)
+        raise HTTPException(409, str(exc)) from exc
+    return {"job_id": job_id}
 
 
 # ---- SQL (roadmap L3) ------------------------------------------------------------------------------------------

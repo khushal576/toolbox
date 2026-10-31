@@ -217,5 +217,5 @@ browser holds it exactly, else text), UUID and INTERVAL — a DECIMAL column use
 
 The left card is an Athena-style **Tables** list (Vault `GET /data/catalog`: workspaces → tables → columns with SQL
 types; filter box; **Load** → `/load/lake`, the table is registered under its own name). Files are no longer uploaded
-here — they come in through Data Lake (the `/upload` and `/load/vault` endpoints still exist, unused by the page).
+here — they come in through Vault → Vault Data → Load files (the `/upload` and `/load/vault` endpoints still exist, unused by the page).
 Old Vault datasets show up as tables in workspace `datasets` (imported by the Vault).

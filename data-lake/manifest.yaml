@@ -1,10 +1,11 @@
 # Plugin manifest — spec: docs/architecture/plugin-manifest.md
 schema_version: 1
 name: data-lake
-title: Data Lake
-description: Load files (CSV, JSON, Parquet, XML, Excel, .gz — one or thousands) into Vault Data tables as Parquet
-icon: 🏞️
+title: Vault Data loader
+description: Backend of Vault → Vault Data (Load files + SQL tabs) — no page of its own; loads files into Vault Data tables as Parquet
+icon: 📦
 category: tool
+hidden: true            # L6: its page moved into Vault → Vault Data; the API stays mounted here
 kind: python
 entry: data_lake.server:app
 runtime: data

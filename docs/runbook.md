@@ -20,30 +20,40 @@ the install icon at the right end of the address bar (or ⋮ menu → *Cast, sav
 Toolbox must be running (`docker compose up -d`) — the app is only a window onto it. Uninstall: in the app
 window, ⋮ → *Uninstall Toolbox*. (Without installing: `chromium --app=http://localhost:8000`.)
 
-**Your data files (Data Lake):** put files you want to load into **`~/toolbox-data`** (Toolbox sees it read-only;
-it can never change or delete them). Then open **Data Lake** → *Data folder* → pick a file, a folder or a pattern →
-choose a workspace and table name → *Load*. Uploading through the page or loading from a link works too. Browse the
-result in **Vault → 📦 Data**. Another folder: set `TOOLBOX_DATA_DIR=/path/to/folder` in `.env`, then
+**Your data files (Vault → Vault Data → ⬆ Load files):** put files you want to load into **`~/toolbox-data`** (Toolbox sees it read-only;
+it can never change or delete them). Then open **Vault** → **📦 Vault Data** → *Load files* → *Data folder* → pick a file, a folder or a pattern →
+choose a workspace (default: **system**, the built-in one) and a table name → *Load*. Uploading through the page or loading from a link works too. Browse the
+result under *Tables*. Another folder: set `TOOLBOX_DATA_DIR=/path/to/folder` in `.env`, then
 `docker compose up -d`.
 
-**Querying your tables (Data Lake → 🔎 SQL):** write SQL with tables as `workspace.table`, e.g.
-`SELECT c.country, sum(o.amount) FROM sales.orders o JOIN crm.customers c USING (customer_id) GROUP BY 1`.
-*Run* answers within 30 s; for big queries press *Run in background* (you can close the page — the result waits in
-*History*). Results can be paged, downloaded (CSV/Parquet) or saved as a new table; `CREATE TABLE ws.name AS SELECT …`
-does the same in one step. Queries never change or delete data; results are kept 7 days.
+**Querying your tables:** open **Duck Lab**, pick tables from its Tables bar (they appear as `workspace.table`) and write SQL there,
+e.g. `SELECT c.country, sum(o.amount) FROM sales.orders o JOIN crm.customers c USING (customer_id) GROUP BY 1`.
+Use *📦 Save to Vault Data* to keep a result as a table (a bare name goes to the `system` workspace).
+
+**Loading only some columns, renaming, casting, hiding sensitive data:** in **Vault → Vault Data → ⬆ Load files** pick the data, then
+press **🔍 Preview columns** (step 2). You get one row per column: untick *Keep* to leave it out, type a new name under *Load as*,
+choose a *Type* (a value that doesn't convert becomes empty and you are told how many — or choose "stop the load"), and put a value
+under *If empty* to fill blanks. *Protect* hides sensitive data while loading: **mask** (`j***@mail.com`, `**** 1234`), **hash** (a one-way
+code — the same person always gets the same code, so joins still work; needs a secret *salt* that is never stored), **redact** (fixed
+text), **empty** (NULL) or **shuffle** (values are swapped between rows: each row gets another row's value — realistic but not the right
+person's). Columns that look sensitive (e-mail, phone, Aadhaar, PAN, card, names, addresses…) are pre-set and marked orange — it is only a
+guess, check it. Nothing happens until you press Load; if you never press Preview the file loads as is. **Same structure again?** *Save as
+template…* and later *Apply template* (by column name, or by position for files without headers) — templates keep names, types and the
+kind of protection, never salts or seeds. A **masked copy** of a table already in Vault Data: Tables → open the table → *Copy with column
+map…*. Not available for database copies or read-in-place tables. A big shuffle uses more memory than a plain load.
 
 **Using tables in other tools:** Duck Lab, DataFrame Studio, SQL Studio (import dialog) and DataDiff list your
 tables under **📦 workspace** in their "Load from Vault" lists; their **📦 Save to Vault Data** buttons save a
-result as `workspace.table`. **Copying tables out of a database** (e.g. staging for a migration): save the
-connection in the Vault once, then Data Lake → *Database* → pick the connection → *Show tables* → tick tables (or
+result as `workspace.table` (just `table` = it goes to **system**). **Copying tables out of a database** (e.g. staging for a migration): save the
+connection in the Vault once, then Vault Data → Load files → *Database* → pick the connection → *Show tables* → tick tables (or
 write one SELECT) → workspace → *Load*. The database is only read.
 
-**Tables in AWS S3 (or MinIO etc.):** Data Lake → *S3* → *+ new S3 location* (name, access key, secret, region; an
+**Tables in AWS S3 (or MinIO etc.):** Vault Data → Load files → *S3* → *+ new S3 location* (name, access key, secret, region; an
 endpoint only for non-AWS storage) → *Test* → *Save to Vault*. Then type `s3://bucket/folder/` or a pattern →
 *Load* (copies it in) or tick *Read in place* (stays in S3, read on every query).
 
-**Knowing your data:** Vault → 📦 Data → a table → *Profile columns* (empty values, distinct values, min/max,
-averages, most common values) and *Suggest joins* (which columns match other tables). In Data Lake → SQL, the 🔗 next
+**Knowing your data:** Vault → 📦 Vault Data → Tables → a table → *Profile columns* (empty values, distinct values, min/max,
+averages, most common values) and *Suggest joins* (which columns match other tables). In Vault Data → SQL, the 🔗 next
 to a table does the same and writes the JOIN for you; *📊 Chart* draws a result.
 
 **A terminal on a server (SSH & SFTP → Terminal):** save the server once in the Vault (*Add SSH server*), then pick it
@@ -158,7 +168,7 @@ identical; a secret decrypted with the restored key).
 | `TOOLBOX_WORKER_SCALING` | `1:3` | Min:max background-job workers |
 | `TOOLBOX_IDLE_TIMEOUT_S` | (manifests: 900) | Minutes-unused before LaTeX/SSH/pgtools/Notebook sleep, in seconds (overrides Notebook's own 30 min too) |
 | `TOOLBOX_SLOW_MS` | 2000 | When a request counts as "slow" on the Status page |
-| `TOOLBOX_DATA_DIR` | `~/toolbox-data` | The folder Data Lake can load from (shared read-only) |
+| `TOOLBOX_DATA_DIR` | `~/toolbox-data` | The folder Vault Data → Load files can read from (shared read-only) |
 | `TOOLBOX_DATABASE_URL` | bundled Postgres | Use your own Postgres instead (a dedicated `toolbox` database) |
 | `TOOLBOX_DB_PASSWORD`, `TOOLBOX_S3_ACCESS_KEY`, `TOOLBOX_S3_SECRET_KEY` | local-only defaults | Passwords of the bundled services |
 | `TOOLBOX_VAULT_KEY` | (moved here in B7) | The Vault key — **back it up, never change it** while secrets exist |

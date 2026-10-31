@@ -134,7 +134,7 @@ def sweep_uploads() -> int:
 
 # ---- links -------------------------------------------------------------------------------------------------------
 
-def download(url: str, work: Path, log) -> Path:
+def download(url: str, work: Path, log, limit: int | None = None) -> Path:
     import httpx
 
     u = urlsplit(url)
@@ -150,5 +150,7 @@ def download(url: str, work: Path, log) -> Path:
             for chunk in r.iter_bytes(1 << 20):
                 fh.write(chunk)
                 n += len(chunk)
+                if limit is not None and n >= limit:   # a column preview only needs the head of the file
+                    break
     log("info", f"downloaded {name} ({n / 2**20:,.1f} MB)")
     return dest

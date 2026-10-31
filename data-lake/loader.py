@@ -11,7 +11,11 @@ Python). The Parquet files then become a managed table via core.lake (create / a
 spec = {"source": {"kind": "upload", "upload_id": ..., "files": [names]} | {"kind": "folder", "pattern": "sales/*.csv"}
                   | {"kind": "url", "url": "https://..."},
         "workspace": "sales", "table": "orders", "mode": "create|append|overwrite", "format": "auto|csv|json|...",
-        "header": null|true|false, "delimiter": null|",", "add_filename": bool, "sheet": null|"Sheet1", "external": bool}
+        "header": null|true|false, "delimiter": null|",", "add_filename": bool, "sheet": null|"Sheet1", "external": bool,
+        "columns": null | [column map, see colmap.py], "only_listed": bool, "secrets_ref": null | "<id>"}
+
+With a column map (roadmap L7) the reader's SELECT is wrapped by `colmap.compile_select` (keep / rename / cast / fill /
+mask / hash / redact / shuffle) before the COPY to Parquet. `run_copy` does the same from an existing Vault Data table.
 """
 
 from __future__ import annotations
@@ -26,8 +30,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from data_lake import sources
+    from data_lake import colmap, sources
 except ImportError:  # standalone
+    import colmap
     import sources
 
 from core.file_source import FORMATS, build_multi_read_expr, detect_any
@@ -62,7 +67,8 @@ def _gather(ctx: Any, spec: dict[str, Any], work: Path) -> list[Path]:
     raise LoadError("source.kind must be upload, folder or url")
 
 
-def _to_readable(files: list[Path], fmt: str, spec: dict[str, Any], work: Path, log) -> tuple[list[Path], str]:
+def _to_readable(files: list[Path], fmt: str, spec: dict[str, Any], work: Path, log,
+                 limit_rows: int | None = None) -> tuple[list[Path], str]:
     """XML → JSON lines, Excel → Parquet (both formats can't be read lazily by DuckDB here)."""
     if fmt == "xml":
         import json
@@ -89,7 +95,7 @@ def _to_readable(files: list[Path], fmt: str, spec: dict[str, Any], work: Path, 
         out = []
         for i, f in enumerate(files):
             sheet = spec.get("sheet") or 0
-            df = pd.read_excel(f, sheet_name=sheet, engine="openpyxl")
+            df = pd.read_excel(f, sheet_name=sheet, engine="openpyxl", nrows=limit_rows)
             df.columns = [str(c) for c in df.columns]
             dest = work / f"excel_{i}.parquet"
             df.to_parquet(dest, index=False)
@@ -109,7 +115,9 @@ def run_load(ctx: Any, spec: dict[str, Any]) -> None:
     t0 = time.monotonic()
     ws, table, mode = spec["workspace"], spec["table"], spec.get("mode") or "create"
     work = Path(tempfile.mkdtemp(prefix="lake_load_", dir=os.environ.get("DATA_LAKE_TMP")))
+    columns = None
     try:
+        columns = take_columns(spec)
         p.update(phase="finding files")
         src = spec.get("source") or {}
         s3 = src.get("kind") == "s3"
@@ -147,6 +155,9 @@ def run_load(ctx: Any, spec: dict[str, Any]) -> None:
             source["file"] = spec["file"]
 
         if spec.get("external"):
+            if columns:
+                raise LoadError("A column map (rename, cast, mask…) can't be used on a read-in-place table — it is "
+                                "never copied. Untick \"Read in place\" or remove the column map.")
             if src.get("kind") not in ("folder", "s3") or fmt not in ("csv", "json", "parquet"):
                 raise LoadError("Read-in-place (external) tables need a data-folder or S3 source in csv, json or "
                                 "parquet.")
@@ -162,42 +173,27 @@ def run_load(ctx: Any, spec: dict[str, Any]) -> None:
 
         if not s3:
             files, fmt = _to_readable(files, fmt, spec, work, log)
-        p["phase"] = "converting to Parquet"
         add_name = bool(spec.get("add_filename"))
-        expr = build_multi_read_expr([pattern] if s3 else [str(f) for f in files], fmt, header=spec.get("header"),
-                                     delimiter=spec.get("delimiter") or None, with_filename=add_name)
-        select = (f"SELECT * EXCLUDE (filename), regexp_extract(filename, '[^/]+$') AS _source_file FROM {expr}"
-                  if add_name else f"SELECT * FROM {expr}")
+
+        def make_select(text_columns: list[str] | None = None) -> str:
+            expr = build_multi_read_expr([pattern] if s3 else [str(f) for f in files], fmt, header=spec.get("header"),
+                                         delimiter=spec.get("delimiter") or None, with_filename=add_name,
+                                         varchar_columns=text_columns)
+            return (f"SELECT * EXCLUDE (filename), regexp_extract(filename, '[^/]+$') AS _source_file FROM {expr}"
+                    if add_name else f"SELECT * FROM {expr}")
+
         out_dir = work / "parquet"
-        con = duckdb.connect(":memory:")
-        con.execute(f"SET memory_limit = '{MEMORY_LIMIT}'")
-        con.execute(f"SET temp_directory = '{work / 'spill'}'")
+        con = _connect(work)
         if s3:
             lake_store.use_s3(con, src.get("location_id"), pattern)
-        stop = threading.Event()
-
-        def watch():  # Stop → interrupt DuckDB (its 1.2 Python API reports no progress: the page shows elapsed time)
-            while not stop.wait(1.0):
-                if ctx.cancel.is_set():
-                    try:
-                        con.interrupt()
-                    except Exception:  # noqa: BLE001
-                        pass
-
-        threading.Thread(target=watch, daemon=True).start()
-        try:
-            con.execute(f"COPY ({select}) TO '{out_dir}' (FORMAT PARQUET, FILE_SIZE_BYTES '{PART_BYTES}')")
-        except duckdb.InterruptException:
-            raise LoadError("Stopped.") from None
-        except duckdb.Error as exc:
-            raise LoadError(f"Could not read the data: {str(exc).splitlines()[0][:400]}") from None
-        finally:
-            stop.set()
-            con.close()
+        compiled = _copy_to_parquet(ctx, con, make_select, columns, bool(spec.get("only_listed")), out_dir,
+                                    csv=fmt == "csv")
         parts = sorted(out_dir.rglob("*.parquet"))
         if not parts:
             raise LoadError("The input produced no rows/columns.")
         p["phase"] = "storing"
+        if columns:
+            source["column_map"] = colmap.public_summary(columns, bool(spec.get("only_listed")))
         old = None
         try:
             old = lake.get_table(ws, table)
@@ -218,9 +214,310 @@ def run_load(ctx: Any, spec: dict[str, Any]) -> None:
         log("error", str(exc))
     finally:
         shutil.rmtree(work, ignore_errors=True)
+        drop_secrets(spec.get("secrets_ref"))
         src = spec.get("source") or {}
         if src.get("kind") == "upload" and p.get("phase") == "done":
             sources.STAGE.remove_all(src["upload_id"])  # staged copies are only needed until the load succeeded
+
+
+# ---- the column map (roadmap L7) ------------------------------------------------------------------------------------
+
+_SECRET_TTL = 1800
+
+
+def _secret_store():
+    """Short-lived side channel for salts / seeds: they travel to the worker through Redis under `secrets_ref` (30 min,
+    deleted when the job ends) instead of the job arguments, which RQ keeps for an hour (a week when a job fails)."""
+    try:
+        from core.state.sessions import SessionStore
+
+        return SessionStore("data-lake-secrets", ttl_seconds=_SECRET_TTL)
+    except Exception:  # noqa: BLE001 — no Redis (standalone / tests): the caller keeps them in the spec
+        return None
+
+
+def stash_secrets(ref: str, secrets: dict) -> bool:
+    store = _secret_store()
+    if store is None or not secrets:
+        return False
+    try:
+        store.set(ref, {"secrets": secrets})
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def take_columns(spec: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """The spec's column map with its salts / seeds put back (validated)."""
+    cols = spec.get("columns")
+    if not cols:
+        return None
+    ref = spec.get("secrets_ref")
+    if ref:
+        store = _secret_store()
+        data = store.get(ref) if store is not None else None
+        if data is None and any((c.get("protect") or {}).get("has_secret") for c in cols):
+            raise LoadError("The salt/seed for this load expired — start the load again.")
+        cols = colmap.merge_secrets(cols, (data or {}).get("secrets"))
+    try:
+        colmap.normalize_entries(cols)
+    except colmap.ColmapError as exc:
+        raise LoadError(f"Column map: {exc}") from None
+    return cols
+
+
+def drop_secrets(ref: str | None) -> None:
+    store = _secret_store() if ref else None
+    if store is not None:
+        try:
+            store.delete(ref)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _connect(work: Path):
+    import duckdb
+
+    con = duckdb.connect(":memory:")
+    con.execute(f"SET memory_limit = '{MEMORY_LIMIT}'")
+    con.execute(f"SET temp_directory = '{work / 'spill'}'")
+    return con
+
+
+def _check_casts(ctx: Any, con: Any, select: str, compiled: "colmap.Compiled") -> None:
+    """One pass counting values that don't convert: strict columns stop the load, the others become NULL (warned)."""
+    if not compiled.cast_checks:
+        return
+    ctx.progress["phase"] = "checking conversions"
+    row = con.execute(colmap.failing_count_sql(select, compiled.cast_checks)).fetchone()
+    warnings = []
+    for (name, typ, mode, _sql), n in zip(compiled.cast_checks, row):
+        n = int(n or 0)
+        if not n:
+            continue
+        if mode == "fail":
+            raise LoadError(f"{n:,} value(s) in '{name}' can't be converted to {typ.lower()} (strict mode) — "
+                            f"nothing was loaded. Use \"set to NULL\" instead, or fix the data.")
+        warnings.append({"column": name, "type": typ.lower(), "count": n})
+        ctx.log("warn", f"{n:,} value(s) in `{name}` couldn't be converted to {typ.lower()} → NULL")
+    ctx.progress["warnings"] = warnings
+
+
+def _copy_to_parquet(ctx: Any, con: Any, make_select: Any, columns: list[dict[str, Any]] | None, only_listed: bool,
+                     out_dir: Path, csv: bool = False) -> "colmap.Compiled | None":
+    """COPY the reader's SELECT (`make_select(text_columns)`, wrapped by the column map when there is one) to Parquet
+    files in out_dir; Stop interrupts it. Closes `con`. For a CSV, columns the map gives an explicit type are read as
+    raw text first (so "00123", dates in any format and bad numbers are decided by the map, not by the sniffer).
+    When the load protects columns, DuckDB's own error text is NOT shown (it can quote data rows)."""
+    import duckdb
+
+    p, log = ctx.progress, ctx.log
+    protected = bool(columns) and any((c.get("protect") or {}).get("kind", "none") != "none" for c in columns)
+    stop = threading.Event()
+
+    def watch():  # Stop → interrupt DuckDB (its 1.2 Python API reports no progress: the page shows elapsed time)
+        while not stop.wait(1.0):
+            if ctx.cancel.is_set():
+                try:
+                    con.interrupt()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    threading.Thread(target=watch, daemon=True).start()
+    compiled = None
+    try:
+        select = make_select(None)
+        final = select
+        if columns:
+            p["phase"] = "applying the column map"
+            available = {r[0]: r[1] for r in con.execute(f"DESCRIBE {select}").fetchall()}
+            if csv:
+                # (always, even when DESCRIBE says VARCHAR: newer DuckDBs push a TRY_CAST into the CSV reader's own
+                # sniffed type, and a bad value would then raise instead of becoming NULL)
+                typed = [e.source for e in colmap.normalize_entries(columns) if e.include and e.duck_type and e.source in available]
+                if typed:
+                    select = make_select(sorted(set(typed)))
+                    available = {r[0]: r[1] for r in con.execute(f"DESCRIBE {select}").fetchall()}
+            compiled = colmap.compile_select(select, available, columns, only_listed)
+            _check_casts(ctx, con, select, compiled)
+            final = compiled.select_sql
+            prot = [f"{c['name']} ({c['protect']})" for c in compiled.columns if c["protect"] != "none"]
+            log("info", f"column map: {len(compiled.columns)} column(s)" + (f"; protected: {', '.join(prot)}" if prot else ""))
+            p["protected"] = [{"name": c["name"], "kind": c["protect"]} for c in compiled.columns if c["protect"] != "none"]
+        p["phase"] = "converting to Parquet"
+        con.execute(f"COPY ({final}) TO '{out_dir}' (FORMAT PARQUET, FILE_SIZE_BYTES '{PART_BYTES}')")
+    except duckdb.InterruptException:
+        raise LoadError("Stopped.") from None
+    except colmap.ColmapError as exc:
+        raise LoadError(f"Column map: {exc}") from None
+    except duckdb.Error as exc:
+        if protected:
+            raise LoadError(f"Could not process the data ({type(exc).__name__}) — details are hidden because this "
+                            f"load protects columns.") from None
+        raise LoadError(f"Could not read the data: {str(exc).splitlines()[0][:400]}") from None
+    finally:
+        stop.set()
+        con.close()
+    return compiled
+
+
+# ---- previewing columns before a load (roadmap L7) -----------------------------------------------------------------
+
+INSPECT_MEMORY = os.environ.get("DATA_LAKE_QUERY_MEMORY", "384MB")
+INSPECT_FILES = 5                 # at most this many files are looked at (column names are merged by name anyway)
+INSPECT_URL_BYTES = 8 << 20       # a link is read only this far
+INSPECT_EXCEL_ROWS = 200
+
+
+class _Quiet:
+    """ctx stand-in for code shared with the jobs (download logging, progress)."""
+
+    def __init__(self):
+        self.progress: dict[str, Any] = {}
+        self.cancel = threading.Event()
+
+    def log(self, *_a, **_k) -> None:
+        pass
+
+
+def _show(v: Any) -> Any:
+    return None if v is None else str(v)[:80]
+
+
+def inspect_source(spec: dict[str, Any], sample_rows: int = 5) -> dict[str, Any]:
+    """Column names, types and a few sample values of what a load would read — WITHOUT loading it (DESCRIBE + LIMIT on the
+    first few files). Returns {"format", "files", "file_count", "columns": [{name, type, sql_type, samples,
+    suggestion}]}. Samples go to the browser only — nothing is stored or logged."""
+    import duckdb
+
+    from core import lake as lake_store
+
+    lake = lake_store.scoped("data-lake")
+    work = Path(tempfile.mkdtemp(prefix="lake_inspect_", dir=os.environ.get("DATA_LAKE_TMP")))
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute(f"SET memory_limit = '{INSPECT_MEMORY}'")
+        con.execute(f"SET temp_directory = '{work / 'spill'}'")
+        src = spec.get("source") or {}
+        kind = src.get("kind")
+        quiet = _Quiet()
+        fmt = spec.get("format") or "auto"
+        names: list[str]
+        count = 1
+        if kind == "table":
+            ws, _, name = (src.get("table") or "").partition(".")
+            t = lake.get_table(ws, name)
+            lake.prepare(con, t)
+            expr, fmt, names = lake.read_expr(ws, name), "table", [t["full_name"]]
+        elif kind == "s3":
+            pattern = (src.get("pattern") or "").strip()
+            pattern = pattern + "**" if pattern.endswith("/") else pattern
+            found = lake_store.s3_match(src.get("location_id"), pattern)
+            if not found["count"]:
+                raise LoadError(f"Nothing in S3 matches '{pattern}'.")
+            fmt = format_from_name(found["sample"][0]) if fmt == "auto" else fmt
+            if fmt not in ("csv", "json", "parquet"):
+                raise LoadError("From S3: csv, json or parquet files — pick the format under Advanced.")
+            lake_store.use_s3(con, src.get("location_id"), found["sample"][0])
+            expr = build_multi_read_expr([found["sample"][0]], fmt, header=spec.get("header"),
+                                         delimiter=spec.get("delimiter") or None)
+            names, count = [found["sample"][0]], found["count"]
+        else:
+            if kind == "url":
+                f = sources.download(src.get("url") or "", work, quiet.log, limit=INSPECT_URL_BYTES)
+                if detect_any(str(f)) not in ("csv", "json"):
+                    raise LoadError("A preview of a link works for CSV and JSON files — upload the file or use the data "
+                                    "folder for other formats, or load without a preview.")
+                files = [f]
+            elif kind == "upload":
+                files = []
+                for n in (src.get("files") or [])[:INSPECT_FILES]:
+                    p = sources.STAGE.fetch(src["upload_id"], n)
+                    if p is None:
+                        raise LoadError(f"The uploaded file '{n}' is gone (uploads are kept 1 day) — upload it again.")
+                    files.append(p)
+                count = len(src.get("files") or [])
+            elif kind == "folder":
+                matched = sources.match(src.get("pattern") or "")
+                if not matched:
+                    raise LoadError(f"No files match '{src.get('pattern')}' in the data folder.")
+                files, count = matched[:INSPECT_FILES], len(matched)
+            else:
+                raise LoadError("source.kind must be upload, folder, url, s3 or table")
+            if not files:
+                raise LoadError("Choose at least one file first.")
+            if fmt == "auto":
+                found_fmt = {detect_any(str(f)) for f in files}
+                if len(found_fmt) > 1:
+                    raise LoadError(f"The files have different formats ({', '.join(sorted(found_fmt))}) — load them "
+                                    f"separately.")
+                fmt = found_fmt.pop()
+            if fmt not in FORMATS:
+                raise LoadError(f"Unknown format '{fmt}'")
+            names = [f.name for f in files]
+            use = files[:1] if fmt in ("xml", "excel") else files
+            use, rfmt = _to_readable(use, fmt, spec, work, quiet.log, limit_rows=INSPECT_EXCEL_ROWS)
+            expr = build_multi_read_expr([str(f) for f in use], rfmt, header=spec.get("header"),
+                                         delimiter=spec.get("delimiter") or None)
+        try:
+            desc = con.execute(f"DESCRIBE SELECT * FROM {expr}").fetchall()
+            rows = con.execute(f"SELECT * FROM {expr} LIMIT 20").fetchall()
+        except duckdb.Error as exc:
+            raise LoadError(f"Could not read the data: {str(exc).splitlines()[0][:300]}") from None
+        cols = []
+        for i, d in enumerate(desc):
+            vals = [r[i] for r in rows]
+            cols.append({"name": d[0], "type": d[1], "sql_type": lake_store.sql_type(d[1]),
+                         "samples": [_show(v) for v in vals[:sample_rows]],
+                         "suggestion": colmap.suggest_protection(d[0], vals)})
+        return {"format": fmt, "files": names[:INSPECT_FILES], "file_count": count, "columns": cols}
+    finally:
+        con.close()
+        shutil.rmtree(work, ignore_errors=True)
+
+
+# ---- a protected / reshaped COPY of an existing table (roadmap L7) --------------------------------------------------
+
+def run_copy(ctx: Any, spec: dict[str, Any]) -> None:
+    """Job body: read a Vault Data table through the column map into another table (e.g. a masked copy to share).
+    spec = {"from": "ws.table", "workspace", "table", "mode", "columns", "only_listed", "secrets_ref"}."""
+    from core import lake as lake_store
+
+    lake = lake_store.scoped("data-lake")
+    log, p = ctx.log, ctx.progress
+    t0 = time.monotonic()
+    ws, table, mode = spec["workspace"], spec["table"], spec.get("mode") or "create"
+    work = Path(tempfile.mkdtemp(prefix="lake_copy_", dir=os.environ.get("DATA_LAKE_TMP")))
+    try:
+        columns = take_columns(spec)
+        fws, _, fname = (spec.get("from") or "").partition(".")
+        if (fws, fname) == (ws, table):
+            raise LoadError("The copy must go to a different table than its source.")
+        p.update(phase="reading the table")
+        srct = lake.get_table(fws, fname)
+        con = _connect(work)
+        lake.prepare(con, srct)
+        select = f"SELECT * FROM {lake.read_expr(fws, fname)}"
+        log("info", f"copying {srct['full_name']} ({srct['row_count']:,} rows)")
+        out_dir = work / "parquet"
+        _copy_to_parquet(ctx, con, lambda _text=None: select, columns, bool(spec.get("only_listed")), out_dir)
+        parts = sorted(out_dir.rglob("*.parquet"))
+        if not parts:
+            raise LoadError("The copy produced no rows/columns.")
+        p["phase"] = "storing"
+        source = {"kind": "copy", "from": srct["full_name"]}
+        if columns:
+            source["column_map"] = colmap.public_summary(columns, bool(spec.get("only_listed")))
+        t = lake.write_table(ws, table, parts, mode=mode, source=source, create_workspace_if_missing=True)
+        p.update(phase="done", rows=t["row_count"], table=t["full_name"], percent=100,
+                 seconds=round(time.monotonic() - t0, 1))
+        log("ok", f"{mode}: {t['full_name']} now has {t['row_count']:,} rows ({p['seconds']} s)")
+    except (LoadError, lake_store.LakeError, ValueError) as exc:
+        p.update(phase="failed", error=str(exc))
+        log("error", str(exc))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+        drop_secrets(spec.get("secrets_ref"))
 
 
 def format_from_name(name: str) -> str:

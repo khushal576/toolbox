@@ -382,11 +382,12 @@
     // ---------- settings ----------
     function loadSettings() { refreshStatus().then(function (s) { if (s) renderSettings(s); }); }
     function renderSettings(s) {
-      var c = s.counts, on = s.plugins.filter(function (p) { return p.enabled; }).length;
-      $("summary").innerHTML = pill("Tools", s.plugins.length) + pill("On", on) + pill("Off", s.plugins.length - on) +
+      var vis = s.plugins.filter(function (p) { return !p.hidden; });   // hidden tools (manifest `hidden`) have no switch
+      var c = s.counts, on = vis.filter(function (p) { return p.enabled; }).length;
+      $("summary").innerHTML = pill("Tools", vis.length) + pill("On", on) + pill("Off", vis.length - on) +
         pill("Loaded now", c.loaded || 0) + pill("Not loaded", c.not_loaded || 0) + (c.failed ? pill("Failed", c.failed) : "") +
         (c.asleep ? pill("Asleep (on demand)", c.asleep) : "") + (c.starting ? pill("Starting", c.starting) : "");
-      $("rows").innerHTML = s.plugins.map(function (p) {
+      $("rows").innerHTML = vis.map(function (p) {
         var st = p.state === "disabled" ? (p.restart_to_free_memory ? "off · restart frees memory" : "off") : p.state.replace("_", " ");
         var dot = ["loaded", "failed", "asleep", "starting"].indexOf(p.state) >= 0 ? p.state : "";
         if (p.state === "asleep") st = "asleep · starts on first use";

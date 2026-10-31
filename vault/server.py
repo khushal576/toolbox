@@ -300,7 +300,7 @@ async def data_table_csv(ws: str, name: str, max_rows: int = DEFAULT_PREVIEW_MAX
     t = await asyncio.to_thread(_lake_call, lake.get_table, ws, name)
     if t["row_count"] > max_rows:
         raise HTTPException(400, f"{t['full_name']} has {t['row_count']:,} rows — loading into the page is limited to "
-                                 f"{max_rows:,}. Make a smaller table first (Data Lake → SQL: CREATE TABLE ws.t AS "
+                                 f"{max_rows:,}. Make a smaller table first (Vault Data → SQL: CREATE TABLE ws.t AS "
                                  f"SELECT … WHERE …).")
     with tempfile.TemporaryDirectory(prefix="vault_csv_") as tmp:
         dest = Path(tmp) / "t.csv"

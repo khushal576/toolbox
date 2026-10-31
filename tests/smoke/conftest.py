@@ -32,6 +32,11 @@ def mounted_tools() -> list[str]:
     return [m.name for m in discover(REPO).ordered() if m.kind == "python"]
 
 
+def visible_tools() -> list[str]:
+    """Mounted tools that get a home card (manifest `hidden: true` ones are API-only, e.g. data-lake since L6)."""
+    return [m.name for m in discover(REPO).ordered() if m.kind == "python" and not m.hidden]
+
+
 class Response:
     def __init__(self, status: int, headers, body: bytes):
         self.status, self.headers, self.body = status, headers, body

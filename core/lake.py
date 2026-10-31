@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "lake"   # standalone SQLite + local file cache
 IMPORT_WORKSPACE = "datasets"                                         # where old Vault datasets are imported
+SYSTEM_WORKSPACE = "system"   # always exists, can't be renamed/deleted; default home of anything saved without a workspace
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -149,6 +150,7 @@ def _history(con, table_id: str, ws: str, name: str, action: str, **detail: Any)
 
 def list_workspaces() -> list[dict[str, Any]]:
     _ready_store()
+    _ensure_workspace(SYSTEM_WORKSPACE)
     with _connect() as con:
         rows = con.execute(
             "SELECT w.id, w.name, w.description, w.created_at, w.updated_at, COUNT(t.id) AS tables, "
@@ -198,6 +200,8 @@ def _ensure_workspace(name: str) -> None:
 
 def update_workspace(name: str, new_name: Optional[str] = None, description: Optional[str] = None) -> dict[str, Any]:
     _ready_store()
+    if name == SYSTEM_WORKSPACE and new_name and new_name != name:
+        raise LakeError(f"The '{SYSTEM_WORKSPACE}' workspace is built in and can't be renamed.")
     with _connect() as con:
         ws = _workspace(con, name)
         target = check_name(new_name, "workspace name") if new_name and new_name != name else name
@@ -211,6 +215,8 @@ def update_workspace(name: str, new_name: Optional[str] = None, description: Opt
 def delete_workspace(name: str, drop_tables: bool = False) -> int:
     """Delete a workspace. Refuses one with tables unless drop_tables=True (then their files are deleted too)."""
     _ready_store()
+    if name == SYSTEM_WORKSPACE:
+        raise LakeError(f"The '{SYSTEM_WORKSPACE}' workspace is built in and can't be deleted (its tables can).")
     with _connect() as con:
         ws = _workspace(con, name)
         tids = [r["id"] for r in con.execute("SELECT id FROM tables WHERE workspace_id = ?", (ws["id"],))]
@@ -327,6 +333,9 @@ def write_table(workspace: str, name: str, parquet_files: Iterable[Path], *, mod
     """Store Parquet files as a managed table. mode: create (fails if it exists) | overwrite (new version, the old
     one is deleted after the switch) | append (more parts in the current version; columns must stay compatible)."""
     _ready_store()
+    workspace = (workspace or "").strip() or SYSTEM_WORKSPACE
+    if workspace == SYSTEM_WORKSPACE:
+        create_workspace_if_missing = True
     if mode not in ("create", "overwrite", "append"):
         raise LakeError("mode must be create, overwrite or append")
     name = check_name(name, "table name")
@@ -457,6 +466,9 @@ def register_external(workspace: str, name: str, location: str, fmt: str, *, opt
     from core.file_source import build_multi_read_expr
 
     _ready_store()
+    workspace = (workspace or "").strip() or SYSTEM_WORKSPACE
+    if workspace == SYSTEM_WORKSPACE:
+        create_workspace_if_missing = True
     name = check_name(name, "table name")
     opts = dict(options or {})
     if location.startswith("s3://") and not opts.get("s3_location"):
@@ -932,6 +944,7 @@ def import_file(workspace: str, name: str, path: Path, *, mode: str = "create", 
 
     from core.file_source import build_multi_read_expr, detect_any
 
+    workspace = (workspace or "").strip() or SYSTEM_WORKSPACE
     path = Path(path)
     fmt = detect_any(str(path))
     if fmt not in ("csv", "json", "parquet"):

@@ -106,7 +106,7 @@ def test_workspace_with_tables_is_protected(L, tmp_path):
     L.write_table("w", "t", [parquet(tmp_path, "x", "SELECT 1 AS v")], create_workspace_if_missing=True)
     with pytest.raises(L.LakeError, match="still has 1 table"):
         L.delete_workspace("w")
-    assert L.delete_workspace("w", drop_tables=True) == 1 and L.list_workspaces() == []
+    assert L.delete_workspace("w", drop_tables=True) == 1 and [w["name"] for w in L.list_workspaces()] == ["system"]   # system is built in
     L.update_workspace  # noqa: B018 - exists
     L.create_workspace("old")
     assert L.update_workspace("old", new_name="new", description="d")["name"] == "new"
@@ -115,7 +115,7 @@ def test_workspace_with_tables_is_protected(L, tmp_path):
 def test_scopes(L, tmp_path):
     L.create_workspace("w")
     reader, writer, none = L.ScopedLake("t", "read"), L.ScopedLake("t", "write"), L.ScopedLake("t", "none")
-    assert reader.list_workspaces()[0]["name"] == "w"
+    assert "w" in [x["name"] for x in reader.list_workspaces()]
     with pytest.raises(L.ScopeError, match="data: write"):
         reader.create_workspace("x")
     with pytest.raises(L.ScopeError):

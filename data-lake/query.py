@@ -71,6 +71,14 @@ CREATE TABLE IF NOT EXISTS saved (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS colmaps (          -- roadmap L7: saved column maps (templates); salts / seeds are never stored
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    columns TEXT NOT NULL,              -- JSON column map (colmap.template_columns)
+    only_listed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 STORE = SqlStore("data_lake", sqlite_path=lake_store.DATA_DIR / "data_lake.db", ddl=_SCHEMA)

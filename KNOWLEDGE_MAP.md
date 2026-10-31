@@ -27,6 +27,8 @@ misleads. If a file's job changes, update its row here in the same commit.
 | Replicas: how many run, why it scaled up/down, which replica got a request, worker pool size | `core_plugins/autoscale.py` (`ScaledService.tick`, thresholds `UP_CPU`/`DOWN_CPU`/`DOWN_AFTER`/`COOLDOWN`), `core_plugins/balancer.py` (`Balancer.pick`, `mark_failed`), wiring + `scaled` in `/api/workspace/runtimes` in `main.py`, retry loop in `core_plugins/proxy.py`; compose `deploy.replicas` + `TOOLBOX_WORKER_SCALING` (roadmap D3) |
 | The Status tab: what it shows, the attention rules, where each number comes from | `core_plugins/overview.py` (`containers`, `jobs_summary`, `storage_summary`, `attention`), `/api/workspace/overview` + `/api/state/overview` in `main.py`, `renderStatus` in `core_plugins/ui/workspace.html` (roadmap E1) |
 | Per-tool request/error/slow counters, the recent-errors list, the log window, the sidebar alert badge | `core_plugins/metrics.py` (`Metered`, `record`, `flush`, `read`, `recent_errors`), `core_plugins/overview.py` (`logs`, `_demux`, `container_states`, `attention`), `/api/workspace/{metrics,errors,logs/<name>,alerts}` in `main.py`, `loadAlerts`/`showLog`/`spark` in `core_plugins/ui/workspace.html` (roadmap E2/E3) |
+| The built-in `system` workspace (always exists; no rename/delete; default for saves without a workspace) | `core/lake.py` (`SYSTEM_WORKSPACE`, `list_workspaces`, `update_workspace`, `delete_workspace`, `write_table`/`import_file`/`register_external` defaults); Vault page `#wsList` (built-in pill, rename/delete hidden) |
+| A tool with no card/sidebar entry (API only) | manifest `hidden: true` → `main.py` `_load_registry`/`home`, `core_plugins/ui/workspace.html` Settings (`vis`) |
 | Vault Data: workspaces/tables, where a table's files are, versions/history, importing old datasets, which tool may read/write Data | `core/lake.py` (`create_workspace`, `write_table`, `rename_table`, `drop_table`, `preview`, `local_files`, `import_vault_datasets`, `scoped`), `/data*` endpoints in `vault/server.py`, Data tab in `vault/ui/index.html`, manifest `vault: {data: …}` (roadmap L1) |
 | Installing Toolbox as an app, its name/colors/shortcuts, the icons, the favicon | `_WEBMANIFEST`, `/manifest.webmanifest`, `/icons/{name}`, `/favicon.ico` in `main.py`; icons in `core_plugins/ui/icons/` (regenerate: `python3 tools/icons/make_icons.py`); `<link rel="manifest">` in `core_plugins/ui/workspace.html` (roadmap G1) |
 | Backups / restore, what's in an archive, the "last backup" line | `scripts/backup.sh`, `scripts/restore.sh`, `core/state/backup.py` (`objects_export`, `objects_import`, `mark`, `last`), `backup` in `/api/state/overview` (main.py) + `attention` (overview.py); owner how-to `docs/runbook.md` (Ops session) |
@@ -1424,9 +1426,9 @@ original→masked JSON → masked text) and Visualize (live sandboxed HTML/CSS p
 | Tabs kept between visits (4 MB) | `persist`, `KEEP_LIMIT` |
 | The bundle's contents / rebuild | `text-editor/ui/vendor/entry.js` + `text-editor/CLAUDE.md` |
 
-## Tool: Data Lake — mounted at `/tools/data-lake/`
+## Backend: Vault Data loader (the former Data Lake tool) — mounted at `/tools/data-lake/`, hidden; page = Vault → Vault Data
 
-Loads files into **Vault Data** tables as Parquet (roadmap L2) and queries them with SQL, Athena style (L3, 🔎 SQL tab). Read `data-lake/CLAUDE.md` first.
+Loads files into **Vault Data** tables as Parquet (roadmap L2), with an optional **column map** (L7: keep / rename / cast / fill / mask / hash / shuffle). Its Athena-style SQL backend (L3, `query.py`) stays but the SQL tab was dropped from the UI — SQL is Duck Lab's job. Read `data-lake/CLAUDE.md` first.
 
 | If you need to change... | Go to |
 |---|---|
@@ -1434,13 +1436,22 @@ Loads files into **Vault Data** tables as Parquet (roadmap L2) and queries them 
 | How a load works (detection, XML/Excel conversion, DuckDB COPY → Parquet, modes, column-change warning) | `data-lake/loader.py` (`run_load`) |
 | Format detection / reading many files as one table (shared) | `core/file_source.py` (`detect_any`, `build_multi_read_expr`) |
 | Endpoints, starting/stopping/polling a load | `data-lake/server.py` |
-| The page | `data-lake/ui/index.html` |
+| The page (moved in L6: Vault → Vault Data → ⬆ Load files; `data-lake/ui/index.html` is only a redirect) | `vault/ui/index.html` (`#paneLoad`, the second `<script>` IIFE; ids prefixed `dl_`, CSS under `.dl`) |
+| **Column map (L7)**: what a map may contain, how it becomes one DuckDB SELECT (cast → fill empty → protect), identifier/literal quoting, type allow-list | `data-lake/colmap.py` (`normalize_entries`, `compile_select`, `qi`, `ql`, `typed_literal`, `TYPES`) |
+| Mask / hash / redact / empty / shuffle (what each does to NULLs and short values; shuffle = row_number join on a random or seeded key) | `data-lake/colmap.py` (`compile_select`: protect branches, `sh{k}` CTEs) |
+| Guessing sensitive columns (email, Aadhaar, PAN, card, phone, SSN, names, address…) | `data-lake/colmap.py` (`suggest_protection`) |
+| Counting values that don't convert (warn / strict stop), typed CSV columns read as raw text first | `data-lake/loader.py` (`_check_casts`, `_copy_to_parquet`), `core/file_source.py` (`varchar_columns`) |
+| Preview columns before loading (DESCRIBE + 5 sample rows of the first files; link = first 8 MB) | `data-lake/loader.py` (`inspect_source`), `POST /inspect` in `server.py` |
+| Saved column maps (templates, no salts/seeds), Postgres schema `data_lake`, table `colmaps` | `data-lake/colmap.py` (`save_template`, `template_columns`), `query.py` (`_SCHEMA`), `/colmaps` in `server.py` |
+| Salts / seeds travel to the worker through a short-lived Redis key, never the job args or the catalog | `data-lake/colmap.py` (`split_secrets`, `merge_secrets`), `loader.py` (`stash_secrets`, `take_columns`, `drop_secrets`) |
+| Masked / reshaped copy of an existing table (worker job) | `data-lake/loader.py` (`run_copy`), `POST /copy-table` in `server.py`; UI: Tables → "Copy with column map…" → `vaultDl.copyFrom` |
+| The column-map grid, templates bar, job notes (cast warnings, protected columns) | `vault/ui/index.html` (`#dl_colCard`, `renderGrid`, `toMap`, `mapBody`, `buildMap`) |
 | Where tables end up, external tables, preview | `core/lake.py` (`write_table`, `register_external`, `read_expr`, `preview`) |
 | The shared data folder location | `TOOLBOX_DATA_DIR` (compose: rt-data + worker, `/data`, read-only) |
 | What SQL is allowed (read-only check, which tables get mounted, unqualified names) | `data-lake/query.py` (`analyse`, `ALLOWED_FUNCTIONS`) |
 | Running a query (instant 30 s vs background job, memory, timeout/stop), CREATE TABLE AS | `data-lake/query.py` (`execute`, `run_query_job`), env `DATA_LAKE_INSTANT_SECONDS` / `DATA_LAKE_QUERY_MEMORY` |
 | Stored results (paging, CSV/Parquet download, save as table, 7-day expiry), history + saved queries | `data-lake/query.py` (`RESULTS`, `page`, `export_csv`, `save_as_table`, `STORE` schema `data_lake`) |
-| The SQL editor (catalog tree, autocomplete, results grid) | `data-lake/ui/index.html` (`#sqlView`, `acSuggest`) |
+| (SQL editor: removed from the page — only the backend above remains) | – |
 | Staging database tables (Vault connection → tables / one SELECT → workspace), batch typing, read-only source | `data-lake/staging.py` (`connect`, `run_stage`, `_batch_to_parquet`, `_merge`); page: `#src-db` |
 
 ### Vault Data in every tool (roadmap L4) — symptom → file
@@ -1462,9 +1473,9 @@ Loads files into **Vault Data** tables as Parquet (roadmap L2) and queries them 
 | Column profile (what's computed, sample size, cache) | `core/lake.py` `profile`, `PROFILE_SAMPLE`, table `lake.profiles`; Vault `GET /data/tables/{ws}/{t}/profile`; page `showProfile` |
 | Suggested joins (name rules, overlap check, minimum %) | `core/lake.py` `suggest_joins`, `_GENERIC`, `MIN_OVERLAP`; Vault `/joins`; Data Lake tree `showJoins` |
 | S3 credentials / reading s3:// tables / error wording | `core/lake.py` `use_s3`, `s3_secret_sql`, `prepare`, `s3_match`, `s3_error_text`; Vault `POST /test-s3` |
-| Loading from S3 (copy or read in place) | `data-lake/loader.py` (`s3` branch, `format_from_name`); page `#src-s3` |
+| Loading from S3 (copy or read in place) | `data-lake/loader.py` (`s3` branch, `format_from_name`); page `#dl_src-s3` |
 | Column types shown as varchar(100) / numeric(12,2) | `core/lake.py` `sql_type` (+ `_table_dict`); staging `declared_types` → `source.column_types` |
-| Charts on a query result | `data-lake/ui/index.html` `drawChart` (SVG, first `CHART_ROWS` rows) |
+| Charts on a query result | `vault/ui/index.html` `drawChart` (SVG, first `CHART_ROWS` rows) |
 | DataFrame Studio Tables bar (green = loaded; first = `df`, others = variables by name) | `df-studio/ui/index.html` `renderCatalog`, `renderFrames`; `engine.add_frame`/`lake_frame`/`recompute`, `steps.FRAMES`; `/frames/add`, `/frames/remove`, `/session/clear` |
 | DataFrame Studio column stats in the grid header, SQL-style types | `engine.column_stats` (`GET /column-stats`), `engine.sql_type`; page `headerHtml`, `#statsBtn` |
 | Duck Lab Tables bar (green = loaded, ✕ unloads) | `duck-lab/ui/index.html` `renderCatalog` → `/load/lake`, `/table/remove` |

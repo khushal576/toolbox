@@ -87,10 +87,12 @@ def detect_any(path: str) -> str:
 
 
 def build_multi_read_expr(paths: list[str], fmt: str, *, header: bool | None = None, delimiter: str | None = None,
-                          with_filename: bool = False) -> str:
+                          with_filename: bool = False, varchar_columns: list[str] | None = None) -> str:
     """One DuckDB expression reading ALL `paths` (same format) as one table: columns matched by name across files
     (`union_by_name`), compression detected from the name (.gz), optional `filename` column for "which file did
-    this row come from". csv/json/parquet only (xml/excel are converted to Parquet first)."""
+    this row come from". `varchar_columns` (csv only): read these columns as raw text instead of sniffing a type — so
+    "00123" stays "00123" and a date can be parsed with an explicit format. csv/json/parquet only (xml/excel are
+    converted to Parquet first)."""
     files = "[" + ", ".join(_quote_literal(p) for p in paths) + "]"
     extra = ", filename=true" if with_filename else ""
     if fmt == "csv":
@@ -99,6 +101,8 @@ def build_multi_read_expr(paths: list[str], fmt: str, *, header: bool | None = N
             opts += f", header={'true' if header else 'false'}"
         if delimiter:
             opts += f", delim={_quote_literal(delimiter)}"
+        if varchar_columns:
+            opts += ", types={" + ", ".join(f"{_quote_literal(c)}: 'VARCHAR'" for c in varchar_columns) + "}"
         return f"read_csv({files}, auto_detect=true, union_by_name=true{opts}{extra})"
     if fmt == "json":
         return f"read_json_auto({files}, union_by_name=true{extra})"
