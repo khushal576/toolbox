@@ -355,3 +355,34 @@ offers "load the first 1 000 000 rows" instead of silently cutting. `/export/lak
   **📊 Column stats** toggle (remembered in localStorage), a 4-line strip from `GET /column-stats`
   (`engine.column_stats` over the WHOLE transformed DataFrame: empty, distinct, min/max, avg/std; full text on hover).
   Few columns fill the width (`fitColumns`); dates/timestamps are shown without the ISO `T…000`.
+
+## Click cleaning + Formula bar (roadmap DF1 + DF2)
+
+Goal (owner): data cleaning and feature engineering without writing a `def transform(df)` each time. See
+`docs/roadmap/ROADMAP.md` Phase DF for the whole plan (staging, join builder, feature catalog, speed, quality are DF3–DF7, not built).
+
+- **`clean_steps.py`** — 15 no-code steps (`HANDLERS`/`LABELS`, registered in `steps.STEP_HANDLERS`), each takes `columns: [..]`
+  so ONE step fixes many columns. Unlike the older handlers a step here BUILDS its pandas code from validated params + `repr()` and
+  then RUNS that same code on a copy (`run()`), so the line shown in the pipeline, the exported script and what really happened
+  can't drift. Never put user text into the code string raw. Things worth telling the user go through `note()`
+  (`NOTES` context variable, collected by `engine._run_step`, shown as page warnings and stored on the step as `notes`).
+  `cast_type`'s "stop with an error" only decides whether THIS run is refused; the stored code is the forgiving form (same result).
+- **`formula.py`** — the Formula bar. `ast.parse` → allow-list check → code GENERATED from the tree; typed text is never executed.
+  Allowed: numbers/text/names, arithmetic, comparisons, `& | ~ and or not`, `x if c else y`, `in [..]`, `is None`, and the functions
+  in `FUNCS` (positional args only). `` `names with spaces` `` in backticks. Limits: 50 lines, 2000 chars, 250 nodes, `**` exponent ≤ 100,
+  no text repeat. `tests/unit/test_df_studio_steps.py` runs ~60 escape attempts (`__import__`, attributes, lambda, comprehensions,
+  `open`, `exec`…) and a test fails when `FUNCS` and the emitter disagree. `custom_code` (Query box) stays the full-Python escape hatch.
+- **Pipeline steps can be turned off/on, moved, removed** (`engine.toggle_step`/`move_step`/`remove_step`): the new list is only
+  installed if the WHOLE pipeline still replays (`_swap_steps`), else the old one is kept and the 400 says "Step 3 (…): …".
+  A step has `enabled` (missing = on, for sessions saved before DF1) and optional `notes`; `recompute`, `generate_script` and saved
+  templates (`server.save_template`) only use enabled steps. Errors raised while replaying are prefixed with the step number.
+- **Page (`ui/index.html`, the "PHASE DF" block):** `CLEAN` object = one entry per Clean-box action (fields are declarative; add a
+  field there, not a fieldset); `makeColumnPicker` = searchable picker that never renders more than 40 columns (this is the
+  "thousands of columns" fix for the new boxes; the old `.col-select` `<select>`s are unchanged); `openMenu` = the ⋮ header menu
+  (capture-phase click handler so Tabulator doesn't sort); `runCheck`/`lastChecked` = Check shows the generated pandas + warnings and
+  the panel's Add commits exactly what was checked; Formula autocomplete (`acUpdate`, counts backticks to know if the caret is inside one).
+- **Suggested fixes** (`engine.suggest_fixes`): looks at the column's stats and a sample of ≤ 1000 values (numbers stored as text,
+  `$1,200`, dates, yes/no, stray spaces, mixed capitals, constant columns, empties, IQR outliers). Suggests only — never changes data.
+- **Gotchas:** every Add still replays the whole pipeline (each step works on a copy) — fine for normal files, DF6 is the planned
+  fix. `Int64`/`string`/`boolean` pandas dtypes are used on purpose (nullable); `date` = datetime at midnight (the page shows it as
+  `date`). Verified with pandas 2.2.2 / numpy 1.26.4 / Python 3.11 (the image) and pandas 2.3 / numpy 2.4 / Python 3.13.

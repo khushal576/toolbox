@@ -598,12 +598,18 @@ full picture.
 | If you need to change...                                          | Go to |
 |-----------------------------------------------------------------------|-------|
 | Session state, the replay model, file loading, insights, script export, template replay, the Check/Add split (`preview_step`/`apply_step`) | `df-studio/engine.py` |
-| A transformation step's behavior or its generated pandas code line     | `df-studio/steps.py` (`STEP_HANDLERS`) |
-| API endpoints (`/load`, `/load/vault`, `/step`, `/step/check`, `/insight`, `/export`, `/script`, `/template/*`) | `df-studio/server.py` |
+| A transformation step's behavior or its generated pandas code line     | `df-studio/steps.py` (`STEP_HANDLERS`); the DF1 cleaning steps are in `df-studio/clean_steps.py` (`HANDLERS`) |
+| A no-code cleaning step (fill empty, change type, clean text, replace, extract/split/join, date parts, dedupe, drop sparse/constant, outliers, bins, bulk rename, filter builder) — what it validates, the pandas line it builds and runs, the note it reports | `df-studio/clean_steps.py` (one function per step; `run()` executes the generated code; `note()` → page warnings) |
+| The Formula bar: what is allowed, the function list, how `a / b` becomes `df['x'] = (df['a'] / df['b'])`, the plain-language errors | `df-studio/formula.py` (`FUNCS`, `Emitter`, `compile_lines`, `expression`) |
+| Turning a step off/on, moving it, refusing a change that would break a later step; notes stored per step; "Step N (…):" error prefix | `df-studio/engine.py` (`toggle_step`, `move_step`, `_swap_steps`, `recompute`, `apply_step_ex`) |
+| The ⋮ column menu's stats + suggested fix | `df-studio/engine.py` `suggest_fixes` + `column_stats(df, columns)`; `server.py` `GET /column-stats?column=`; UI `openMenu()` |
+| API endpoints (`/load`, `/load/vault`, `/step`, `/step/check`, `/step/remove`, `/step/toggle`, `/step/move`, `/formula/help`, `/column-stats`, `/insight`, `/export`, `/script`, `/template/*`) | `df-studio/server.py` (all walked by `tests/unit/test_df_studio_server.py`) |
 | Saved-template storage (JSON on disk)                                  | `df-studio/templates_store.py` |
 | The frontend: grid (Tabulator.js), "load from Vault" picker, form-based step fields, Query box (Check/Add + snippets), pipeline panel, script/template panels | `df-studio/ui/index.html` |
 | Loading a saved Vault dataset in as a new session (the consumer side of duck-lab's/sql-studio's `/export/vault`) | `df-studio/server.py`'s `/load/vault` — decrypts via `core.vault.load_dataset_file()`, reads the bytes, then reuses the exact same `engine.load_dataframe()`/`create_session()` path `/load` uses for an upload |
 | Adding a brand-new form-based step type                                | `steps.py` (handler) **and** `ui/index.html` (`#f-<type>` fieldset + `<option>`) |
+| Adding a new Clean-box action (no-code step)                           | `clean_steps.py` (handler + `HANDLERS` + `LABELS`) **and** `ui/index.html`'s `CLEAN` object (fields) — no new fieldset |
+| The Clean card, column picker, ⋮ menu, Formula card + autocomplete, pipeline on/off/▲▼ | `df-studio/ui/index.html` — the "PHASE DF" block near the end of the script |
 | Adding a new Query-box quick-insert snippet                            | `ui/index.html` — `SNIPPETS` object only, no backend change |
 
 ### Known non-obvious behavior (read before touching these areas)
@@ -623,6 +629,12 @@ full picture.
   deliberate, single-user local tool; revisit before this is ever exposed
   beyond one trusted user). Check mode (`/step/check`) still `exec()`s the
   code — it's a "don't commit yet" toggle, not a safer sandbox.
+- **The DF1 cleaning steps RUN the code they show** (`clean_steps.run()` exec's the generated line on a copy of the DataFrame);
+  every user value goes through `repr()` — never paste user text into the code string. The Formula bar is different again: the
+  text is parsed with `ast`, checked against an allow-list and the pandas is GENERATED from the tree (`formula.Emitter`);
+  the typed text is never executed. New function = a `FUNCS` entry **and** an emitter branch (a test fails when they disagree).
+- **Turning a step off / moving / removing one is refused (400, nothing changed) when a later step needs it** —
+  `engine._swap_steps` replays the whole pipeline first. Disabled steps are skipped by `recompute`, by the script and by templates.
 - **Step handlers raise plain `ValueError`, never `engine.StepError`** —
   `StepError` is a subclass, so `except StepError` alone misses them. This
   bit `engine.apply_template()` for real (a step failing mid-template

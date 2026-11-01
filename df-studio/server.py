@@ -49,9 +49,10 @@ from pathlib import Path
 from pydantic import BaseModel
 
 try:  # package import when mounted inside the toolbox (df_studio.*)
-    from df_studio import engine, templates_store
+    from df_studio import engine, formula, templates_store
 except ImportError:  # flat import when run standalone from within this folder
     import engine
+    import formula
     import templates_store
 
 try:  # core/ is a sibling top-level package in the real image (/app/core)
@@ -291,12 +292,19 @@ class FrameRequest(BaseModel):
 
 
 @app.get("/column-stats")
-async def column_stats(request: Request):
-    """Stats per column of the current (transformed) DataFrame — the grid's header strip (roadmap L5)."""
+async def column_stats(request: Request, column: Optional[str] = None):
+    """Stats per column of the current (transformed) DataFrame — the grid's header strip (roadmap L5). With
+    ?column=name only that column, plus suggested fixes for it (the header menu, roadmap DF1)."""
     try:
         session = await _session(request)
         df = await asyncio.to_thread(engine.recompute, session)
-        return {"stats": await asyncio.to_thread(engine.column_stats, df), "rows": len(df)}
+        if column is None:
+            return {"stats": await asyncio.to_thread(engine.column_stats, df), "rows": len(df)}
+        if column not in df.columns:
+            return _error(ValueError(f"Column not found: {column}"))
+        stats = await asyncio.to_thread(engine.column_stats, df, [column])
+        suggest = await asyncio.to_thread(engine.suggest_fixes, df[column], stats[column])
+        return {"stats": stats, "rows": len(df), "suggest": suggest}
     except engine.StepError as exc:
         return _error(exc)
 
@@ -363,12 +371,14 @@ async def export_to_lake(request: Request, body: SaveToLakeRequest):
 async def add_step(body: StepRequest, request: Request):
     try:
         session = await _session(request)
-        df = await asyncio.to_thread(engine.apply_step, session, body.type, body.params)
-        return engine.build_preview(session, df)
+        df, notes = await asyncio.to_thread(engine.apply_step_ex, session, body.type, body.params)
+        preview = engine.build_preview(session, df)
     except engine.StepError as exc:
         return _error(exc)
     except Exception as exc:  # noqa: BLE001
         return _error(exc)
+    preview["warnings"] = notes   # roadmap DF1: "12 values couldn't be converted…"
+    return preview
 
 
 @app.post("/step/check")
@@ -377,13 +387,15 @@ async def check_step(body: StepRequest, request: Request):
     pipeline — lets the query box's Check mode iterate before committing."""
     try:
         session = await _session(request)
-        df = await asyncio.to_thread(engine.preview_step, session, body.type, body.params)
+        df, code, notes = await asyncio.to_thread(engine.run_step, session, body.type, body.params)
         preview = engine.build_preview(session, df)
     except engine.StepError as exc:
         return _error(exc)
     except Exception as exc:  # noqa: BLE001
         return _error(exc)
     preview["committed"] = False
+    preview["warnings"] = notes
+    preview["code"] = code   # the real pandas this step would add — shown in the check panel
     return preview
 
 
@@ -393,8 +405,46 @@ async def remove_step(body: RemoveRequest, request: Request):
         session = await _session(request)
         df = await asyncio.to_thread(engine.remove_step, session, body.index)
         return engine.build_preview(session, df)
-    except engine.StepError as exc:
+    except Exception as exc:  # noqa: BLE001 — incl. "a later step needs this one" (nothing was changed)
         return _error(exc)
+
+
+class ToggleRequest(BaseModel):
+    index: int
+    enabled: bool
+
+
+class MoveRequest(BaseModel):
+    index: int
+    direction: str
+
+
+@app.post("/step/toggle")
+async def toggle_step(body: ToggleRequest, request: Request):
+    """Turn a step off / on without deleting it (roadmap DF1). Refused (400, nothing changed) when a later step needs it."""
+    try:
+        session = await _session(request)
+        df = await asyncio.to_thread(engine.toggle_step, session, body.index, body.enabled)
+        return engine.build_preview(session, df)
+    except Exception as exc:  # noqa: BLE001
+        return _error(exc)
+
+
+@app.post("/step/move")
+async def move_step(body: MoveRequest, request: Request):
+    """Move a step one place up / down (roadmap DF1). Refused (400, nothing changed) when the order would break a step."""
+    try:
+        session = await _session(request)
+        df = await asyncio.to_thread(engine.move_step, session, body.index, body.direction)
+        return engine.build_preview(session, df)
+    except Exception as exc:  # noqa: BLE001
+        return _error(exc)
+
+
+@app.get("/formula/help")
+async def formula_help():
+    """The functions the formula bar accepts (name + one-line help) — drives the page's autocomplete and help list."""
+    return {"functions": formula.function_help()}
 
 
 @app.post("/step/reset")
@@ -437,7 +487,8 @@ async def save_template(body: TemplateNameRequest, request: Request):
         session = await _session(request)
         if not session.steps:
             return _error(ValueError("Pipeline is empty — nothing to save."))
-        await asyncio.to_thread(templates_store.save_template, body.name, session.steps)
+        await asyncio.to_thread(templates_store.save_template, body.name,
+                                [st for st in session.steps if st.get("enabled", True) is not False])
     except (engine.StepError, ValueError) as exc:
         return _error(exc)
     return {"templates": await asyncio.to_thread(templates_store.list_templates)}

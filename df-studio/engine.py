@@ -21,6 +21,7 @@ import io
 import json
 import os
 import random
+import re
 import threading
 import uuid
 from collections import OrderedDict
@@ -288,51 +289,111 @@ def _frames_info(session: Session) -> list[dict[str, Any]]:
     return out
 
 
+def _enabled(step: dict[str, Any]) -> bool:
+    return step.get("enabled", True) is not False   # steps saved before DF1 have no flag = on
+
+
 def recompute(session: Session) -> pd.DataFrame:
     loaders = {name: (lambda ref=ref: lake_frame(ref)) for name, ref in session.frames.items()}
     token = steps_mod.FRAMES.set(loaders)
     try:
         df = session.original_df
-        for step in session.steps:
+        for i, step in enumerate(session.steps):
+            if not _enabled(step):
+                continue
             handler = STEP_HANDLERS[step["type"]]
-            df, _ = handler(df, step["params"])
+            try:
+                df, _ = handler(df, step["params"])
+            except ValueError as exc:  # say WHICH step broke — "Column(s) not found: x" alone is hard to place
+                raise StepError(f"Step {i + 1} ({STEP_LABELS.get(step['type'], step['type'])}): {exc}") from exc
         return df
     finally:
         steps_mod.FRAMES.reset(token)
 
 
-def _run_step(session: Session, step_type: str, params: dict[str, Any]) -> tuple[pd.DataFrame, str]:
+def _run_step(session: Session, step_type: str, params: dict[str, Any]) -> tuple[pd.DataFrame, str, list[str]]:
     if step_type not in STEP_HANDLERS:
         raise StepError(f"Unknown step type '{step_type}'.")
     current = recompute(session)
     handler = STEP_HANDLERS[step_type]
     token = steps_mod.FRAMES.set({name: (lambda ref=ref: lake_frame(ref)) for name, ref in session.frames.items()})
+    notes: list[str] = []
+    note_token = steps_mod.NOTES.set(notes)
     try:
-        return handler(current, params)
+        df, code = handler(current, params)
+        return df, code, notes
     finally:
+        steps_mod.NOTES.reset(note_token)
         steps_mod.FRAMES.reset(token)
 
 
+run_step = _run_step   # public name: server.py's Check wants the code and the notes too
+
+
+def preview_step_ex(session: Session, step_type: str, params: dict[str, Any]) -> tuple[pd.DataFrame, list[str]]:
+    """Run a step against the current DataFrame without committing it to the pipeline — the "Check" half of the
+    Query / Clean / Formula workflow. Also returns what the step wants to tell the user (roadmap DF1)."""
+    new_df, _, notes = _run_step(session, step_type, params)
+    return new_df, notes
+
+
 def preview_step(session: Session, step_type: str, params: dict[str, Any]) -> pd.DataFrame:
-    """Run a step against the current DataFrame without committing it to the
-    pipeline — the "Check" half of the query box's edit/check workflow."""
-    new_df, _ = _run_step(session, step_type, params)
-    return new_df
+    return preview_step_ex(session, step_type, params)[0]
+
+
+def apply_step_ex(session: Session, step_type: str, params: dict[str, Any]) -> tuple[pd.DataFrame, list[str]]:
+    _, code, notes = _run_step(session, step_type, params)  # validates against current df before committing
+    step: dict[str, Any] = {"type": step_type, "params": params, "code": code, "enabled": True}
+    if notes:
+        step["notes"] = notes
+    session.steps.append(step)
+    save_session(session)
+    return recompute(session), notes
 
 
 def apply_step(session: Session, step_type: str, params: dict[str, Any]) -> pd.DataFrame:
-    _, code = _run_step(session, step_type, params)  # validates against current df before committing
-    session.steps.append({"type": step_type, "params": params, "code": code})
+    return apply_step_ex(session, step_type, params)[0]
+
+
+def _swap_steps(session: Session, new_steps: list[dict[str, Any]]) -> pd.DataFrame:
+    """Install a changed step list only if the whole pipeline still replays; otherwise keep the old one and say why
+    (turning off / moving / removing a step that a later step depends on)."""
+    old = session.steps
+    session.steps = new_steps
+    try:
+        df = recompute(session)
+    except ValueError:
+        session.steps = old
+        raise
     save_session(session)
-    return recompute(session)
+    return df
 
 
 def remove_step(session: Session, index: int) -> pd.DataFrame:
     if index < 0 or index >= len(session.steps):
         raise StepError("Step not found.")
-    session.steps.pop(index)
-    save_session(session)
-    return recompute(session)
+    return _swap_steps(session, session.steps[:index] + session.steps[index + 1:])
+
+
+def toggle_step(session: Session, index: int, enabled: bool) -> pd.DataFrame:
+    """Turn a step off / on without deleting it (roadmap DF1)."""
+    if index < 0 or index >= len(session.steps):
+        raise StepError("Step not found.")
+    steps = [dict(s) for s in session.steps]
+    steps[index]["enabled"] = bool(enabled)
+    return _swap_steps(session, steps)
+
+
+def move_step(session: Session, index: int, direction: str) -> pd.DataFrame:
+    """Move a step one place up or down (roadmap DF1)."""
+    if direction not in ("up", "down"):
+        raise StepError("Direction must be up or down.")
+    target = index - 1 if direction == "up" else index + 1
+    if index < 0 or index >= len(session.steps) or target < 0 or target >= len(session.steps):
+        raise StepError("Can't move the step there.")
+    steps = list(session.steps)
+    steps[index], steps[target] = steps[target], steps[index]
+    return _swap_steps(session, steps)
 
 
 def reset_steps(session: Session) -> pd.DataFrame:
@@ -392,6 +453,8 @@ def generate_script(session: Session) -> str:
     for name, ref in session.frames.items():  # tables added for joins: export them from Vault Data next to the script
         lines.append(f"{name} = pd.read_parquet({(ref + '.parquet')!r})")
     for step in session.steps:
+        if not _enabled(step):
+            continue   # a turned-off step is not part of the pipeline's result, so not of its script either
         lines.append("")
         lines.append(step["code"])
     lines.append("")
@@ -447,7 +510,10 @@ def sql_type(s: pd.Series) -> str:
     if pd.api.types.is_float_dtype(k):
         return "real" if k.itemsize == 4 else "double"
     if pd.api.types.is_datetime64_any_dtype(k):
-        return "timestamptz" if getattr(k, "tz", None) is not None else "timestamp"
+        if getattr(k, "tz", None) is not None:
+            return "timestamptz"
+        head = s.dropna().head(200)   # nothing but midnights = a date column (e.g. after "Change type → date")
+        return "date" if len(head) and (head == head.dt.normalize()).all() else "timestamp"
     if pd.api.types.is_timedelta64_dtype(k):
         return "interval"
     sample = s.dropna().head(50)
@@ -466,12 +532,14 @@ def sql_type(s: pd.Series) -> str:
     return "varchar"
 
 
-def column_stats(df: pd.DataFrame) -> dict[str, dict[str, Any]]:
+def column_stats(df: pd.DataFrame, columns: list[str] | None = None) -> dict[str, dict[str, Any]]:
     """Per column over the WHOLE DataFrame (not the preview rows): empty values, distinct values, and for numbers /
-    dates min · max (· average · std for numbers)."""
+    dates min · max (· average · std for numbers). `columns` limits it to some columns (the header menu asks for one)."""
     out: dict[str, dict[str, Any]] = {}
     n = len(df)
     for c in df.columns:
+        if columns is not None and c not in columns:
+            continue
         s = df[c]
         nulls = int(s.isna().sum())
         try:
@@ -487,6 +555,69 @@ def column_stats(df: pd.DataFrame) -> dict[str, dict[str, Any]]:
             st.update({"min": str(s.min()), "max": str(s.max())})
         out[str(c)] = st
     return out
+
+
+_BOOLISH = {"true", "false", "yes", "no", "y", "n", "t", "f", "0", "1"}
+_DATEISH = re.compile(r"^\s*\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}")
+
+
+def suggest_fixes(s: pd.Series, stat: dict[str, Any]) -> list[dict[str, Any]]:
+    """What is probably worth doing to this column (roadmap DF1: the header menu's "suggested fix"). Looks at the
+    column's stats plus a sample of at most 1000 values; every suggestion is {action, why, params} where `action` is a
+    Clean-panel step type and `params` pre-fills its form. Never changes anything."""
+    out: list[dict[str, Any]] = []
+    n = stat.get("rows") or 0
+    if not n:
+        return out
+    numeric = pd.api.types.is_numeric_dtype(s.dtype) and not pd.api.types.is_bool_dtype(s.dtype)
+    pct = stat.get("null_pct") or 0
+    if 0 < pct < 100:
+        why = f"{pct}% of the values are empty" + (" — most of the column; maybe drop it instead" if pct >= 80 else "")
+        out.append({"action": "fill_nulls", "why": why,
+                    "params": {"method": "median" if numeric else "mode"}})
+    if stat.get("distinct") == 1 and n > 1:
+        out.append({"action": "drop_constant", "why": "every value is the same — it adds nothing", "params": {}})
+    textual = not numeric and not pd.api.types.is_datetime64_any_dtype(s.dtype) and not pd.api.types.is_bool_dtype(s.dtype)
+    if textual:
+        sample = s.dropna().head(1000)
+        sample = sample[sample.map(lambda v: isinstance(v, str))]
+        if len(sample):
+            import warnings
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                raw_num = pd.to_numeric(sample, errors="coerce").notna().mean()
+                stripped_num = pd.to_numeric(sample.str.replace(r"[,$€£%\s]", "", regex=True), errors="coerce").notna().mean()
+                lowered = sample.str.strip().str.lower()
+                if raw_num >= 0.9:
+                    whole = (pd.to_numeric(sample, errors="coerce").dropna() % 1 == 0).all()
+                    out.append({"action": "cast_type", "why": "these look like numbers stored as text",
+                                "params": {"to": "integer" if whole else "float"}})
+                elif stripped_num >= 0.9:
+                    out.append({"action": "cast_type", "why": "numbers with , $ or % signs stored as text",
+                                "params": {"to": "float", "ignore_symbols": True}})
+                elif lowered.nunique() <= 2 and set(lowered.unique()) <= _BOOLISH and len(set(lowered.unique())) >= 1 and lowered.nunique() == 2:
+                    out.append({"action": "cast_type", "why": "only two values, like yes/no", "params": {"to": "boolean"}})
+                elif sample.map(lambda v: bool(_DATEISH.match(v))).mean() >= 0.9 and \
+                        pd.to_datetime(sample, errors="coerce").notna().mean() >= 0.9:
+                    out.append({"action": "cast_type", "why": "these look like dates stored as text", "params": {"to": "date"}})
+            if (sample != sample.str.strip()).any():
+                out.append({"action": "clean_text", "why": "some values have extra spaces at the ends",
+                            "params": {"ops": ["strip"]}})
+            elif sample.str.strip().nunique() > sample.str.strip().str.lower().nunique():
+                out.append({"action": "clean_text", "why": "the same text is written with different capitals",
+                            "params": {"ops": ["strip", "lower"]}})
+    elif numeric and n > 8:
+        v = s.dropna().astype("float64")
+        if len(v) > 8:
+            q1, q3 = v.quantile(0.25), v.quantile(0.75)
+            iqr = q3 - q1
+            if iqr > 0:
+                k = int(((v < q1 - 1.5 * iqr) | (v > q3 + 1.5 * iqr)).sum())
+                if 0 < k <= 0.2 * len(v):
+                    out.append({"action": "clip_outliers", "why": f"{k:,} value(s) are far outside the rest",
+                                "params": {"method": "iqr", "action": "clip"}})
+    return out[:4]
 
 
 def build_preview(session: Session, df: pd.DataFrame) -> dict[str, Any]:
@@ -508,7 +639,8 @@ def build_preview(session: Session, df: pd.DataFrame) -> dict[str, Any]:
         "preview_mode": session.preview_mode,
         "rows": json.loads(capped.to_json(orient="records", date_format="iso")),
         "steps": [
-            {"type": s["type"], "label": STEP_LABELS[s["type"]], "code": s["code"]}
+            {"type": s["type"], "label": STEP_LABELS[s["type"]], "code": s["code"],
+             "enabled": _enabled(s), "notes": s.get("notes") or []}
             for s in session.steps
         ],
         "frames": _frames_info(session),

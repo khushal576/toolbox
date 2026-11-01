@@ -19,6 +19,14 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
+try:  # package import inside the toolbox (df_studio.*) / flat import when run standalone from this folder
+    from df_studio import clean_steps, formula
+except ImportError:
+    import clean_steps
+    import formula
+
+NOTES = clean_steps.NOTES   # what a step wants to tell the user (engine._run_step collects it)
+
 StepHandler = Callable[[pd.DataFrame, dict[str, Any]], tuple[pd.DataFrame, str]]
 
 
@@ -170,6 +178,8 @@ STEP_HANDLERS: dict[str, StepHandler] = {
     "sort_rows": sort_rows,
     "custom_code": custom_code,
     "join_table": join_table,
+    **clean_steps.HANDLERS,   # roadmap DF1: no-code cleaning steps
+    "expression": formula.expression,   # roadmap DF2: the formula bar
 }
 
 STEP_LABELS: dict[str, str] = {
@@ -180,4 +190,6 @@ STEP_LABELS: dict[str, str] = {
     "sort_rows": "Sort",
     "custom_code": "Custom Python",
     "join_table": "Join table",
+    **clean_steps.LABELS,
+    "expression": "Formula",
 }

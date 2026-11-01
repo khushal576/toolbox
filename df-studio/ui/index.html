@@ -24,7 +24,7 @@
     overflow: hidden; /* the page itself never scrolls — panes below do */
   }
   header {
-    max-width: 1280px; margin: 0 auto 10px; width: 100%; flex-shrink: 0;
+    max-width: none; margin: 0 auto 10px; width: 100%; flex-shrink: 0;
     display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
   }
   header h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: -0.5px; }
@@ -32,7 +32,7 @@
   header p { color: var(--muted); font-size: 0.78rem; }
 
   .wrap {
-    max-width: 1280px; margin: 0 auto; width: 100%;
+    max-width: none; margin: 0 auto; width: 100%;
     flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column;
   }
 
@@ -89,7 +89,7 @@
      panel — min-height:0 is what actually lets a flex/grid child shrink
      below its content size instead of pushing the page taller. */
   .layout {
-    display: grid; grid-template-columns: 260px minmax(0, 1fr) 320px; gap: 16px;
+    display: grid; grid-template-columns: 220px minmax(0, 1fr) 300px; gap: 12px;
     flex: 1; min-height: 0; min-width: 0; overflow: hidden;
   }
 
@@ -106,6 +106,14 @@
     border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
   }
 
+  .layout.hide-left { grid-template-columns: 0 minmax(0, 1fr) 300px; gap: 0 12px; }
+  .layout.hide-right { grid-template-columns: 220px minmax(0, 1fr) 0; gap: 0 12px; }
+  .layout.hide-left.hide-right { grid-template-columns: 0 minmax(0, 1fr) 0; }
+  .layout.hide-left > .catalog, .layout.hide-right > .sidebar { visibility: hidden; overflow: hidden; padding: 0; border: 0; }
+  .panel-toggles { display: inline-flex; gap: 6px; margin-left: auto; }
+  .panel-toggles button { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 6px;
+                          padding: 3px 10px; font: inherit; font-size: 0.78rem; cursor: pointer; }
+  .panel-toggles button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
   .sidebar { height: 100%; min-width: 0; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
   /* Tables bar (roadmap L5, Athena-style): workspaces → tables → columns with SQL types */
   .catalog { height: 100%; min-width: 0; display: flex; flex-direction: column; overflow: hidden; margin-bottom: 0; }
@@ -240,6 +248,72 @@
   .result-wrap { max-height: 320px; overflow: auto; }
 
   .empty-state { color: var(--muted); font-size: 0.85rem; padding: 40px 0; text-align: center; }
+
+  /* ---- Phase DF: Clean panel, column menu, formula bar, pipeline controls ---- */
+  .h-top { display: flex; align-items: center; gap: 4px; }
+  .h-top .h-name { flex: 1; min-width: 0; }
+  .h-menu { cursor: pointer; padding: 0 5px; border-radius: 4px; color: var(--muted); font-weight: 700; line-height: 1.3; }
+  .h-menu:hover { background: var(--accent); color: #fff; }
+  .card.flash { box-shadow: 0 0 0 3px rgba(79,94,240,0.35); transition: box-shadow 0.3s; }
+  .card .sub { font-size: 0.74rem; color: var(--muted); margin: -2px 0 8px; }
+  .clean-fields .field { margin-bottom: 9px; }
+  .clean-fields label.opt { text-transform: none; font-weight: 400; font-size: 0.82rem; color: var(--text); letter-spacing: 0;
+                            display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+  .clean-fields label.opt input { width: auto; }
+  .clean-fields textarea { min-height: 70px; }
+  .clean-fields input[type="number"] { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+                                       padding: 7px 9px; font-size: 0.83rem; width: 100%; }
+  .checks { display: flex; flex-direction: column; gap: 1px; }
+  .cp { position: relative; }
+  .cp-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+  .cp-chip { background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 1px 4px 1px 9px; font-size: 0.74rem;
+             display: inline-flex; align-items: center; gap: 4px; max-width: 100%; }
+  .cp-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+  .cp-chip a { cursor: pointer; color: var(--muted); padding: 0 4px; } .cp-chip a:hover { color: var(--err-text); }
+  .cp-search { font-family: inherit !important; }
+  .cp-list { position: absolute; left: 0; right: 0; z-index: 30; background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+             max-height: 220px; overflow-y: auto; box-shadow: 0 6px 20px rgba(0,0,0,0.12); font-size: 0.8rem; margin-top: 2px; }
+  .cp-list[hidden] { display: none; }
+  .cp-item { padding: 4px 9px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  .cp-item:hover { background: var(--bg); } .cp-item.on { background: rgba(79,94,240,0.12); font-weight: 600; }
+  .cp-item .ty, .cp-more { color: var(--muted); font-size: 0.7rem; } .cp-more { padding: 4px 9px; }
+  .cp-tools { font-size: 0.72rem; margin-top: 3px; display: flex; gap: 10px; }
+  .cp-tools a { color: var(--accent); cursor: pointer; }
+  .cond { border: 1px solid var(--border); border-radius: 7px; padding: 6px; margin-bottom: 6px; display: flex; flex-direction: column; gap: 5px; position: relative; }
+  .cond .cond-x { position: absolute; top: 2px; right: 4px; }
+  .cond select, .cond input { font-family: inherit; }
+  .link-btn { background: none; color: var(--accent); padding: 0; font-weight: 600; font-size: 0.78rem; }
+  .col-menu { position: fixed; z-index: 100; width: 290px; max-height: 80vh; overflow-y: auto; background: var(--surface); color: var(--text);
+              border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); padding: 10px; font-size: 0.82rem; }
+  .col-menu[hidden] { display: none; }
+  .col-menu .cm-head { font-size: 0.9rem; margin-bottom: 2px; word-break: break-all; }
+  .col-menu .cm-stats { color: var(--muted); font-size: 0.74rem; margin-bottom: 8px; }
+  .col-menu .cm-sug button { display: block; width: 100%; text-align: left; margin-bottom: 4px; background: var(--warn-bg); color: var(--warn-text);
+                             border: 1px solid var(--warn-border); font-weight: 500; }
+  .col-menu .cm-act { display: block; width: 100%; text-align: left; background: none; color: var(--text); font-weight: 500; padding: 6px 8px; border-radius: 6px; }
+  .col-menu .cm-act:hover { background: var(--bg); }
+  .col-menu .cm-sep { border-top: 1px solid var(--border); margin: 6px 0; }
+  .ac-wrap { position: relative; }
+  .ac { position: absolute; left: 0; right: 0; top: 100%; z-index: 40; background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+        max-height: 220px; overflow-y: auto; box-shadow: 0 6px 20px rgba(0,0,0,0.12); font-size: 0.78rem; }
+  .ac[hidden] { display: none; }
+  .ac div { padding: 4px 9px; display: flex; justify-content: space-between; gap: 10px; cursor: pointer; font-family: 'Cascadia Code', 'Fira Code', monospace; }
+  .ac div.on, .ac div:hover { background: var(--accent); color: #fff; } .ac div .hint2 { color: var(--muted); font-family: inherit; font-size: 0.68rem; }
+  .ac div.on .hint2, .ac div:hover .hint2 { color: #e6e9f8; }
+  .fn-list { max-height: 200px; overflow-y: auto; font-size: 0.74rem; margin-top: 6px; }
+  .fn-list div { padding: 2px 0; border-bottom: 1px dashed var(--border); } .fn-list code { font-weight: 700; }
+  #queryCheckExtra pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin: 6px 0 0; font-size: 0.74rem;
+                         white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', 'Fira Code', monospace; max-height: 120px; overflow: auto; }
+  #queryCheckExtra .warn { color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 6px; padding: 5px 8px;
+                           margin-top: 6px; font-size: 0.78rem; }
+  .pipeline-list li.off { opacity: 0.5; }
+  .pipeline-list li.off code, .pipeline-list li.off pre { text-decoration: line-through; }
+  .pipeline-list .st-toggle { width: auto; margin-top: 3px; flex: none; }
+  .pipeline-list .st-main { flex: 1; min-width: 0; }
+  .pipeline-list .st-btns { display: flex; align-items: center; gap: 2px; flex: none; }
+  .pipeline-list .st-btns .mini { background: none; color: var(--muted); padding: 2px 5px; font-size: 0.7rem; }
+  .pipeline-list .st-btns .mini:hover:not(:disabled) { color: var(--accent); }
+  .pipeline-list .st-note { font-size: 0.7rem; color: var(--warn-text); margin-top: 3px; }
 </style>
 </head>
 <body>
@@ -261,6 +335,10 @@
         <button type="button" class="secondary" id="previewModeSampleBtn" data-mode="sample" disabled>Sample</button>
         <button type="button" class="secondary" id="resampleBtn" style="display:none;" disabled>⟳ Resample</button>
       </div>
+      <div class="panel-toggles">
+        <button type="button" id="toggleLeft" title="Show / hide the Tables list">▤ Tables</button>
+        <button type="button" id="toggleRight" title="Show / hide the Clean, Formula and Pipeline panel">▥ Tools</button>
+      </div>
     </div>
 
 
@@ -272,6 +350,7 @@
         <div>
           <h2 id="queryCheckTitle">Check result</h2>
           <p class="hint" id="queryCheckMeta" style="margin-bottom:0;"></p>
+          <div id="queryCheckExtra"></div>
         </div>
         <div class="check-panel-actions">
           <button id="queryCheckAddBtn">Add to pipeline</button>
@@ -296,9 +375,37 @@
 
       <!-- Sidebar -->
       <div class="sidebar">
+        <div class="card" id="cleanCard">
+          <h2>Clean</h2>
+          <p class="sub">Pick what to fix and which columns, press <b>Check</b> to preview, then <b>Add to pipeline</b>. One step can fix many columns. Tip: the <b>⋮</b> on a column header suggests fixes for that column.</p>
+          <div class="field">
+            <label for="cleanAction">What do you want to do?</label>
+            <select id="cleanAction"></select>
+          </div>
+          <div class="clean-fields" id="cleanFields"></div>
+          <div class="script-actions">
+            <button class="secondary" id="cleanCheckBtn">Check</button>
+            <button id="cleanAddBtn">Add to pipeline</button>
+          </div>
+        </div>
+
+        <div class="card" id="formulaCard">
+          <h2>Formula</h2>
+          <p class="sub">One line per new column, like <code>ratio = a / b</code>. Names with spaces go in backticks: <code>`unit price` * qty</code>. No function needed.</p>
+          <div class="ac-wrap">
+            <textarea id="formulaText" rows="3" spellcheck="false" placeholder="ratio = a / b&#10;size = where(a > 100, 'big', 'small')"></textarea>
+            <div class="ac" id="formulaAc" hidden></div>
+          </div>
+          <details id="formulaFns"><summary class="hint" style="cursor:pointer;margin:6px 0 0;">Available functions</summary><div class="fn-list" id="formulaFnList"></div></details>
+          <div class="script-actions" style="margin-top:8px;">
+            <button class="secondary" id="formulaCheckBtn" title="Ctrl+Enter">Check</button>
+            <button id="formulaAddBtn">Add to pipeline</button>
+          </div>
+        </div>
+
         <div class="card">
           <h2>Query</h2>
-          <p class="hint">Write a <code>transform(df)</code> function. <strong>Check</strong> runs it and shows what it would produce without touching the pipeline; <strong>Add to pipeline</strong> commits it. Pick a snippet below to start from working code instead of a blank box.</p>
+          <p class="hint">For anything the <b>Clean</b> and <b>Formula</b> boxes above don't cover: write a <code>transform(df)</code> function. <strong>Check</strong> runs it and shows what it would produce without touching the pipeline; <strong>Add to pipeline</strong> commits it. Pick a snippet below to start from working code instead of a blank box.</p>
 
           <div class="field">
             <label for="snippetSelect">Insert a snippet</label>
@@ -314,50 +421,6 @@
             <button class="secondary" id="checkQueryBtn">Check</button>
             <button id="addQueryBtn">Add to pipeline</button>
           </div>
-        </div>
-
-        <div class="card">
-          <h2>Add step</h2>
-          <p class="hint">Form-based steps for the common cases. Each appends real pandas code to the pipeline below and is fully removable. For anything these don't cover, use Query above.</p>
-          <div class="field">
-            <label for="stepType">Step</label>
-            <select id="stepType">
-              <option value="rename_column">Rename column</option>
-              <option value="drop_columns">Drop column(s)</option>
-              <option value="add_column">Add column</option>
-              <option value="filter_rows">Filter rows</option>
-              <option value="sort_rows">Sort</option>
-            </select>
-          </div>
-
-          <form class="step-form" id="stepForm">
-            <fieldset id="f-rename_column" class="active">
-              <div class="field"><label>Column</label><select class="col-select" data-field="old"></select></div>
-              <div class="field"><label>New name</label><input type="text" data-field="new" placeholder="new_name" /></div>
-            </fieldset>
-
-            <fieldset id="f-drop_columns">
-              <div class="field"><label>Columns (multi-select)</label><select class="col-select" data-field="columns" multiple></select></div>
-            </fieldset>
-
-            <fieldset id="f-add_column">
-              <div class="field"><label>New column name</label><input type="text" data-field="name" placeholder="total" /></div>
-              <div class="field"><label>Expression</label><input type="text" data-field="expr" placeholder="price * qty" /></div>
-              <p class="hint">Reference existing columns by name. Arithmetic, comparisons, and string concatenation work; e.g. <code>price * qty</code> or <code>first + " " + last</code>.</p>
-            </fieldset>
-
-            <fieldset id="f-filter_rows">
-              <div class="field"><label>Keep rows where</label><input type="text" data-field="expr" placeholder='age > 30 and country == "IN"' /></div>
-            </fieldset>
-
-            <fieldset id="f-sort_rows">
-              <div class="field"><label>Columns (multi-select, priority order)</label><select class="col-select" data-field="columns" multiple></select></div>
-              <div class="field"><label><input type="checkbox" data-field="ascending" checked style="width:auto;display:inline-block;margin-right:6px;" />Ascending</label></div>
-            </fieldset>
-
-
-            <button type="submit" id="applyStepBtn">Apply</button>
-          </form>
         </div>
 
         <div class="card">
@@ -389,22 +452,6 @@
           <ul class="template-list" id="templateList"><li class="empty">No saved templates yet.</li></ul>
         </div>
 
-        <div class="card">
-          <h2>Insights</h2>
-          <div class="insight-btns">
-            <button class="secondary" data-insight="describe">Describe</button>
-            <button class="secondary" data-insight="info">Info</button>
-            <button class="secondary" data-insight="nunique">Nunique</button>
-          </div>
-          <div class="field">
-            <label>Value counts for</label>
-            <div class="row">
-              <select id="valueCountsCol" class="col-select"></select>
-              <button class="secondary" id="valueCountsBtn" style="flex:0 0 auto;">Go</button>
-            </div>
-          </div>
-          <p class="hint" style="margin-bottom:0;">Results open above, full width.</p>
-        </div>
 
         <div class="card">
           <h2>Export</h2>
@@ -829,6 +876,22 @@
     });
   }
 
+  function toggleStep(index, enabled) {
+    return api("step/toggle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index, enabled }),
+    });
+  }
+
+  function moveStep(index, direction) {
+    return api("step/move", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index, direction }),
+    });
+  }
+
   function resetSteps() {
     return api("step/reset", { method: "POST" });
   }
@@ -910,7 +973,9 @@
   const fmtNum = (v) => v == null ? "—" : Math.abs(v) >= 1e6 ? v.toExponential(2) :
     Number(v).toLocaleString(undefined, { maximumFractionDigits: Math.abs(v) < 10 ? 4 : 2 });
   function headerHtml(c) {
-    let h = `<div class="h-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</div><div class="h-type">${escapeHtml(c.sql_type || c.dtype)}</div>`;
+    let h = `<div class="h-top"><div class="h-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</div>` +
+      `<span class="h-menu" data-col="${escapeHtml(c.name)}" title="Clean this column — suggestions and actions">⋮</span></div>` +
+      `<div class="h-type">${escapeHtml(c.sql_type || c.dtype)}</div>`;
     const st = statsOn && colStats ? colStats[c.name] : null;
     // always the same 4 lines (blank when n/a) so every header is equally tall and no filter box gets covered
     const line = (html) => `<div class="h-line">${html || "&nbsp;"}</div>`;
@@ -1031,15 +1096,23 @@
     }
     steps.forEach((step, i) => {
       const li = document.createElement("li");
+      const off = step.enabled === false;
+      if (off) li.className = "off";
       const codeHtml = step.code.includes("\n")
         ? `<pre>${escapeHtml(step.code)}</pre>`
         : `<code>${escapeHtml(step.code)}</code>`;
+      const notes = (step.notes || []).map((n) => `<div class="st-note">${escapeHtml(n)}</div>`).join("");
       li.innerHTML = `
-        <div>
-          <div class="label">${step.label}</div>
-          ${codeHtml}
+        <input type="checkbox" class="st-toggle" data-toggle="${i}" ${off ? "" : "checked"} title="Turn this step on or off (it stays in the list)" />
+        <div class="st-main">
+          <div class="label">${i + 1}. ${step.label}${off ? " — off" : ""}</div>
+          ${codeHtml}${notes}
         </div>
-        <button class="danger" data-remove="${i}">✕</button>`;
+        <div class="st-btns">
+          <button class="mini" data-up="${i}" title="Move up" ${i === 0 ? "disabled" : ""}>▲</button>
+          <button class="mini" data-down="${i}" title="Move down" ${i === steps.length - 1 ? "disabled" : ""}>▼</button>
+          <button class="danger" data-remove="${i}" title="Remove this step">✕</button>
+        </div>`;
       list.appendChild(li);
     });
   }
@@ -1095,6 +1168,7 @@
 
   function applyPreview(preview) {
     clearError();
+    if (preview.warnings && preview.warnings.length) showWarning(preview.warnings.join(" "));  // roadmap DF1: "3 values couldn't be converted…"
     renderTable(preview);
     renderPipeline(preview.steps);
     renderFrames(preview.frames, preview.table_ref);
@@ -1274,41 +1348,47 @@
   document.getElementById("previewModeSampleBtn").addEventListener("click", () => switchPreviewMode("sample"));
   document.getElementById("resampleBtn").addEventListener("click", () => switchPreviewMode("sample", true));
 
-  document.getElementById("stepType").addEventListener("change", (e) => {
-    document.querySelectorAll("#stepForm fieldset").forEach((f) => f.classList.remove("active"));
-    document.getElementById("f-" + e.target.value).classList.add("active");
-  });
-
-  document.getElementById("stepForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const type = document.getElementById("stepType").value;
-    const fieldset = document.getElementById("f-" + type);
-    const params = {};
-    fieldset.querySelectorAll("[data-field]").forEach((el) => {
-      const key = el.dataset.field;
-      if (el.tagName === "SELECT" && el.multiple) {
-        params[key] = Array.from(el.selectedOptions).map((o) => o.value);
-      } else if (el.type === "checkbox") {
-        params[key] = el.checked;
-      } else {
-        params[key] = el.value;
+  // Give the grid the whole width: the Tables list and the Clean/Formula/Pipeline panel can be hidden (remembered).
+  (function () {
+    const layout = document.querySelector(".layout");
+    const sides = { left: ["hide-left", "toggleLeft"], right: ["hide-right", "toggleRight"] };
+    const load = () => { try { return JSON.parse(localStorage.getItem("dfs_panels") || "{}"); } catch (e) { return {}; } };
+    const save = (v) => { try { localStorage.setItem("dfs_panels", JSON.stringify(v)); } catch (e) {} };
+    const apply = (v) => {
+      for (const k of Object.keys(sides)) {
+        layout.classList.toggle(sides[k][0], !!v[k]);
+        document.getElementById(sides[k][1]).classList.toggle("on", !v[k]);
       }
-    });
+      if (window.dispatchEvent) window.dispatchEvent(new Event("resize"));   // Tabulator re-fits to the new width
+    };
+    const state = load(); apply(state);
+    for (const k of Object.keys(sides)) {
+      document.getElementById(sides[k][1]).addEventListener("click", () => { state[k] = !state[k]; save(state); apply(state); });
+    }
+  })();
+
+  document.getElementById("pipelineList").addEventListener("click", async (e) => {
+    const rm = e.target.closest("[data-remove]");
+    const up = e.target.closest("[data-up]");
+    const down = e.target.closest("[data-down]");
+    if (!rm && !up && !down) return;
     try {
-      const preview = await addStep(type, params);
+      const preview = rm ? await removeStep(parseInt(rm.dataset.remove, 10))
+        : await moveStep(parseInt((up || down).dataset[up ? "up" : "down"], 10), up ? "up" : "down");
       applyPreview(preview);
     } catch (err) {
       showError(err.message);
     }
   });
 
-  document.getElementById("pipelineList").addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-remove]");
-    if (!btn) return;
+  // turn a step off / on without deleting it
+  document.getElementById("pipelineList").addEventListener("change", async (e) => {
+    const box = e.target.closest("[data-toggle]");
+    if (!box) return;
     try {
-      const preview = await removeStep(parseInt(btn.dataset.remove, 10));
-      applyPreview(preview);
+      applyPreview(await toggleStep(parseInt(box.dataset.toggle, 10), box.checked));
     } catch (err) {
+      box.checked = !box.checked; // refused (a later step needs it) — nothing changed on the server
       showError(err.message);
     }
   });
@@ -1331,35 +1411,12 @@
   function showInsightPanel(title) {
     document.getElementById("queryCheckTitle").textContent = title;
     document.getElementById("queryCheckMeta").textContent = "";
+    document.getElementById("queryCheckExtra").innerHTML = "";
     document.getElementById("queryCheckAddBtn").style.display = "none";
     const panel = document.getElementById("queryCheckPanel");
     panel.style.display = "block";
     panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
-
-  document.querySelectorAll("[data-insight]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      try {
-        const data = await getInsight(btn.dataset.insight);
-        showInsightPanel(INSIGHT_LABELS[btn.dataset.insight] || btn.dataset.insight);
-        renderResultTable(document.getElementById("queryCheckResult"), data.columns || Object.keys(data.rows[0] || {}), data.rows);
-      } catch (err) {
-        showError(err.message);
-      }
-    });
-  });
-
-  document.getElementById("valueCountsBtn").addEventListener("click", async () => {
-    const col = document.getElementById("valueCountsCol").value;
-    if (!col) return;
-    try {
-      const data = await getInsight("value_counts", col);
-      showInsightPanel(`Value counts — ${col}`);
-      renderResultTable(document.getElementById("queryCheckResult"), ["value", "count"], data.rows);
-    } catch (err) {
-      showError(err.message);
-    }
-  });
 
   let currentExportFormat = "csv";
   const EXPORT_FIELD_GROUPS = { csv: "exportFieldsCsv", json: "exportFieldsJson", parquet: "exportFieldsParquet" };
@@ -1491,10 +1548,12 @@
   });
 
   let lastCheckedCode = "";
+  let lastChecked = null; // {type, params} of the last Check from the Clean / Formula boxes (roadmap DF1/DF2)
 
   function dismissQueryCheck() {
     document.getElementById("queryCheckPanel").style.display = "none";
     lastCheckedCode = "";
+    lastChecked = null;
   }
 
   async function commitQuery(code) {
@@ -1529,6 +1588,8 @@
       const preview = await checkStep("custom_code", { code });
       clearError();
       lastCheckedCode = code;
+      lastChecked = null;
+      document.getElementById("queryCheckExtra").innerHTML = "";
       document.getElementById("queryCheckTitle").textContent = "Check result";
       document.getElementById("queryCheckAddBtn").style.display = "inline-block";
       const meta = document.getElementById("queryCheckMeta");
@@ -1546,8 +1607,14 @@
     }
   });
 
-  document.getElementById("queryCheckAddBtn").addEventListener("click", () => {
-    commitQuery(lastCheckedCode);
+  document.getElementById("queryCheckAddBtn").addEventListener("click", async () => {
+    if (!lastChecked) { commitQuery(lastCheckedCode); return; }
+    const { type, params } = lastChecked; // exactly what was Checked, not whatever the form says now
+    try {
+      applyPreview(await addStep(type, params));
+    } catch (err) {
+      showError(err.message);
+    }
   });
 
   document.getElementById("queryCheckDismissBtn").addEventListener("click", () => {
@@ -1570,6 +1637,509 @@
       // needs to see.
     }
   }
+
+  // =====================================================================
+  // PHASE DF — Clean panel, column menu, formula bar (roadmap DF1 + DF2)
+  // =====================================================================
+  const byId = (id) => document.getElementById(id);
+  const esc = escapeHtml;
+  const columnsInfo = () => (lastPreview ? lastPreview.columns : []);
+  function colKind(c) {
+    const t = (c.sql_type || c.dtype || "").toLowerCase();
+    if (/^(date|timestamp)/.test(t)) return "date";
+    if (t.startsWith("bool")) return "bool";
+    if (/int|real|double|numeric|decimal|float/.test(t)) return "number";
+    return "text";
+  }
+
+  // ── searchable column picker — works with thousands of columns (never renders more than 40 at a time)
+  function makeColumnPicker(host, opts) {
+    opts = opts || {};
+    host.classList.add("cp");
+    host.innerHTML = '<div class="cp-chips"></div><input type="text" class="cp-search" placeholder="' +
+      (opts.multi ? "search and pick columns…" : "search and pick a column…") + '" autocomplete="off" /><div class="cp-list" hidden></div><div class="cp-tools"></div>';
+    const chips = host.querySelector(".cp-chips"), search = host.querySelector(".cp-search");
+    const list = host.querySelector(".cp-list"), tools = host.querySelector(".cp-tools");
+    let chosen = [];
+    const api_ = { onChange: null };
+    const candidates = () => columnsInfo().filter((c) => !opts.kinds || opts.kinds.includes(colKind(c)));
+    function matching() {
+      const q = search.value.trim().toLowerCase();
+      return candidates().filter((c) => !q || c.name.toLowerCase().includes(q));
+    }
+    function drawChips() {
+      const shown = chosen.slice(0, 25);
+      chips.innerHTML = shown.map((n) => `<span class="cp-chip"><span title="${esc(n)}">${esc(n)}</span><a data-rm="${esc(n)}" title="Remove">✕</a></span>`).join("") +
+        (chosen.length > 25 ? `<span class="cp-chip"><span>+${chosen.length - 25} more</span></span>` : "");
+      search.style.display = !opts.multi && chosen.length ? "none" : "";
+    }
+    function drawList() {
+      const all = matching(), show = all.slice(0, 40);
+      list.innerHTML = show.map((c) => `<div class="cp-item${chosen.includes(c.name) ? " on" : ""}" data-name="${esc(c.name)}"><span>${esc(c.name)}</span><span class="ty">${esc(c.sql_type || c.dtype)}</span></div>`).join("") +
+        (all.length > 40 ? `<div class="cp-more">${(all.length - 40).toLocaleString()} more — type to narrow</div>` : "") +
+        (!all.length ? '<div class="cp-more">No matching column.</div>' : "");
+      tools.innerHTML = opts.multi
+        ? `<a data-all="1">add all ${all.length.toLocaleString()} ${search.value.trim() ? "matching" : "listed"}</a>${chosen.length ? '<a data-clear="1">clear</a>' : ""}`
+        : "";
+    }
+    const changed = () => { drawChips(); if (api_.onChange) api_.onChange(); };
+    search.addEventListener("focus", () => { list.hidden = false; drawList(); });
+    search.addEventListener("input", () => { list.hidden = false; drawList(); });
+    list.addEventListener("mousedown", (e) => {
+      const it = e.target.closest("[data-name]");
+      if (!it) return;
+      e.preventDefault();
+      const n = it.dataset.name;
+      if (opts.multi) { chosen = chosen.includes(n) ? chosen.filter((x) => x !== n) : chosen.concat(n); drawList(); } else { chosen = [n]; list.hidden = true; search.value = ""; }
+      changed();
+    });
+    host.addEventListener("mousedown", (e) => {
+      if (e.target.closest("[data-all]")) {
+        e.preventDefault();
+        const names = matching().map((c) => c.name);
+        chosen = chosen.concat(names.filter((n) => !chosen.includes(n)));
+        drawList(); changed();
+      } else if (e.target.closest("[data-clear]")) {
+        e.preventDefault(); chosen = []; drawList(); changed();
+      }
+    });
+    chips.addEventListener("click", (e) => {
+      const rm = e.target.closest("[data-rm]");
+      if (!rm) return;
+      chosen = chosen.filter((x) => x !== rm.dataset.rm);
+      drawList(); changed();
+    });
+    document.addEventListener("mousedown", (e) => { if (!host.contains(e.target)) list.hidden = true; });
+    drawChips();
+    api_.get = () => chosen.slice();
+    api_.set = (arr) => { chosen = (arr || []).filter((n) => typeof n === "string"); drawChips(); };
+    return api_;
+  }
+
+  // ── what the Clean box can do. Each field: k = param name, t = type, show(values) = when it is visible.
+  const OPS = [["==", "equals"], ["!=", "is not"], [">", "is greater than"], [">=", "is at least"], ["<", "is less than"], ["<=", "is at most"],
+    ["contains", "contains"], ["not_contains", "doesn't contain"], ["startswith", "starts with"], ["endswith", "ends with"],
+    ["isnull", "is empty"], ["notnull", "is not empty"], ["in", "is one of  (a, b, c)"], ["not_in", "is not one of  (a, b, c)"], ["between", "is between  (a, b)"]];
+  const isDateTo = (v) => v.to === "date" || v.to === "datetime";
+  const CLEAN = {
+    fill_nulls: { group: "Fix values", label: "Fill empty values", fields: [
+      { k: "columns", t: "cols" },
+      { k: "method", t: "select", label: "Fill with", def: "value", opts: [["value", "a value I type"], ["mean", "the average (numbers)"], ["median", "the middle value (numbers)"],
+        ["mode", "the most common value"], ["ffill", "the value above"], ["bfill", "the value below"], ["zero", "0 (numbers)"], ["empty_string", "empty text"]] },
+      { k: "value", t: "text", label: "Value", show: (v) => v.method === "value" },
+    ] },
+    cast_type: { group: "Fix values", label: "Change type", fields: [
+      { k: "columns", t: "cols" },
+      { k: "to", t: "select", label: "Change to", def: "float", opts: [["text", "Text"], ["integer", "Whole number"], ["float", "Decimal number"], ["boolean", "True / False"],
+        ["date", "Date"], ["datetime", "Date and time"], ["category", "Category (few repeated values)"]] },
+      { k: "format", t: "text", label: "Date format (optional)", ph: "%d/%m/%Y — empty = detect it", show: isDateTo },
+      { k: "dayfirst", t: "check", label: "Day comes first (31/12/2026)", show: (v) => isDateTo(v) && !v.format },
+      { k: "ignore_symbols", t: "check", label: "Ignore , $ € £ % and spaces inside numbers", show: (v) => v.to === "float" || v.to === "integer" },
+      { k: "on_error", t: "select", label: "Values that can't be changed", def: "coerce", show: (v) => v.to !== "text" && v.to !== "category",
+        opts: [["coerce", "Make them empty (and tell me how many)"], ["raise", "Stop with an error"]] },
+    ] },
+    clean_text: { group: "Fix values", label: "Clean text", fields: [
+      { k: "columns", t: "cols", kinds: ["text"] },
+      { k: "ops", t: "checks", label: "Do this", def: ["strip"], opts: [["strip", "Trim spaces at both ends"], ["collapse_spaces", "Turn repeated spaces into one"], ["remove_spaces", "Remove all spaces"],
+        ["lower", "all lowercase"], ["upper", "ALL UPPERCASE"], ["title", "Title Case"], ["remove_digits", "Remove digits"], ["remove_punctuation", "Remove punctuation"],
+        ["ascii_only", "Remove accents / non-English letters"]] },
+    ] },
+    replace_values: { group: "Fix values", label: "Replace values", fields: [
+      { k: "columns", t: "cols" },
+      { k: "mapping", t: "textarea", label: "Replace (one per line:  old => new)", ph: "N/A =>\nUSA => United States\n-1 => 0",
+        help: "Leave the new value empty to make the old one empty. Spaces around the values are ignored.", parse: parseMapping },
+      { k: "regex", t: "check", label: "The old values are patterns (regular expressions)" },
+    ] },
+    extract_text: { group: "Text", label: "Extract part of text", fields: [
+      { k: "column", t: "col", kinds: ["text"] },
+      { k: "pattern", t: "text", label: "Pattern — put the part to keep in ( )", ph: "INV-(\\d+)" },
+      { k: "new_column", t: "text", label: "New column name" },
+    ] },
+    split_column: { group: "Text", label: "Split a column", fields: [
+      { k: "column", t: "col", kinds: ["text"] },
+      { k: "delimiter", t: "text", label: "Split on", ph: ",  or  -  or  |" },
+      { k: "new_columns", t: "text", label: "New column names (comma-separated)", ph: "first, last" },
+      { k: "drop_original", t: "check", label: "Remove the original column" },
+    ] },
+    merge_columns: { group: "Text", label: "Join columns into one", fields: [
+      { k: "columns", t: "cols", label: "Columns to join (in this order)" },
+      { k: "separator", t: "text", label: "Put between them", def: " " },
+      { k: "new_column", t: "text", label: "New column name" },
+      { k: "drop_original", t: "check", label: "Remove the original columns" },
+    ] },
+    date_parts: { group: "Dates", label: "Date parts (year, month, …)", fields: [
+      { k: "column", t: "col", kinds: ["date"] },
+      { k: "parts", t: "checks", label: "Make columns for", def: ["year", "month", "day"], opts: [["year", "year"], ["month", "month (1–12)"], ["day", "day of month"],
+        ["weekday", "weekday (0 = Monday)"], ["weekday_name", "weekday name"], ["month_name", "month name"], ["quarter", "quarter"], ["week", "week of year"],
+        ["dayofyear", "day of year"], ["hour", "hour"], ["minute", "minute"], ["is_weekend", "is weekend (true / false)"]] },
+      { k: "prefix", t: "text", label: "Name prefix (optional)", ph: "same as the column name" },
+    ] },
+    filter_builder: { group: "Rows", label: "Filter rows", fields: [
+      { k: "conditions", t: "conds" },
+      { k: "combine", t: "select", label: "Keep rows that match", def: "and", opts: [["and", "all of the conditions"], ["or", "any of the conditions"]], show: (v) => v.conditions.length > 1 },
+    ] },
+    dedupe: { group: "Rows", label: "Remove duplicate rows", fields: [
+      { k: "subset", t: "cols", label: "Duplicates = same values in these columns (empty = every column)", optional: true },
+      { k: "keep", t: "select", label: "Keep", def: "first", opts: [["first", "the first one"], ["last", "the last one"], ["none", "none (remove every copy)"]] },
+    ] },
+    clip_outliers: { group: "Numbers", label: "Outliers (unusual values)", fields: [
+      { k: "columns", t: "cols", kinds: ["number"] },
+      { k: "method", t: "select", label: "How to find them", def: "iqr", opts: [["iqr", "far outside the middle half of the values (IQR)"], ["zscore", "many standard deviations from the average"], ["percentile", "below / above chosen percentiles"]] },
+      { k: "factor", t: "number", label: "How strict (empty = 1.5 for IQR, 3 for standard deviations)", show: (v) => v.method !== "percentile" },
+      { k: "low", t: "number", label: "Lower percentile", def: 1, show: (v) => v.method === "percentile" },
+      { k: "high", t: "number", label: "Upper percentile", def: 99, show: (v) => v.method === "percentile" },
+      { k: "action", t: "select", label: "What to do with them", def: "clip", opts: [["clip", "pull them back to the edge"], ["null", "make them empty"], ["flag", "keep them, add a true / false flag column"]] },
+    ] },
+    bin_column: { group: "Numbers", label: "Group numbers into bins", fields: [
+      { k: "column", t: "col", kinds: ["number"] },
+      { k: "method", t: "select", label: "How", def: "equal_width", opts: [["equal_width", "equal-size ranges"], ["quantile", "equal number of rows in each"], ["custom", "my own edges"]] },
+      { k: "bins", t: "number", label: "How many groups", def: 4, show: (v) => v.method !== "custom" },
+      { k: "edges", t: "text", label: "Edges (smallest first)", ph: "0, 18, 65, 120", show: (v) => v.method === "custom" },
+      { k: "labels", t: "text", label: "Group names (optional, comma-separated)", ph: "low, medium, high" },
+      { k: "new_column", t: "text", label: "New column name (optional)", ph: "<column>_bin" },
+    ] },
+    drop_sparse: { group: "Columns", label: "Drop mostly-empty columns", fields: [
+      { k: "max_null_pct", t: "number", label: "Drop columns that are more than … % empty", def: 50 },
+    ] },
+    drop_constant: { group: "Columns", label: "Drop columns that never change", info: "Removes every column where all the rows hold the same value.", fields: [] },
+    bulk_rename: { group: "Columns", label: "Rename columns in bulk", fields: [
+      { k: "style", t: "select", label: "Style", def: "snake_case", opts: [["snake_case", "snake_case  (Order ID → order_id)"], ["lower", "lowercase"], ["upper", "UPPERCASE"], ["title", "Title Case"], ["strip", "only trim extra spaces"]] },
+      { k: "columns", t: "cols", label: "Only these columns (empty = all)", optional: true },
+    ] },
+  };
+
+  function parseMapping(raw) {
+    const out = [];
+    String(raw || "").split("\n").forEach((line) => {
+      if (!line.trim()) return;
+      const i = line.indexOf("=>") >= 0 ? line.indexOf("=>") : line.indexOf("->");
+      if (i < 0) throw new Error(`Write each replacement like  old => new   (this line has no “=>”: ${line.trim().slice(0, 40)})`);
+      const from = line.slice(0, i).trim(), to = line.slice(i + 2).trim();
+      out.push({ from, to: to === "" ? null : to });
+    });
+    return out;
+  }
+
+  // ── building the form of one Clean action
+  let cleanCtx = null;
+  function renderCleanForm(action, preset) {
+    preset = preset || {};
+    const spec = CLEAN[action], host = byId("cleanFields");
+    host.innerHTML = "";
+    const ctx = { action, spec, getters: {}, setters: {}, wraps: {} };
+    if (spec.info) host.insertAdjacentHTML("beforeend", `<p class="hint">${esc(spec.info)}</p>`);
+    let ready = false;   // refresh() needs every field's getter, so it waits until the whole form is built
+    const refresh = () => {
+      if (!ready) return;
+      const vals = ctx.values();
+      spec.fields.forEach((f) => { if (f.show) ctx.wraps[f.k].style.display = f.show(vals) ? "" : "none"; });
+    };
+    ctx.values = () => { const o = {}; spec.fields.forEach((f) => { o[f.k] = ctx.getters[f.k](); }); return o; };
+    spec.fields.forEach((f) => {
+      const wrap = document.createElement("div");
+      wrap.className = "field";
+      ctx.wraps[f.k] = wrap;
+      const label = f.label || (f.t === "cols" ? "Columns" : f.t === "col" ? "Column" : "");
+      if (label && f.t !== "check" && f.t !== "conds") wrap.insertAdjacentHTML("beforeend", `<label>${esc(label)}</label>`);
+      const preVal = preset.params && preset.params[f.k] !== undefined ? preset.params[f.k] : undefined;
+      if (f.t === "cols" || f.t === "col") {
+        const box = document.createElement("div");
+        wrap.appendChild(box);
+        const picker = makeColumnPicker(box, { multi: f.t === "cols", kinds: f.kinds });
+        picker.onChange = refresh;
+        const init = preVal !== undefined ? [].concat(preVal) : (f.t === "cols" ? (preset.columns || []) : (preset.column ? [preset.column] : (preset.columns || []).slice(0, 1)));
+        picker.set(f.t === "col" ? init.slice(0, 1) : init);
+        ctx.getters[f.k] = () => (f.t === "col" ? (picker.get()[0] || "") : picker.get());
+      } else if (f.t === "select") {
+        const sel = document.createElement("select");
+        sel.innerHTML = f.opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+        sel.value = preVal !== undefined ? preVal : f.def;
+        wrap.appendChild(sel);
+        ctx.getters[f.k] = () => sel.value;
+      } else if (f.t === "text" || f.t === "number") {
+        const inp = document.createElement("input");
+        inp.type = f.t === "number" ? "number" : "text";
+        if (f.t === "number") inp.step = "any";
+        if (f.ph) inp.placeholder = f.ph;
+        inp.value = preVal !== undefined ? preVal : (f.def !== undefined ? f.def : "");
+        wrap.appendChild(inp);
+        ctx.getters[f.k] = () => (f.t === "number" ? (inp.value.trim() === "" ? null : Number(inp.value)) : inp.value);
+      } else if (f.t === "textarea") {
+        const ta = document.createElement("textarea");
+        if (f.ph) ta.placeholder = f.ph;
+        ta.spellcheck = false;
+        ta.value = preVal !== undefined ? preVal : "";
+        wrap.appendChild(ta);
+        if (f.help) wrap.insertAdjacentHTML("beforeend", `<p class="hint" style="margin:3px 0 0">${esc(f.help)}</p>`);
+        ctx.getters[f.k] = () => ta.value;
+      } else if (f.t === "check") {
+        const lab = document.createElement("label");
+        lab.className = "opt";
+        lab.innerHTML = `<input type="checkbox" /> ${esc(f.label)}`;
+        const cb = lab.querySelector("input");
+        cb.checked = preVal !== undefined ? !!preVal : !!f.def;
+        wrap.appendChild(lab);
+        ctx.getters[f.k] = () => cb.checked;
+      } else if (f.t === "checks") {
+        const box = document.createElement("div");
+        box.className = "checks";
+        const want = new Set(preVal !== undefined ? preVal : f.def || []);
+        box.innerHTML = f.opts.map(([v, l]) => `<label class="opt"><input type="checkbox" value="${esc(v)}" ${want.has(v) ? "checked" : ""} /> ${esc(l)}</label>`).join("");
+        wrap.appendChild(box);
+        ctx.getters[f.k] = () => [...box.querySelectorAll("input:checked")].map((i) => i.value);
+      } else if (f.t === "conds") {
+        const box = document.createElement("div");
+        wrap.appendChild(box);
+        const rows = [];
+        const addRow = (col, op, val) => {
+          const row = document.createElement("div");
+          row.className = "cond";
+          row.innerHTML = '<a class="cond-x link-btn" title="Remove this condition" style="cursor:pointer">✕</a><div class="cc"></div>' +
+            `<select class="op">${OPS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("")}</select><input type="text" class="val" />`;
+          const picker = makeColumnPicker(row.querySelector(".cc"), { multi: false });
+          if (col) picker.set([col]);
+          const opSel = row.querySelector(".op"), valIn = row.querySelector(".val");
+          opSel.value = op || "==";
+          valIn.value = val || "";
+          const sync = () => {
+            const o = opSel.value;
+            valIn.style.display = o === "isnull" || o === "notnull" ? "none" : "";
+            valIn.placeholder = o === "in" || o === "not_in" ? "a, b, c" : o === "between" ? "10, 20" : "value";
+          };
+          opSel.addEventListener("change", () => { sync(); refresh(); });
+          sync();
+          row.querySelector(".cond-x").addEventListener("click", () => { rows.splice(rows.indexOf(entry), 1); row.remove(); refresh(); });
+          const entry = { picker, opSel, valIn };
+          rows.push(entry);
+          box.appendChild(row);
+          refresh();
+        };
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "link-btn";
+        add.textContent = "+ add another condition";
+        add.addEventListener("click", () => addRow());
+        wrap.appendChild(add);
+        const pre = preVal !== undefined ? preVal : [{ column: preset.column || (preset.columns || [])[0] || "" }];
+        pre.forEach((c) => addRow(c.column, c.op, c.value));
+        ctx.getters[f.k] = () => rows.map((r) => ({ column: r.picker.get()[0] || "", op: r.opSel.value, value: r.valIn.value }));
+      }
+      host.appendChild(wrap);
+    });
+    host.oninput = refresh;
+    host.onchange = refresh;
+    cleanCtx = ctx;
+    ready = true;
+    refresh();
+  }
+
+  function cleanParams() {
+    const ctx = cleanCtx, vals = ctx.values(), params = {};
+    for (const f of ctx.spec.fields) {
+      if (f.show && !f.show(vals)) continue;
+      let v = vals[f.k];
+      if (f.parse) v = f.parse(v);
+      if (f.t === "number" && v === null) continue;
+      if ((f.t === "text" || f.t === "textarea") && v === "" && f.k !== "separator") continue;
+      if ((f.t === "cols") && f.optional && !v.length) continue;
+      if (f.t === "conds") v = v.filter((c) => c.column);
+      params[f.k] = v;
+    }
+    return params;
+  }
+
+  function openClean(action, preset) {
+    if (!CLEAN[action]) return;
+    byId("cleanAction").value = action;
+    renderCleanForm(action, preset);
+    const card = byId("cleanCard");
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    card.classList.add("flash");
+    setTimeout(() => card.classList.remove("flash"), 1200);
+  }
+
+  (function buildCleanSelect() {
+    const sel = byId("cleanAction"), groups = {};
+    Object.entries(CLEAN).forEach(([k, v]) => { (groups[v.group] = groups[v.group] || []).push([k, v.label]); });
+    sel.innerHTML = Object.entries(groups).map(([g, items]) => `<optgroup label="${esc(g)}">${items.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}</optgroup>`).join("");
+    sel.addEventListener("change", () => renderCleanForm(sel.value));
+    renderCleanForm(sel.value);
+  })();
+
+  // ── Check / Add for the Clean and Formula boxes. Check shows the real pandas line and any warnings, and
+  // "Add to pipeline" in the panel commits exactly what was checked.
+  async function runCheck(type, params, title) {
+    try {
+      const preview = await checkStep(type, params);
+      clearError();
+      lastCheckedCode = "";
+      lastChecked = { type, params };
+      byId("queryCheckTitle").textContent = title || "Check result";
+      byId("queryCheckAddBtn").style.display = "inline-block";
+      byId("queryCheckMeta").textContent = `Preview only, not added to the pipeline — would produce ${preview.row_count.toLocaleString()} rows × ${preview.columns.length} columns.`;
+      byId("queryCheckExtra").innerHTML = (preview.code ? `<pre>${esc(preview.code)}</pre>` : "") +
+        (preview.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("");
+      renderResultTable(byId("queryCheckResult"), preview.columns.map((c) => c.name), preview.rows);
+      const panel = byId("queryCheckPanel");
+      panel.style.display = "block";
+      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+  async function runAdd(type, params, after) {
+    try {
+      applyPreview(await addStep(type, params));
+      if (after) after();
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+  function withCleanParams(fn) {
+    let params;
+    try { params = cleanParams(); } catch (err) { showError(err.message); return; }
+    fn(cleanCtx.action, params);
+  }
+  byId("cleanCheckBtn").addEventListener("click", () => withCleanParams((a, p) => runCheck(a, p, `Check result — ${CLEAN[a].label}`)));
+  byId("cleanAddBtn").addEventListener("click", () => withCleanParams((a, p) => runAdd(a, p)));
+
+  // ── the ⋮ menu on every column header: stats, a suggested fix, and the actions that make sense for that column
+  const menu = document.createElement("div");
+  menu.className = "col-menu";
+  menu.hidden = true;
+  document.body.appendChild(menu);
+  const closeMenu = () => { menu.hidden = true; };
+  document.addEventListener("mousedown", (e) => { if (!menu.hidden && !menu.contains(e.target) && !e.target.closest(".h-menu")) closeMenu(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+
+  async function quickStep(type, params) {   // rename / drop / sort straight from the column menu — no form
+    try { applyPreview(await addStep(type, params)); } catch (err) { showError(err.message); }
+  }
+
+  async function openMenu(name, anchor) {
+    const c = columnsInfo().find((x) => x.name === name);
+    if (!c) return;
+    const kind = colKind(c);
+    const r = anchor.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 306)) + "px";
+    menu.style.top = Math.min(r.bottom + 4, Math.max(8, window.innerHeight - 380)) + "px";
+    const acts = [["fill_nulls", "Fill empty values"], ["cast_type", "Change type"], ["replace_values", "Replace values"]];
+    if (kind === "text") acts.push(["clean_text", "Clean text"], ["split_column", "Split into columns"], ["extract_text", "Extract part of text"]);
+    if (kind === "number") acts.push(["clip_outliers", "Handle outliers"], ["bin_column", "Group into bins"]);
+    if (kind === "date") acts.push(["date_parts", "Date parts (year, month, …)"]);
+    acts.push(["filter_builder", "Filter rows on this column"], ["dedupe", "Remove duplicates by this column"]);
+    menu.innerHTML = `<div class="cm-head"><b>${esc(name)}</b> <span class="h-type">${esc(c.sql_type || c.dtype)}</span></div>` +
+      '<div class="cm-stats" id="cmStats">checking…</div><div class="cm-sug" id="cmSug"></div><div class="cm-sep"></div>' +
+      acts.map(([a, l]) => `<button class="cm-act" data-act="${a}">${esc(l)}</button>`).join("") +
+      '<div class="cm-sep"></div><button class="cm-act" data-legacy="value_counts">Value counts</button><button class="cm-act" data-legacy="sort_asc">Sort A → Z / small → large</button><button class="cm-act" data-legacy="sort_desc">Sort Z → A / large → small</button><button class="cm-act" data-legacy="rename">Rename this column…</button><button class="cm-act" data-legacy="drop">Drop this column</button>';
+    menu.hidden = false;
+    menu.onclick = (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      closeMenu();
+      if (b.dataset.act) openClean(b.dataset.act, { column: name, columns: [name] });
+      else if (b.dataset.sug) { const s = menu._sug[+b.dataset.sug]; openClean(s.action, { column: name, columns: [name], params: s.params }); }
+      else if (b.dataset.legacy === "rename") { const n = (prompt(`New name for “${name}”:`, name) || "").trim(); if (n && n !== name) quickStep("rename_column", { old: name, new: n }); }
+      else if (b.dataset.legacy === "value_counts") getInsight("value_counts", name).then((data) => { showInsightPanel(`Value counts — ${name}`); renderResultTable(document.getElementById("queryCheckResult"), ["value", "count"], data.rows); }).catch((err) => showError(err.message));
+      else if (b.dataset.legacy === "drop") quickStep("drop_columns", { columns: [name] });
+      else if (b.dataset.legacy === "sort_asc" || b.dataset.legacy === "sort_desc") quickStep("sort_rows", { columns: [name], ascending: b.dataset.legacy === "sort_asc" });
+    };
+    try {
+      const d = await api("column-stats?column=" + encodeURIComponent(name));
+      const st = (d.stats || {})[name];
+      if (menu.hidden || !st) return;
+      const bits = [`${st.null_pct}% empty`, `${st.distinct == null ? "—" : st.distinct.toLocaleString()} different values`];
+      if (st.min !== undefined) bits.push(`min ${typeof st.min === "number" ? fmtNum(st.min) : st.min}`, `max ${typeof st.max === "number" ? fmtNum(st.max) : st.max}`);
+      byId("cmStats").textContent = bits.join(" · ");
+      menu._sug = d.suggest || [];
+      byId("cmSug").innerHTML = menu._sug.map((s, i) => `<button data-sug="${i}">💡 ${esc(s.why)} → ${esc(CLEAN[s.action] ? CLEAN[s.action].label : s.action)}</button>`).join("");
+    } catch (err) {
+      if (!menu.hidden) byId("cmStats").textContent = err.message;
+    }
+  }
+  // capture phase: the click on ⋮ must not reach Tabulator's own header handler (it would sort the column)
+  byId("table").addEventListener("click", (e) => {
+    const b = e.target.closest(".h-menu");
+    if (!b) return;
+    e.stopPropagation();
+    e.preventDefault();
+    openMenu(b.dataset.col, b);
+  }, true);
+
+  // ── Formula bar (roadmap DF2)
+  let fnHelp = [];
+  api("formula/help").then((d) => {
+    fnHelp = d.functions || [];
+    byId("formulaFnList").innerHTML = fnHelp.map((f) => `<div><code>${esc(f.name)}</code> — ${esc(f.help)}</div>`).join("");
+  }).catch(() => { /* the bar still works without the list */ });
+
+  const fta = byId("formulaText"), fac = byId("formulaAc");
+  let acItems = [], acIdx = 0, acFrom = 0, acInBt = false;
+  const acHide = () => { fac.hidden = true; acItems = []; };
+  function acDraw() {
+    fac.innerHTML = acItems.map((it, i) => `<div class="${i === acIdx ? "on" : ""}" data-i="${i}"><span>${esc(it.label)}</span><span class="hint2">${esc(it.hint)}</span></div>`).join("");
+    fac.hidden = !acItems.length;
+  }
+  function acUpdate() {
+    const pos = fta.selectionStart, before = fta.value.slice(0, pos);
+    const lineBefore = before.split("\n").pop();
+    const bt = (lineBefore.match(/`/g) || []).length % 2 === 1 ? before.match(/`([^`\n]*)$/) : null; // an odd number of backticks = we are inside one
+    let word, from;
+    acInBt = false;
+    if (bt) { word = bt[1]; from = pos - bt[0].length; acInBt = true; } else {
+      const m = before.match(/[A-Za-z_][A-Za-z0-9_]*$/);
+      if (!m) { acHide(); return; }
+      word = m[0]; from = pos - word.length;
+      if (/^\s*[A-Za-z_][A-Za-z0-9_]*$/.test(before.split("\n").pop()) && !before.split("\n").pop().includes("=")) { /* typing the new column's name */ acHide(); return; }
+    }
+    const lw = word.toLowerCase(), starts = [], inc = [];
+    for (const c of columnsInfo()) {
+      const l = c.name.toLowerCase();
+      if (l.startsWith(lw)) starts.push(c); else if (lw && l.includes(lw)) inc.push(c);
+      if (starts.length >= 12) break;
+    }
+    const items = starts.concat(inc).slice(0, 10).map((c) => ({ kind: "col", text: c.name, label: c.name, hint: c.sql_type || c.dtype }));
+    if (!acInBt && lw) fnHelp.filter((f) => f.name.startsWith(lw)).slice(0, 6).forEach((f) => items.push({ kind: "fn", text: f.name, label: f.name + "( )", hint: "function" }));
+    acItems = items.slice(0, 12); acIdx = 0; acFrom = from;
+    acDraw();
+  }
+  function acPick(i) {
+    const it = acItems[i];
+    if (!it) return;
+    const pos = fta.selectionStart;
+    let ins;
+    if (it.kind === "fn") ins = it.text + "(";
+    else if (acInBt) ins = "`" + it.text + (fta.value[pos] === "`" ? "" : "`");
+    else ins = /^[A-Za-z_][A-Za-z0-9_]*$/.test(it.text) ? it.text : "`" + it.text + "`";
+    const after = acInBt && fta.value[pos] === "`" ? pos + 1 : pos;
+    fta.value = fta.value.slice(0, acFrom) + ins + fta.value.slice(after);
+    const caret = acFrom + ins.length;
+    fta.setSelectionRange(caret, caret);
+    acHide();
+    fta.focus();
+  }
+  fta.addEventListener("input", acUpdate);
+  fta.addEventListener("click", acUpdate);
+  fta.addEventListener("blur", () => setTimeout(acHide, 120));
+  fta.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); acHide(); byId("formulaCheckBtn").click(); return; }
+    if (fac.hidden) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); acIdx = (acIdx + 1) % acItems.length; acDraw(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); acIdx = (acIdx - 1 + acItems.length) % acItems.length; acDraw(); }
+    else if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); acPick(acIdx); }
+    else if (e.key === "Escape") { acHide(); }
+  });
+  fac.addEventListener("mousedown", (e) => { const d = e.target.closest("[data-i]"); if (d) { e.preventDefault(); acPick(+d.dataset.i); } });
+  byId("formulaCheckBtn").addEventListener("click", () => {
+    const text = fta.value;
+    if (!text.trim()) { showError("Type a formula first, like  total = price * qty"); return; }
+    runCheck("expression", { text }, "Check result — formula");
+  });
+  byId("formulaAddBtn").addEventListener("click", () => {
+    const text = fta.value;
+    if (!text.trim()) { showError("Type a formula first, like  total = price * qty"); return; }
+    runAdd("expression", { text }, () => { fta.value = ""; });
+  });
 
   populateSnippetSelect();
   refreshTemplates();

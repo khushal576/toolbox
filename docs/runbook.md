@@ -64,7 +64,12 @@ open. Servers saved as read-only get no terminal.
 **Duck Lab / DataFrame Studio** work only with Vault Data tables (left *Tables* list → *Load*; loaded tables turn
 green, ✕ unloads). Load as many as you need: in Duck Lab each is a SQL table (write your JOIN); in DataFrame Studio
 the first is `df` and the others are variables named after the table (`df.merge(customers, on="customer_id")` in
-Query). *📊 Column stats* shows empty / distinct / min / max / average per column in the grid header. Inside any tool
+Query). *📊 Column stats* shows empty / distinct / min / max / average per column in the grid header.
+**Cleaning without code (DataFrame Studio):** click the **⋮** on a column header for its empty %, a suggested fix and the actions
+that fit it, or use the **Clean** box (pick what to fix, pick the columns — one step can fix many — press *Check*, then *Add to
+pipeline*). The **Formula** box makes a new column from one line (`ratio = a / b`; names with spaces in backticks). In the Pipeline
+list every step can be switched off/on (it stays listed), moved ▲▼ or removed ✕; a change that would break a later step is refused.
+The *Query* box (full Python) is still there for anything else. Inside any tool
 the left menu hides — press ☰ (top left) or Ctrl+K to open it.
 
 **Never run `docker compose down -v`** unless you mean it: `-v` deletes the data volumes (database, files).

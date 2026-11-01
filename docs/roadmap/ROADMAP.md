@@ -321,6 +321,39 @@ like Athena (SQL), with pandas through the existing tools (a Jupyter-like notebo
   loaded files), dedupe on load, data-quality rules, time travel / restore version, zero-copy clone, JSON flattening, partitioned
   tables, schema evolution on append, PII column tags that mask in every tool, scheduled loads.
 
+## Phase DF – DataFrame Studio for cleaning + feature engineering
+<!-- The owner's plan calls these F1–F7; they are DF1–DF7 here because "Phase F" already means "Multiple nodes" below. -->
+
+Owner request (2026-11-01): make data cleaning and feature engineering easy in DataFrame Studio — less hand-written
+`def transform(df)`, quicker steps, many-table joins, staging results. Master plan, in this order:
+
+### DF1 Click cleaning (M)
+- **Done** (2026-11-01, rebuild needed): 15 no-code steps in `df-studio/clean_steps.py` — fill empty values, change type, clean
+  text, replace values, extract / split / join text, date parts, remove duplicates, drop mostly-empty / constant columns, outliers,
+  bins, bulk rename, filter builder — each applies to MANY columns in one step, shows its real pandas line, exports in the script and in
+  templates. The step runs the very code it shows (`run()`), values go through `repr()`. The page: **Clean** card (searchable column
+  picker, fine with thousands of columns), a **⋮ menu on every column header** (stats + suggested fix: `engine.suggest_fixes`), Check
+  shows pandas + warnings ("N values couldn't be converted"), every step can be turned **off/on**, moved ▲▼, removed ✕ (refused with
+  a plain message, nothing changed, when a later step needs it — `engine._swap_steps`). A broken step now names itself ("Step 3 (…): …").
+### DF2 Formula bar (S)
+- **Done** (2026-11-01): `df-studio/formula.py` — `ratio = a / b`, several lines, `` `names with spaces` ``, ~40 functions
+  (`where`, `coalesce`, `round`, `cut`, `lower`, `year`…), autocomplete for columns and functions. `ast`-validated allow-list; the shown
+  pandas is GENERATED from the checked tree, the typed text is never executed. `def transform(df)` stays for hard cases.
+### DF3 Staging (M) — planned
+- Named checkpoints in a pipeline ("clean_customers") saved as Vault Data tables (default workspace `system`) with lineage (source
+  tables + steps + script stored with the table); a stage can be the input of another pipeline; "re-run on updated data".
+### DF4 Join builder for many tables (M) — planned
+- Pick tables from Vault Data, key suggestions from `lake.suggest_joins`, chain joins visually, join type, several keys; row-explosion
+  warning (1:N / N:M), match-rate report, unmatched rows; append tables with the same structure by name or position (reuse L7's map).
+### DF5 Feature catalog (M) — planned
+- Numeric (log, ratios, scaling), categorical (one-hot, label, frequency, target encoding, rare grouping), time (lags, rolling,
+  time since), group aggregates, missing flags; "fit on this set, apply to another" so scaling/encoding doesn't leak.
+### DF6 Speed and scale (M) — planned
+- Replay from the last unchanged step (today every Add replays the whole pipeline on copies), work on a sample while building, DuckDB
+  backend for the heavy steps (joins, group-bys).
+### DF7 Quality and trust (S) — planned
+- Row-count waterfall per step, before/after profile, per-stage checks (not null, unique, range), data dictionary saved with a feature table.
+
 ## Phase E – Observability (revised 2026-10-25: lightweight, no new containers)
 
 Owner decision: Prometheus + Grafana (two always-on containers, ~150–250 MiB, own storage) are too heavy for one
@@ -385,6 +418,17 @@ the workspace status) and shows it on ONE page in the workspace. Nothing runs or
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+
+- 2026-11-01 – **DF1 + DF2 done (code + docs + tests, not yet rebuilt/verified live).** DataFrame Studio: Clean card + ⋮ column menu,
+  Formula bar, steps turn off/on/move (see Phase DF above). New: `df-studio/clean_steps.py`, `formula.py`; `engine.py` (notes, `enabled`,
+  `toggle_step`/`move_step`, rollback when a change would break a later step, `suggest_fixes`); `server.py` (`/step/toggle`, `/step/move`,
+  `/formula/help`, `/column-stats?column=`, Check returns `code` + `warnings`). Verified: `tests/unit/test_df_studio_steps.py` (86) +
+  `test_df_studio_server.py` (6) on the host (pandas 2.3 / numpy 2.4 / Python 3.13) AND with the image's pandas 2.2.2 / numpy 1.26.4 /
+  Python 3.11 (copied into the running rt-data container's /tmp, nothing rebuilt); the page driven in headless Chromium (Selenium)
+  against the standalone server — menu, suggestions, Check/Add, picker, autocomplete, bad + hostile formulas, toggle/move/remove, filter
+  builder. **Gotchas:** a hand-edit once dropped `/step/remove` from `server.py` — the HTTP test now walks every step route;
+  `engine.recompute` wraps handler errors as `StepError("Step N (label): …")`; steps saved earlier have no `enabled` key (= on);
+  `cast_type` "stop with an error" only affects the run that adds the step (the stored code uses the forgiving form, same result).
 
 - 2026-10-31 – **L7 done (code + docs + tests, not yet rebuilt/verified live).** Column map + protection on Load files (see L7 above).
   Verified here: `tests/unit/test_colmap.py` (22 tests) on DuckDB 1.2.2 AND 2.0, the whole unit suite on the host, the grid driven in
