@@ -48,6 +48,27 @@ result as `workspace.table` (just `table` = it goes to **system**). **Copying ta
 connection in the Vault once, then Vault Data → Load files → *Database* → pick the connection → *Show tables* → tick tables (or
 write one SELECT) → workspace → *Load*. The database is only read.
 
+**Editing a small table by hand (Mini Sheet):** open **Mini Sheet** → *Open* → *Vault Data table…* (or paste from Excel, or open a CSV /
+Excel / JSON file, or start a blank sheet). Click a cell and type; **Enter** goes down, **Tab** goes right, **F2** or a double-click edits
+what is already there, **Esc** cancels. Paste straight from Excel with Ctrl+V; **Ctrl+D** fills down, drag the small square at the corner of the
+selection to fill or continue a series; right-click for rows/columns (insert, delete, move, rename — double-click a header to rename) and the
+column's *type*, sort and filter. **Ctrl+Z / Ctrl+Y** undo and redo (300 steps), **Ctrl+F** is find & replace. Yellow cells are changed since you
+opened it, green rows are new, red cells don't fit their column's type. A cell starting with **=** is a formula: `=A1+B1`, `=SUM(A1:A9)`,
+`=IF(B2>10,"big","small")` (also ROUND, AVERAGE, MIN, MAX, COUNT, CONCAT, LEN, UPPER, LOWER, TRIM, ABS, TODAY) — **formulas are saved as their
+results**, and `A1` means the first column's first data row (the header isn't counted; it doesn't move when you insert or sort rows). **Save** puts it
+back into Vault Data (a bare name goes to **system**); every cell is checked first, so nothing is silently turned empty — you get a list of the
+cells to fix. If the table exists you can *replace it and keep a backup copy* (`<name>_backup_<date>`), replace it, or use another name. A table
+opened as "first N rows" can only be saved under a new name. For small data only (50,000 rows); bigger files: Vault → Vault Data → Load files.
+**Long text, several sheets, and "did I lose my work?" (Mini Sheet):** your work is **saved automatically** a couple of seconds after you stop typing
+(the toolbar says *Draft saved ✓*), so a reload or a closed tab brings it back with a green *Restored your unsaved work…* bar (*Discard* throws it away; the
+undo history is not kept). If the same browser has Mini Sheet open in two tabs, the second one pauses its autosave — click the note in the toolbar to make that
+tab the one that is kept. To show long text in full, open a column's **⋮** menu → **Wrap text** (or *↵ Wrap* → *every column*): the rows grow to fit, and
+drag the column edge to see the text re-wrap as you go. Double-click a cell in a wrapped column to edit it; **Alt+Enter** adds a line break inside the cell.
+A workbook can have many **sheets** (tabs at the bottom): **＋** adds one, double-click a tab to rename it, right-click for duplicate / delete / move. An Excel file opens
+**all** its sheets. A formula can read another sheet: `=Sheet2!A1` or `='My sheet'!B2:B9` (renaming a sheet updates those formulas; deleting it makes them `#REF!`).
+*Save* saves the sheet you are looking at; **Save all sheets…** saves every sheet as its own Vault Data table (and saves nothing at all if any cell is wrong).
+*Download → Excel* gives one file with all sheets. *Open → Close workbook* starts over.
+
 **Tables in AWS S3 (or MinIO etc.):** Vault Data → Load files → *S3* → *+ new S3 location* (name, access key, secret, region; an
 endpoint only for non-AWS storage) → *Test* → *Save to Vault*. Then type `s3://bucket/folder/` or a pattern →
 *Load* (copies it in) or tick *Read in place* (stays in S3, read on every query).

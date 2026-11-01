@@ -85,6 +85,8 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | L5 | Extras: profiles, suggested joins, charts, AWS S3 locations, notebook (later) | M | L4 | ☑ (notebook deferred) |
 | N1 | Notebook tool: Colab-style workspaces, kernels, per-workspace pip, zip/folder upload + download (own `rt-notebook` runtime, no credentials) | M | C3 | ☑ |
 | S1 | SharePoint Lists tool: many sites via Microsoft Graph, all columns, grid editing + Python staging, reviewed approval before any write, no delete | L | B7, N1 | ☑ (not yet run on a real tenant) |
+| M1 | Mini Sheet tool: a small spreadsheet for hand-editing data (open Vault Data / paste / file, formulas, undo, find & replace, typed save back) | M | L5 | ☑ (code + tests; live check after rebuild) |
+| M2 | Mini Sheet: autosaved draft (session), per-column wrap text with live re-wrap, several sheets (tabs, cross-sheet formulas, save all) | M | M1 | ☑ (code + tests; live check after rebuild) |
 | F1 | Image versioning, registry, k8s manifests from plugin manifests | M | D3, E1 | ⏸ deferred |
 | F2 | k3s single-node deploy (lab) | M | F1 | ⏸ deferred |
 | F3 | KEDA scale-to-zero + queue scaling | M | F2 | ⏸ deferred |
@@ -354,6 +356,34 @@ Owner request (2026-11-01): make data cleaning and feature engineering easy in D
 ### DF7 Quality and trust (S) — planned
 - Row-count waterfall per step, before/after profile, per-stage checks (not null, unique, range), data dictionary saved with a feature table.
 
+## Phase M – Mini Sheet (hand-editing small data)
+
+Owner request (2026-11-01): "a mini excel where I can edit data easily manually, basic Excel-like functionality, not full" — because a
+second table loaded into DataFrame Studio could not be looked at or edited, and small tables need quick manual fixes.
+
+### M1 Mini Sheet (M) — ☑ built and tested (host + headless Chromium); not yet rebuilt/verified in the live containers
+- New tool `mini-sheet/` (runtime `data`, `vault: {data: write}`, stateless): open a Vault Data table / a paste from Excel / a CSV·TSV·JSON·XLSX
+  file / a blank sheet; edit in place (Enter/Tab/arrows/F2, ranges, copy-paste TSV with Excel, Ctrl+D / Ctrl+R / drag fill, insert/delete/move
+  rows and columns, rename + retype columns, sort, per-column filter, search, find & replace, 300-step undo/redo, dirty-cell highlight);
+  formulas `=A1+B2`, `=SUM(A1:A9)`, IF/ROUND/CONCAT/LEN/UPPER/LOWER/TRIM/ABS/COUNT/MIN/MAX/AVERAGE/TODAY from a hand-written
+  tokenizer + parser (no `eval`), `#DIV/0!`/`#REF!`/`#CIRC!`/`#NAME?`/`#VALUE!`/`#ERR!`.
+- Save → `workspace.table` (bare name → `system`), the table's own column types are kept, EVERY cell is checked (422 + list, never a silent
+  NULL), existing table → replace (old data kept as a `_backup_` table, or overwritten) or another name; a sheet opened as "first N rows" can't
+  overwrite its source. Download CSV / XLSX. Limits 50,000 rows × 200 columns × 5 M cells, 25 MB files.
+- **Done when**: the browser tests (edit, undo, paste, fill, formulas, sort, filter, find/replace, save 422/409/413 flows) pass and the
+  rebuilt stack opens a Vault Data table, edits it and saves it back with the same types. (The first half is done.)
+
+### M2 Draft, per-column wrap, several sheets (M) — ☑ built and tested (host + container state backend + headless Chromium); not yet rebuilt/verified in the live gateway
+Owner request (2026-11-01): "it does not have a session"; "wrap text should refresh when I resize the width — no 2 line / n line, just wrap on/off for a column";
+"also support multi sheet because Excel already has many sheets".
+- **Draft**: the whole workbook is autosaved to `/draft` (cookie `mini_sheet_sid`, gzip JSON in Redis + S3 storage, 7-day sliding TTL, ≤ 40 MB) and restored on
+  page open with a banner; undo history is not kept; two tabs of one browser are told apart by a `rev` (409 → the second tab pauses autosave).
+- **Wrap per column** (replaces the toolbar 2/3/5/Fit menu): header ⋮ → Wrap text, toolbar → wrap/unwrap all; variable row heights (`S.rowY`, binary-search
+  `rowAtY`), exact measuring only for the rows on screen, live re-wrap while dragging a column edge, text-area editor with Alt+Enter, line counter in `ui/wrap.js`.
+- **Several sheets**: tabs (add / rename / duplicate / delete / move), per-sheet selection·filters·undo, whole-workbook xlsx open + download, `Save all sheets…`
+  (`POST /save-all`, all-or-nothing checks), cross-sheet formulas (`Sheet2!A1`, `'My sheet'!A1:B9`, shared cycle detection, rename rewrites / delete → `#REF!`).
+- **Done when**: the rebuilt stack restores a draft after a reload, wraps/re-wraps a column while resizing, and saves a three-sheet workbook as three tables.
+
 ## Phase E – Observability (revised 2026-10-25: lightweight, no new containers)
 
 Owner decision: Prometheus + Grafana (two always-on containers, ~150–250 MiB, own storage) are too heavy for one
@@ -418,6 +448,24 @@ the workspace status) and shows it on ONE page in the workspace. Nothing runs or
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+
+- 2026-11-01 – **M2 Mini Sheet: draft + per-column wrap + several sheets built (code + docs + tests; NOT rebuilt, NOT committed).** New `mini-sheet/draftstore.py`,
+  `ui/wrap.js`; `server.py` (`/draft` GET·PUT·DELETE, `/save-all`, `/wrap.js`, `/import` `all_sheets`, `/export` `sheets`, `/limits` + `max_sheets`), `sheetio.py`
+  (`parse_xlsx_all`, `build_export_workbook`, sheet-name rules, workbook limits), `ui/formula.js` (cross-sheet refs, shared cycle detector, `retargetSheet`),
+  `ui/index.html` (workbook/tabs, variable row heights, draft), `manifest.yaml` (`state: [session]`), smoke `/draft` + `/wrap.js`. Tests: 54 host tests in
+  `test_mini_sheet.py` (+ node `mini_sheet_wrap_cases.js`, extended `mini_sheet_formula_cases.js`), 22 in `test_mini_sheet_server.py` (need DuckDB), a Selenium drive of
+  the real page (wrap, live resize, edit/scroll/select in tall rows, autosave + reload restore, tabs, cross-sheet formulas, save-all, xlsx) and the Redis+S3 draft store
+  run inside the live `rt-data` container. Left: rebuild, `scripts/smoke.sh`, a look through the real gateway. Gotchas: never assume a row is 26 px (use `rowTop`/`rowHt`);
+  the browser drops `dblclick` when the first click redraws the element (tabs/headers detect it by hand); a whole-column/row header click used to scroll the grid to the
+  last row/column — it no longer does; Playwright's driver is broken here, Selenium + chromium works.
+
+- 2026-11-01 – **M1 Mini Sheet built (code + docs + tests; NOT rebuilt, NOT committed).** New `mini-sheet/` (`server.py`, `sheetio.py`,
+  `ui/index.html`, `ui/formula.js`, `manifest.yaml` order 115, `CLAUDE.md`), Dockerfile (`COPY mini-sheet/ ./mini_sheet/` + `mini_sheet/__init__.py`
+  in the `touch` line), smoke `API_CHECKS` (`/limits`, `/catalog-lite`), runbook + KNOWLEDGE_MAP sections. Tests: `test_mini_sheet.py` (node formula cases +
+  sheetio, 20 on the host), `test_mini_sheet_server.py` (11, need DuckDB — run in a venv with duckdb 1.2.2, or in the container) and a Selenium/Chromium
+  drive of the real page (edit/undo/paste/fill/formula/sort/filter/find/save). Left: rebuild, `scripts/smoke.sh`, look at it in the real gateway.
+  Gotchas: `replace_keep` renames the old table to `<name>_backup_<time>` (lake's `overwrite` deletes the old files — only a history row stays);
+  formula refs are plain positions and don't move on insert/sort (fill shifts them); header ⋮ menu needed a CAPTURE-phase outside-click handler.
 
 - 2026-11-01 – **DF1 + DF2 done (code + docs + tests, not yet rebuilt/verified live).** DataFrame Studio: Clean card + ⋮ column menu,
   Formula bar, steps turn off/on/move (see Phase DF above). New: `df-studio/clean_steps.py`, `formula.py`; `engine.py` (notes, `enabled`,

@@ -97,3 +97,52 @@ def test_templates_keep_only_turned_on_steps(client):
     assert client.post("/template/save", json={"name": "t1"}).status_code == 200
     applied = client.post("/template/apply", json={"name": "t1"}).json()
     assert [s["type"] for s in applied["steps"]] == ["fill_nulls"]
+
+
+# ---- extra tables next to df: read-only view (frame/preview + frame stats) ------------------------------------
+
+@pytest.fixture
+def with_frame(client, monkeypatch):
+    import pandas as pd
+
+    eng = sys.modules["engine"]
+    cust = pd.DataFrame({"customer_id": [1, 2, 3, 4], "name": ["a", "b", None, "d"], "spend": [10.5, 20.0, 30.25, 40.0]})
+    monkeypatch.setattr(eng, "lake_frame", lambda ref, limit=None: cust)
+    r = client.post("/frames/add", json={"workspace": "crm", "table": "customers"})
+    assert r.status_code == 200 and r.json()["added"] == "customers"
+    return client
+
+
+def test_frame_preview_shows_the_added_table_read_only(with_frame):
+    r = with_frame.get("/frame/preview", params={"name": "customers"})
+    j = r.json()
+    assert r.status_code == 200 and j["frame"] == "customers" and j["ref"] == "crm.customers" and j["read_only"] is True
+    assert j["row_count"] == 4 and [c["name"] for c in j["columns"]] == ["customer_id", "name", "spend"]
+    assert j["columns"][0]["sql_type"] == "bigint" and j["rows"][0]["customer_id"] == 1
+    # df is untouched: still the uploaded CSV, no steps added
+    s = with_frame.get("/session").json()
+    assert [c["name"] for c in s["columns"]] == ["age", "city", "score"] and s["steps"] == []
+
+
+def test_frame_preview_follows_head_sample_mode(with_frame):
+    with_frame.post("/preview-mode", json={"mode": "sample"})
+    j = with_frame.get("/frame/preview", params={"name": "customers"}).json()
+    assert j["preview_mode"] == "sample" and j["row_count"] == 4
+
+
+def test_frame_preview_refuses_names_that_are_not_loaded(with_frame):
+    for bad in ("nope", "df", "../etc/passwd", "crm.customers"):
+        r = with_frame.get("/frame/preview", params={"name": bad})
+        assert r.status_code == 400 and "isn't one of the loaded tables" in r.json()["error"]
+    assert with_frame.get("/frame/preview", params={"name": "x"}).status_code == 400   # also with no frames at all
+
+
+def test_column_stats_for_a_frame_uses_that_frame(with_frame):
+    j = with_frame.get("/column-stats", params={"frame": "customers"}).json()
+    assert set(j["stats"]) == {"customer_id", "name", "spend"} and j["rows"] == 4
+    assert j["stats"]["name"]["nulls"] == 1 and j["stats"]["spend"]["max"] == 40.0
+    one = with_frame.get("/column-stats", params={"frame": "customers", "column": "spend"}).json()
+    assert set(one["stats"]) == {"spend"} and one["suggest"] is not None
+    assert with_frame.get("/column-stats", params={"frame": "nope"}).status_code == 400
+    # without ?frame= it is still df's own stats
+    assert set(with_frame.get("/column-stats").json()["stats"]) == {"age", "city", "score"}

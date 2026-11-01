@@ -128,6 +128,18 @@
                 font-family: 'Cascadia Code', 'Fira Code', monospace; }
   .cat-tb .nm::before { content: "▸ "; color: var(--muted); font-family: system-ui; } .cat-tb.open .nm::before { content: "▾ "; }
   .cat-tb .n { color: var(--muted); font-size: 0.7rem; }
+  .cat-tb .nm { min-width: 7ch; }
+  .cat-tb .var { max-width: 6.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cat-tb[data-view] { cursor: pointer; } .cat-tb[data-view] .nm::before { content: ""; }
+  .cat-tb.viewing { background: rgba(21,128,61,0.24); }
+  .view-bar { display: none; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; flex-shrink: 0; }
+  .view-bar.on { display: flex; }
+  .view-bar .chip { border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 999px; padding: 3px 12px;
+                    font: 0.78rem 'Cascadia Code', 'Fira Code', monospace; cursor: pointer; max-width: 220px; overflow: hidden;
+                    text-overflow: ellipsis; white-space: nowrap; }
+  .view-bar .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .view-bar .view-label { font-size: 0.78rem; color: var(--muted); margin-left: 6px; }
+  .view-bar .view-label b { color: var(--text); }
   .cat-tb button { font-size: 0.68rem; padding: 2px 6px; }
   .cat-col { display: flex; justify-content: space-between; gap: 6px; padding: 1px 6px 1px 34px; font-size: 0.74rem;
              font-family: 'Cascadia Code', 'Fira Code', monospace; }
@@ -369,6 +381,7 @@
       </div>
       <!-- Main: table -->
       <div class="card table-card">
+        <div class="view-bar" id="viewBar"></div>
         <div id="table"></div>
         <div id="emptyState" class="empty-state">Pick a table on the left and press Load.</div>
       </div>
@@ -968,13 +981,14 @@
   const MANY_COLUMNS_THRESHOLD = 60;
 
   // ── Column stats in the header (roadmap L5): whole-DataFrame numbers from /column-stats, shown when toggled on
-  let lastPreview = null, colStats = null, statsOn = false;
+  // lastPreview = what the grid shows right now (df, or a read-only added table); dfPreview = the pipeline result
+  let lastPreview = null, dfPreview = null, viewFrame = null, colStats = null, statsOn = false;
   try { statsOn = localStorage.getItem("dfs_stats") === "1"; } catch (e) { /* no storage: off */ }
   const fmtNum = (v) => v == null ? "—" : Math.abs(v) >= 1e6 ? v.toExponential(2) :
     Number(v).toLocaleString(undefined, { maximumFractionDigits: Math.abs(v) < 10 ? 4 : 2 });
   function headerHtml(c) {
     let h = `<div class="h-top"><div class="h-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</div>` +
-      `<span class="h-menu" data-col="${escapeHtml(c.name)}" title="Clean this column — suggestions and actions">⋮</span></div>` +
+      (viewFrame ? "" : `<span class="h-menu" data-col="${escapeHtml(c.name)}" title="Clean this column — suggestions and actions">⋮</span>`) + `</div>` +
       `<div class="h-type">${escapeHtml(c.sql_type || c.dtype)}</div>`;
     const st = statsOn && colStats ? colStats[c.name] : null;
     // always the same 4 lines (blank when n/a) so every header is equally tall and no filter box gets covered
@@ -995,7 +1009,11 @@
   }
   async function loadColStats() {
     colStats = null;
-    try { colStats = (await api("column-stats")).stats; } catch (e) { colStats = {}; }
+    const want = viewFrame;   // the view may switch while this is in flight — then the answer is stale
+    let got;
+    try { got = (await api("column-stats" + (want ? "?frame=" + encodeURIComponent(want) : ""))).stats; } catch (e) { got = {}; }
+    if (want !== viewFrame) return;
+    colStats = got;
     if (lastPreview) renderTable(lastPreview, true);
   }
   document.getElementById("statsBtn").classList.toggle("on", statsOn);
@@ -1061,8 +1079,10 @@
       placeholder: "No rows.",
     });
 
-    currentColumns = preview.columns.map((c) => c.name);
-    populateColumnSelects();
+    if (!preview.frame) {   // the column pickers belong to df (pipeline), never to a read-only table
+      currentColumns = preview.columns.map((c) => c.name);
+      populateColumnSelects();
+    }
 
     const shownNote =
       preview.shown_rows < preview.row_count
@@ -1070,8 +1090,9 @@
           ? ` (random sample of ${preview.shown_rows.toLocaleString()})`
           : ` (showing first ${preview.shown_rows.toLocaleString()})`
         : "";
-    document.getElementById("fileMeta").textContent =
-      `${preview.filename} — ${preview.row_count.toLocaleString()} rows × ${preview.columns.length} columns${shownNote}`;
+    document.getElementById("fileMeta").textContent = preview.frame
+      ? `${preview.frame} (${preview.ref}) — ${preview.row_count.toLocaleString()} rows × ${preview.columns.length} columns${shownNote} — read-only`
+      : `${preview.filename} — ${preview.row_count.toLocaleString()} rows × ${preview.columns.length} columns${shownNote}`;
   }
 
   function populateColumnSelects() {
@@ -1169,9 +1190,11 @@
   function applyPreview(preview) {
     clearError();
     if (preview.warnings && preview.warnings.length) showWarning(preview.warnings.join(" "));  // roadmap DF1: "3 values couldn't be converted…"
+    dfPreview = preview; viewFrame = null;   // a change to the pipeline/tables shows df again
     renderTable(preview);
     renderPipeline(preview.steps);
     renderFrames(preview.frames, preview.table_ref);
+    renderViewBar();
     document.getElementById("scriptBox").style.display = "none";
     document.getElementById("scriptCopyActions").style.display = "none";
     dismissQueryCheck(); // shared panel — stale after any pipeline change either way
@@ -1249,10 +1272,12 @@
         const isMain = loadedRef === full, extra = frames.find((f) => f.ref === full), isLoaded = isMain || !!extra;
         const varName = isMain ? "df" : extra ? extra.name : "";
         const actions = isLoaded
-          ? `<span class="var" title="in the Query box this table is ${escapeHtml(varName)}">${escapeHtml(varName)}</span>
+          ? `<span class="var" title="in the Query box this table is ${escapeHtml(varName)}">${isMain || varName !== t.name ? escapeHtml(varName) : "in use"}</span>
              <button class="secondary" ${isMain ? 'data-clear="1"' : `data-unframe="${escapeHtml(extra.name)}"`} title="${isMain ? "Unload (start over)" : "Unload"}">✕</button>`
           : `<button data-load="${escapeHtml(full)}" title="${loadedRef ? "Load it too — it becomes a variable named after the table" : "Load it as df"}">Load</button>`;
-        return `<div class="cat-tb${tOpen ? " open" : ""}${isLoaded ? " loaded" : ""}"><span class="nm" data-tb="${escapeHtml(full)}" title="${escapeHtml(full)}">${escapeHtml(t.name)}</span>
+        const viewing = isLoaded && (viewFrame || "df") === varName;
+        // the variable name is only shown when it adds something (df, or a name different from the table's)
+        return `<div class="cat-tb${tOpen ? " open" : ""}${isLoaded ? " loaded" : ""}${viewing ? " viewing" : ""}"${isLoaded ? ` data-view="${escapeHtml(varName)}"` : ""}><span class="nm" ${isLoaded ? "" : `data-tb="${escapeHtml(full)}" `}title="${escapeHtml(full)}${isLoaded ? " — click to view it in the grid" : ""}">${escapeHtml(t.name)}</span>
           <span class="n">${Number(t.row_count).toLocaleString()}</span>${actions}</div>` +
           (tOpen ? t.columns.map((c) => `<div class="cat-col"><span>${escapeHtml(c.name)}</span><span class="ty">${escapeHtml(c.sql_type || c.type || "")}</span></div>`).join("") : "");
       }).join("") : "");
@@ -1275,6 +1300,8 @@
       return;
     }
     if (ws) { openWs.has(ws.dataset.ws) ? openWs.delete(ws.dataset.ws) : openWs.add(ws.dataset.ws); renderCatalog(); return; }
+    const vw = e.target.closest(".cat-tb[data-view]");
+    if (vw && !e.target.closest("button")) { showView(vw.dataset.view); return; }
     if (tb) { openTb.has(tb.dataset.tb) ? openTb.delete(tb.dataset.tb) : openTb.add(tb.dataset.tb); renderCatalog(); return; }
     if (load) {
       const [w, t] = load.dataset.load.split(".");
@@ -1283,11 +1310,44 @@
         const preview = loadedRef  // already have df → this one becomes a named variable
           ? await api("frames/add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace: w, table: t }) })
           : await loadLakeTable(w, t);
-        if (preview) applyPreview(preview);
+        if (preview) { applyPreview(preview); if (preview.added) await showView(preview.added); }   // a table added next to df opens in the grid
       } catch (err) { showError(err.message); }
       finally { load.disabled = false; load.textContent = "Load"; renderCatalog(); }
     }
   });
+  // ── View switcher: `df` (the editable pipeline result) and every other loaded table, read-only (frame/preview)
+  function renderViewBar() {
+    const bar = document.getElementById("viewBar");
+    if (!frames.length) { bar.classList.remove("on"); bar.innerHTML = ""; return; }
+    const names = ["df", ...frames.map((f) => f.name)];
+    const cur = viewFrame || "df";
+    const chips = names.map((n) => `<button type="button" class="chip${n === cur ? " on" : ""}" data-view="${escapeHtml(n)}" title="${n === "df" ? "df — the table you're editing (steps apply to it)" : escapeHtml(n) + " — read-only"}">${escapeHtml(n)}</button>`).join("");
+    let label;
+    if (viewFrame) {
+      const f = frames.find((x) => x.name === viewFrame);
+      label = `Viewing <b>${escapeHtml(viewFrame)}</b>${f ? " (" + escapeHtml(f.ref) + ")" : ""} — read-only. Use Join (Query) to combine it with <code>df</code>.`;
+    } else {
+      label = `Viewing <b>df</b> — the table you edit${dfPreview ? " (" + escapeHtml(dfPreview.filename.replace(/\.parquet$/, "")) + ")" : ""}.`;
+    }
+    bar.innerHTML = `<span class="meta">View:</span>${chips}<span class="view-label">${label}</span>`;
+    bar.classList.add("on");
+    renderCatalog();   // highlights the row being viewed
+  }
+  async function showView(name) {
+    if (!dfPreview) return;
+    if (!name || name === "df") {
+      viewFrame = null; renderTable(dfPreview); renderViewBar(); return;
+    }
+    try {
+      const p = await api("frame/preview?name=" + encodeURIComponent(name));
+      viewFrame = name; renderTable(p); renderViewBar();
+    } catch (err) { showError(err.message); }
+  }
+  document.getElementById("viewBar").addEventListener("click", (e) => {
+    const c = e.target.closest("[data-view]");
+    if (c) showView(c.dataset.view);
+  });
+
   function renderFrames(list, ref) {
     frames = list || [];
     loadedRef = ref || null;
@@ -1337,8 +1397,10 @@
 
   async function switchPreviewMode(mode, resample) {
     try {
+      const keep = viewFrame;
       const preview = await setPreviewModeApi(mode, resample);
       applyPreview(preview);
+      if (keep && frames.some((f) => f.name === keep)) await showView(keep);
     } catch (err) {
       showError(err.message);
     }
@@ -1643,7 +1705,7 @@
   // =====================================================================
   const byId = (id) => document.getElementById(id);
   const esc = escapeHtml;
-  const columnsInfo = () => (lastPreview ? lastPreview.columns : []);
+  const columnsInfo = () => (dfPreview ? dfPreview.columns : []);
   function colKind(c) {
     const t = (c.sql_type || c.dtype || "").toLowerCase();
     if (/^(date|timestamp)/.test(t)) return "date";

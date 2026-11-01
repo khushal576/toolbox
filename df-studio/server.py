@@ -30,6 +30,7 @@ POST /step/check    — run a step WITHOUT committing it (query box "Check" mode
 POST /step/remove   — remove a step by index, return recomputed preview
 POST /step/reset    — clear all steps, back to the original upload
 POST /preview-mode  — switch the preview grid between head/sample (see engine.Session)
+GET  /frame/preview — read-only grid of an added table (?name=); /column-stats?frame=name = its stats
 GET  /insight       — describe / info / nunique / value_counts (read-only)
 GET  /export        — download the current result as csv/json/parquet
 """
@@ -291,13 +292,29 @@ class FrameRequest(BaseModel):
     name: str = ""
 
 
+@app.get("/frame/preview")
+async def frame_preview(request: Request, name: str):
+    """Grid data of an added table (read-only view next to `df`) — head/sample like the main grid, same cell budget."""
+    try:
+        session = await _session(request)
+        df = await asyncio.to_thread(engine.frame_df, session, name)
+        return await asyncio.to_thread(engine.build_frame_preview, session, name, df)
+    except (lake_store.LakeError, lake_store.ScopeError) as exc:
+        return _error(exc, status=_lake_status(exc))
+    except engine.StepError as exc:
+        return _error(exc)
+
+
 @app.get("/column-stats")
-async def column_stats(request: Request, column: Optional[str] = None):
+async def column_stats(request: Request, column: Optional[str] = None, frame: Optional[str] = None):
     """Stats per column of the current (transformed) DataFrame — the grid's header strip (roadmap L5). With
     ?column=name only that column, plus suggested fixes for it (the header menu, roadmap DF1)."""
     try:
         session = await _session(request)
-        df = await asyncio.to_thread(engine.recompute, session)
+        if frame:   # an added table: its own stats (no pipeline applied)
+            df = await asyncio.to_thread(engine.frame_df, session, frame)
+        else:
+            df = await asyncio.to_thread(engine.recompute, session)
         if column is None:
             return {"stats": await asyncio.to_thread(engine.column_stats, df), "rows": len(df)}
         if column not in df.columns:

@@ -356,6 +356,21 @@ offers "load the first 1 000 000 rows" instead of silently cutting. `/export/lak
   (`engine.column_stats` over the WHOLE transformed DataFrame: empty, distinct, min/max, avg/std; full text on hover).
   Few columns fill the width (`fitColumns`); dates/timestamps are shown without the ISO `T…000`.
 
+## Viewing every loaded table (view switcher)
+
+Only `df` used to be visible; tables added next to it (`session.frames`) were just variables. Now a **View:** bar above the
+grid (`#viewBar`, shown once at least one extra table is loaded) has a chip for `df` and one per loaded table, plus a label
+saying what you are looking at. Clicking a chip — or a green row in the Tables bar (loaded rows no longer expand their
+columns on click; the grid header shows the types) — calls `showView()`. Extra tables are **read-only**: `GET /frame/preview?name=`
+(`engine.frame_df` → `lake_frame`, so cached per table version and refused with 400 unless the name is in `session.frames`;
+`build_frame_preview` reuses `_capped_rows` = the same head/sample + `PREVIEW_CELL_BUDGET` cap as `df`) and
+`GET /column-stats?frame=name` (stats of that table, no pipeline). Page state: `dfPreview` = the pipeline result, `lastPreview` =
+what the grid shows, `viewFrame` = null (df) or a table name. Gotchas: `applyPreview()` (any step/load/unload) always goes back to
+`df` — except Head/Sample, which re-opens the viewed table; while a table is shown the header ⋮ menu is hidden and
+`currentColumns`/column pickers stay df's (the Clean/Formula boxes always act on `df`); a stats answer that arrives after the
+view changed is dropped. Loading a second table from the Tables bar opens it right away. The Tables bar only shows the variable
+name when it adds something (`df`, or a name different from the table's), so long names are no longer cut to "da…".
+
 ## Click cleaning + Formula bar (roadmap DF1 + DF2)
 
 Goal (owner): data cleaning and feature engineering without writing a `def transform(df)` each time. See

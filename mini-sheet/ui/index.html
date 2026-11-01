@@ -1,0 +1,2027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mini Sheet</title>
+<link rel="icon" href="data:," />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+    --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --err-bg: rgba(220,38,38,0.07); --err-text: #b91c1c; --err-border: rgba(220,38,38,0.35);
+    --ok-bg: rgba(21,128,61,0.08); --ok-text: #15803d;
+    --warn-bg: rgba(217,119,6,0.09); --warn-text: #b45309;
+    --dirty: #fff6d6; --newrow: #eaf7ee; --grid: #e6e9f3; --head: #f0f2fa;
+  }
+  html, body { height: 100%; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 13px;
+         display: flex; flex-direction: column; overflow: hidden; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+
+  /* ---- toolbar ---- */
+  .bar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border);
+         flex-wrap: wrap; }
+  .bar h1 { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.3px; margin-right: 6px; }
+  .bar h1 span { color: var(--accent); }
+  .sheetname { color: var(--muted); font-size: 0.82rem; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 6px; }
+  .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+  .btn { border: 1px solid var(--border); background: var(--surface); border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.82rem; white-space: nowrap; }
+  .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.primary:hover:not(:disabled) { color: #fff; filter: brightness(1.08); }
+  .btn.danger { color: var(--err-text); }
+  .search { border: 1px solid var(--border); border-radius: 6px; padding: 5px 9px; width: 190px; background: var(--bg); font-size: 0.82rem; }
+  .spacer { flex: 1; }
+  .menuwrap { position: relative; display: inline-block; }
+  .dd { position: absolute; top: calc(100% + 4px); left: 0; z-index: 60; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(20,24,60,0.16); min-width: 210px; padding: 4px; display: none; }
+  .dd.open { display: block; }
+  .dd button, .ctx button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 0.82rem; }
+  .dd button:hover, .ctx button:hover { background: var(--bg); color: var(--accent); }
+  .ctx hr, .dd hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+  .ctx { position: fixed; z-index: 80; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(20,24,60,0.18);
+         min-width: 210px; padding: 4px; display: none; max-height: 80vh; overflow: auto; }
+  .ctx .lbl { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); padding: 5px 10px 2px; }
+
+  /* ---- formula bar ---- */
+  .fxbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  #ref { width: 92px; text-align: center; border: 1px solid var(--border); border-radius: 5px; padding: 4px 6px; background: var(--bg); font-size: 0.8rem;
+         font-family: ui-monospace, Menlo, Consolas, monospace; overflow: hidden; white-space: nowrap; }
+  .fxl { color: var(--accent); font-style: italic; font-weight: 700; }
+  #fx { flex: 1; border: 1px solid var(--border); border-radius: 5px; padding: 4px 8px; background: var(--surface);
+        font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; min-width: 0; }
+  #fx.err { border-color: var(--err-border); background: var(--err-bg); }
+  #fx:disabled { background: var(--bg); }
+
+  /* ---- grid ---- */
+  .sheet { flex: 1; min-height: 0; display: grid; grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: 46px minmax(0, 1fr); background: var(--surface); }
+  .corner { background: var(--head); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); cursor: pointer; position: relative; z-index: 3; }
+  .corner::after { content: ""; position: absolute; right: 6px; bottom: 6px; border: 6px solid transparent; border-right-color: #b8bdd2; border-bottom-color: #b8bdd2; }
+  #colhead, #rowhead { overflow: hidden; position: relative; background: var(--head); user-select: none; }
+  #colhead { border-bottom: 1px solid var(--border); }
+  #rowhead { border-right: 1px solid var(--border); }
+  #colhead .in, #rowhead .in { position: absolute; top: 0; left: 0; }
+  .h { position: absolute; top: 0; height: 46px; border-right: 1px solid var(--grid); padding: 3px 22px 0 7px; cursor: default; overflow: hidden; }
+  .h.on, .g.on { background: #dfe3fb; }
+  .h .hl { font-size: 0.66rem; color: var(--muted); line-height: 1.1; }
+  .h .hn { font-weight: 600; font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; }
+  .h .ht { font-size: 0.62rem; color: var(--muted); }
+  .h .hf { color: var(--accent); font-weight: 700; }
+  .h .hm { position: absolute; right: 7px; top: 4px; width: 16px; height: 16px; text-align: center; line-height: 14px; border-radius: 4px; cursor: pointer; color: var(--muted); }
+  .h .hm:hover { background: var(--accent); color: #fff; }
+  .h .hr { position: absolute; right: -3px; top: 0; width: 7px; height: 100%; cursor: col-resize; z-index: 2; }
+  .g { position: absolute; left: 0; width: 52px; height: 26px; border-bottom: 1px solid var(--grid); text-align: center; line-height: 25px; font-size: 0.72rem;
+       color: var(--muted); cursor: default; }
+  .g.new { background: var(--newrow); color: var(--ok-text); font-weight: 700; }
+  .g.on { color: var(--text); }
+  #vp { overflow: auto; position: relative; outline: none; background: #fff; }
+  #sizer { position: relative; }
+  #rows { position: absolute; left: 0; top: 0; }
+  .row { position: absolute; left: 0; height: 26px; }
+  .c { position: absolute; top: 0; height: 100%; border-right: 1px solid var(--grid); border-bottom: 1px solid var(--grid); padding: 0 7px; line-height: 25px;
+       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: cell; }
+  /* a wrapped column (header ⋮ → Wrap text): the cell shows its whole text over several lines; the row is as tall as its tallest wrapped cell */
+  .c.w { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 40; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 17px;
+         padding: 4px 7px; text-overflow: clip; }
+  .g.w { line-height: 17px; padding-top: 4px; }
+  .h .hw { color: var(--accent); font-weight: 700; }
+  .c.r { text-align: right; }
+  .c.ctr { text-align: center; }
+  .c.d { background: var(--dirty); }
+  .c.nr { background: var(--newrow); }
+  .c.bad { background: var(--err-bg); box-shadow: inset 0 -2px 0 var(--err-border); }
+  .c.fe { color: var(--err-text); font-weight: 600; }
+  .c.fm { color: #3b44b8; }
+  #selbox { position: absolute; pointer-events: none; border: 1px solid var(--accent); background: rgba(79,94,240,0.09); display: none; z-index: 2; }
+  #actbox { position: absolute; pointer-events: none; border: 2px solid var(--accent); display: none; z-index: 3; }
+  #fh { position: absolute; width: 8px; height: 8px; background: var(--accent); border: 1px solid #fff; cursor: crosshair; display: none; z-index: 4; }
+  #fillprev { position: absolute; pointer-events: none; border: 2px dashed var(--accent); display: none; z-index: 3; }
+  #ed { position: absolute; z-index: 5; display: none; border: 2px solid var(--accent); background: #fff; padding: 0 6px; font: inherit; outline: none; height: 26px; min-width: 60px; }
+  #edw { position: absolute; z-index: 5; display: none; border: 2px solid var(--accent); background: #fff; padding: 4px 6px; font: inherit; line-height: 17px; outline: none;
+         resize: none; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 60px; }
+
+  .empty { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; color: var(--muted); padding: 24px; text-align: center; }
+  .empty h2 { color: var(--text); font-size: 1.25rem; }
+  .empty .opts { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .empty .opts .btn { padding: 11px 18px; font-size: 0.9rem; }
+
+  /* ---- sheet tabs (the workbook) ---- */
+  #tabs { display: none; align-items: stretch; gap: 2px; padding: 4px 8px 0; background: var(--head); border-top: 1px solid var(--border); overflow-x: auto; flex-shrink: 0; }
+  .tab { border: 1px solid var(--border); border-bottom: none; border-radius: 7px 7px 0 0; background: #e4e7f5; padding: 4px 12px; font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+         max-width: 220px; overflow: hidden; text-overflow: ellipsis; user-select: none; }
+  .tab:hover { background: #eef0fb; }
+  .tab.on { background: var(--surface); font-weight: 600; color: var(--accent); box-shadow: 0 2px 0 var(--surface); position: relative; top: 1px; }
+  .tab .dot { color: var(--warn-text); font-weight: 700; margin-left: 4px; }
+  .tab.add { background: none; border-color: transparent; font-weight: 700; color: var(--accent); padding: 4px 10px; }
+  .tab.add:hover { background: #dfe3fb; }
+  .tab input { font: inherit; width: 130px; border: 1px solid var(--accent); border-radius: 4px; padding: 0 4px; }
+
+  /* ---- draft (autosave) + restore banner ---- */
+  .draftstate { font-size: 0.74rem; color: var(--muted); white-space: nowrap; }
+  .draftstate.bad { color: var(--err-text); cursor: pointer; text-decoration: underline; }
+  .draftstate.pause { color: var(--warn-text); cursor: pointer; text-decoration: underline; }
+  #restoreBar { display: none; align-items: center; gap: 10px; padding: 6px 12px; background: var(--ok-bg); color: var(--ok-text); border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+  #restoreBar button { border: 1px solid currentColor; background: none; color: inherit; border-radius: 5px; padding: 2px 9px; cursor: pointer; font-size: 0.78rem; }
+  #restoreBar .x { margin-left: auto; border: none; font-size: 1rem; line-height: 1; }
+
+  /* ---- status bar ---- */
+  .status { display: flex; gap: 14px; align-items: center; padding: 5px 12px; background: var(--surface); border-top: 1px solid var(--border); font-size: 0.76rem; color: var(--muted); flex-wrap: wrap; }
+  .status b { color: var(--text); font-weight: 600; }
+  .status .warn { color: var(--warn-text); }
+  .status .bad { color: var(--err-text); cursor: pointer; text-decoration: underline; }
+  .status .ok { color: var(--ok-text); }
+
+  /* ---- modal, find panel, toast ---- */
+  .backdrop { position: fixed; inset: 0; background: rgba(20,24,50,0.4); z-index: 90; display: flex; align-items: flex-start; justify-content: center; padding: 8vh 16px 16px; overflow: auto; }
+  .modal { background: var(--surface); border-radius: 12px; box-shadow: 0 20px 60px rgba(20,24,60,0.35); width: min(560px, 100%); padding: 18px 20px; }
+  .modal.wide { width: min(760px, 100%); }
+  .modal h2 { font-size: 1.05rem; margin-bottom: 10px; }
+  .modal .hint { color: var(--muted); font-size: 0.78rem; line-height: 1.5; margin: 6px 0; }
+  .modal label { display: block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); margin: 10px 0 4px; }
+  .modal input[type=text], .modal select, .modal textarea { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; background: var(--bg); }
+  .modal textarea { min-height: 170px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; resize: vertical; }
+  .modal .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .modal .chk { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 0.84rem; }
+  .modal .chk label { margin: 0; text-transform: none; font-size: 0.84rem; letter-spacing: 0; color: var(--text); font-weight: 400; }
+  .modal .acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+  .msg { border-radius: 7px; padding: 8px 11px; font-size: 0.82rem; margin-top: 10px; }
+  .msg.err { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border); }
+  .msg.ok { background: var(--ok-bg); color: var(--ok-text); }
+  .msg.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .pick { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 10px; margin-top: 8px; }
+  .pick .list { border: 1px solid var(--border); border-radius: 8px; max-height: 300px; overflow: auto; }
+  .pick .list div { padding: 7px 10px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--grid); }
+  .pick .list div:hover { background: var(--bg); }
+  .pick .list div.on { background: #dfe3fb; font-weight: 600; }
+  .pick .list .m { color: var(--muted); font-weight: 400; font-size: 0.76rem; }
+  table.errs { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
+  table.errs th, table.errs td { text-align: left; padding: 5px 7px; border-bottom: 1px solid var(--grid); }
+  table.errs th { font-size: 0.68rem; text-transform: uppercase; color: var(--muted); }
+  table.errs tr.go { cursor: pointer; } table.errs tr.go:hover td { background: var(--bg); }
+  #find { position: fixed; right: 18px; top: 98px; z-index: 70; width: 320px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+          box-shadow: 0 10px 30px rgba(20,24,60,0.22); padding: 12px 14px; display: none; }
+  #find.open { display: block; }
+  #find input[type=text] { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: var(--bg); margin-bottom: 6px; }
+  #find .fr { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  #find .opt { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; margin-top: 4px; }
+  #find .cnt { font-size: 0.76rem; color: var(--muted); margin-top: 6px; min-height: 1em; }
+  #toast { position: fixed; left: 50%; bottom: 46px; transform: translateX(-50%); z-index: 100; background: #1c2035; color: #fff; border-radius: 8px; padding: 9px 16px;
+           font-size: 0.84rem; display: none; max-width: min(640px, 92vw); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+  #toast.err { background: var(--err-text); }
+  .sr { position: absolute; left: -9999px; }
+</style>
+</head>
+<body>
+
+<div class="bar" id="bar">
+  <h1>Mini Sheet<span>.</span></h1>
+  <span class="sheetname" id="sheetName">no sheet open</span>
+  <div class="menuwrap">
+    <button class="btn" id="btnOpen" aria-haspopup="true">Open ▾</button>
+    <div class="dd" id="ddOpen">
+      <button data-open="table">📦 Vault Data table…</button>
+      <button data-open="paste">📋 Paste from Excel / Sheets…</button>
+      <button data-open="file">📄 CSV / Excel / JSON file…</button>
+      <button data-open="blank">▫ Blank sheet</button>
+      <hr>
+      <button data-open="close" id="miClose" disabled>✕ Close workbook</button>
+    </div>
+  </div>
+  <button class="btn primary" id="btnSave" disabled title="Save this sheet to Vault Data (Ctrl+S)">💾 Save</button>
+  <button class="btn" id="btnSaveAll" disabled title="Save every sheet to Vault Data, one table per sheet">💾 Save all sheets…</button>
+  <div class="menuwrap">
+    <button class="btn" id="btnDown" disabled aria-haspopup="true">Download ▾</button>
+    <div class="dd" id="ddDown">
+      <button data-down="xlsx">Excel (.xlsx) — all sheets</button>
+      <button data-down="csv">CSV (.csv) — this sheet</button>
+    </div>
+  </div>
+  <span class="sep"></span>
+  <button class="btn" id="btnUndo" disabled title="Undo (Ctrl+Z)">↶ Undo</button>
+  <button class="btn" id="btnRedo" disabled title="Redo (Ctrl+Y)">↷ Redo</button>
+  <span class="sep"></span>
+  <div class="menuwrap">
+    <button class="btn" id="btnWrap" disabled aria-haspopup="true" title="Show long text over several lines (or turn it on for one column from the column's ⋮ menu)">↵ Wrap ▾</button>
+    <div class="dd" id="ddWrap">
+      <button data-wrap="all">Wrap text in every column</button>
+      <button data-wrap="none">Stop wrapping in every column</button>
+    </div>
+  </div>
+  <button class="btn" id="btnFind" disabled title="Find & replace (Ctrl+F)">🔍 Find &amp; replace</button>
+  <input class="search" id="search" type="search" placeholder="Search rows…" disabled aria-label="Search rows" />
+  <button class="btn" id="btnClearFilters" style="display:none" title="Remove every filter and the search">✕ Clear filters</button>
+  <span class="spacer"></span>
+  <span class="draftstate" id="draftState" title="Your work is kept in a draft, so a reload or a closed tab doesn't lose it (undo history is not kept)"></span>
+</div>
+<div id="restoreBar" role="status"><span id="restoreMsg"></span><button id="restoreDiscard" title="Throw the restored work away and start clean">Discard</button><button class="x" id="restoreClose" title="Hide this message" aria-label="Hide this message">✕</button></div>
+
+<div class="fxbar">
+  <div id="ref">–</div>
+  <span class="fxl">fx</span>
+  <input id="fx" type="text" disabled spellcheck="false" placeholder="Pick a cell — type text, a number, or a formula like =SUM(A1:A9)" aria-label="Cell content" />
+</div>
+
+<div id="emptyState" class="empty">
+  <h2>🧮 Mini Sheet</h2>
+  <p>A small spreadsheet for editing data by hand. Open something to start.</p>
+  <div class="opts">
+    <button class="btn primary" data-open="table">📦 Open a Vault Data table</button>
+    <button class="btn" data-open="paste">📋 Paste from Excel</button>
+    <button class="btn" data-open="file">📄 Open a file</button>
+    <button class="btn" data-open="blank">▫ Blank sheet</button>
+  </div>
+  <p style="font-size:0.78rem;max-width:560px">For small data (up to 50,000 rows). Bigger files: load them with Vault → Vault Data → Load files.</p>
+</div>
+
+<div class="sheet" id="sheet" style="display:none">
+  <div class="corner" id="corner" title="Select everything"></div>
+  <div id="colhead"><div class="in" id="colin"></div></div>
+  <div id="rowhead"><div class="in" id="rowin"></div></div>
+  <div id="vp" tabindex="0" aria-label="Sheet">
+    <div id="sizer">
+      <div id="rows"></div>
+      <div id="selbox"></div><div id="actbox"></div><div id="fillprev"></div><div id="fh"></div>
+      <input id="ed" type="text" spellcheck="false" aria-label="Edit cell" />
+      <textarea id="edw" spellcheck="false" aria-label="Edit cell (wrapped text)" rows="1"></textarea>
+    </div>
+  </div>
+</div>
+
+<div id="tabs" role="tablist" aria-label="Sheets"></div>
+
+<div class="status" id="status"><span id="stDims">–</span><span id="stSel"></span><span class="spacer"></span><span id="stDirty"></span></div>
+
+<div class="ctx" id="ctx"></div>
+<div id="find">
+  <b style="font-size:0.84rem">Find &amp; replace</b>
+  <input type="text" id="fFind" placeholder="Find" style="margin-top:8px" />
+  <input type="text" id="fRepl" placeholder="Replace with" />
+  <label class="opt"><input type="checkbox" id="fCase" /> Match case</label>
+  <label class="opt"><input type="checkbox" id="fWhole" /> Whole cell only</label>
+  <label class="opt"><input type="checkbox" id="fSel" /> Only in the selected cells</label>
+  <label class="opt"><input type="checkbox" id="fForm" /> Also look inside formulas</label>
+  <div class="fr">
+    <button class="btn" id="fPrev">◀ Previous</button><button class="btn" id="fNext">Next ▶</button>
+    <button class="btn" id="fOne">Replace</button><button class="btn" id="fAll">Replace all</button>
+    <button class="btn" id="fClose">Close</button>
+  </div>
+  <div class="cnt" id="fCnt"></div>
+</div>
+<div id="toast" role="status"></div>
+
+<script src="formula.js"></script>
+<script src="wrap.js"></script>
+<script>
+(function () {
+  "use strict";
+  const F = window.MSFormula, WR = window.MSWrap;
+  const $ = (id) => document.getElementById(id);
+  const MINW = 48, RH_MIN = 26, LH = 17, SAFE = 9007199254740991, MAXUNDO = 300;
+  const KIND_LABEL = { text: "text", integer: "whole number", number: "number", date: "date", datetime: "date & time", boolean: "yes/no" };
+  const KIND_TAG = { text: "text", integer: "int", number: "num", date: "date", datetime: "date+time", boolean: "yes/no" };
+  let LIMITS = { max_rows: 50000, max_cols: 200, max_cells: 5000000, max_upload_mb: 25, max_sheets: 50, sheet_name_max: 31, draft_max_mb: 40 };
+
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const NUMRE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+  let toastTimer = null;
+  function toast(msg, isErr) {
+    const t = $("toast"); t.textContent = msg; t.className = isErr ? "err" : ""; t.style.display = "block";
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.display = "none"; }, isErr ? 6000 : 3000);
+  }
+  async function api(path, opts) {
+    const r = await fetch(path, opts);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error(j.error || j.detail || ("HTTP " + r.status)); e.status = r.status; e.body = j; throw e; }
+    return j;
+  }
+  const postJSON = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+  // ======================================================================================================= state
+  let W = null;                    // the open workbook { name, sheets: [sheet…], active }, or null
+  let S = null;                    // the ACTIVE sheet (W.sheets[W.active]), or null — nearly everything below works on S
+  /* sheet = { id, name, cols:[{id,name,kind,sql,w,wrap}], rows:[{id,v:[],h,ex}], nextRid, nextCid, origRows:Map, origColIdx:Map, origin,
+               filters:Map(cid→text), search, view:[dataRowIdx], colX:[], totalW, rowY:Float64Array|null, wrapCols:[], sel:{ar,ac,cr,cc},
+               scroll:{top,left}, undo:[], redo:[], ev, cleanIdx }
+     rowY[r] = top (px) of view row r, rowY[view.length] = total height; null while no column wraps (every row is RH_MIN tall).
+     row.h = the row's height in px, row.ex = that height was measured (false = still a guess from the text length). */
+  let ed = null;                   // the cell editor: {r, c, mode, before, el}
+  let rafPending = false;
+  let nextSheetId = 1;
+  const SHARED = { visiting: new Set(), depth: 0 };      // ONE cycle detector for every sheet: a loop through two sheets is #CIRC!
+
+  const colOf = (ci) => S.cols[ci];
+  const KIND_MINW = { datetime: 170, date: 112, number: 104, integer: 96, boolean: 96, text: 110 };
+  function defaultWidth(c) { return Math.max(KIND_MINW[c.kind] || 96, Math.min(220, 44 + String(c.name).length * 8)); }
+
+  const sheetByName = (name) => {                          // case-insensitive; a plain search, so no name can reach an object property
+    if (!W) return null;
+    const l = String(name).toLowerCase();
+    for (const sh of W.sheets) if (sh.name.toLowerCase() === l) return sh;
+    return null;
+  };
+  function attachEvaluator(sh) {
+    sh.ev = F.createEvaluator({
+      id: sh.id, shared: SHARED,
+      getRaw: (r, c) => (sh.rows[r] ? sh.rows[r].v[c] : undefined), rows: () => sh.rows.length, cols: () => sh.cols.length,
+      sheet: (name) => { const t = sheetByName(name); return t ? { rows: () => t.rows.length, cols: () => t.cols.length, cell: (r, c) => t.ev.valueAt(r, c) } : null; },
+    });
+  }
+  const clearAllEv = () => { if (W) for (const sh of W.sheets) sh.ev.clear(); };   // an edit may change what other sheets' formulas show
+
+  // ---- sheet names (Excel's rules: 1–31 characters, none of [ ] : * ? / \, not starting/ending with ')
+  const SHEET_BAD = /[\[\]:*?\/\\\u0000-\u001f]/;
+  function checkSheetName(name, except) {                   // "" = fine, else the reason
+    const n = String(name === null || name === undefined ? "" : name).trim();
+    if (!n) return "A sheet needs a name.";
+    if (n.length > LIMITS.sheet_name_max) return "A sheet name can have at most " + LIMITS.sheet_name_max + " characters.";
+    if (SHEET_BAD.test(n)) return "A sheet name can't contain [ ] : * ? / \\";
+    if (n.charAt(0) === "'" || n.charAt(n.length - 1) === "'") return "A sheet name can't start or end with an apostrophe.";
+    if (W && W.sheets.some((sh) => sh !== except && sh.name.toLowerCase() === n.toLowerCase())) return "Another sheet is already called “" + n + "”.";
+    return "";
+  }
+  function uniqueSheetName(label, taken) {                  // any text → a valid tab name that isn't in `taken` (a Set of lowercase names)
+    const base = String(label || "Sheet").replace(/\.(csv|tsv|txt|json|xlsx|xlsm)$/i, "").replace(SHEET_BAD, "_").replace(/^'+|'+$/g, "").trim().slice(0, LIMITS.sheet_name_max) || "Sheet";
+    let cand = base, i = 2;
+    while (taken.has(cand.toLowerCase())) { const suf = " (" + i++ + ")"; cand = base.slice(0, LIMITS.sheet_name_max - suf.length) + suf; }
+    return cand;
+  }
+  const takenNames = (except) => new Set(W ? W.sheets.filter((sh) => sh !== except).map((sh) => sh.name.toLowerCase()) : []);
+
+  // ---- making sheets
+  function makeSheet(cols, rows, name, origin) {
+    const prev = S;
+    const sh = { id: nextSheetId++, name, cols: [], rows: [], nextRid: 1, nextCid: 1, origRows: new Map(), origColIdx: new Map(), origin: origin || null,
+                 filters: new Map(), search: "", view: [], colX: [], totalW: 0, rowY: null, wrapCols: [], sel: { ar: 0, ac: 0, cr: 0, cc: 0 },
+                 scroll: { top: 0, left: 0 }, undo: [], redo: [], ev: null, cleanIdx: 0 };
+    cols.forEach((c) => sh.cols.push({ id: sh.nextCid++, name: c.name, kind: c.kind || "text", sql: c.sql_type || c.sql || "", w: c.w || 0, wrap: !!c.wrap }));
+    sh.cols.forEach((c) => { if (!c.w) c.w = defaultWidth(c); });
+    rows.forEach((r) => sh.rows.push({ id: sh.nextRid++, v: r.slice(0, cols.length) }));
+    if (!sh.rows.length) sh.rows.push({ id: sh.nextRid++, v: cols.map(() => null) });      // an empty table still needs one row to click in
+    attachEvaluator(sh);
+    S = sh;
+    try { rebaseline(sh); layoutCols(); rebuildView(); } finally { S = prev; }
+    return sh;
+  }
+  function openWorkbook(sheets, name, active) {            // replaces whatever was open
+    W = { name: name || "Workbook", sheets, active: 0 };
+    S = null;
+    $("search").value = "";
+    activateSheet(active || 0);
+    $("vp").focus();
+  }
+  function newSheet(cols, rows, name, origin) {            // one sheet in a fresh workbook (the old way in; the open dialogs use placeSheets)
+    const label = origin && origin.table ? origin.table : name;
+    openWorkbook([makeSheet(cols, rows, uniqueSheetName(label, new Set()), origin)], name);
+    touchDraft();
+  }
+  const workbookCells = () => (W ? W.sheets.reduce((n, sh) => n + sh.rows.length * Math.max(1, sh.cols.length), 0) : 0);
+  // defs: [{cols, rows, label, origin}] → sheets of the open workbook ("add") or a new workbook ("replace")
+  function placeSheets(defs, wbName, mode) {
+    const adding = mode === "add" && !!W;
+    if (adding) {
+      if (W.sheets.length + defs.length > LIMITS.max_sheets) { toast("A workbook can have at most " + LIMITS.max_sheets + " sheets.", true); return false; }
+      const extra = defs.reduce((n, d) => n + d.rows.length * Math.max(1, d.cols.length), 0);
+      if (workbookCells() + extra > LIMITS.max_cells) { toast("That would take the workbook over " + LIMITS.max_cells.toLocaleString() + " cells — Mini Sheet is for small data.", true); return false; }
+    }
+    const taken = adding ? takenNames() : new Set();
+    const made = defs.map((d) => { const nm = uniqueSheetName(d.label, taken); taken.add(nm.toLowerCase()); return makeSheet(d.cols, d.rows, nm, d.origin); });
+    if (adding) { const first = W.sheets.length; W.sheets.push(...made); activateSheet(first); }
+    else openWorkbook(made, wbName);
+    touchDraft();
+    return true;
+  }
+  function rebaseline(sh) {                                // what "changed" is measured against: the sheet as just opened / saved
+    sh = sh || S;
+    sh.origRows = new Map(); sh.origColIdx = new Map();
+    sh.rows.forEach((r) => sh.origRows.set(r.id, r.v.slice()));
+    sh.cols.forEach((c, i) => sh.origColIdx.set(c.id, i));
+    sh.cleanIdx = sh.undo.length;
+    if (sh === S) scheduleStats();
+  }
+  function layoutCols() {
+    let x = 0; S.colX = [];
+    for (const c of S.cols) { S.colX.push(x); x += c.w; }
+    S.totalW = x;
+  }
+  const dataRow = (r) => S.rows[S.view[r]];
+  const sheetChanged = (sh) => sh.cleanIdx === null || sh.undo.length !== sh.cleanIdx;
+
+  // ---- row geometry. Rows are RH_MIN tall unless a wrapped column makes them taller (then S.rowY holds every row's top).
+  const rowTop = (r) => (S.rowY ? S.rowY[r] : r * RH_MIN);
+  const rowHt = (r) => (S.rowY ? S.rowY[r + 1] - S.rowY[r] : RH_MIN);
+  const totalH = () => (S.rowY ? S.rowY[S.view.length] : S.view.length * RH_MIN);
+  function rowAtY(y) {                                     // the view row containing pixel y (clamped)
+    const nv = S.view.length;
+    if (!nv) return 0;
+    if (!S.rowY) return Math.max(0, Math.min(nv - 1, Math.floor(y / RH_MIN)));
+    const Y = S.rowY;
+    let lo = 0, hi = nv - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (Y[mid] <= y) lo = mid; else hi = mid - 1; }
+    return lo;
+  }
+
+  // ---- wrapped columns: measuring text in the cell's real font. Rows that are not on screen get a quick guess from the text length;
+  // the rows on screen are measured exactly (WR.countLines mirrors the browser's own wrapping) and the guess is replaced.
+  let measureCtx = null, charW = 7;
+  function measurer() {
+    if (!measureCtx) {
+      measureCtx = document.createElement("canvas").getContext("2d");
+      const cs = getComputedStyle(document.body);
+      measureCtx.font = cs.fontSize + " " + cs.fontFamily;
+      charW = measureCtx.measureText("etaoinshrdlu0123456789 ").width / 23 || 7;
+    }
+    return (t) => measureCtx.measureText(t).width;
+  }
+  const CELL_PAD = 15;                                     // 7 px padding each side + the 1 px border
+  const MAX_CHAR = 13;                                     // wider than any glyph we draw (the font is 13 px): text of at most avail/MAX_CHAR characters certainly fits one line
+  function textOf(row, dr, ci) {
+    const raw = row.v[ci];
+    return display(isF(raw) ? valueAt(dr, ci) : (raw === undefined ? null : raw));
+  }
+  function exactLines(row, dr) {
+    const measure = measurer();
+    let lines = 1;
+    for (const ci of S.wrapCols) {
+      const t = textOf(row, dr, ci);
+      if (t === "") continue;
+      const avail = S.cols[ci].w - CELL_PAD;
+      if (t.length * MAX_CHAR <= avail && t.indexOf("\n") < 0) continue;
+      lines = Math.max(lines, WR.countLines(t, avail, measure).lines);
+    }
+    return lines;
+  }
+  function guessLines(row) {
+    measurer();
+    let lines = 1;
+    for (const ci of S.wrapCols) {
+      const raw = row.v[ci];
+      if (raw === null || raw === undefined || isF(raw)) continue;
+      lines = Math.max(lines, WR.estimateLines(String(raw), S.cols[ci].w - CELL_PAD, charW));
+    }
+    return lines;
+  }
+  /** (Re)build S.rowY from the stored row heights. reset = forget every height first (a column was resized / wrapped / un-wrapped). */
+  function layoutRows(reset) {
+    S.wrapCols = [];
+    S.cols.forEach((c, i) => { if (c.wrap) S.wrapCols.push(i); });
+    if (!S.wrapCols.length) { S.rowY = null; return; }
+    const nv = S.view.length, Y = new Float64Array(nv + 1);
+    if (reset) for (const row of S.rows) { row.h = undefined; row.ex = false; }
+    let y = 0;
+    for (let r = 0; r < nv; r++) {
+      const row = S.rows[S.view[r]];
+      if (row.h === undefined) { row.h = WR.rowHeight(guessLines(row), LH, RH_MIN); row.ex = false; }
+      Y[r] = y; y += row.h;
+    }
+    Y[nv] = y;
+    S.rowY = Y;
+  }
+  function measureRows(r0, r1) {                           // exact heights for view rows r0..r1; true when any of them changed
+    let changedAny = false;
+    for (let r = r0; r <= r1; r++) {
+      const dr = S.view[r], row = S.rows[dr];
+      if (row.ex) continue;
+      const h = WR.rowHeight(exactLines(row, dr), LH, RH_MIN);
+      if (h !== row.h) changedAny = true;
+      row.h = h; row.ex = true;
+    }
+    return changedAny;
+  }
+  /** Rebuild the row geometry but keep the row at the top of the window where it was (so the sheet doesn't jump under the reader). */
+  function relayoutKeepAnchor(reset) {
+    const vp = $("vp");
+    const ar = S.view.length ? rowAtY(vp.scrollTop) : 0, off = vp.scrollTop - (S.view.length ? rowTop(ar) : 0);
+    const atEnd = S.view.length > 0 && vp.scrollTop > 0 && vp.scrollTop + vp.clientHeight >= totalH() - 2;       // the reader is at the very bottom: stay there
+    layoutRows(reset);
+    $("sizer").style.height = totalH() + "px";
+    if (atEnd) vp.scrollTop = Math.max(0, totalH() - vp.clientHeight);
+    else if (S.view.length) { const nt = rowTop(Math.min(ar, S.view.length - 1)) + off; if (Math.abs(nt - vp.scrollTop) > 0.5) vp.scrollTop = nt; }
+  }
+  function setWrap(ci, on) {
+    const col = S.cols[ci];
+    if (!col || !!col.wrap === !!on) return;
+    col.wrap = !!on;
+    relayoutKeepAnchor(true); renderAll(); touchDraft();
+  }
+  function wrapAll(on) {
+    S.cols.forEach((c) => { c.wrap = !!on; });
+    relayoutKeepAnchor(true); renderAll(); touchDraft();
+    toast(on ? "Long text now wraps in every column." : "Wrapping is off in every column.");
+  }
+
+  // ======================================================================================================= values
+  const isF = F.isFormula;
+  function rawText(v) { return v === null || v === undefined ? "" : typeof v === "boolean" ? (v ? "true" : "false") : String(v); }
+  function parseInput(text, col) {
+    if (text === null || text === undefined) return null;
+    const t = String(text);
+    if (t === "") return null;
+    if (t.charAt(0) === "=" && t.length > 1) return t;
+    const s = t.trim();
+    switch (col.kind) {
+      case "integer":
+        if (/^[+-]?\d+$/.test(s)) { const n = Number(s); return Math.abs(n) <= SAFE ? n : s.replace(/^\+/, ""); }
+        if (NUMRE.test(s) && Number.isInteger(Number(s))) return Number(s);
+        return t;
+      case "number":
+        if (NUMRE.test(s)) return /^(numeric|decimal)/i.test(col.sql || "") ? s.replace(/^\+/, "") : Number(s);
+        return t;
+      case "boolean": {
+        const l = s.toLowerCase();
+        if (["true", "t", "yes", "y", "1"].indexOf(l) >= 0) return true;
+        if (["false", "f", "no", "n", "0"].indexOf(l) >= 0) return false;
+        return t;
+      }
+      case "date": case "datetime": return s;
+      default: return t;
+    }
+  }
+  function validDate(s) {
+    const m = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(s);
+    if (!m) return false;
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
+  }
+  function problem(col, v) {                    // "" = fine, else a short reason (shown softly: red cell + tooltip)
+    if (v === null || v === undefined || v === "") return "";
+    if (v instanceof F.FErr) return "Formula error " + v.code;
+    const s = typeof v === "string" ? v.trim() : v;
+    switch (col.kind) {
+      case "integer": return typeof s === "number" ? (Number.isInteger(s) ? "" : "Not a whole number") : (typeof s === "string" && /^[+-]?\d+$/.test(s) ? "" : "Not a whole number");
+      case "number": {
+        if (typeof s === "number") return isFinite(s) ? "" : "Not a number";
+        if (typeof s !== "string" || !NUMRE.test(s)) return "Not a number";
+        const m = /^(?:numeric|decimal)\((\d+),\s*(\d+)\)$/i.exec(col.sql || "");
+        if (m) { const frac = (s.split(".")[1] || "").replace(/[eE].*$/, "").length; if (frac > +m[2]) return "More than " + m[2] + " decimal places"; }
+        return "";
+      }
+      case "boolean": return typeof s === "boolean" || (typeof s === "number" && (s === 0 || s === 1)) ||
+        (typeof s === "string" && ["true", "false", "t", "f", "yes", "no", "y", "n", "1", "0"].indexOf(s.toLowerCase()) >= 0) ? "" : "Not true/false";
+      case "date": return typeof s === "string" && (validDate(s) || (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}[ T]00:00(:00(\.0+)?)?$/.test(s) && validDate(s.slice(0, 10)))) ? "" : "Not a date — use YYYY-MM-DD";
+      case "datetime": return typeof s === "string" && /^\d{4}[-/]\d{1,2}[-/]\d{1,2}([ T]\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(s) && validDate(s.slice(0, 10).replace(/T.*/, "")) ? "" : "Not a date/time — use YYYY-MM-DD HH:MM:SS";
+      default: return "";
+    }
+  }
+  function valueAtIn(sh, dr, ci) {              // the computed value of a cell of any sheet (formulas evaluated)
+    const v = sh.ev.valueAt(dr, ci);
+    return v === undefined ? null : v;
+  }
+  const valueAt = (dr, ci) => valueAtIn(S, dr, ci);
+  function display(v) {
+    if (v === null || v === undefined) return "";
+    if (v instanceof F.FErr) return v.code;
+    if (typeof v === "boolean") return v ? "TRUE" : "FALSE";
+    if (typeof v === "number") return F.fmtNum(v);
+    return String(v);
+  }
+  const sameVal = (a, b) => ((a === null || a === undefined || a === "") && (b === null || b === undefined || b === "")) ? true : (a === b || String(a) === String(b));
+  function isDirty(row, ci) {
+    const o = S.origRows.get(row.id);
+    if (!o) return false;
+    const oi = S.origColIdx.get(S.cols[ci].id);
+    return oi === undefined ? true : !sameVal(o[oi], row.v[ci]);
+  }
+
+  // ======================================================================================================= view (filter / search)
+  function makeFilter(text) {
+    const t = text.trim();
+    if (!t) return null;
+    const low = t.toLowerCase();
+    if (low === "empty" || low === "blank") return (d) => d === "";
+    if (low === "nonempty" || low === "notblank" || low === "not empty") return (d) => d !== "";
+    let m = /^(>=|<=|<>|!=|>|<|=|!)\s*(.*)$/.exec(t);
+    if (m) {
+      const op = m[1], arg = m[2].trim(), an = NUMRE.test(arg) ? Number(arg) : null, al = arg.toLowerCase();
+      const cmp = (d) => { const dn = NUMRE.test(d.trim()) ? Number(d) : null; return (an !== null && dn !== null) ? (dn < an ? -1 : dn > an ? 1 : 0) : (d.toLowerCase() < al ? -1 : d.toLowerCase() > al ? 1 : 0); };
+      if (op === "=") return (d) => cmp(d) === 0;
+      if (op === "!" || op === "<>" || op === "!=") return (d) => cmp(d) !== 0;
+      if (op === ">") return (d) => d !== "" && cmp(d) > 0;
+      if (op === ">=") return (d) => d !== "" && cmp(d) >= 0;
+      if (op === "<") return (d) => d !== "" && cmp(d) < 0;
+      return (d) => d !== "" && cmp(d) <= 0;
+    }
+    return (d) => d.toLowerCase().indexOf(low) >= 0;
+  }
+  function rebuildView() {
+    const fl = [];
+    S.filters.forEach((txt, cid) => { const ci = S.cols.findIndex((c) => c.id === cid); const f = makeFilter(txt); if (ci >= 0 && f) fl.push([ci, f]); });
+    const q = S.search.trim().toLowerCase();
+    const n = S.rows.length;
+    if (!fl.length && !q) { S.view = new Array(n); for (let i = 0; i < n; i++) S.view[i] = i; }
+    else {
+      const out = [], nc = S.cols.length;
+      for (let i = 0; i < n; i++) {
+        let ok = true;
+        for (const [ci, f] of fl) { if (!f(display(valueAt(i, ci)))) { ok = false; break; } }
+        if (ok && q) {
+          ok = false;
+          for (let c = 0; c < nc; c++) { if (display(valueAt(i, c)).toLowerCase().indexOf(q) >= 0) { ok = true; break; } }
+        }
+        if (ok) out.push(i);
+      }
+      S.view = out;
+    }
+    syncFilterButton(fl.length || q);
+    layoutRows(false);
+    clampSel();
+  }
+  function syncFilterButton(on) {
+    if (on === undefined) on = S.filters.size || S.search.trim();
+    $("btnClearFilters").style.display = on ? "" : "none";
+  }
+
+  // ======================================================================================================= selection
+  function clampSel() {
+    const nv = S.view.length, nc = S.cols.length, s = S.sel;
+    const cl = (v, hi) => Math.max(0, Math.min(v, Math.max(0, hi)));
+    s.ar = cl(s.ar, nv - 1); s.cr = cl(s.cr, nv - 1); s.ac = cl(s.ac, nc - 1); s.cc = cl(s.cc, nc - 1);
+  }
+  const rng = () => { const s = S.sel; return { r0: Math.min(s.ar, s.cr), r1: Math.max(s.ar, s.cr), c0: Math.min(s.ac, s.cc), c1: Math.max(s.ac, s.cc) }; };
+  function select(ar, ac, cr, cc, noScroll) {
+    S.sel = { ar, ac, cr: cr === undefined ? ar : cr, cc: cc === undefined ? ac : cc };
+    clampSel();
+    if (!noScroll) ensureVisible(S.sel.cr, S.sel.cc);
+    afterSelect();
+  }
+  function afterSelect() { drawOverlay(); renderHeads(); updateFx(); scheduleStats(); }
+  function ensureVisible(r, c) {
+    const vp = $("vp");
+    const top = rowTop(r), bot = rowTop(r + 1), left = S.colX[c] || 0, right = left + (S.cols[c] ? S.cols[c].w : 0);
+    if (top < vp.scrollTop) vp.scrollTop = top;
+    else if (bot > vp.scrollTop + vp.clientHeight - 16) vp.scrollTop = bot - vp.clientHeight + 16;
+    if (left < vp.scrollLeft) vp.scrollLeft = left;
+    else if (right > vp.scrollLeft + vp.clientWidth - 16) vp.scrollLeft = right - vp.clientWidth + 16;
+  }
+  function refLabel() {
+    const { r0, r1, c0, c1 } = rng();
+    const one = (r, c) => F.colToLetters(c) + (S.view[r] === undefined ? "" : S.view[r] + 1);
+    return (r0 === r1 && c0 === c1) ? one(r0, c0) : one(r0, c0) + ":" + one(r1, c1);
+  }
+
+  // ======================================================================================================= rendering
+  function schedule() { if (!rafPending) { rafPending = true; requestAnimationFrame(() => { rafPending = false; if (S) renderAll(); }); } }
+  function renderAll() { renderBody(); renderHeads(); drawOverlay(); }
+  function colAtX(x) {                          // index of the column containing x (binary search over colX)
+    let lo = 0, hi = S.cols.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (S.colX[mid] <= x) lo = mid; else hi = mid - 1; }
+    return lo;
+  }
+  function visibleCols() {
+    const vp = $("vp");
+    return [Math.max(0, colAtX(vp.scrollLeft) - 1), Math.min(S.cols.length - 1, colAtX(vp.scrollLeft + vp.clientWidth) + 1)];
+  }
+  function visibleRows() {                      // [first, last] view rows to draw: the window plus a few rows of margin
+    const vp = $("vp"), nv = S.view.length;
+    if (!nv) return [0, -1];
+    return [Math.max(0, rowAtY(vp.scrollTop) - 3), Math.min(nv - 1, rowAtY(vp.scrollTop + vp.clientHeight) + 3)];
+  }
+  function renderBody() {
+    const nv = S.view.length;
+    let [r0, r1] = visibleRows();
+    // The real heights replace our guesses. Taller/shorter rows move what is on screen, so rows that just scrolled into the window are
+    // measured too — repeat until every row drawn has its exact height (a row still on its guess is what got cut off while resizing).
+    for (let pass = 0; S.rowY && nv && pass < 6; pass++) {
+      [r0, r1] = visibleRows();
+      if (!measureRows(r0, r1)) break;
+      relayoutKeepAnchor(false);
+    }
+    [r0, r1] = visibleRows();
+    $("sizer").style.width = S.totalW + "px"; $("sizer").style.height = totalH() + "px";
+    const [c0, c1] = visibleCols();
+    const out = [];
+    for (let r = r0; r <= r1; r++) {
+      const dr = S.view[r], row = S.rows[dr], isNew = !S.origRows.has(row.id);
+      out.push('<div class="row" style="top:' + rowTop(r) + "px;height:" + rowHt(r) + 'px">');
+      for (let c = c0; c <= c1; c++) {
+        const col = S.cols[c], raw = row.v[c], formula = isF(raw);
+        const v = formula ? valueAt(dr, c) : (raw === undefined ? null : raw);
+        let cls = "c", title = "";
+        const isErr = v instanceof F.FErr;
+        if (isErr) cls += " fe";
+        else {
+          const pr = problem(col, v);
+          if (pr) { cls += " bad"; title = pr; }
+        }
+        if (col.wrap) {
+          cls += " w";
+          if (!title && typeof v === "string" && rowHt(r) >= 689) title = v.length > 600 ? v.slice(0, 600) + "…" : v;   // longer than the 40-line cap: hover shows it all
+        } else if (!title && typeof v === "string" && v.length > 40) title = v.length > 600 ? v.slice(0, 600) + "…" : v;   // cut off by the column: hover shows it
+        if (formula && !isErr) cls += " fm";
+        if (typeof v === "number" || col.kind === "integer" || col.kind === "number") { if (typeof v === "number" || (typeof v === "string" && NUMRE.test(v.trim()))) cls += " r"; }
+        else if (typeof v === "boolean") cls += " ctr";
+        if (isNew) cls += " nr"; else if (isDirty(row, c)) cls += " d";
+        out.push('<div class="' + cls + '" data-r="' + r + '" data-c="' + c + '" style="left:' + S.colX[c] + "px;width:" + col.w + 'px"' + (title ? ' title="' + esc(title) + '"' : "") + ">" + esc(display(v)) + "</div>");
+      }
+      out.push("</div>");
+    }
+    $("rows").innerHTML = out.join("");
+  }
+  function renderHeads() {
+    const vp = $("vp"), nv = S.view.length, { r0: sr0, r1: sr1, c0: sc0, c1: sc1 } = rng();
+    const fullCols = sr0 === 0 && sr1 === nv - 1 && nv > 0;
+    const fullRows = sc0 === 0 && sc1 === S.cols.length - 1;
+    const [c0, c1] = visibleCols();
+    const hs = [];
+    for (let c = c0; c <= c1; c++) {
+      const col = S.cols[c], on = c >= sc0 && c <= sc1 && fullCols;
+      const filt = S.filters.has(col.id) && S.filters.get(col.id).trim() !== "";
+      hs.push('<div class="h' + (on ? " on" : "") + '" data-hc="' + c + '" style="left:' + S.colX[c] + "px;width:" + col.w + 'px">' +
+        '<div class="hl">' + F.colToLetters(c) + '</div><div class="hn" title="' + esc(col.name) + '">' + esc(col.name) + '</div>' +
+        '<div class="ht">' + KIND_TAG[col.kind] + (col.wrap ? ' <span class="hw" title="Long text wraps in this column">↵ wrap</span>' : "") + (filt ? ' <span class="hf" title="Filter: ' + esc(S.filters.get(col.id)) + '">⏷ filtered</span>' : "") + "</div>" +
+        '<span class="hm" data-hm="' + c + '" title="Column menu">⋮</span><i class="hr" data-hr="' + c + '"></i></div>');
+    }
+    $("colin").innerHTML = hs.join(""); $("colin").style.width = S.totalW + "px";
+    $("colin").style.transform = "translateX(" + -vp.scrollLeft + "px)";
+    const [r0, r1] = visibleRows();
+    const gs = [];
+    for (let r = r0; r <= r1; r++) {
+      const dr = S.view[r], isNew = !S.origRows.has(S.rows[dr].id), on = r >= sr0 && r <= sr1 && fullRows, ht = rowHt(r);
+      gs.push('<div class="g' + (isNew ? " new" : "") + (on ? " on" : "") + (ht > RH_MIN ? " w" : "") + '" data-gr="' + r + '" style="top:' + rowTop(r) + "px;height:" + ht + 'px" title="' + (isNew ? "New row" : "") + '">' + (dr + 1) + "</div>");
+    }
+    $("rowin").innerHTML = gs.join(""); $("rowin").style.height = totalH() + "px";
+    $("rowin").style.transform = "translateY(" + -vp.scrollTop + "px)";
+  }
+  function box(el, r0, c0, r1, c1, pad) {
+    if (!S.cols.length || r1 < r0) { el.style.display = "none"; return; }
+    const x0 = S.colX[c0], x1 = S.colX[c1] + S.cols[c1].w;
+    el.style.display = "block";
+    el.style.left = (x0 - (pad ? 1 : 0)) + "px"; el.style.top = (rowTop(r0) - (pad ? 1 : 0)) + "px";
+    el.style.width = (x1 - x0 + (pad ? 1 : 0)) + "px"; el.style.height = (rowTop(r1 + 1) - rowTop(r0) + (pad ? 1 : 0)) + "px";
+  }
+  function drawOverlay() {
+    if (!S || !S.view.length || !S.cols.length) { $("selbox").style.display = $("actbox").style.display = $("fh").style.display = "none"; return; }
+    const { r0, r1, c0, c1 } = rng();
+    const multi = r0 !== r1 || c0 !== c1;
+    if (multi) box($("selbox"), r0, c0, r1, c1, true); else $("selbox").style.display = "none";
+    box($("actbox"), S.sel.cr, S.sel.cc, S.sel.cr, S.sel.cc, true);
+    const fh = $("fh");
+    if (ed) fh.style.display = "none";
+    else { fh.style.display = "block"; fh.style.left = (S.colX[c1] + S.cols[c1].w - 5) + "px"; fh.style.top = (rowTop(r1 + 1) - 5) + "px"; }
+  }
+  function updateFx() {
+    const fx = $("fx");
+    if (!S || !S.view.length) { fx.disabled = true; fx.value = ""; $("ref").textContent = "–"; return; }
+    fx.disabled = false;
+    $("ref").textContent = refLabel();
+    if (document.activeElement !== fx && !ed) {
+      const row = dataRow(S.sel.cr), raw = row ? row.v[S.sel.cc] : null;
+      fx.value = rawText(raw); checkFx();
+    }
+  }
+  function checkFx() {
+    const v = $("fx").value, bad = isF(v) ? F.check(v) : null;
+    $("fx").classList.toggle("err", !!bad); $("fx").title = bad ? "This formula can't be read: " + bad : "";
+  }
+  function syncChrome() {
+    const on = !!S;
+    $("sheetName").textContent = W ? W.name + (S && S.origin && S.origin.partial ? "  (first rows only)" : "") : "no sheet open";
+    ["btnSave", "btnSaveAll", "btnDown", "btnFind", "search", "btnWrap"].forEach((id) => { $(id).disabled = !on; });
+    $("miClose").disabled = !on;
+    $("btnUndo").disabled = !on || !S.undo.length; $("btnRedo").disabled = !on || !S.redo.length;
+  }
+
+  // ======================================================================================================= stats (status bar)
+  let statsTimer = null;
+  function scheduleStats() { clearTimeout(statsTimer); statsTimer = setTimeout(updateStats, 160); }
+  function updateStats() {
+    if (!S) { $("stDims").textContent = "–"; $("stSel").textContent = ""; $("stDirty").textContent = ""; return; }
+    const nv = S.view.length, nr = S.rows.length;
+    $("stDims").innerHTML = "<b>" + nr.toLocaleString() + "</b> rows × <b>" + S.cols.length + "</b> columns" + (nv !== nr ? " · showing <b>" + nv.toLocaleString() + "</b>" : "");
+    // selection: count / sum / average of the numbers in the selected cells
+    const { r0, r1, c0, c1 } = rng();
+    const cells = (r1 - r0 + 1) * (c1 - c0 + 1);
+    if (cells > 1 && cells <= 200000 && nv) {
+      let n = 0, sum = 0, cnt = 0;
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+        const v = valueAt(S.view[r], c);
+        if (v !== null && v !== "") cnt++;
+        if (typeof v === "number" ? isFinite(v) : (typeof v === "string" && NUMRE.test(v.trim()))) { n++; sum += Number(v); }
+      }
+      $("stSel").innerHTML = cells.toLocaleString() + " cells selected · <b>" + cnt.toLocaleString() + "</b> filled" + (n ? " · Sum <b>" + F.fmtNum(sum) + "</b> · Avg <b>" + F.fmtNum(sum / n) + "</b>" : "");
+    } else $("stSel").textContent = "";
+    // changes since opened/saved, and cells that don't fit their column's type
+    let dirty = 0, fresh = 0, bad = 0;
+    const big = S.rows.length * S.cols.length > 1500000, nc = S.cols.length;
+    const oi = S.cols.map((c) => S.origColIdx.get(c.id));
+    for (let i = 0; i < S.rows.length; i++) {
+      const row = S.rows[i], o = S.origRows.get(row.id);
+      if (!o) fresh++;
+      else for (let c = 0; c < nc; c++) if (oi[c] === undefined ? true : !sameVal(o[oi[c]], row.v[c])) dirty++;
+      if (!big) for (let c = 0; c < nc; c++) { const raw = row.v[c]; if (raw !== null && raw !== undefined && raw !== "" && problem(S.cols[c], isF(raw) ? valueAt(i, c) : raw)) bad++; }
+    }
+    const gone = S.origRows.size - (S.rows.length - fresh);
+    const bits = [];
+    if (dirty) bits.push("<b>" + dirty.toLocaleString() + "</b> cell(s) changed");
+    if (fresh) bits.push("<b>" + fresh.toLocaleString() + "</b> new row(s)");
+    if (gone > 0) bits.push("<b>" + gone.toLocaleString() + "</b> row(s) deleted");
+    let html = bits.length ? '<span class="warn">' + bits.join(" · ") + " — not saved yet</span>" : (isChanged() ? '<span class="warn">edited — not saved yet</span>' : '<span class="ok">no unsaved changes</span>');
+    if (bad) html = '<span class="bad" id="stBad" title="Show the first one">' + bad.toLocaleString() + " cell(s) don't fit their column type</span> · " + html;
+    $("stDirty").innerHTML = html;
+    const b = $("stBad"); if (b) b.onclick = gotoFirstBad;
+  }
+  function gotoFirstBad() {
+    for (let i = 0; i < S.rows.length; i++) for (let c = 0; c < S.cols.length; c++) {
+      const raw = S.rows[i].v[c];
+      if (raw !== null && raw !== undefined && raw !== "" && problem(S.cols[c], isF(raw) ? valueAt(i, c) : raw)) { gotoCell(i, c); return; }
+    }
+  }
+  function gotoCell(dataIdx, ci) {              // select a cell by data row; drops filters if they hide it
+    let r = S.view.indexOf(dataIdx);
+    if (r < 0) { S.filters.clear(); S.search = ""; $("search").value = ""; rebuildView(); r = S.view.indexOf(dataIdx); }
+    if (r < 0) return;
+    select(r, ci, r, ci); schedule();
+  }
+
+  // ======================================================================================================= commands (undo / redo)
+  function changed(cmd) {
+    clearAllEv();
+    if (S.wrapCols.length) for (const row of S.rows) row.ex = false;          // what was edited may need another line: re-measure what is on screen
+    if (cmd.struct) layoutCols();
+    if (cmd.struct || S.filters.size || S.search) rebuildView(); else layoutRows(false);
+    clampSel();
+    syncChrome(); renderTabs(); renderAll(); updateFx(); scheduleStats(); touchDraft();
+  }
+  function exec(cmd) {
+    if (!cmd) return;
+    cmd.redo();
+    if (S.cleanIdx !== null && S.cleanIdx > S.undo.length) S.cleanIdx = null;       // the saved state is no longer reachable by undo
+    S.undo.push(cmd);
+    if (S.undo.length > MAXUNDO) { S.undo.shift(); S.cleanIdx = S.cleanIdx > 0 ? S.cleanIdx - 1 : null; }
+    S.redo.length = 0;
+    changed(cmd);
+  }
+  function undo() {
+    if (!S || ed) return;
+    const c = S.undo.pop(); if (!c) return;
+    c.undo(); S.redo.push(c); changed(c);
+  }
+  function redo() {
+    if (!S || ed) return;
+    const c = S.redo.pop(); if (!c) return;
+    c.redo(); S.undo.push(c); changed(c);
+  }
+  // items: [[rowObj, colIndex, newValue]] → one undo step; cells whose value doesn't change are skipped
+  function cmdSet(items) {
+    const list = [];
+    for (const [row, ci, nv] of items) { const ov = row.v[ci] === undefined ? null : row.v[ci]; if (!sameVal(ov, nv) || (ov !== nv && typeof ov !== typeof nv && ov !== null && nv !== null)) list.push([row, ci, ov, nv]); }
+    if (!list.length) return null;
+    return { redo() { for (const [r, c, , nv] of list) r.v[c] = nv; }, undo() { for (let i = list.length - 1; i >= 0; i--) { const [r, c, ov] = list[i]; r.v[c] = ov; } } };
+  }
+  const cmdInsertRows = (at, rows) => ({ struct: true, redo() { S.rows.splice(at, 0, ...rows); }, undo() { S.rows.splice(at, rows.length); } });
+  function cmdDeleteRows(idxs) {                // data indices
+    const sorted = [...new Set(idxs)].sort((a, b) => a - b), removed = sorted.map((i) => S.rows[i]);
+    return { struct: true,
+      redo() { for (let k = sorted.length - 1; k >= 0; k--) S.rows.splice(sorted[k], 1); },
+      undo() { for (let k = 0; k < sorted.length; k++) S.rows.splice(sorted[k], 0, removed[k]); } };
+  }
+  function cmdInsertCols(at, cols) {
+    return { struct: true, redo() { S.cols.splice(at, 0, ...cols); for (const r of S.rows) r.v.splice(at, 0, ...cols.map(() => null)); },
+      undo() { S.cols.splice(at, cols.length); for (const r of S.rows) r.v.splice(at, cols.length); } };
+  }
+  function cmdDeleteCols(idxs) {
+    const sorted = [...new Set(idxs)].sort((a, b) => a - b), cols = sorted.map((i) => S.cols[i]);
+    const vals = S.rows.map((r) => sorted.map((i) => r.v[i]));
+    return { struct: true,
+      redo() { for (let k = sorted.length - 1; k >= 0; k--) { S.cols.splice(sorted[k], 1); for (const r of S.rows) r.v.splice(sorted[k], 1); } },
+      undo() { for (let k = 0; k < sorted.length; k++) { S.cols.splice(sorted[k], 0, cols[k]); S.rows.forEach((r, ri) => r.v.splice(sorted[k], 0, vals[ri][k])); } } };
+  }
+  function cmdMoveCol(from, to) {
+    const mv = (a, b) => { const [c] = S.cols.splice(a, 1); S.cols.splice(b, 0, c); for (const r of S.rows) { const [v] = r.v.splice(a, 1); r.v.splice(b, 0, v); } };
+    return { struct: true, redo() { mv(from, to); }, undo() { mv(to, from); } };
+  }
+  const cmdProp = (obj, key, nv, struct) => { const ov = obj[key]; return { struct: !!struct, redo() { obj[key] = nv; }, undo() { obj[key] = ov; } }; };
+  const cmdOrder = (newOrder) => { const old = S.rows.slice(); return { struct: true, redo() { S.rows = newOrder.slice(); }, undo() { S.rows = old.slice(); } }; };
+  function batch(makers) {                      // makers run in order at (re)do time, so later ones see earlier ones' effect
+    let done = [];
+    return { struct: true, redo() { done = []; for (const m of makers) { const c = m(); if (c) { c.redo(); done.push(c); } } },
+      undo() { for (let i = done.length - 1; i >= 0; i--) done[i].undo(); } };
+  }
+  const dataIdxOf = (r) => S.view[r];
+  function newRowObj() { return { id: S.nextRid++, v: S.cols.map(() => null) }; }
+  function uniqueName(base) {
+    const names = new Set(S.cols.map((c) => c.name.toLowerCase()));
+    if (!names.has(base.toLowerCase())) return base;
+    let i = 2; while (names.has((base + "_" + i).toLowerCase())) i++;
+    return base + "_" + i;
+  }
+  function newColObj(name, kind) { return { id: S.nextCid++, name: name, kind: kind || "text", sql: "", w: 120 }; }
+
+  // ---- editing cells
+  function setCellValue(r, c, text) {
+    const row = dataRow(r); if (!row) return;
+    exec(cmdSet([[row, c, parseInput(text, S.cols[c])]]));
+  }
+  function clearRange() {
+    const { r0, r1, c0, c1 } = rng(), items = [];
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) items.push([dataRow(r), c, null]);
+    exec(cmdSet(items));
+  }
+
+  // ---- the in-cell editor: a one-line box, or (in a wrapped column) a text area that grows with the text; Alt+Enter = new line
+  function growEditor(el) {
+    if (el.tagName !== "TEXTAREA" || !ed) return;
+    el.style.height = rowHt(ed.r) + "px";
+    el.style.height = Math.max(rowHt(ed.r), Math.min(700, el.scrollHeight + 4)) + "px";
+  }
+  function startEdit(r, c, initial, mode) {
+    if (!S || !S.view.length) return;
+    if (ed) commitEdit(0);
+    const row = dataRow(r), col = S.cols[c], wrapped = !!col.wrap, el = $(wrapped ? "edw" : "ed");
+    $("ed").style.display = "none"; $("edw").style.display = "none";
+    ed = { r, c, mode: mode || "edit", before: row.v[c], el };
+    el.style.display = "block";
+    el.style.left = S.colX[c] + "px"; el.style.top = rowTop(r) + "px"; el.style.height = rowHt(r) + "px";
+    el.style.width = Math.max(col.w, wrapped ? 160 : 130) + "px";
+    el.value = initial !== null && initial !== undefined ? initial : rawText(row.v[c]);
+    growEditor(el);
+    drawOverlay();
+    el.focus();
+    if (initial === null || initial === undefined) el.setSelectionRange(el.value.length, el.value.length);
+    $("fx").value = el.value; checkFx();
+  }
+  function commitEdit(dr, dc) {
+    if (!ed) return;
+    const { r, c, el } = ed, text = el.value;
+    ed = null; el.style.display = "none";
+    setCellValue(r, c, text);
+    if (dr || dc) { const nr = Math.max(0, Math.min(S.view.length - 1, r + (dr || 0))), nc = Math.max(0, Math.min(S.cols.length - 1, c + (dc || 0))); select(nr, nc, nr, nc); }
+    else afterSelect();
+    $("vp").focus();
+  }
+  function cancelEdit() {
+    if (!ed) return;
+    ed.el.style.display = "none"; ed = null; afterSelect(); $("vp").focus();
+  }
+
+  // ======================================================================================================= clipboard (TSV)
+  function tsvEscape(s) { return /[\t\n\r"]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  function copyText() {
+    const { r0, r1, c0, c1 } = rng(), lines = [];
+    for (let r = r0; r <= r1; r++) { const cells = []; for (let c = c0; c <= c1; c++) cells.push(tsvEscape(display(valueAt(dataIdxOf(r), c)))); lines.push(cells.join("\t")); }
+    return lines.join("\n");
+  }
+  function parseTSV(text) {                     // Excel/Sheets copy format: tab-separated, "quoted" cells may hold tabs/newlines
+    const rows = []; let row = [], cell = "", i = 0, q = false;
+    text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    if (text.endsWith("\n")) text = text.slice(0, -1);
+    for (; i < text.length; i++) {
+      const ch = text[i];
+      if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+      else if (ch === '"' && cell === "") q = true;
+      else if (ch === "\t") { row.push(cell); cell = ""; }
+      else if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+      else cell += ch;
+    }
+    row.push(cell); rows.push(row);
+    return rows;
+  }
+  function pasteGrid(grid) {
+    if (!grid.length) return;
+    const { r0, r1, c0, c1 } = rng();
+    const single = grid.length === 1 && grid[0].length === 1;
+    const startR = r0, startC = c0;
+    const h = single ? r1 - r0 + 1 : grid.length, w = single ? c1 - c0 + 1 : Math.max(...grid.map((g) => g.length));
+    const needRows = Math.max(0, startR + h - S.view.length), needCols = Math.max(0, startC + w - S.cols.length);
+    if (S.rows.length + needRows > LIMITS.max_rows) { toast("That would go over " + LIMITS.max_rows.toLocaleString() + " rows — Mini Sheet is for small data.", true); return; }
+    if (S.cols.length + needCols > LIMITS.max_cols) { toast("That would go over " + LIMITS.max_cols + " columns.", true); return; }
+    const addRows = []; for (let i = 0; i < needRows; i++) addRows.push(newRowObj());
+    const targets = [];                          // row objects for each pasted row (existing view rows, then the new ones)
+    for (let i = 0; i < h; i++) targets.push(startR + i < S.view.length ? dataRow(startR + i) : addRows[startR + i - S.view.length]);
+    const addCols = []; for (let j = 0; j < needCols; j++) addCols.push(newColObj(uniqueName("column_" + (S.cols.length + j + 1)), "text"));
+    const makers = [];
+    if (addCols.length) makers.push(() => cmdInsertCols(S.cols.length, addCols));
+    if (addRows.length) makers.push(() => { const c = cmdInsertRows(S.rows.length, addRows); addRows.forEach((r) => { while (r.v.length < S.cols.length) r.v.push(null); }); return c; });
+    makers.push(() => {
+      const items = [];
+      for (let i = 0; i < h; i++) for (let j = 0; j < w; j++) {
+        const text = single ? grid[0][0] : (grid[i][j] === undefined ? null : grid[i][j]);
+        if (text === null) continue;
+        items.push([targets[i], startC + j, parseInput(text, S.cols[startC + j])]);
+      }
+      return cmdSet(items);
+    });
+    exec(batch(makers));
+    select(startR, startC, startR + h - 1, startC + w - 1);
+    toast("Pasted " + (h * w).toLocaleString() + " cell(s)" + (needRows ? ", added " + needRows + " row(s)" : "") + (needCols ? " and " + needCols + " column(s)" : ""));
+  }
+
+  // ======================================================================================================= fill (Ctrl+D / Ctrl+R / drag handle)
+  function fillItems(src, tgt, vertical, up) {
+    // src, tgt = {r0,r1,c0,c1} in view coords; tgt adjoins src on one side. Returns [[rowObj, ci, value]].
+    const items = [];
+    const n = vertical ? src.r1 - src.r0 + 1 : src.c1 - src.c0 + 1;
+    const lines = vertical ? src.c1 - src.c0 + 1 : src.r1 - src.r0 + 1;
+    for (let line = 0; line < lines; line++) {
+      const srcRaw = []; for (let k = 0; k < n; k++) { const r = vertical ? src.r0 + k : src.r0 + line, c = vertical ? src.c0 + line : src.c0 + k; srcRaw.push(dataRow(r).v[c]); }
+      const numeric = n >= 2 && srcRaw.every((v) => !isF(v) && v !== null && v !== "" && (typeof v === "number" || (typeof v === "string" && NUMRE.test(v.trim()))));
+      const step = numeric ? Number(srcRaw[1]) - Number(srcRaw[0]) : 0;
+      const isSeries = numeric && srcRaw.every((v, k) => Math.abs((Number(v) - Number(srcRaw[0])) - step * k) < 1e-9);
+      const cnt = vertical ? tgt.r1 - tgt.r0 + 1 : tgt.c1 - tgt.c0 + 1;
+      for (let m = 0; m < cnt; m++) {
+        const pos = up ? (vertical ? tgt.r1 : tgt.c1) - m : (vertical ? tgt.r0 : tgt.c0) + m;     // target position along the fill axis
+        const first = vertical ? src.r0 : src.c0;
+        const srcK = up ? (n - ((first - pos) % n)) % n : (pos - first) % n;     // which source cell this target copies
+        const srcPos = first + srcK;
+        const tr = vertical ? pos : src.r0 + line, tc = vertical ? src.c0 + line : pos;
+        let v = srcRaw[srcK];
+        if (isSeries) { const nv = Number(srcRaw[0]) + step * (pos - first); v = Math.abs(nv) <= SAFE ? Number(F.fmtNum(nv)) : nv; }
+        else if (isF(v)) v = F.shift(v, vertical ? pos - srcPos : 0, vertical ? 0 : pos - srcPos);
+        items.push([dataRow(tr), tc, v]);
+      }
+    }
+    return items;
+  }
+  function fillDownRight(vertical) {
+    const { r0, r1, c0, c1 } = rng();
+    if (vertical) {
+      if (r0 === r1) { if (r0 === 0) return; const src = { r0: r0 - 1, r1: r0 - 1, c0, c1 }; exec(cmdSet(fillItems(src, { r0, r1: r0, c0, c1 }, true, false))); }
+      else exec(cmdSet(fillItems({ r0, r1: r0, c0, c1 }, { r0: r0 + 1, r1, c0, c1 }, true, false)));
+    } else {
+      if (c0 === c1) { if (c0 === 0) return; exec(cmdSet(fillItems({ r0, r1, c0: c0 - 1, c1: c0 - 1 }, { r0, r1, c0, c1: c0 }, false, false))); }
+      else exec(cmdSet(fillItems({ r0, r1, c0, c1: c0 }, { r0, r1, c0: c0 + 1, c1 }, false, false)));
+    }
+  }
+
+  // ======================================================================================================= rows / columns / sort / filter
+  function selectedRows() { const { r0, r1 } = rng(); const out = []; for (let r = r0; r <= r1; r++) out.push(dataIdxOf(r)); return out; }
+  function selectedCols() { const { c0, c1 } = rng(); const out = []; for (let c = c0; c <= c1; c++) out.push(c); return out; }
+  function insertRows(below) {
+    const idxs = selectedRows(), n = Math.max(1, idxs.length);
+    if (S.rows.length + n > LIMITS.max_rows) { toast("That would go over " + LIMITS.max_rows.toLocaleString() + " rows.", true); return; }
+    const at = below ? idxs[idxs.length - 1] + 1 : idxs[0];
+    const rows = []; for (let i = 0; i < n; i++) rows.push(newRowObj());
+    exec(cmdInsertRows(at, rows));
+    const r = Math.max(0, S.view.indexOf(at)); select(r, S.sel.cc, r + n - 1, S.sel.cc); schedule();
+  }
+  function deleteRows() {
+    const idxs = selectedRows();
+    if (!idxs.length) return;
+    if (idxs.length === S.rows.length && !confirm("Delete every row?")) return;
+    exec(cmdDeleteRows(idxs));
+    toast("Deleted " + idxs.length.toLocaleString() + " row(s) — Ctrl+Z brings them back");
+  }
+  function insertCols(right) {
+    const cs = selectedCols(), n = cs.length;
+    if (S.cols.length + n > LIMITS.max_cols) { toast("That would go over " + LIMITS.max_cols + " columns.", true); return; }
+    const at = right ? cs[cs.length - 1] + 1 : cs[0];
+    const add = []; for (let i = 0; i < n; i++) add.push(newColObj(uniqueName("column_" + (S.cols.length + 1 + i)), "text"));
+    exec(cmdInsertCols(at, add));
+    select(S.sel.ar, at, S.sel.cr, at + n - 1);
+  }
+  function deleteCols() {
+    const cs = selectedCols();
+    if (cs.length >= S.cols.length) { toast("A sheet needs at least one column.", true); return; }
+    exec(cmdDeleteCols(cs));
+    toast("Deleted " + cs.length + " column(s) — Ctrl+Z brings them back");
+  }
+  function moveCol(delta) {
+    const cs = selectedCols();
+    if (cs.length !== 1) { toast("Select one column to move it."); return; }
+    const to = cs[0] + delta;
+    if (to < 0 || to >= S.cols.length) return;
+    exec(cmdMoveCol(cs[0], to));
+    select(S.sel.ar, to, S.sel.cr, to);
+  }
+  async function renameCol(ci) {
+    const col = S.cols[ci];
+    const name = await askText("Rename column", "New name", col.name);
+    if (name === null) return;
+    const n = name.trim();
+    if (!n) { toast("A column needs a name.", true); return; }
+    if (n.length > 128) { toast("That name is too long.", true); return; }
+    if (S.cols.some((c, i) => i !== ci && c.name.toLowerCase() === n.toLowerCase())) { toast("Another column is already called “" + n + "”.", true); return; }
+    exec(cmdProp(col, "name", n, true));
+  }
+  function setKind(ci, kind) {
+    const col = S.cols[ci];
+    if (col.kind === kind) return;
+    const makers = [() => ({ struct: true, redo() { col.kind = kind; col.sql = ""; }, undo() { col.kind = oldK; col.sql = oldS; } })];
+    const oldK = col.kind, oldS = col.sql;
+    makers.push(() => {                          // re-read every plain value as the new type (formulas stay formulas)
+      const items = [];
+      for (const row of S.rows) { const v = row.v[ci]; if (v !== null && v !== undefined && v !== "" && !isF(v)) items.push([row, ci, parseInput(rawText(v), col)]); }
+      return cmdSet(items);
+    });
+    exec(batch(makers));
+    const bad = S.rows.filter((row, i) => { const v = row.v[ci]; return v !== null && v !== undefined && v !== "" && problem(col, isF(v) ? valueAt(i, ci) : v); }).length;
+    toast("“" + col.name + "” is now " + KIND_LABEL[kind] + (bad ? " — " + bad.toLocaleString() + " value(s) don't fit (shown in red)" : ""), !!bad);
+  }
+  function sortCol(ci, asc) {
+    const keys = S.rows.map((row, i) => { const v = valueAt(i, ci); return { row, v, empty: v === null || v === "" }; });
+    const num = (v) => (typeof v === "number" ? v : (typeof v === "string" && NUMRE.test(v.trim()) ? Number(v) : null));
+    keys.sort((a, b) => {
+      if (a.empty || b.empty) return a.empty === b.empty ? 0 : (a.empty ? 1 : -1);      // blanks always last
+      const x = num(a.v), y = num(b.v);
+      const c = (x !== null && y !== null) ? x - y : display(a.v).localeCompare(display(b.v), undefined, { numeric: true, sensitivity: "base" });
+      return asc ? c : -c;
+    });
+    exec(cmdOrder(keys.map((k) => k.row)));
+    toast("Sorted by “" + S.cols[ci].name + "” " + (asc ? "A → Z" : "Z → A") + " — rows moved; Ctrl+Z puts them back");
+  }
+  async function filterCol(ci) {
+    const col = S.cols[ci];
+    const v = await askText("Filter “" + col.name + "”", "Show only rows where this column…", S.filters.get(col.id) || "",
+      "Type text to find (contains), or: =value · !value · >5 · >=5 · <5 · <=5 · empty · nonempty. Leave empty to remove the filter.");
+    if (v === null) return;
+    if (v.trim()) S.filters.set(col.id, v); else S.filters.delete(col.id);
+    rebuildView(); select(Math.min(S.sel.cr, Math.max(0, S.view.length - 1)), S.sel.cc); schedule(); scheduleStats(); touchDraft();
+  }
+  function clearFilters() { S.filters.clear(); S.search = ""; $("search").value = ""; rebuildView(); schedule(); scheduleStats(); touchDraft(); }
+
+  // ======================================================================================================= find & replace
+  let findPos = -1;
+  function findMatcher() {
+    const q = $("fFind").value;
+    if (!q) return null;
+    const cs = $("fCase").checked, whole = $("fWhole").checked, inForm = $("fForm").checked;
+    const needle = cs ? q : q.toLowerCase();
+    return (raw, shown) => {
+      const text = isF(raw) ? (inForm ? raw : shown) : shown;
+      const hay = cs ? text : text.toLowerCase();
+      return whole ? hay === needle : hay.indexOf(needle) >= 0;
+    };
+  }
+  function* cellsInScope() {
+    const only = $("fSel").checked, { r0, r1, c0, c1 } = rng();
+    const ra = only ? r0 : 0, rb = only ? r1 : S.view.length - 1, ca = only ? c0 : 0, cb = only ? c1 : S.cols.length - 1;
+    for (let r = ra; r <= rb; r++) for (let c = ca; c <= cb; c++) yield [r, c];
+  }
+  function matches() {
+    const m = findMatcher(), out = [];
+    if (!m) return out;
+    for (const [r, c] of cellsInScope()) { const dr = S.view[r], raw = S.rows[dr].v[c]; if (m(raw, display(valueAt(dr, c)))) out.push([r, c]); }
+    return out;
+  }
+  function findStep(dir) {
+    const list = matches();
+    $("fCnt").textContent = list.length ? list.length.toLocaleString() + " match(es)" : ($("fFind").value ? "No matches" : "");
+    if (!list.length) return;
+    const cur = S.sel.cr * 100000 + S.sel.cc;
+    let pick;
+    if (dir > 0) pick = list.find(([r, c]) => r * 100000 + c > cur) || list[0];
+    else pick = [...list].reverse().find(([r, c]) => r * 100000 + c < cur) || list[list.length - 1];
+    select(pick[0], pick[1], pick[0], pick[1]); schedule();
+  }
+  function replaceText(raw, shown) {
+    const q = $("fFind").value, rep = $("fRepl").value, cs = $("fCase").checked, whole = $("fWhole").checked;
+    const base = isF(raw) ? raw : shown;
+    if (whole) return rep;
+    const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), cs ? "g" : "gi");
+    return base.replace(re, () => rep);
+  }
+  function replaceCells(list) {
+    const m = findMatcher(); if (!m || !list.length) return 0;
+    const items = [];
+    for (const [r, c] of list) {
+      const dr = S.view[r], row = S.rows[dr], raw = row.v[c];
+      if (isF(raw) && !$("fForm").checked) continue;                       // a formula's result isn't text you can replace
+      items.push([row, c, parseInput(replaceText(raw, display(valueAt(dr, c))), S.cols[c])]);
+    }
+    const cmd = cmdSet(items);
+    if (cmd) exec(cmd);
+    return items.length;
+  }
+  function openFind() {
+    $("find").classList.add("open");
+    const { r0, r1, c0, c1 } = rng();
+    if (r0 === r1 && c0 === c1 && S.view.length) { const t = display(valueAt(dataIdxOf(r0), c0)); if (t && t.length < 60 && !$("fFind").value) $("fFind").value = t; }
+    $("fFind").focus(); $("fFind").select();
+    $("fCnt").textContent = $("fFind").value ? matches().length.toLocaleString() + " match(es)" : "";
+  }
+
+  // ======================================================================================================= modals
+  function modal(html, wide) {
+    const bd = document.createElement("div"); bd.className = "backdrop";
+    bd.innerHTML = '<div class="modal' + (wide ? " wide" : "") + '" role="dialog" aria-modal="true">' + html + "</div>";
+    document.body.appendChild(bd);
+    const close = () => { bd.remove(); };
+    bd.addEventListener("mousedown", (e) => { if (e.target === bd) close(); });
+    return { el: bd.firstChild, close, q: (s) => bd.querySelector(s) };
+  }
+  function askText(title, label, value, hint) {
+    return new Promise((resolve) => {
+      const m = modal("<h2>" + esc(title) + "</h2><label>" + esc(label) + '</label><input type="text" id="mt" />' + (hint ? '<p class="hint">' + esc(hint) + "</p>" : "") +
+        '<div class="acts"><button class="btn" id="mc">Cancel</button><button class="btn primary" id="mo">OK</button></div>');
+      const inp = m.q("#mt"); inp.value = value || ""; inp.focus(); inp.select();
+      const done = (v) => { m.close(); resolve(v); $("vp").focus(); };
+      m.q("#mo").onclick = () => done(inp.value); m.q("#mc").onclick = () => done(null);
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") done(inp.value); if (e.key === "Escape") done(null); });
+    });
+  }
+  const isChanged = () => !!S && sheetChanged(S);
+  const anyChanged = () => !!W && W.sheets.some(sheetChanged);
+  function guardUnsaved() {
+    if (!anyChanged()) return true;
+    const n = W.sheets.filter(sheetChanged).length;
+    return confirm((n > 1 ? n + " sheets have" : "This workbook has") + " changes that aren't saved to Vault Data. Open something else and lose them?");
+  }
+  // When a workbook is open, every "open" dialog asks: add the result as a new sheet (default) or replace the workbook.
+  const whereHtml = () => !W ? "" : '<div class="chk" style="flex-direction:column;align-items:flex-start;gap:4px"><div><input type="radio" name="om" id="omAdd" value="add" checked /> <label for="omAdd">Add it as a new sheet in this workbook</label></div>' +
+    '<div><input type="radio" name="om" id="omRep" value="replace" /> <label for="omRep">Replace the whole workbook</label></div></div>';
+  const whereMode = (m) => (!W ? "replace" : (m.q("#omRep") && m.q("#omRep").checked ? "replace" : "add"));
+
+  // ---- open: Vault Data table
+  async function openTableDialog() {
+    const m = modal('<h2>Open a Vault Data table</h2><p class="hint">Pick a workspace, then a table. Mini Sheet is for small tables (up to ' + LIMITS.max_rows.toLocaleString() +
+      ' rows) — a bigger one can be opened as its first rows.</p>' + whereHtml() + '<div class="pick"><div class="list" id="pw">Loading…</div><div class="list" id="pt"></div></div><div id="pm"></div>' +
+      '<div class="acts"><button class="btn" id="pc">Cancel</button></div>');
+    m.q("#pc").onclick = m.close;
+    let cat = [];
+    try { cat = (await api("catalog-lite")).workspaces; } catch (e) { m.q("#pw").textContent = e.message; return; }
+    let cur = cat.find((w) => w.name === "system") || cat[0];
+    const drawW = () => { m.q("#pw").innerHTML = cat.map((w) => '<div data-w="' + esc(w.name) + '" class="' + (cur && cur.name === w.name ? "on" : "") + '">🗂 ' + esc(w.name) + '<span class="m">' + w.tables.length + "</span></div>").join("") || "No workspaces yet."; drawT(); };
+    const drawT = () => { m.q("#pt").innerHTML = cur && cur.tables.length ? cur.tables.map((t) => '<div data-t="' + esc(t.name) + '"><span>' + esc(t.name) + '</span><span class="m">' + Number(t.rows).toLocaleString() + " rows · " + t.columns + " cols</span></div>").join("") : '<div class="m" style="cursor:default">No tables here.</div>'; };
+    drawW();
+    m.q("#pw").onclick = (e) => { const d = e.target.closest("[data-w]"); if (d) { cur = cat.find((w) => w.name === d.dataset.w); drawW(); } };
+    m.q("#pt").onclick = async (e) => {
+      const d = e.target.closest("[data-t]"); if (!d) return;
+      if (whereMode(m) === "replace" && !guardUnsaved()) return;
+      await openTable(cur.name, d.dataset.t, null, m, whereMode(m));
+    };
+  }
+  async function openTable(ws, name, limit, m, mode) {
+    const box = m ? m.q("#pm") : null;
+    if (box) box.innerHTML = '<div class="msg ok">Opening ' + esc(ws + "." + name) + "…</div>";
+    try {
+      const d = await api("table?ws=" + encodeURIComponent(ws) + "&name=" + encodeURIComponent(name) + (limit ? "&limit=" + limit : ""));
+      if (m) m.close();
+      placeSheets([{ cols: d.columns.map((c) => ({ name: c.name, kind: c.kind, sql_type: c.sql_type })), rows: d.rows, label: name,
+                     origin: { workspace: ws, table: name, partial: d.partial, row_count: d.row_count } }], ws + "." + name, mode || "replace");
+      if (d.notes && d.notes.length) toast(d.notes[0] + (d.notes.length > 1 ? " (+" + (d.notes.length - 1) + " more notes)" : ""));
+      else if (d.partial) toast("Opened the first " + d.loaded_rows.toLocaleString() + " of " + d.row_count.toLocaleString() + " rows.");
+    } catch (e) {
+      if (box) {
+        if (e.status === 413 && e.body.row_count) {
+          box.innerHTML = '<div class="msg warn">' + esc(e.message) + '</div><div class="acts"><button class="btn primary" id="pl">Open the first ' + e.body.max_rows.toLocaleString() + " rows</button></div>";
+          m.q("#pl").onclick = () => openTable(ws, name, e.body.max_rows, m, mode);
+        } else box.innerHTML = '<div class="msg err">' + esc(e.message) + "</div>";
+      } else toast(e.message, true);
+    }
+  }
+  // ---- open: paste / file / blank
+  function openPasteDialog() {
+    const m = modal('<h2>Paste from Excel or Google Sheets</h2><p class="hint">Copy cells in Excel/Sheets (Ctrl+C), then paste here (Ctrl+V). CSV text works too.</p>' + whereHtml() +
+      '<textarea id="pt" placeholder="Paste here…"></textarea><div class="chk"><input type="checkbox" id="ph" checked /><label for="ph">The first row holds the column names</label></div><div id="pm"></div>' +
+      '<div class="acts"><button class="btn" id="pc">Cancel</button><button class="btn primary" id="po">Open</button></div>');
+    const ta = m.q("#pt"); ta.focus();
+    m.q("#pc").onclick = m.close;
+    const go = async (limit) => {
+      const box = m.q("#pm"), mode = whereMode(m);
+      if (mode === "replace" && !guardUnsaved()) return;
+      try {
+        const d = await postJSON("parse", { text: ta.value, header: m.q("#ph").checked, limit: limit || null });
+        m.close();
+        placeSheets([{ cols: d.columns, rows: d.rows, label: "Pasted data", origin: null }], "Pasted data", mode);
+        if (d.partial) toast("Opened the first " + d.rows.length.toLocaleString() + " of " + d.row_count.toLocaleString() + " rows.");
+      } catch (e) {
+        if (e.status === 413 && e.body.row_count) {
+          box.innerHTML = '<div class="msg warn">' + esc(e.message) + '</div><div class="acts"><button class="btn" id="pl">Open the first ' + e.body.max_rows.toLocaleString() + " rows</button></div>";
+          m.q("#pl").onclick = () => go(e.body.max_rows);
+        } else box.innerHTML = '<div class="msg err">' + esc(e.message) + "</div>";
+      }
+    };
+    m.q("#po").onclick = () => go(null);
+  }
+  function openFileDialog() {
+    const m = modal('<h2>Open a file</h2><p class="hint">CSV, TSV, JSON or Excel (.xlsx), up to ' + LIMITS.max_upload_mb + ' MB. An Excel file opens <b>every sheet</b> as its own sheet. For big files use Vault → Vault Data → Load files.</p>' + whereHtml() +
+      '<label>File</label><input type="file" id="pf" accept=".csv,.tsv,.txt,.json,.xlsx,.xlsm" />' +
+      '<div class="chk"><input type="checkbox" id="ph" checked /><label for="ph">The first row holds the column names</label></div>' +
+      '<div id="sheetrow" style="display:none"><label>Only this Excel sheet (empty = all sheets)</label><input type="text" id="ps" placeholder="Sheet1" /></div><div id="pm"></div>' +
+      '<div class="acts"><button class="btn" id="pc">Cancel</button><button class="btn primary" id="po">Open</button></div>');
+    m.q("#pc").onclick = m.close;
+    m.q("#pf").onchange = () => { const f = m.q("#pf").files[0]; m.q("#sheetrow").style.display = f && /\.xls[xm]$/i.test(f.name) ? "" : "none"; };
+    const go = async (limit) => {
+      const f = m.q("#pf").files[0], box = m.q("#pm"), mode = whereMode(m);
+      if (!f) { box.innerHTML = '<div class="msg err">Choose a file first.</div>'; return; }
+      if (mode === "replace" && !guardUnsaved()) return;
+      const fd = new FormData(); fd.append("file", f); fd.append("header", m.q("#ph").checked ? "true" : "false");
+      if (m.q("#ps").value.trim()) fd.append("sheet", m.q("#ps").value.trim()); else fd.append("all_sheets", "true");
+      if (limit) fd.append("limit", String(limit));
+      box.innerHTML = '<div class="msg ok">Reading…</div>';
+      try {
+        const d = await api("import", { method: "POST", body: fd });
+        m.close();
+        if (d.sheets) {                                                       // a whole Excel workbook
+          const defs = d.sheets.map((x) => ({ cols: x.columns, rows: x.rows, label: x.name, origin: null }));
+          if (!placeSheets(defs, f.name, mode)) return;
+          const skipped = d.skipped || [];
+          toast("Opened " + d.sheets.length + " sheet(s)" + (skipped.length ? " — skipped " + skipped.map((k) => "“" + k.name + "” (" + k.reason + ")").join(", ") : ""), skipped.some((k) => k.reason !== "empty"));
+        } else {
+          placeSheets([{ cols: d.columns, rows: d.rows, label: f.name, origin: null }], f.name, mode);
+          if (d.partial) toast("Opened the first " + d.rows.length.toLocaleString() + " of " + d.row_count.toLocaleString() + " rows.");
+        }
+      } catch (e) {
+        if (e.status === 413 && e.body.row_count) {
+          box.innerHTML = '<div class="msg warn">' + esc(e.message) + '</div><div class="acts"><button class="btn" id="pl">Open the first ' + e.body.max_rows.toLocaleString() + " rows</button></div>";
+          m.q("#pl").onclick = () => go(e.body.max_rows);
+        } else box.innerHTML = '<div class="msg err">' + esc(e.message) + "</div>";
+      }
+    };
+    m.q("#po").onclick = () => go(null);
+  }
+  function blankDef(label) {
+    const cols = ["A", "B", "C", "D", "E"].map((n) => ({ name: n, kind: "text", sql_type: "varchar" }));
+    const rows = []; for (let i = 0; i < 20; i++) rows.push([null, null, null, null, null]);
+    return { cols, rows, label, origin: null };
+  }
+  function openBlank() {                         // no workbook yet: a new one; otherwise a new sheet in it (Open ▾ → Close workbook starts over)
+    if (W) { addBlankSheet(); return; }
+    placeSheets([blankDef("Sheet1")], "Blank sheet", "replace");
+  }
+
+  // ---- save
+  function sheetPayload(sh) {                    // computed values, one array per row; errs = formulas that show an error
+    sh = sh || S;
+    const rows = [], errs = [];
+    for (let i = 0; i < sh.rows.length; i++) {
+      const out = new Array(sh.cols.length);
+      for (let c = 0; c < sh.cols.length; c++) {
+        const raw = sh.rows[i].v[c];
+        let v = raw === undefined ? null : raw;
+        if (isF(raw)) {
+          v = valueAtIn(sh, i, c);
+          if (v instanceof F.FErr) { if (errs.length < 8) errs.push(F.colToLetters(c) + (i + 1) + " " + v.code); v = null; }
+          else if (typeof v === "number") v = Number(F.fmtNum(v));
+        }
+        out[c] = v;
+      }
+      rows.push(out);
+    }
+    return { rows, errs, columns: sh.cols.map((c) => ({ name: c.name, kind: c.kind, sql_type: c.sql })) };
+  }
+  function openSaveDialog() {
+    if (!S) return;
+    const p = sheetPayload();
+    if (p.errs.length) { toast("Some formulas show errors (" + p.errs.join(", ") + "). Fix or clear them before saving.", true); return; }
+    const o = S.origin;
+    const m = modal('<h2>Save to Vault Data</h2><div class="row2"><div><label>Workspace</label><input type="text" id="sw" /></div><div><label>Table name</label><input type="text" id="st" /></div></div>' +
+      '<p class="hint">Lowercase letters, digits and _ (start with a letter). Leave the workspace as <b>system</b> if unsure — a name with a dot, like <b>sales.orders</b>, also works. ' +
+      "<b>Formulas are saved as their computed values</b> (the table has no formulas). Columns keep their types.</p>" +
+      '<div id="sm"></div><div class="acts"><button class="btn" id="sc">Cancel</button><button class="btn primary" id="so">Save</button></div>');
+    m.q("#sw").value = o ? o.workspace : "system";
+    m.q("#st").value = o ? o.table : snakeName(S.name);
+    m.q("#st").focus(); m.q("#st").select();
+    m.q("#sc").onclick = m.close;
+    const send = async (mode) => {
+      const box = m.q("#sm");
+      box.innerHTML = '<div class="msg ok">Saving…</div>';
+      try {
+        const res = await postJSON("save", { workspace: m.q("#sw").value.trim(), table: m.q("#st").value.trim(), mode, columns: p.columns, rows: p.rows, origin: o });
+        m.close();
+        const t = res.table;
+        S.origin = { workspace: t.workspace || m.q("#sw").value.trim() || "system", table: t.name, partial: false };
+        const full = t.full_name || (S.origin.workspace + "." + S.origin.table);
+        if (W.sheets.length === 1) W.name = full;
+        rebaseline(); syncChrome(); renderTabs(); renderAll(); touchDraft();
+        toast("Saved " + full + " — " + Number(t.row_count).toLocaleString() + " rows" + (res.backup ? " (old data kept as " + res.backup + ")" : ""));
+      } catch (e) {
+        if (e.status === 422 && e.body.cell_errors) { m.close(); showCellErrors(e.body); return; }
+        if (e.status === 409) {
+          box.innerHTML = '<div class="msg warn">' + esc(m.q("#sw").value.trim() + "." + m.q("#st").value.trim()) + ' already exists. What now?</div>' +
+            '<div class="acts"><button class="btn primary" id="sk">Replace it, keep a backup copy of the old data</button><button class="btn danger" id="sr">Replace it (old data is overwritten)</button><button class="btn" id="sn">Use another name</button></div>';
+          m.q("#sk").onclick = () => send("replace_keep"); m.q("#sr").onclick = () => send("overwrite"); m.q("#sn").onclick = () => { box.innerHTML = ""; m.q("#st").focus(); m.q("#st").select(); };
+        } else box.innerHTML = '<div class="msg err">' + esc(e.message) + "</div>";
+      }
+    };
+    m.q("#so").onclick = () => send("create");
+    m.q("#st").addEventListener("keydown", (e) => { if (e.key === "Enter") send("create"); });
+  }
+  // groups: [{sheet, cell_errors}] (one group for "Save", one per sheet for "Save all sheets")
+  function showCellErrors(body, groups) {
+    groups = groups || [{ sheet: S.name, cell_errors: body.cell_errors }];
+    const multi = groups.length > 1 || (W && W.sheets.length > 1);
+    const shown = groups.reduce((n, g) => n + g.cell_errors.length, 0);
+    const rows = groups.map((g) => g.cell_errors.map((e) => '<tr class="go" data-sheet="' + esc(g.sheet) + '" data-row="' + e.row + '" data-col="' + esc(e.column) + '">' + (multi ? "<td>" + esc(g.sheet) + "</td>" : "") +
+      "<td>" + e.row + "</td><td>" + esc(e.column) + "</td><td>" + esc(e.value) + "</td><td>" + esc(e.reason) + "</td></tr>").join("")).join("");
+    const m = modal("<h2>Nothing was saved</h2><p class=\"hint\">" + esc(body.error) + " Click a line to jump to the cell, fix it (or change the column's type), and save again." +
+      (body.total_errors > shown ? " Showing the first " + shown + "." : "") + '</p><table class="errs"><thead><tr>' + (multi ? "<th>Sheet</th>" : "") + '<th>Row</th><th>Column</th><th>Value</th><th>Problem</th></tr></thead><tbody>' + rows + '</tbody></table><div class="acts"><button class="btn primary" id="ok">Close</button></div>', true);
+    m.q("#ok").onclick = m.close;
+    m.q("tbody").onclick = (e) => {
+      const tr = e.target.closest("tr"); if (!tr) return;
+      const idx = W.sheets.findIndex((sh) => sh.name === tr.dataset.sheet);
+      m.close();
+      if (idx < 0) return;
+      if (idx !== W.active) activateSheet(idx);
+      const ci = S.cols.findIndex((c) => c.name === tr.dataset.col);
+      if (ci >= 0) gotoCell(Number(tr.dataset.row) - 1, ci);
+    };
+  }
+  function snakeName(label) {                    // "Q1 Sales" → q1_sales (a valid Vault Data table name)
+    const n = String(label || "").replace(/\.[^.]*$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").replace(/^(?=\d)/, "t_").slice(0, 60);
+    return n || "sheet_1";
+  }
+
+  // ---- save every sheet: one Vault Data table per sheet, everything checked before anything is written
+  function openSaveAllDialog() {
+    if (!W) return;
+    const payloads = W.sheets.map((sh) => sheetPayload(sh));
+    const bad = [];
+    payloads.forEach((p, i) => p.errs.forEach((e) => bad.push(W.sheets[i].name + "!" + e)));
+    if (bad.length) { toast("Some formulas show errors (" + bad.slice(0, 6).join(", ") + "). Fix or clear them before saving.", true); return; }
+    const withOrigin = W.sheets.find((sh) => sh.origin);
+    const rows = W.sheets.map((sh, i) => '<tr><td>' + esc(sh.name) + '</td><td class="num">' + sh.rows.length.toLocaleString() + ' × ' + sh.cols.length + '</td><td><input type="text" class="tn" data-i="' + i + '" value="' + esc(sh.origin ? sh.origin.table : snakeName(sh.name)) + '" /></td></tr>').join("");
+    const m = modal('<h2>Save all sheets to Vault Data</h2><label>Workspace</label><input type="text" id="aw" />' +
+      '<p class="hint">Every sheet becomes its own table. Lowercase letters, digits and _ (start with a letter). A name with a dot, like <b>sales.orders</b>, picks another workspace for that sheet. ' +
+      "<b>Formulas are saved as their computed values.</b> If any cell doesn't fit its column's type, nothing is saved at all.</p>" +
+      '<table class="errs"><thead><tr><th>Sheet</th><th>Size</th><th>Table name</th></tr></thead><tbody>' + rows + '</tbody></table><div id="am"></div>' +
+      '<div class="acts"><button class="btn" id="ac">Cancel</button><button class="btn primary" id="ao">Save all</button></div>', true);
+    m.q("#aw").value = withOrigin ? withOrigin.origin.workspace : "system";
+    m.q("#ac").onclick = m.close;
+    const send = async (onExists) => {
+      const box = m.q("#am");
+      box.innerHTML = '<div class="msg ok">Checking and saving…</div>';
+      const items = W.sheets.map((sh, i) => ({ sheet: sh.name, table: m.q('.tn[data-i="' + i + '"]').value.trim(), columns: payloads[i].columns, rows: payloads[i].rows, origin: sh.origin }));
+      try {
+        const res = await postJSON("save-all", { workspace: m.q("#aw").value.trim(), on_exists: onExists, items });
+        res.results.forEach((r, i) => {
+          if (!r.ok) return;
+          const sh = W.sheets[i], t = r.table;
+          sh.origin = { workspace: t.workspace || m.q("#aw").value.trim() || "system", table: t.name, partial: false };
+          rebaseline(sh);
+        });
+        syncChrome(); renderTabs(); renderAll(); touchDraft();
+        const failed = res.results.filter((r) => !r.ok);
+        m.q("#am").innerHTML = '<div class="msg ' + (failed.length ? "warn" : "ok") + '">' + (failed.length ? failed.length + " sheet(s) could not be saved:" : "Saved " + res.results.length + " table(s):") + "<br>" +
+          res.results.map((r) => r.ok ? "✓ " + esc(r.sheet) + " → " + esc(r.table.full_name || r.table.name) + (r.backup ? " (old data kept as " + esc(r.backup) + ")" : "") : "✗ " + esc(r.sheet) + " — " + esc(r.error)).join("<br>") + "</div>";
+        m.q("#ao").style.display = "none"; m.q("#ac").textContent = "Close";
+      } catch (e) {
+        if (e.status === 422 && e.body.sheets) { m.close(); showCellErrors(e.body, e.body.sheets); return; }
+        if (e.status === 409 && e.body.existing) {
+          box.innerHTML = '<div class="msg warn">' + esc(e.message) + '</div><div class="acts"><button class="btn primary" id="ak">Replace them, keep a backup copy of the old data</button><button class="btn danger" id="ar">Replace them (old data is overwritten)</button><button class="btn" id="an">Use other names</button></div>';
+          m.q("#ak").onclick = () => send("replace_keep"); m.q("#ar").onclick = () => send("overwrite"); m.q("#an").onclick = () => { box.innerHTML = ""; };
+        } else box.innerHTML = '<div class="msg err">' + esc(e.message) + "</div>";
+      }
+    };
+    m.q("#ao").onclick = () => send("ask");
+  }
+
+  async function download(fmt) {
+    if (!S) return;
+    const all = fmt === "xlsx";                  // Excel = every sheet (one worksheet each); CSV = this sheet
+    const targets = all ? W.sheets : [S];
+    const payloads = targets.map((sh) => sheetPayload(sh));
+    const bad = []; payloads.forEach((p, i) => p.errs.forEach((e) => bad.push((all ? targets[i].name + "!" : "") + e)));
+    if (bad.length) { toast("Some formulas show errors (" + bad.slice(0, 6).join(", ") + "). Fix or clear them first.", true); return; }
+    const base = (all ? W.name : S.name).replace(/\.[^.]*$/, "");
+    const body = all ? { format: fmt, name: base, sheets: targets.map((sh, i) => ({ name: sh.name, columns: payloads[i].columns, rows: payloads[i].rows })) }
+                     : { format: fmt, name: base, columns: payloads[0].columns, rows: payloads[0].rows };
+    try {
+      const r = await fetch("export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ("HTTP " + r.status)); }
+      const blob = await r.blob(), a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = ((r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/) || [0, "sheet." + fmt])[1];
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // ======================================================================================================= the workbook: tabs
+  function renderTabs() {
+    const t = $("tabs");
+    if (!W) { t.style.display = "none"; t.innerHTML = ""; return; }
+    t.style.display = "flex";
+    t.innerHTML = W.sheets.map((sh, i) => '<div class="tab' + (i === W.active ? " on" : "") + '" role="tab" aria-selected="' + (i === W.active) + '" data-ti="' + i + '" title="' + esc(sh.name) + (sheetChanged(sh) ? " — has changes that are not saved to Vault Data" : "") + '">' +
+      esc(sh.name) + (sheetChanged(sh) ? '<span class="dot">•</span>' : "") + "</div>").join("") + '<div class="tab add" id="tabAdd" title="Add a sheet" role="button" aria-label="Add a sheet">＋</div>';
+    const on = t.querySelector(".tab.on"); if (on && on.scrollIntoView) on.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  function activateSheet(i) {
+    if (!W || i < 0 || i >= W.sheets.length) return;
+    if (ed) commitEdit(0);
+    const vp = $("vp");
+    if (S) S.scroll = { top: vp.scrollTop, left: vp.scrollLeft };
+    W.active = i; S = W.sheets[i];
+    $("emptyState").style.display = "none"; $("sheet").style.display = "grid";
+    $("search").value = S.search || "";
+    layoutCols();
+    if (S.wrapCols.length) for (const row of S.rows) row.ex = false;           // another sheet may have changed what these show
+    layoutRows(false);
+    syncFilterButton(); clampSel(); syncChrome(); renderTabs();
+    $("sizer").style.height = totalH() + "px"; $("sizer").style.width = S.totalW + "px";
+    vp.scrollTop = S.scroll.top; vp.scrollLeft = S.scroll.left;
+    renderAll(); afterSelect();
+  }
+  function addBlankSheet() {
+    if (!W) { openBlank(); return; }
+    if (W.sheets.length >= LIMITS.max_sheets) { toast("A workbook can have at most " + LIMITS.max_sheets + " sheets.", true); return; }
+    let n = W.sheets.length + 1; const taken = takenNames();
+    while (taken.has(("Sheet" + n).toLowerCase())) n++;
+    const d = blankDef("Sheet" + n);
+    W.sheets.push(makeSheet(d.cols, d.rows, "Sheet" + n, null));
+    activateSheet(W.sheets.length - 1); touchDraft();
+  }
+  // apply a text change to every formula of every sheet (and to the "as saved" copy, so a rename doesn't light up as an edit)
+  function rewriteSheetRefs(oldName, newName) {
+    let cells = 0;
+    for (const sh of W.sheets) {
+      let hit = 0;
+      const fix = (v, count) => { if (typeof v === "string" && v.charCodeAt(0) === 61 && v.indexOf("!") >= 0) { const nv = F.retargetSheet(v, oldName, newName); if (nv !== v) { if (count) hit++; return nv; } } return v; };
+      for (const row of sh.rows) for (let c = 0; c < row.v.length; c++) { const nv = fix(row.v[c], true); if (nv !== row.v[c]) row.v[c] = nv; }
+      sh.origRows.forEach((arr) => { for (let c = 0; c < arr.length; c++) arr[c] = fix(arr[c], false); });
+      if (hit) {                                // old undo steps would put the old name back — start the history of that sheet afresh
+        const was = sheetChanged(sh);
+        sh.undo.length = 0; sh.redo.length = 0; sh.cleanIdx = was ? null : 0;
+        cells += hit;
+      }
+    }
+    clearAllEv();
+    return cells;
+  }
+  async function renameSheet(i) {
+    const sh = W.sheets[i];
+    const name = await askText("Rename sheet", "New name", sh.name, "Up to " + LIMITS.sheet_name_max + " characters, not " + "[ ] : * ? / \\" + ". Formulas that point at this sheet are updated.");
+    if (name === null) return;
+    const n = name.trim(), err = checkSheetName(n, sh);
+    if (err) { toast(err, true); return; }
+    if (n === sh.name) return;
+    const old = sh.name; sh.name = n;
+    const cells = rewriteSheetRefs(old, n);
+    for (const x of W.sheets) rebuildViewOf(x);
+    syncChrome(); renderTabs(); renderAll(); touchDraft();
+    toast("Renamed “" + old + "” to “" + n + "”" + (cells ? " — updated " + cells.toLocaleString() + " formula(s)" : ""));
+  }
+  function rebuildViewOf(sh) { if (sh === S) { rebuildView(); return; } const prev = S; S = sh; try { rebuildView(); } finally { S = prev; } }
+  function duplicateSheet(i) {
+    if (W.sheets.length >= LIMITS.max_sheets) { toast("A workbook can have at most " + LIMITS.max_sheets + " sheets.", true); return; }
+    const src = W.sheets[i];
+    if (workbookCells() + src.rows.length * Math.max(1, src.cols.length) > LIMITS.max_cells) { toast("That would take the workbook over " + LIMITS.max_cells.toLocaleString() + " cells.", true); return; }
+    const name = uniqueSheetName(src.name, takenNames());
+    const cols = src.cols.map((c) => ({ name: c.name, kind: c.kind, sql_type: c.sql, w: c.w, wrap: c.wrap }));
+    const sh = makeSheet(cols, src.rows.map((r) => r.v.slice()), name, null);        // a copy is a new, unsaved sheet: no "opened from"
+    W.sheets.splice(i + 1, 0, sh);
+    activateSheet(i + 1); touchDraft();
+    toast("Copied “" + src.name + "” as “" + name + "”.");
+  }
+  function deleteSheet(i) {
+    if (W.sheets.length <= 1) { toast("A workbook needs at least one sheet.", true); return; }
+    const sh = W.sheets[i];
+    const hasData = sh.rows.some((r) => r.v.some((v) => v !== null && v !== undefined && v !== ""));
+    if ((hasData || sheetChanged(sh)) && !confirm("Delete the sheet “" + sh.name + "”? Formulas in other sheets that use it will show #REF!. This can't be undone.")) return;
+    if (ed) commitEdit(0);
+    W.sheets.splice(i, 1);
+    const cells = rewriteSheetRefs(sh.name, null);
+    W.active = Math.min(W.active > i ? W.active - 1 : W.active, W.sheets.length - 1);
+    S = null;                                    // activateSheet must not save the scroll position of the sheet that is gone
+    for (const x of W.sheets) rebuildViewOf(x);
+    activateSheet(W.active); touchDraft();
+    toast("Deleted “" + sh.name + "”" + (cells ? " — " + cells.toLocaleString() + " formula(s) now show #REF!" : ""));
+  }
+  function moveSheet(i, delta) {
+    const j = i + delta;
+    if (j < 0 || j >= W.sheets.length) return;
+    const cur = W.sheets[W.active];
+    const [sh] = W.sheets.splice(i, 1); W.sheets.splice(j, 0, sh);
+    W.active = W.sheets.indexOf(cur);
+    renderTabs(); touchDraft();
+  }
+  function closeWorkbook(force) {
+    if (!W) return;
+    if (!force && anyChanged() && !confirm("Close the workbook and lose the changes that aren't saved to Vault Data?")) return;
+    if (ed) cancelEdit();
+    W = null; S = null;
+    $("sheet").style.display = "none"; $("emptyState").style.display = "";
+    $("search").value = ""; $("btnClearFilters").style.display = "none";
+    syncChrome(); renderTabs(); updateStats(); updateFx(); drawOverlay();
+    discardDraft();
+  }
+  function tabMenu(i, x, y) {
+    showCtx(x, y, [{ text: "Rename…", run: () => renameSheet(i) }, { text: "Duplicate", run: () => duplicateSheet(i) }, { text: "Delete…", run: () => deleteSheet(i) }, "-",
+      { text: "Move left", run: () => moveSheet(i, -1), disabled: i === 0 }, { text: "Move right", run: () => moveSheet(i, 1), disabled: i === W.sheets.length - 1 }]);
+  }
+
+  // ======================================================================================================= the draft (autosave)
+  // The whole workbook is kept on the server (cookie mini_sheet_sid) a couple of seconds after the last change, so a reload or a
+  // closed tab loses nothing. Undo history is NOT part of it. Two tabs of one browser share one draft: the second to write is
+  // refused (409) and autosave pauses until the user takes over from the indicator in the toolbar.
+  const draft = { rev: null, timer: null, busy: false, again: false, dirty: false, paused: false, force: false, error: "", fatal: false, savedAt: null, off: false };
+  function setDraftState() {
+    const el = $("draftState");
+    el.className = "draftstate";
+    let t = "";
+    if (!W) t = "";
+    else if (draft.paused) { t = "Draft paused — also open in another tab (click)"; el.className += " pause"; }
+    else if (draft.error) { t = "Draft not saved (" + draft.error + ")"; el.className += " bad"; }
+    else if (draft.busy) t = "Saving draft…";
+    else if (draft.dirty) t = "Draft: changes not saved yet…";
+    else if (draft.savedAt) t = "Draft saved ✓ " + draft.savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    el.textContent = t;
+  }
+  const draftDelay = () => 2000 + Math.min(8000, Math.round(workbookCells() / 1000));      // a big workbook is written less often
+  function touchDraft() {
+    if (!W || draft.off) return;
+    draft.dirty = true;
+    if (draft.paused) { setDraftState(); return; }
+    clearTimeout(draft.timer);
+    draft.timer = setTimeout(() => flushDraft(false), draftDelay());
+    setDraftState();
+  }
+  function serializeSheet(sh) {
+    const same = sh.origColIdx.size === sh.cols.length && sh.cols.every((c, i) => sh.origColIdx.get(c.id) === i);
+    const o = {
+      id: sh.id, name: sh.name, nextRid: sh.nextRid, nextCid: sh.nextCid, origin: sh.origin, changed: sheetChanged(sh),
+      cols: sh.cols.map((c) => ({ id: c.id, name: c.name, kind: c.kind, sql: c.sql, w: c.w, wrap: c.wrap ? 1 : 0 })),
+      rows: sh.rows.map((r) => [r.id, r.v]),
+      filters: [...sh.filters], search: sh.search, sel: sh.sel, scroll: sh.scroll,
+    };
+    if (sh === S) { const vp = $("vp"); o.scroll = { top: vp.scrollTop, left: vp.scrollLeft }; }
+    if (same) {                                  // columns are as opened: only rows that differ from the saved copy need that copy stored
+      const fresh = [], diff = [];
+      for (const row of sh.rows) {
+        const orig = sh.origRows.get(row.id);
+        if (!orig) { fresh.push(row.id); continue; }
+        for (let c = 0; c < row.v.length; c++) if (!sameVal(orig[c], row.v[c])) { diff.push([row.id, orig]); break; }
+      }
+      o.orig = { mode: "diff", fresh, diff, gone: Math.max(0, sh.origRows.size - (sh.rows.length - fresh.length)) };
+    } else o.orig = { mode: "full", rows: [...sh.origRows], cols: [...sh.origColIdx] };
+    return o;
+  }
+  function serializeWorkbook() {
+    return { v: 1, changed: anyChanged(), saved_from: location.pathname, wb: { name: W.name, active: W.active, sheets: W.sheets.map(serializeSheet) } };
+  }
+  function sheetFromDraft(d) {
+    const prev = S;
+    const sh = { id: nextSheetId++, name: d.name, cols: [], rows: [], nextRid: d.nextRid || 1, nextCid: d.nextCid || 1, origRows: new Map(), origColIdx: new Map(), origin: d.origin || null,
+                 filters: new Map(d.filters || []), search: d.search || "", view: [], colX: [], totalW: 0, rowY: null, wrapCols: [],
+                 sel: d.sel || { ar: 0, ac: 0, cr: 0, cc: 0 }, scroll: d.scroll || { top: 0, left: 0 }, undo: [], redo: [], ev: null, cleanIdx: d.changed ? null : 0 };
+    sh.cols = d.cols.map((c) => ({ id: c.id, name: c.name, kind: c.kind || "text", sql: c.sql || "", w: c.w || 120, wrap: !!c.wrap }));
+    const nc = sh.cols.length;
+    sh.rows = d.rows.map(([id, v]) => { const vv = v.slice(0, nc); while (vv.length < nc) vv.push(null); return { id, v: vv }; });
+    if (!sh.rows.length) sh.rows.push({ id: sh.nextRid++, v: sh.cols.map(() => null) });
+    const o = d.orig || { mode: "diff", fresh: [], diff: [], gone: 0 };
+    if (o.mode === "full") { sh.origRows = new Map(o.rows); sh.origColIdx = new Map(o.cols); }
+    else {
+      const fresh = new Set(o.fresh), diff = new Map(o.diff);
+      for (const row of sh.rows) if (!fresh.has(row.id)) sh.origRows.set(row.id, diff.get(row.id) || row.v.slice());
+      for (let k = 1; k <= (o.gone || 0); k++) sh.origRows.set(-k, []);            // rows deleted since the last save are only counted
+      sh.cols.forEach((c, i) => sh.origColIdx.set(c.id, i));
+    }
+    attachEvaluator(sh);
+    S = sh;
+    try { layoutCols(); rebuildView(); } finally { S = prev; }
+    return sh;
+  }
+  function restoreWorkbook(d) {
+    if (!d || !d.wb || !Array.isArray(d.wb.sheets) || !d.wb.sheets.length) throw new Error("the draft has no sheets");
+    const sheets = d.wb.sheets.slice(0, LIMITS.max_sheets).map(sheetFromDraft);
+    W = { name: d.wb.name || "Workbook", sheets, active: 0 };
+    S = null;
+    activateSheet(Math.max(0, Math.min(sheets.length - 1, d.wb.active || 0)));
+  }
+  async function gzipText(text) {
+    if (typeof CompressionStream === "undefined") return null;
+    try {
+      const cs = new CompressionStream("gzip"), w = cs.writable.getWriter();
+      w.write(new TextEncoder().encode(text)); w.close();
+      return new Uint8Array(await new Response(cs.readable).arrayBuffer());
+    } catch (e) { return null; }
+  }
+  async function flushDraft(urgent) {
+    clearTimeout(draft.timer);
+    if (!W || !draft.dirty || draft.paused || draft.off) return;
+    if (draft.busy) { draft.again = true; return; }
+    draft.busy = true; draft.dirty = false; setDraftState();
+    let retry = true;
+    try {
+      const text = JSON.stringify(serializeWorkbook()), gz = await gzipText(text), body = gz || text;
+      const headers = { "X-Draft-Encoding": gz ? "gzip" : "identity", "X-Draft-Rev": draft.force ? "force" : (draft.rev === null ? "" : String(draft.rev)) };
+      const r = await fetch("draft", { method: "PUT", headers, body, keepalive: !!urgent && body.length < 60000 });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 409) { draft.paused = true; draft.dirty = true; draft.error = ""; retry = false; }
+      else if (!r.ok) { draft.error = j.error || ("HTTP " + r.status); draft.dirty = true; retry = r.status >= 500; }
+      else { draft.rev = j.rev; draft.force = false; draft.error = ""; draft.savedAt = new Date(); retry = false; }
+    } catch (e) { draft.error = "no connection"; draft.dirty = true; }
+    finally {
+      draft.busy = false;
+      setDraftState();
+      if (draft.dirty && !draft.paused && (retry || draft.again)) { draft.timer = setTimeout(() => flushDraft(false), draft.error ? 20000 : draftDelay()); }
+      draft.again = false;
+    }
+  }
+  async function discardDraft() {
+    draft.dirty = false; clearTimeout(draft.timer); draft.rev = null; draft.error = ""; draft.paused = false; draft.savedAt = null;
+    setDraftState();
+    try { await fetch("draft", { method: "DELETE" }); } catch (e) { /* nothing to clean up if the server is unreachable */ }
+  }
+  function takeOverDraft() {
+    if (!draft.paused) { if (draft.error) { draft.error = ""; draft.dirty = true; flushDraft(false); } return; }
+    if (!confirm("Another tab of this browser has been saving a draft of its own. Keep THIS tab's work as the draft (the other tab's draft is replaced)?")) return;
+    draft.paused = false; draft.force = true; draft.dirty = true; flushDraft(false);
+  }
+  function showRestoreBar(d, savedAt) {
+    const when = savedAt ? new Date(savedAt) : null;
+    const today = when && when.toDateString() === new Date().toDateString();
+    const label = when ? (today ? "today " : when.toLocaleDateString([], { day: "numeric", month: "short" }) + " ") + when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "earlier";
+    $("restoreMsg").textContent = "Restored your " + (d.changed ? "unsaved work" : "workbook") + " from " + label + " — " + W.sheets.length + " sheet" + (W.sheets.length === 1 ? "" : "s") + ". (Undo history is not kept.)";
+    $("restoreBar").style.display = "flex";
+  }
+  async function tryRestore() {
+    let j;
+    try { j = await api("draft"); } catch (e) { return; }
+    if (!j.draft || W) return;
+    draft.rev = j.rev;
+    try { restoreWorkbook(j.draft); } catch (e) { toast("The saved draft couldn't be opened (" + e.message + ").", true); return; }
+    draft.savedAt = j.saved_at ? new Date(j.saved_at) : null; draft.dirty = false;
+    setDraftState(); showRestoreBar(j.draft, j.saved_at);
+  }
+
+  // ======================================================================================================= context menu
+  function showCtx(x, y, items) {
+    const c = $("ctx");
+    c.innerHTML = items.map((it) => it === "-" ? "<hr>" : (it.label ? '<div class="lbl">' + esc(it.label) + "</div>" : '<button data-i="' + items.indexOf(it) + '"' + (it.disabled ? " disabled" : "") + ">" + esc(it.text) + "</button>")).join("");
+    c.style.display = "block";
+    const w = c.offsetWidth, h = c.offsetHeight;
+    c.style.left = Math.max(4, Math.min(x, window.innerWidth - w - 6)) + "px"; c.style.top = Math.max(4, Math.min(y, window.innerHeight - h - 6)) + "px";
+    c.onclick = (e) => { const b = e.target.closest("button"); if (!b) return; hideCtx(); items[Number(b.dataset.i)].run(); };
+  }
+  function hideCtx() { $("ctx").style.display = "none"; }
+  function rowItems() { return [{ text: "Insert row above", run: () => insertRows(false) }, { text: "Insert row below", run: () => insertRows(true) }, { text: "Delete row(s)", run: deleteRows }]; }
+  function colItems(ci) {
+    const col = S.cols[ci];
+    return [{ text: "Rename column…", run: () => renameCol(ci) }, { text: (col.wrap ? "✓ " : "   ") + "Wrap text", run: () => setWrap(ci, !col.wrap) }, "-", { label: "Column type" }].concat(Object.keys(KIND_LABEL).map((k) => ({ text: (col.kind === k ? "✓ " : "   ") + KIND_LABEL[k], run: () => setKind(ci, k) })),
+      ["-", { text: "Sort A → Z", run: () => sortCol(ci, true) }, { text: "Sort Z → A", run: () => sortCol(ci, false) }, { text: "Filter…", run: () => filterCol(ci) },
+        { text: "Remove this column's filter", run: () => { S.filters.delete(col.id); rebuildView(); schedule(); scheduleStats(); touchDraft(); }, disabled: !S.filters.has(col.id) }, "-",
+        { text: "Insert column left", run: () => insertCols(false) }, { text: "Insert column right", run: () => insertCols(true) },
+        { text: "Move column left", run: () => moveCol(-1) }, { text: "Move column right", run: () => moveCol(1) }, { text: "Delete column(s)", run: deleteCols }]);
+  }
+  function cellItems(ci) {
+    return [{ text: "Clear cells", run: clearRange }, { text: "Fill down (Ctrl+D)", run: () => fillDownRight(true) }, { text: "Fill right (Ctrl+R)", run: () => fillDownRight(false) }, "-"].concat(rowItems(),
+      ["-", { text: "Insert column left", run: () => insertCols(false) }, { text: "Insert column right", run: () => insertCols(true) }, { text: "Delete column(s)", run: deleteCols }, "-",
+        { text: "Sort this column A → Z", run: () => sortCol(ci, true) }, { text: "Sort this column Z → A", run: () => sortCol(ci, false) }, { text: "Filter this column…", run: () => filterCol(ci) }]);
+  }
+
+  // ======================================================================================================= events
+  function pointCell(e) {                        // viewport pixel → {r, c} (clamped)
+    const vp = $("vp"), rect = vp.getBoundingClientRect();
+    const x = e.clientX - rect.left + vp.scrollLeft, y = e.clientY - rect.top + vp.scrollTop;
+    return { r: rowAtY(Math.max(0, y)), c: colAtX(Math.max(0, Math.min(S.totalW - 1, x))) };
+  }
+  let drag = null, autoTimer = null, lastPt = null, lastHeadClick = { c: -1, t: 0 }, resizeRaf = false;
+  function autoScroll() {
+    if (!drag || !lastPt) return;
+    const vp = $("vp"), rect = vp.getBoundingClientRect(), e = lastPt;
+    let dx = 0, dy = 0;
+    if (e.clientY < rect.top + 20) dy = -(rect.top + 20 - e.clientY); else if (e.clientY > rect.bottom - 20) dy = e.clientY - (rect.bottom - 20);
+    if (e.clientX < rect.left + 20) dx = -(rect.left + 20 - e.clientX); else if (e.clientX > rect.right - 20) dx = e.clientX - (rect.right - 20);
+    if (dx || dy) { vp.scrollLeft += Math.sign(dx) * Math.min(40, Math.abs(dx)); vp.scrollTop += Math.sign(dy) * Math.min(40, Math.abs(dy)); dragMove(e); }
+  }
+  function startDrag(kind, extra) { drag = Object.assign({ kind }, extra); clearInterval(autoTimer); autoTimer = setInterval(autoScroll, 45); }
+  function endDrag() { clearInterval(autoTimer); autoTimer = null; drag = null; lastPt = null; }
+  function dragMove(e) {
+    lastPt = e;
+    if (!drag || !S) return;
+    if (drag.kind === "cells") { const p = pointCell(e); select(S.sel.ar, S.sel.ac, p.r, p.c, true); }
+    else if (drag.kind === "cols") { const p = pointCell(e); select(0, S.sel.ac, Math.max(0, S.view.length - 1), p.c, true); }
+    else if (drag.kind === "rows") { const p = pointCell(e); select(S.sel.ar, 0, p.r, S.cols.length - 1, true); }
+    else if (drag.kind === "resize") {
+      const col = S.cols[drag.ci], w = Math.max(MINW, drag.w0 + e.clientX - drag.x0);
+      col.w = w; layoutCols(); drag.moved = true;
+      if (!resizeRaf) {                          // wrapped text is re-measured at the new width once per frame, not once per mouse event
+        resizeRaf = true;
+        requestAnimationFrame(() => { resizeRaf = false; if (!S) return; if (S.wrapCols.length) relayoutKeepAnchor(true); renderAll(); });
+      }
+    } else if (drag.kind === "fill") {
+      const p = pointCell(e), s = drag.src;
+      const down = p.r - s.r1, up = s.r0 - p.r, right = p.c - s.c1, left = s.c0 - p.c;
+      const best = Math.max(down, up, right, left);
+      let tgt = null, vertical = true, upDir = false;
+      if (best > 0) {
+        if (best === down || best === up) { vertical = true; upDir = best === up && up > down; tgt = upDir ? { r0: p.r, r1: s.r0 - 1, c0: s.c0, c1: s.c1 } : { r0: s.r1 + 1, r1: p.r, c0: s.c0, c1: s.c1 }; }
+        else { vertical = false; upDir = best === left && left > right; tgt = upDir ? { r0: s.r0, r1: s.r1, c0: p.c, c1: s.c0 - 1 } : { r0: s.r0, r1: s.r1, c0: s.c1 + 1, c1: p.c }; }
+      }
+      drag.tgt = tgt; drag.vertical = vertical; drag.up = upDir;
+      if (tgt) box($("fillprev"), Math.min(tgt.r0, s.r0), Math.min(tgt.c0, s.c0), Math.max(tgt.r1, s.r1), Math.max(tgt.c1, s.c1), true); else $("fillprev").style.display = "none";
+    }
+  }
+  function bind() {
+    const vp = $("vp");
+    vp.addEventListener("scroll", () => { if (S) { renderBody(); renderHeads(); } });
+    window.addEventListener("resize", () => { if (S) schedule(); });
+    document.addEventListener("mousemove", (e) => { if (drag) dragMove(e); });
+    document.addEventListener("mouseup", () => {
+      if (!drag) return;
+      if (drag.kind === "fill") {
+        $("fillprev").style.display = "none";
+        const { tgt, src, vertical, up } = drag;
+        if (tgt) {
+          exec(cmdSet(fillItems(src, tgt, vertical, up)));
+          const all = { r0: Math.min(src.r0, tgt.r0), r1: Math.max(src.r1, tgt.r1), c0: Math.min(src.c0, tgt.c0), c1: Math.max(src.c1, tgt.c1) };
+          select(all.r0, all.c0, all.r1, all.c1, true);
+        }
+      }
+      if (drag.kind === "resize" && drag.moved) touchDraft();
+      endDrag();
+    });
+    document.addEventListener("mousedown", (e) => {              // capture phase: closes the old menu BEFORE a header's ⋮ opens a new one
+      if (!e.target.closest(".ctx")) hideCtx();
+      if (!e.target.closest(".menuwrap")) document.querySelectorAll(".dd.open").forEach((d) => d.classList.remove("open"));
+    }, true);
+
+    vp.addEventListener("mousedown", (e) => {
+      if (!S || e.button === 2) return;
+      if (e.target.id === "fh") { e.preventDefault(); const s = rng(); startDrag("fill", { src: s }); return; }
+      if (e.target.id === "ed" || e.target.id === "edw") return;
+      if (ed) commitEdit(0);
+      const cell = e.target.closest(".c"); if (!cell) return;
+      e.preventDefault(); vp.focus();
+      const r = Number(cell.dataset.r), c = Number(cell.dataset.c);
+      if (e.shiftKey) select(S.sel.ar, S.sel.ac, r, c); else select(r, c, r, c);
+      startDrag("cells");
+    });
+    vp.addEventListener("dblclick", (e) => { if (!S) return; const cell = e.target.closest(".c"); if (cell) startEdit(Number(cell.dataset.r), Number(cell.dataset.c), null, "edit"); });
+    vp.addEventListener("contextmenu", (e) => {
+      if (!S) return; e.preventDefault();
+      const cell = e.target.closest(".c"); if (!cell) return;
+      const r = Number(cell.dataset.r), c = Number(cell.dataset.c), { r0, r1, c0, c1 } = rng();
+      if (r < r0 || r > r1 || c < c0 || c > c1) select(r, c, r, c);
+      showCtx(e.clientX, e.clientY, cellItems(c));
+    });
+    $("colhead").addEventListener("mousedown", (e) => {
+      if (!S) return;
+      if (ed) commitEdit(0);
+      const hr = e.target.closest("[data-hr]");
+      if (hr) { e.preventDefault(); const ci = Number(hr.dataset.hr); startDrag("resize", { ci, x0: e.clientX, w0: S.cols[ci].w }); return; }
+      const hm = e.target.closest("[data-hm]");
+      if (hm) { e.preventDefault(); const ci = Number(hm.dataset.hm); const { c0, c1 } = rng(); if (ci < c0 || ci > c1) select(0, ci, S.view.length - 1, ci, true); const b = hm.getBoundingClientRect(); showCtx(b.left, b.bottom + 2, colItems(ci)); return; }
+      const h = e.target.closest("[data-hc]"); if (!h) return;
+      e.preventDefault(); $("vp").focus();
+      const ci = Number(h.dataset.hc), now = Date.now();
+      // double-click = rename. Detected by hand: selecting re-draws the header cells, so the browser's own dblclick never fires on them.
+      if (!e.shiftKey && lastHeadClick.c === ci && now - lastHeadClick.t < 420) { lastHeadClick = { c: -1, t: 0 }; renameCol(ci); return; }
+      lastHeadClick = { c: ci, t: now };
+      if (e.shiftKey) select(0, S.sel.ac, Math.max(0, S.view.length - 1), ci, true); else select(0, ci, Math.max(0, S.view.length - 1), ci, true);   // a whole column: no vertical jump
+      startDrag("cols");
+    });
+    $("colhead").addEventListener("contextmenu", (e) => {
+      const h = e.target.closest("[data-hc]"); if (!h || !S) return; e.preventDefault();
+      const ci = Number(h.dataset.hc), { c0, c1 } = rng(); if (ci < c0 || ci > c1) select(0, ci, S.view.length - 1, ci, true);
+      showCtx(e.clientX, e.clientY, colItems(ci));
+    });
+    $("rowhead").addEventListener("mousedown", (e) => {
+      if (!S) return; const g = e.target.closest("[data-gr]"); if (!g) return;
+      if (ed) commitEdit(0);
+      e.preventDefault(); $("vp").focus();
+      const r = Number(g.dataset.gr);
+      if (e.shiftKey) select(S.sel.ar, 0, r, S.cols.length - 1, true); else select(r, 0, r, S.cols.length - 1, true);   // a whole row: no sideways jump
+      startDrag("rows");
+    });
+    $("rowhead").addEventListener("contextmenu", (e) => {
+      const g = e.target.closest("[data-gr]"); if (!g || !S) return; e.preventDefault();
+      const r = Number(g.dataset.gr), { r0, r1 } = rng(); if (r < r0 || r > r1) select(r, 0, r, S.cols.length - 1);
+      showCtx(e.clientX, e.clientY, rowItems());
+    });
+    $("corner").addEventListener("mousedown", () => { if (S && S.view.length) { select(0, 0, S.view.length - 1, S.cols.length - 1); $("vp").focus(); } });
+    $("rowhead").addEventListener("wheel", (e) => { $("vp").scrollTop += e.deltaY; });
+    $("colhead").addEventListener("wheel", (e) => { $("vp").scrollLeft += e.deltaX || e.deltaY; });
+
+    // the in-cell editors (the one-line box and the wrapped-text area share every handler)
+    for (const el of [$("ed"), $("edw")]) {
+      el.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter" && e.altKey && el.tagName === "TEXTAREA") {           // Alt+Enter: a new line inside the cell
+          e.preventDefault();
+          const a = el.selectionStart, z = el.selectionEnd;
+          el.value = el.value.slice(0, a) + "\n" + el.value.slice(z); el.setSelectionRange(a + 1, a + 1);
+          $("fx").value = el.value; growEditor(el);
+        }
+        else if (e.key === "Enter") { e.preventDefault(); commitEdit(e.shiftKey ? -1 : 1, 0); }
+        else if (e.key === "Tab") { e.preventDefault(); commitEdit(0, e.shiftKey ? -1 : 1); }
+        else if (e.key === "Escape") { e.preventDefault(); cancelEdit(); }
+        else if (ed && ed.mode === "enter" && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].indexOf(e.key) >= 0 && !(el.tagName === "TEXTAREA" && (e.key === "ArrowUp" || e.key === "ArrowDown"))) {
+          e.preventDefault(); commitEdit(e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0, e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0);
+        } else if (e.key === "F2") { e.preventDefault(); if (ed) ed.mode = ed.mode === "enter" ? "edit" : "enter"; }
+      });
+      el.addEventListener("input", () => { $("fx").value = el.value; checkFx(); growEditor(el); });
+      el.addEventListener("blur", () => { setTimeout(() => { if (ed && ed.el === el && document.activeElement !== $("fx")) commitEdit(0); }, 0); });
+    }
+
+    // the formula bar edits the active cell
+    $("fx").addEventListener("input", checkFx);
+    $("fx").addEventListener("keydown", (e) => {
+      if (!S) return;
+      if (e.key === "Enter") { e.preventDefault(); const { cr, cc } = S.sel; if (ed) { ed.el.value = $("fx").value; commitEdit(1, 0); } else { setCellValue(cr, cc, $("fx").value); select(Math.min(S.view.length - 1, cr + 1), cc); } $("vp").focus(); }
+      else if (e.key === "Escape") { e.preventDefault(); if (ed) cancelEdit(); updateFx(); $("vp").focus(); }
+    });
+    $("fx").addEventListener("focus", () => { if (S && S.view.length && !ed) { const row = dataRow(S.sel.cr); $("fx").value = rawText(row ? row.v[S.sel.cc] : null); } });
+    $("fx").addEventListener("blur", () => { if (S && !ed) updateFx(); });
+
+    // keyboard on the grid
+    vp.addEventListener("keydown", (e) => {
+      if (!S || !S.view.length || ed) return;
+      const ctrl = e.ctrlKey || e.metaKey, k = e.key, s = S.sel;
+      const nv = S.view.length, nc = S.cols.length;
+      const move = (dr, dc) => { const r = Math.max(0, Math.min(nv - 1, s.cr + dr)), c = Math.max(0, Math.min(nc - 1, s.cc + dc)); if (e.shiftKey) select(s.ar, s.ac, r, c); else select(r, c, r, c); };
+      if (ctrl) {
+        const kl = k.toLowerCase();
+        if (kl === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+        if (kl === "y") { e.preventDefault(); redo(); return; }
+        if (kl === "a") { e.preventDefault(); select(0, 0, nv - 1, nc - 1); return; }
+        if (kl === "d") { e.preventDefault(); fillDownRight(true); return; }
+        if (kl === "r") { e.preventDefault(); fillDownRight(false); return; }
+        if (kl === "f" || kl === "h") { e.preventDefault(); openFind(); return; }
+        if (kl === "s") { e.preventDefault(); openSaveDialog(); return; }
+        if (k === "Home") { e.preventDefault(); select(0, 0, 0, 0); return; }
+        if (k === "End") { e.preventDefault(); select(nv - 1, nc - 1, nv - 1, nc - 1); return; }
+        if (k === "ArrowDown") { e.preventDefault(); move(nv, 0); return; }
+        if (k === "ArrowUp") { e.preventDefault(); move(-nv, 0); return; }
+        if (k === "ArrowRight") { e.preventDefault(); move(0, nc); return; }
+        if (k === "ArrowLeft") { e.preventDefault(); move(0, -nc); return; }
+        return;                                  // Ctrl+C / X / V are handled by the clipboard events below
+      }
+      if (k === "ArrowDown") { e.preventDefault(); move(1, 0); }
+      else if (k === "ArrowUp") { e.preventDefault(); move(-1, 0); }
+      else if (k === "ArrowRight") { e.preventDefault(); move(0, 1); }
+      else if (k === "ArrowLeft") { e.preventDefault(); move(0, -1); }
+      else if (k === "PageDown") { e.preventDefault(); move(Math.max(1, rowAtY(rowTop(s.cr) + vp.clientHeight) - s.cr - 1), 0); }
+      else if (k === "PageUp") { e.preventDefault(); move(-Math.max(1, s.cr - rowAtY(rowTop(s.cr) - vp.clientHeight) - 1), 0); }
+      else if (k === "Home") { e.preventDefault(); move(0, -nc); }
+      else if (k === "End") { e.preventDefault(); move(0, nc); }
+      else if (k === "Tab") { e.preventDefault(); const r = rng(); if (r.r0 !== r.r1 || r.c0 !== r.c1) { /* walk inside the range */ let c = s.cc + (e.shiftKey ? -1 : 1), rr = s.cr; if (c > r.c1) { c = r.c0; rr = rr + 1 > r.r1 ? r.r0 : rr + 1; } if (c < r.c0) { c = r.c1; rr = rr - 1 < r.r0 ? r.r1 : rr - 1; } S.sel.cr = rr; S.sel.cc = c; afterSelect(); ensureVisible(rr, c); } else move(0, e.shiftKey ? -1 : 1); }
+      else if (k === "Enter") { e.preventDefault(); if (e.shiftKey) move(-1, 0); else startEdit(s.cr, s.cc, null, "edit"); }
+      else if (k === "F2") { e.preventDefault(); startEdit(s.cr, s.cc, null, "edit"); }
+      else if (k === "Delete" || k === "Backspace") { e.preventDefault(); clearRange(); }
+      else if (k.length === 1 && !e.altKey) { e.preventDefault(); startEdit(s.cr, s.cc, k, "enter"); }
+    });
+    document.addEventListener("copy", (e) => {
+      if (!S || document.activeElement !== vp || ed) return;
+      e.clipboardData.setData("text/plain", copyText()); e.preventDefault();
+      toast("Copied " + ((rng().r1 - rng().r0 + 1) * (rng().c1 - rng().c0 + 1)).toLocaleString() + " cell(s)");
+    });
+    document.addEventListener("cut", (e) => {
+      if (!S || document.activeElement !== vp || ed) return;
+      e.clipboardData.setData("text/plain", copyText()); e.preventDefault(); clearRange();
+    });
+    document.addEventListener("paste", (e) => {
+      if (!S || document.activeElement !== vp || ed) return;
+      const text = (e.clipboardData || window.clipboardData).getData("text/plain");
+      if (!text) return;
+      e.preventDefault(); pasteGrid(parseTSV(text));
+    });
+
+    // toolbar
+    const dd = (btn, menu) => { $(btn).onclick = (e) => { e.stopPropagation(); const open = !$(menu).classList.contains("open"); document.querySelectorAll(".dd.open").forEach((d) => d.classList.remove("open")); $(menu).classList.toggle("open", open); }; };
+    dd("btnOpen", "ddOpen"); dd("btnDown", "ddDown");
+    const opener = (e) => {
+      const b = e.target.closest("[data-open]"); if (!b) return;
+      document.querySelectorAll(".dd.open").forEach((d) => d.classList.remove("open"));
+      ({ table: openTableDialog, paste: openPasteDialog, file: openFileDialog, blank: openBlank, close: () => closeWorkbook(false) })[b.dataset.open]();
+    };
+    $("ddOpen").addEventListener("click", opener); $("emptyState").addEventListener("click", opener);
+    $("ddDown").addEventListener("click", (e) => { const b = e.target.closest("[data-down]"); if (b) { document.querySelectorAll(".dd.open").forEach((d) => d.classList.remove("open")); download(b.dataset.down); } });
+    $("btnSave").onclick = openSaveDialog; $("btnUndo").onclick = () => { undo(); $("vp").focus(); }; $("btnRedo").onclick = () => { redo(); $("vp").focus(); };
+    $("btnFind").onclick = openFind; $("btnClearFilters").onclick = clearFilters;
+    $("btnSaveAll").onclick = openSaveAllDialog;
+    dd("btnWrap", "ddWrap");
+    $("ddWrap").addEventListener("click", (e) => { const b = e.target.closest("[data-wrap]"); if (!b || !S) return; document.querySelectorAll(".dd.open").forEach((d) => d.classList.remove("open")); wrapAll(b.dataset.wrap === "all"); });
+    // the sheet tabs
+    let lastTabClick = { i: -1, t: 0 };
+    $("tabs").addEventListener("click", (e) => {
+      if (e.target.closest("#tabAdd")) { addBlankSheet(); return; }
+      const t = e.target.closest("[data-ti]"); if (!t) return;
+      const i = Number(t.dataset.ti), now = Date.now();
+      // double-click = rename. Detected by hand: the first click redraws the tabs, so the browser's own dblclick never fires on them.
+      if (lastTabClick.i === i && now - lastTabClick.t < 420) { lastTabClick = { i: -1, t: 0 }; renameSheet(i); return; }
+      lastTabClick = { i, t: now };
+      activateSheet(i);
+    });
+    $("tabs").addEventListener("contextmenu", (e) => { const t = e.target.closest("[data-ti]"); if (!t) return; e.preventDefault(); tabMenu(Number(t.dataset.ti), e.clientX, e.clientY); });
+    // the draft
+    $("draftState").addEventListener("click", takeOverDraft);
+    $("restoreClose").onclick = () => { $("restoreBar").style.display = "none"; };
+    $("restoreDiscard").onclick = () => { if (anyChanged() && !confirm("Throw away the restored work and start clean?")) return; $("restoreBar").style.display = "none"; closeWorkbook(true); };
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushDraft(true); });
+    window.addEventListener("pagehide", () => flushDraft(true));
+    let searchTimer = null;
+    $("search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { if (!S) return; S.search = $("search").value; rebuildView(); select(0, S.sel.cc, 0, S.sel.cc); $("vp").scrollTop = 0; schedule(); scheduleStats(); touchDraft(); }, 220); });
+    $("fFind").addEventListener("input", () => { $("fCnt").textContent = $("fFind").value ? matches().length.toLocaleString() + " match(es)" : ""; });
+    for (const id of ["fCase", "fWhole", "fSel", "fForm"]) $(id).addEventListener("change", () => { $("fCnt").textContent = $("fFind").value ? matches().length.toLocaleString() + " match(es)" : ""; });
+    $("fNext").onclick = () => findStep(1); $("fPrev").onclick = () => findStep(-1); $("fClose").onclick = () => { $("find").classList.remove("open"); $("vp").focus(); };
+    $("fFind").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); findStep(e.shiftKey ? -1 : 1); } if (e.key === "Escape") $("fClose").click(); });
+    $("fRepl").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("fOne").click(); } if (e.key === "Escape") $("fClose").click(); });
+    $("fOne").onclick = () => {
+      const m = findMatcher(); if (!m || !S) return;
+      const dr = dataIdxOf(S.sel.cr), raw = S.rows[dr].v[S.sel.cc];
+      if (m(raw, display(valueAt(dr, S.sel.cc)))) { const n = replaceCells([[S.sel.cr, S.sel.cc]]); if (n) toast("Replaced 1 cell"); }
+      findStep(1);
+    };
+    $("fAll").onclick = () => {
+      if (!S) return; const list = matches();
+      if (!list.length) { $("fCnt").textContent = "No matches"; return; }
+      const n = replaceCells(list); $("fCnt").textContent = "Replaced " + n.toLocaleString() + " cell(s)"; toast("Replaced " + n.toLocaleString() + " cell(s) — Ctrl+Z undoes it all at once");
+    };
+    window.addEventListener("beforeunload", (e) => { if (W && !draft.off && (draft.dirty || draft.busy || draft.paused || draft.error)) { e.preventDefault(); e.returnValue = ""; } });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { hideCtx(); document.querySelectorAll(".dd.open").forEach((d) => d.classList.remove("open")); } });
+  }
+
+  // test hook (the unit/browser tests drive the sheet through this; harmless in normal use)
+  window.__sheet = { get S() { return S; }, newSheet, parseInput, problem, display, exec, cmdSet, undo, redo, select, valueAt, pasteGrid, parseTSV, copyText, fillDownRight, sortCol, setKind, sheetPayload, rebuildView, dataRow, startEdit, commitEdit, insertRows, deleteRows, insertCols, deleteCols, moveCol,
+    get W() { return W; }, get draft() { return draft; }, activateSheet, addBlankSheet, renameSheet, duplicateSheet, deleteSheet, moveSheet, closeWorkbook, placeSheets, makeSheet,
+    checkSheetName, setWrap, wrapAll, layoutRows, rowTop, rowHt, rowAtY, totalH, serializeWorkbook, restoreWorkbook, flushDraft, openSaveAllDialog, rewriteSheetRefs, isChanged, anyChanged };
+
+  bind();
+  api("limits").then((l) => { LIMITS = l; }).catch(() => {}).then(tryRestore);
+  draft.off = /[?&]nodraft\b/.test(location.search);                                 // ?nodraft: no autosave, no restore (used by the browser tests)
+})();
+</script>
+</body>
+</html>

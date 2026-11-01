@@ -620,15 +620,39 @@ def suggest_fixes(s: pd.Series, stat: dict[str, Any]) -> list[dict[str, Any]]:
     return out[:4]
 
 
-def build_preview(session: Session, df: pd.DataFrame) -> dict[str, Any]:
-    total_rows = len(df)
+def _capped_rows(session: Session, df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """The rows the grid gets: head or sample (session.preview_mode), at most PREVIEW_CELL_BUDGET cells."""
     num_cols = max(len(df.columns), 1)
     row_cap = max(MIN_PREVIEW_ROWS, min(PREVIEW_ROW_CAP, PREVIEW_CELL_BUDGET // num_cols))
-    shown_rows = min(total_rows, row_cap)
+    shown_rows = min(len(df), row_cap)
     if session.preview_mode == "sample" and shown_rows > 0:
-        capped = df.sample(n=shown_rows, random_state=session.sample_seed)
-    else:
-        capped = df.head(shown_rows)
+        return df.sample(n=shown_rows, random_state=session.sample_seed), shown_rows
+    return df.head(shown_rows), shown_rows
+
+
+def frame_df(session: Session, name: str) -> pd.DataFrame:
+    """One of the extra tables loaded next to `df` (read-only view). Unknown names are refused — only names in
+    session.frames ever reach lake_frame."""
+    ref = session.frames.get(name)
+    if ref is None:
+        raise StepError(f"'{name}' isn't one of the loaded tables ({', '.join(session.frames) or 'none loaded'}).")
+    return lake_frame(ref)
+
+
+def build_frame_preview(session: Session, name: str, df: pd.DataFrame) -> dict[str, Any]:
+    """Grid data for an added table (same shape as build_preview's grid part, none of the pipeline parts)."""
+    capped, shown_rows = _capped_rows(session, df)
+    return {
+        "frame": name, "ref": session.frames.get(name), "read_only": True,
+        "columns": [{"name": c, "dtype": str(df[c].dtype), "sql_type": sql_type(df[c])} for c in df.columns],
+        "row_count": len(df), "shown_rows": shown_rows, "preview_mode": session.preview_mode,
+        "rows": json.loads(capped.to_json(orient="records", date_format="iso")),
+    }
+
+
+def build_preview(session: Session, df: pd.DataFrame) -> dict[str, Any]:
+    total_rows = len(df)
+    capped, shown_rows = _capped_rows(session, df)
     return {
         "filename": session.filename,
         # the Vault Data table this session started from ("ws.table") — the Tables list marks it as loaded

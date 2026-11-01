@@ -1,0 +1,17 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# The sheet lives in the browser; the server opens/saves/converts data and keeps one autosaved draft per browser in Redis + S3 (roadmap M1, M2).
+schema_version: 1
+name: mini-sheet
+title: Mini Sheet
+description: A small spreadsheet for editing data by hand — open a Vault Data table, paste from Excel or load a CSV/XLSX, edit cells, use basic formulas, undo, find & replace, then save it back
+icon: 🧮
+category: tool
+kind: python
+entry: mini_sheet.server:app
+runtime: data
+tier: 3
+state: [session]   # the browser's unsaved workbook (draft) lives in Redis + S3 storage, never in this process (roadmap M2)
+depends_on: [vault]
+requires: []
+order: 115
+vault: {data: write}   # open / save Vault Data tables

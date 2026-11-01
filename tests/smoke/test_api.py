@@ -21,6 +21,10 @@ API_CHECKS = [
     ("schema-map", "GET", "/status", None, "application/json"),
     ("schema-map", "GET", "/projects", None, "application/json"),
     ("duck-lab", "GET", "/tables", None, "application/json"),
+    ("mini-sheet", "GET", "/limits", None, "application/json"),            # roadmap M1: the size limits the page shows
+    ("mini-sheet", "GET", "/catalog-lite", None, "application/json"),      # the "Open a Vault Data table" picker
+    ("mini-sheet", "GET", "/draft", None, "application/json"),             # roadmap M2: the autosaved workbook ({"draft": null} for a fresh browser)
+    ("mini-sheet", "GET", "/wrap.js", None, "application/javascript"),                 # the wrap-text line counter (the page loads it)
     ("vault", "GET", "/secrets", None, "application/json"),
     ("data-lake", "GET", "/workspaces", None, "application/json"),
     ("data-lake", "GET", "/catalog", None, "application/json"),
