@@ -286,6 +286,18 @@ services:
       <<: *state-env
       # the orchestrator CLI (and future jobs) compare through DataDiff's API, not its code (roadmap D1)
       TOOLBOX_DATADIFF_URL: http://rt-datadiff:8080/tools/datadiff-pro
+      # MCP server limits (roadmap K2, docs/runbook.md "Connect Claude to Toolbox"); the defaults are in mcp_server/safety.py
+      MCP_ROWS: ${MCP_ROWS:-200}
+      MCP_MAX_ROWS: ${MCP_MAX_ROWS:-5000}
+      MCP_PROD_ROWS: ${MCP_PROD_ROWS:-100}
+      MCP_PROD_MAX_ROWS: ${MCP_PROD_MAX_ROWS:-500}
+      MCP_MAX_BYTES: ${MCP_MAX_BYTES:-1000000}
+      MCP_SECONDS: ${MCP_SECONDS:-30}
+      MCP_PROD_SECONDS: ${MCP_PROD_SECONDS:-15}
+      MCP_COMPARE_MAX_ROWS: ${MCP_COMPARE_MAX_ROWS:-50000}
+      MCP_PROD_COMPARE_MAX_ROWS: ${MCP_PROD_COMPARE_MAX_ROWS:-5000}
+      MCP_SCRIPT_MAX_ROWS: ${MCP_SCRIPT_MAX_ROWS:-5000}
+      MCP_PROD_SCRIPT_MAX_ROWS: ${MCP_PROD_SCRIPT_MAX_ROWS:-500}
     volumes:
       # the shared data folder (roadmap L2) — load jobs run here — READ-ONLY
       - ${TOOLBOX_DATA_DIR:-~/toolbox-data}:/data:ro

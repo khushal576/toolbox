@@ -68,6 +68,32 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "browser: needs headless Chromium + chromedriver")
 
 
+_DISABLED: set[str] | None = None
+
+
+def disabled_tools() -> set[str]:
+    """Tools switched off in the running workspace (Settings / workspace.yaml). Asked once per run."""
+    global _DISABLED
+    if _DISABLED is None:
+        try:
+            plugins = request("GET", "/api/workspace/status", timeout=10).json()["plugins"]
+            _DISABLED = {p["name"] for p in plugins if not p.get("enabled", True)}
+        except Exception:  # status unreachable: run everything, the real tests will say what is wrong
+            _DISABLED = set()
+    return _DISABLED
+
+
+def pytest_runtest_setup(item):
+    """Roadmap O1: a tool the owner switched off is skipped, not failed (its URL answers 404 'turned off')."""
+    callspec = getattr(item, "callspec", None)
+    tool = callspec.params.get("tool") if callspec else None
+    path = callspec.params.get("path") if callspec else None  # browser tests are parametrized by "/tools/<name>/"
+    if tool is None and isinstance(path, str) and path.startswith("/tools/"):
+        tool = path.split("/")[2]
+    if tool in disabled_tools():
+        pytest.skip(f"{tool} is switched off in this workspace")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def server_up():
     try:

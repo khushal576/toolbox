@@ -150,6 +150,14 @@ COPY duck-lab/ ./duck_lab/
 # duck-lab.
 COPY orchestrator/ ./orchestrator/
 
+# MCP server (roadmap K2) — NOT a mounted tool either: a stdio process an AI client starts with
+# `docker compose run --rm -T worker python -m mcp_server`. Read-only; design: docs/architecture/ADR-MCP.md.
+# vault_scope.yaml carries its (read-only) Vault scope; it is read by core.vault.scope_for("mcp-server").
+COPY mcp_server/ ./mcp_server/
+
+# AI Access page (roadmap K4): the owner's kill switch, PIN, time-limited write grants and the live timeline of what an AI did.
+COPY ai-access/ ./ai_access/
+
 # Vault (tool #15) — management page for core/vault.py's shared
 # encrypted secret store. Imports core.vault directly, so must be
 # copied after core/ above, same reason as duck-lab/orchestrator.
@@ -205,7 +213,7 @@ COPY core_plugins/ ./core_plugins/
 COPY main.py .
 
 # Create empty __init__.py files so Python treats these as packages.
-RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py text_editor/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py data_lake/__init__.py notebook_lab/__init__.py sharepoint_lab/__init__.py mini_sheet/__init__.py
+RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py text_editor/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py data_lake/__init__.py notebook_lab/__init__.py sharepoint_lab/__init__.py mini_sheet/__init__.py ai_access/__init__.py
 
 # --- Python packages: wheelhouse + one deps stage per image ----------------------
 # wheelhouse/ (gitignored) holds pre-downloaded wheels for this exact platform/Python version — see

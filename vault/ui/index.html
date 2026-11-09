@@ -202,6 +202,15 @@
   .dl a.x:hover { color: var(--err); }
   .dl { --ok: #15803d; --err: #b91c1c; }
   .dl .qbadge.done { color: var(--ok); } .dl .qbadge.failed { color: var(--err); }
+.badge.env-prod { background: #fde8e8; color: #9b1c1c; font-weight: 600; }
+.badge.env-non-prod { background: #e6f4ea; color: #1e6b34; }
+.badge.env-unknown { background: #fff4d6; color: #7a5600; }
+.env-pick { font-size: 12px; margin-left: 4px; padding: 1px 4px; }
+@media (prefers-color-scheme: dark) {
+  .badge.env-prod { background: #4a1d1d; color: #ffb4b4; }
+  .badge.env-non-prod { background: #1b3a26; color: #9be3b0; }
+  .badge.env-unknown { background: #3f3210; color: #ffd98a; }
+}
 </style>
 </head>
 <body>
@@ -467,6 +476,12 @@
     <p class="hint">Save a database connection here instead of typing it into a tool each time. It appears under "Saved connections (Vault)" in SQL Studio and Schema Map. Stored encrypted.</p>
     <div class="form-grid">
       <div class="full"><label>Name</label><input type="text" id="cName" placeholder="e.g. prod-readonly" /></div>
+      <div class="full"><label>Environment (shown to AI assistants; not set = treated as prod)</label>
+        <select id="cEnvironment">
+          <option value="">Not set (treated as prod)</option>
+          <option value="non-prod">Non-prod (dev / test / staging)</option>
+          <option value="prod">Prod (production)</option>
+        </select></div>
       <div><label>Database type</label>
         <select id="cDbType">
           <option value="postgres">PostgreSQL</option>
@@ -577,9 +592,22 @@ function formatTimestamp(iso) {
   try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
 }
 
+const ENV_KINDS = ["postgres_connection", "ssh_server"];
+const ENV_LABEL = { "prod": "PROD", "non-prod": "non-prod", "unknown": "env not set" };
+function envControl(s, env) {
+  if (!ENV_KINDS.includes(s.kind)) return "";
+  const cur = env || "unknown";
+  const opt = (v, t) => `<option value="${v}"${(cur === v || (v === "" && cur === "unknown")) ? " selected" : ""}>${t}</option>`;
+  return ` <span class="badge env-${escapeHtml(cur)}" title="Shown to AI assistants. Not set counts as prod.">${ENV_LABEL[cur] || cur}</span>
+    <select class="env-pick" data-env="${escapeHtml(s.id)}" title="Set the environment of this entry">
+      ${opt("", "Not set")}${opt("non-prod", "Non-prod")}${opt("prod", "Prod")}</select>`;
+}
+
 async function refresh() {
   const res = await fetch("secrets");
   const data = await res.json();
+  let envs = {};
+  try { envs = ((await (await fetch("environments")).json()).environments) || {}; } catch (e) { envs = {}; }
   const list = document.getElementById("secretList");
   const emptyHint = document.getElementById("emptyHint");
   const secrets = data.secrets || [];
@@ -587,12 +615,26 @@ async function refresh() {
   list.innerHTML = secrets.map((s) => `
     <li class="secret-item">
       <div>
-        <div class="name">${escapeHtml(s.name)} <span class="badge">${s.has_data ? "Dataset" : "Credential"}</span></div>
+        <div class="name">${escapeHtml(s.name)} <span class="badge">${s.has_data ? "Dataset" : "Credential"}</span>${envControl(s, envs[s.id])}</div>
         <div class="meta">${escapeHtml(s.kind)} · saved ${formatTimestamp(s.created_at)} · updated ${formatTimestamp(s.updated_at)}</div>
       </div>
       <button class="action small" data-delete="${escapeHtml(s.id)}">Delete</button>
     </li>`).join("");
 }
+
+document.getElementById("secretList").addEventListener("change", async (e) => {
+  const sel = e.target.closest("select[data-env]");
+  if (!sel) return;
+  showError(null);
+  try {
+    const res = await fetch(`secrets/${encodeURIComponent(sel.dataset.env)}/environment`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ environment: sel.value }) });
+    if (!res.ok) throw new Error("Could not set the environment.");
+    await refresh();
+  } catch (err) {
+    showError(err.message);
+  }
+});
 
 document.getElementById("secretList").addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-delete]");
@@ -729,6 +771,7 @@ function collectConnection() {
     data: {
       host, port: parseInt($("cPort").value, 10) || DEFAULT_PORTS[dbType], database, username,
       password: $("cPassword").value, db_type: dbType, ssh_tunnel: ssh,
+      ...($("cEnvironment").value ? { environment: $("cEnvironment").value } : {}),
     },
   };
 }

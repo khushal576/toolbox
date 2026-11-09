@@ -1,0 +1,18 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# The owner's page for AI access (roadmap K4, docs/architecture/ADR-MCP.md D12): kill switch, PIN, time-limited write grants, live activity timeline.
+schema_version: 1
+name: ai-access
+title: AI Access
+description: Control what an AI assistant may do with Toolbox — stop it instantly, allow changes for a limited time (with your PIN), and watch everything it does
+icon: 🤖
+category: tool
+kind: python
+entry: ai_access.server:app
+runtime: data     # needs the Toolbox database (audit + grants) and the Vault / Vault Data to list the targets
+tier: 2
+state: [durable]
+depends_on: []
+requires: []
+order: 155
+# Names only are listed (connections, SSH servers, workspaces); nothing is shown or written back.
+vault: {read: [postgres_connection, ssh_server], data: read}

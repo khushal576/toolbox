@@ -1,0 +1,8 @@
+# What the MCP server may do in the Vault (docs/architecture/ADR-MCP.md D2). Read by core.vault.scope_for("mcp-server").
+# Least privilege: it can USE connections by name but never write any secret kind (no `write:` entries, ever);
+# it reads Vault Data tables and datasets, but cannot write them until an owner grant exists (K4).
+name: mcp-server
+vault:
+  read: [postgres_connection, s3_location, ssh_server]
+  datasets: read
+  data: write   # K6: needed by table_transform ONLY, which is gated by an owner grant + confirm token (control.require); a test scans who may call the write functions

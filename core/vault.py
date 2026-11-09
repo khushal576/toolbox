@@ -385,6 +385,49 @@ def get_secret(secret_id: str) -> dict[str, Any]:
     return json.loads(_fernet().decrypt(bytes(_row(secret_id)["ciphertext"])).decode("utf-8"))
 
 
+# ---- environment label (roadmap K2, docs/architecture/ADR-MCP.md D5) -------------------------------------------------
+# Connections and SSH servers can say whether they point at production. It is stored INSIDE the encrypted data as
+# `environment`; an entry without it is "unknown" and every safety rule treats unknown exactly like prod.
+ENVIRONMENTS = ("prod", "non-prod")
+ENV_KINDS = ("postgres_connection", "ssh_server")
+
+
+def environment_of(data: dict[str, Any]) -> str:
+    """'prod' | 'non-prod' | 'unknown' for decrypted connection data (anything else counts as unknown)."""
+    v = str((data or {}).get("environment") or "").strip().lower()
+    return v if v in ENVIRONMENTS else "unknown"
+
+
+def environments() -> dict[str, str]:
+    """{secret id: 'prod'|'non-prod'|'unknown'} for connections and SSH servers. Decrypts server-side and returns
+    ONLY the label, so the Vault page can show a badge without any other field leaving the server."""
+    out: dict[str, str] = {}
+    for kind in ENV_KINDS:
+        for item in list_secrets(kind):
+            try:
+                out[item["id"]] = environment_of(get_secret(item["id"]))
+            except Exception:  # an entry that cannot be decrypted has no label we can trust
+                out[item["id"]] = "unknown"
+    return out
+
+
+def set_environment(secret_id: str, environment: str) -> str:
+    """Set (or, with '', clear) the environment label of a connection / SSH server without touching any other field."""
+    environment = (environment or "").strip().lower()
+    if environment not in ENVIRONMENTS and environment != "":
+        raise ValueError("environment must be 'prod', 'non-prod' or empty (unknown)")
+    kind = _row(secret_id)["kind"]
+    if kind not in ENV_KINDS:
+        raise ValueError(f"environment labels apply to {', '.join(ENV_KINDS)}, not '{kind}'")
+    data = get_secret(secret_id)
+    if environment:
+        data["environment"] = environment
+    else:
+        data.pop("environment", None)
+    update_secret(secret_id, data)
+    return environment or "unknown"
+
+
 def secret_kind(secret_id: str) -> str:
     return _row(secret_id)["kind"]
 
@@ -549,6 +592,23 @@ class Scope:
 _scope_cache: dict[str, Scope] = {}
 
 
+def _scope_from_file(repo: Path, plugin: str):
+    """The `vault:` block of `<folder>/vault_scope.yaml` whose `name:` is *plugin* (headless packages such as
+    mcp_server/ that are not mounted as web tools). Same schema as a manifest's `vault:`; None if there is no file."""
+    import yaml
+
+    from core_plugins.manifest import VaultAccess
+
+    for f in sorted(repo.glob("*/vault_scope.yaml")):
+        try:
+            doc = yaml.safe_load(f.read_text()) or {}
+            if doc.get("name") == plugin:
+                return VaultAccess.model_validate(doc.get("vault") or {})
+        except Exception:  # a broken scope file must never widen access: treat as "no access"
+            logger.warning("ignoring invalid scope file %s", f)
+    return None
+
+
 def scope_for(plugin: str) -> Scope:
     """The scope a plugin's manifest declares (`vault:`); a plugin without one gets no access."""
     if plugin not in _scope_cache:
@@ -557,6 +617,8 @@ def scope_for(plugin: str) -> Scope:
         repo = Path(__file__).resolve().parent.parent
         m = discover(repo).plugins.get(plugin)
         v = m.vault if m is not None else None
+        if m is None:  # not a web tool: a headless package may declare its scope in <folder>/vault_scope.yaml (K2)
+            v = _scope_from_file(repo, plugin)
         _scope_cache[plugin] = Scope(plugin, v.read, v.write, v.datasets, v.data) if v else Scope(plugin)
     return _scope_cache[plugin]
 

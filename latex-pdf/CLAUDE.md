@@ -1,5 +1,9 @@
 # LaTeX to PDF — tool-local notes
 
+<!-- O3-pointer -->
+> **Start here:** repo rules `../CLAUDE.md` (hard rules + task→file table) · where things live in this tool: `./KNOWLEDGE_MAP.md` · what was done last / what is left: `../docs/roadmap/ROADMAP.md` Handoff log. Do not change anything outside this tool's folder unless the task says so.
+
+
 Part of the Toolbox monorepo — see `../CLAUDE.md` for repo-wide architecture and
 `../KNOWLEDGE_MAP.md` for the symptom→file map.
 

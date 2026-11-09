@@ -1,5 +1,9 @@
 # Vault Data loader (folder `data-lake/`, formerly the "Data Lake" tool) — tool-local notes
 
+<!-- O3-pointer -->
+> **Start here:** repo rules `../CLAUDE.md` (hard rules + task→file table) · where things live in this tool: `./KNOWLEDGE_MAP.md` · what was done last / what is left: `../docs/roadmap/ROADMAP.md` Handoff log. Do not change anything outside this tool's folder unless the task says so.
+
+
 > **Roadmap L6:** this folder is now only the BACKEND (load jobs, SQL, staging, S3). Its page was moved into **Vault → Vault Data**
 > (`../vault/ui/index.html`: sub-tabs Tables | ⬆ Load files (the 🔎 SQL tab was dropped — Duck Lab does SQL; `query.py` stays but no page calls it), calling `/tools/data-lake/<endpoint>`); the manifest is
 > `hidden: true` and `GET /` redirects to `/tools/vault/#data` . Wherever this file says "the page" or
@@ -159,3 +163,60 @@ cached; suggested joins; chart + tree joins in headless Chromium.
 - Endpoints: `POST /inspect`, `GET/POST /colmaps`, `DELETE /colmaps/{id}`, `POST /copy-table` (polled with `GET /loads/{job_id}`).
 - Tests: `tests/unit/test_colmap.py` (compile/injection/mask/hash/shuffle/cast/fill/templates/secret hand-off/loader/copy/inspect; passes on
   DuckDB 1.2.2 and 2.0), smoke `test_data_lake_column_map_api`. UI driven in headless Chromium against a stub API.
+
+## Vault Data / lake catalog, phases L1–L7 (platform view)
+
+> Moved **verbatim** from the root `CLAUDE.md` by roadmap session O3 (2026-11-10). The root keeps only the rules and an index;
+> nothing was reworded. Paths in the text are repo-root relative.
+
+- **Vault Data / lake catalog (roadmap L1):** `core/lake.py` — workspaces →
+  tables (Glue-Catalog-like), catalog in Postgres (schema `lake`), managed
+  tables as Parquet in S3 storage (`lake/<table id>/<id>.v<n>.<part>.parquet`,
+  by id: renames never move files; a new version is switched to only after its
+  files are stored). The Vault page's **📦 Data** tab is the front door
+  (Secrets stay encrypted, data is plain Parquet — owner decision). Tools use
+  `lake.scoped("<tool>")` with manifest `vault: {data: none|read|write}`. Old
+  Vault datasets are imported once into workspace `datasets`. Phase L plan
+  (load files L2, SQL L3, every tool L4): `docs/roadmap/ROADMAP.md`. **L2:**
+  new tool **Data Lake** (`data-lake/`, runtime data; its page lives in the Vault since L6) loads uploads, the
+  shared **data folder** (`~/toolbox-data` → `/data` read-only in rt-data +
+  worker, `TOOLBOX_DATA_DIR`), links and patterns into tables — worker job,
+  DuckDB streams to Parquet with a memory cap (1.5 GB CSV → 530 MiB peak);
+  external tables read in place. `core/file_source.py` gained the multi-file
+  reader + content sniffing; Excel via `openpyxl` (data/worker images). **L3:**
+  Data Lake's **🔎 SQL** tab (`data-lake/query.py`) — Athena style: only the
+  tables a query names are mounted as `workspace.table` views in a fresh DuckDB;
+  read-only checked on DuckDB's parse tree (no file-reading functions — the
+  container's files incl. `/proc` stay out of reach); Run = 30 s in rt-data,
+  Run in background = worker job; every result stored as Parquet in S3 (7 days)
+  for paging/download/"save as table"; `CREATE TABLE ws.t AS SELECT`; history +
+  saved queries in Postgres schema `data_lake`. **L4:** every data tool lists
+  tables (Vault `GET /data/catalog`) and saves to `workspace.table`
+  (`lake.export_table` / `import_file`; Duck Lab, DataFrame Studio ≤ 1 M rows,
+  SQL Studio full result + import into a DB, DataDiff ≤ 2000 rows); Data Lake →
+  🗄 Database stages tables from a Vault connection (`data-lake/staging.py`,
+  worker job, read-only source). **Gotcha fixed in L4:** the gateway's proxy
+  client must never keep cookies (`core_plugins/proxy.py` `_no_cookie_jar`) —
+  it used to hand one visitor's tool session cookie to the next. **L5:**
+  column profiles (`lake.profile`, cached per version), suggested joins checked
+  on the data (`lake.suggest_joins`), charts in Data Lake SQL, **S3 locations**
+  (Vault kind `s3_location` → temporary bucket-scoped DuckDB secret,
+  `lake.prepare(con, table)` before reading; httpfs baked into data + worker
+  images), SQL-style column types everywhere (`lake.sql_type`, staged tables keep
+  the source DB's declared types). Owner decisions in L5: inside a tool the
+  workspace sidebar slides away (☰/Ctrl+K); Duck Lab and DataFrame Studio take
+  data ONLY from Vault Data (Athena-style Tables bar; files come in through Data
+  Lake) — DataFrame Studio joins other tables by name. **L6 (owner, 2026-10-31):** only two names are left in the UI —
+  **Vault** (secrets) and **Vault Data** (the word "Data Lake"/"Lakehouse" is gone). The Data Lake page was moved
+  into the Vault page's 📦 Vault Data section as sub-tabs **Tables | ⬆ Load files** (`vault/ui/index.html`, deep links `#data`, `#data/load`;
+  the SQL tab was dropped later the same day — SQL is Duck Lab's job; `data-lake/query.py` endpoints remain unused by the UI); `data-lake/` stays as the backend (runtime data, worker jobs,
+  endpoints unchanged, called by the Vault page at `/tools/data-lake/…`) with manifest `hidden: true` (no card /
+  sidebar / Settings switch) and `GET /tools/data-lake/` just redirects to Vault → Vault Data. Every table lives
+  in a workspace; the built-in **`system`** workspace (`lake.SYSTEM_WORKSPACE`) always exists, can't be renamed
+  or deleted, and is where anything saved without a workspace goes (`write_table` / `import_file` /
+  `register_external` treat an empty workspace as `system`; Duck Lab / DataFrame Studio / SQL Studio accept a bare
+  `table` when saving; every workspace picker in Load/SQL defaults to it). The SQL tab was dropped the same day (Duck Lab does SQL).
+  **L7 (owner, 2026-10-31): column map + protection on Load files** — keep only some columns, rename, cast types, fill empty values,
+  and mask / hash / redact / empty / shuffle sensitive ones (`data-lake/colmap.py`, one DuckDB SELECT over the reader; `POST /inspect`
+  previews columns, templates in Postgres `data_lake.colmaps`, `POST /copy-table` = masked copy of an existing table). Salts/seeds
+  never reach the catalog, templates or job args (Redis side channel, 30 min). See `data-lake/CLAUDE.md`.

@@ -93,6 +93,19 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | F4 | Second node, failover test, runbook | M | F3 | ⏸ deferred |
 | G1 | Desktop: PWA install + app-mode shortcut (optional) | S | A4 | ☐ |
 | G2 | Desktop: Electron wrapper (optional) | M | G1 | ☐ |
+| O1 | Optimization: no-code diet via `.env` + `workspace.yaml` (fewer workers/replicas, learn tools + 3 heavy tools off), re-measure — *not the finished Ops "O1" above, see "Planned 2026-11-10"* | S | – | ☑ (2026-11-10, `measure-O1.md`) |
+| O3 | Optimization: shrink root `CLAUDE.md` to ~150 lines, split `KNOWLEDGE_MAP.md` per tool (nothing lost, only moved) | S | – | ☑ (2026-11-10) |
+| K1 | MCP: design record `ADR-MCP.md` (read-only by default, no secrets out, prod/non-prod labels, write = dry-run + confirm + audit) | S | O3 | ☑ (written + approved 2026-11-10) |
+| K2 | MCP: read-only tools `vault_list`, `vault_dataset_preview`, `run_query` (SELECT only), `compare` (+ `toolbox_guide`, environment labels, audit log) | M | K1 | ☑ (2026-11-10) |
+| K3 | MCP: `generate_insert_script` (generates only, never executes) | S | K2 | ☑ (2026-11-10) |
+| K4 | MCP: owner grants (write/edit only when the owner says), AI activity page (live timeline), kill switch (+ owner PIN) | M | K2 | ☑ (2026-11-10) |
+| K5 | MCP: SSH debugging tools (off by default via owner grant, read-only command allow-list, every command tracked) | M | K4 | ☑ (2026-11-10) |
+| K6 | MCP: DataFrame Studio tools (cleaning steps/formulas with dry-run preview, save as table) | M | K4 | ☑ (2026-11-10) |
+| P1 | Plugins: trusted Python plugins from `plugins/` behind `TOOLBOX_TRUSTED_PLUGINS=1` | M | – | ☐ |
+| P2 | Plugins: new-tool template `tools/_template/` + "add a tool in 5 steps" | S | P1 | ☐ |
+| P3 | Plugins: script to remove a tool cleanly | S | P2 | ☐ |
+| O2 | Optimization: replace SeaweedFS with local-disk storage or Garage behind `core/state/objects` | M | O1 | ⏸ deferred (SeaweedFS is only ~50–75 MiB; not worth the migration risk) |
+| O4 | Optimization: Mini Sheet — list what is missing, then adopt a grid library or remove the tool | M | O1 | ☐ |
 
 About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 before committing to C–F.
 
@@ -444,10 +457,190 @@ the workspace status) and shows it on ONE page in the workspace. Nothing runs or
 - **G1 (S)** ☑ (2026-10-26): web app manifest + icons so Chromium "Install app" works; `chromium --app=` shortcut.
 - **G2 (M)** (not planned — owner chose G1 only): Electron wrapper that starts/stops the Docker stack and opens the workspace window.
 
+## Planned 2026-11-10 – Plugins (P), Optimization (O), MCP (K)
+
+Owner request (2026-11-10): ten new sessions, all ☐ — **planned only, no code changed when they were written.**
+**Suggested order: O1 → O3 → K1 → K2 → K3 → K4 → K5 → K6 → P1 → P2 → P3 → O2 (deferred) → O4.** The "After" column in the Status table is the hard
+dependency; the order is the owner's preference. Same rules as every session: do only the named one, run the smoke tests,
+tick the status, add to the Handoff log, commit/push only when the owner says so.
+
+> **ID clash:** the Status table already has a finished **O1** ("Ops: backup/restore scripts, runbook", ☑). The new
+> *Optimization* sessions reuse the ids O1–O4 as the owner wrote them. "Roadmap: do session O1" means the **Optimization O1
+> below** (the Ops one is done). Rename one of them (e.g. Ops → `OPS1`) if this gets confusing.
+
+### Plugin sessions
+
+#### P1 Trusted Python plugins (M) — after: – · ☐
+- Today the loader **refuses** `kind: python` in `plugins/` (A5). Allow it only when `TOOLBOX_TRUSTED_PLUGINS=1`
+  (**default off**; set in `.env`, passed to the gateway and the runtimes that mount `plugins/` in compose).
+- Update the loader's refusal message (it must say how to enable it, and that python plugins are trusted code with the same
+  access as Toolbox itself) and `docs/architecture/plugin-manifest.md` (trust model section) + `plugins/README.md`.
+- Unit test for **both modes**: flag off → python plugin skipped with the new message; flag on → discovered and mountable;
+  static/external unaffected in both.
+- **Done when**: both tests pass, docs match the loader, nothing changes for anyone who does not set the flag.
+
+#### P2 New-tool template (S) — after: P1 · ☐
+- `tools/_template/`: `manifest.yaml`, `server.py` (minimal FastAPI `app`, relative-path page), `CLAUDE.md`, and a smoke-test
+  skeleton (the `API_CHECKS` / `PAGE_ONLY` entry to copy). Placeholders are obvious (`__NAME__`), and the template is
+  **never discovered as a tool** (underscore folder, `enabled_by_default: false`, or skipped by the loader — a unit test proves it).
+- Root `CLAUDE.md`: a short **"add a tool in 5 steps"** section pointing at the template (the long 10-step checklist stays as the reference).
+- **Done when**: copying the template, renaming it and running the unit + smoke tests gives a working empty tool.
+
+#### P3 Remove a tool cleanly (S) — after: P2 · ☐
+- Script (e.g. `scripts/remove-tool.sh <name>`): removes the tool folder, its Docker volume(s), its `docs/runbook.md` /
+  `CLAUDE.md` mentions, its `KNOWLEDGE_MAP.md` entry (per-tool file after O3), its Dockerfile `COPY` lines, and its smoke entry.
+- **Dry-run by default** (lists what it would delete), deletes only with an explicit flag, refuses while the tool is enabled
+  or has data without a typed confirmation; never touches Vault / Postgres data without asking.
+- **Done when**: adding a tool from the template (P2) and removing it with the script leaves `git status` clean and tests green.
+
+### Optimization sessions
+
+#### O1 No-code diet (S) — after: – · ☑ 2026-11-10
+- Config only (`.env` + `workspace.yaml` + the compose defaults they read; **no code, no images**):
+  `TOOLBOX_WEB_WORKERS=1`, `TOOLBOX_DATA_WORKERS=1`, `rt-datadiff` replicas 4 → 1 and `worker` replicas 3 → 1 (pool size;
+  the autoscaler's `min`/`max` and `TOOLBOX_WORKER_SCALING` must agree), and turn **off**: the learn tools
+  (`cookie-lab`, `header-reference`, `http-methods-status`, `packet-journey`, `vlan-designer`, `subnet-calc`, `dns-lookup`),
+  `sharepoint` (`sharepoint-lab/`), `notebook` (`notebook-lab/`) and `mini-sheet`.
+- Re-measure with `tools/bench` (same method as `measure-C4.md` / `measure-B9.md`) and save **`docs/roadmap/measure-O1.md`** (+ json):
+  idle memory per container before/after, startup time, a few latencies.
+- **Done when**: stack healthy, smoke passes (smoke entries for switched-off tools must skip, not fail), numbers recorded, and
+  `docs/runbook.md` says how to turn each tool/setting back on.
+- **Done** (2026-11-10): idle memory 776 → 604 MiB (gateway 244 → 59, rt-data 107 → 37). DataDiff set to `min: 1, max: 4` (instead of a
+  fixed 1) so it still scales up under load; workers were already 1:3. Tests touched: smoke skips switched-off tools, `test_autoscale`
+  expects (1, 4). Details + undo: `docs/roadmap/measure-O1.md`, `docs/runbook.md` §6.
+
+#### O2 Replace SeaweedFS (M) — after: O1 · ⏸ deferred 2026-11-10
+- **Owner decision:** not urgent. Measured 2026-11-10: SeaweedFS idles at ~50–75 MiB (about 2–3 % of the stack) and holds ~3 GB of data;
+  Garage would save perhaps 30–40 MiB, so the swap + migration risk is not worth it now. Revisit only on a much smaller machine or if
+  O1-style measurements show storage as a large share.
+- Choose **local-disk storage** or **Garage** and make it a config swap behind `core/state/objects` (S3 API stays; **no tool changes**).
+  Decide with the measurement below; update the "S3 → bundled SeaweedFS" fixed decision above if the choice changes.
+- Compare memory (and disk, startup) of the old and new storage in a table; migrate existing objects once; backup/restore
+  scripts (`core/state/backup.py`) and the Status page's storage section must keep working; restore tested into a second project.
+- **Done when**: Vault datasets, Vault Data tables, DataDiff job results and Mini Sheet drafts survive the swap; smoke passes;
+  before/after memory recorded in `docs/roadmap/measure-O2.md`.
+
+#### O3 Shrink root `CLAUDE.md` (S) — after: – · ☑ 2026-11-10
+- Root `CLAUDE.md` (≈ 590 lines) → **about 150 lines**: the rules + an index. Per-tool detail moves into each tool's own
+  `CLAUDE.md` (create one where missing); `KNOWLEDGE_MAP.md` is split **per tool** (e.g. `<tool>/KNOWLEDGE_MAP.md`) with a short
+  index left at the root.
+- **Nothing may be lost, only moved**: before/after check that every removed paragraph exists somewhere new (a diff-based
+  checklist saved in the session notes), links updated, and the "update the map in the same commit" rule rewritten for the new layout.
+- **Done when**: root file ≈ 150 lines, every old fact is findable from the index, and a session opened inside a tool folder
+  still gets oriented from that tool's own file.
+- **Done** (2026-11-10, docs only): root `CLAUDE.md` 592 → 107 lines (reading order, hard rules, task→file table, short forms, verification, operating
+  notes verbatim). Moved **verbatim** to `docs/architecture/` (`platform-overview`, `gateway-and-runtimes`, `state-jobs-vault`, `shared-connectors`,
+  `adding-a-tool`, `stateful-tools-and-workers`) and into the tool files (`api/CLAUDE.md` new, `data-lake/`, `notebook-lab/`, `sharepoint-lab/`).
+  `KNOWLEDGE_MAP.md` 1,848 → 93 lines (repo-wide section + tool index); each of the 25 tool sections is now `<folder>/KNOWLEDGE_MAP.md`.
+  Every tool `CLAUDE.md` got a "Start here" pointer. Checked by script: 0 original `CLAUDE.md` lines lost; `KNOWLEDGE_MAP.md` only the 4-line
+  "rule for every future tool" paragraph (rewritten for the new layout) and 15 cosmetic `---` dividers.
+
+#### O4 Mini Sheet: keep, replace, or remove (M) — after: O1 · ☐
+- Step 1: **list what is missing for the owner's use** (the owner tells; write it down as a checklist, no code yet).
+- Step 2: decide with the owner, based on that list — replace the custom grid with a ready library (**AG Grid Community**,
+  **Tabulator** or **Univer**; local bundle, offline, no CDN) **or remove the tool**. Keep the draft/save-to-Vault-Data
+  behaviour (M1/M2) if kept.
+- **Done when**: the decision is recorded here; then either the grid is swapped with the checklist working and tests green, or the
+  tool is removed (use P3's script if it exists by then).
+
+### MCP sessions
+
+#### K1 MCP design record (S) — after: O3 (smaller docs first) · ☑ written + approved 2026-11-10
+- Write **`docs/architecture/ADR-MCP.md`**: an MCP server (`mcp_server/`) that wraps `orchestrator/` and scoped Vault functions
+  (`vault_store.scoped(...)`, never raw `core.vault`). Rules the ADR fixes:
+  - **Read-only by default.**
+  - **Vault passwords and secrets are never returned** (names, kinds and non-secret fields only; also not in errors or logs).
+  - **Prod vs non-prod connections are labelled** in every result and in tool descriptions.
+  - **Every write tool has dry-run + explicit confirmation + an audit log.**
+- Also decide: where it runs (container or host, transport), how it authenticates, which manifest `vault:` scopes it gets, limits
+  (rows, bytes, time). Docs only.
+- **Done when**: ADR written and approved by the owner; K2/K3 scopes match it.
+- **Written** (2026-11-10): `docs/architecture/ADR-MCP.md` (status PROPOSED). Key decisions: stdio server in a one-off worker container (no network
+  endpoint — Toolbox has no auth); least-privilege `vault:` scope; secrets never returned (allow-lists + redaction + canary tests); **new `environment`
+  field on connections, unlabelled = prod** (verified gap: it does not exist today); two independent read-only guards for `run_query`; write tools =
+  dry-run + digest-bound confirm token + backup + audit, no delete ever; audit table in Postgres. **Approved by the owner the same day**, with amendments recorded as D12–D15: the AI can never read credentials and
+  can write/edit **only when the owner grants it** (owner-created, expiring, kill switch); SSH debugging for the AI (off by default, read-only allow-list, fully
+  tracked); accuracy rules; priority = SQL Studio, DataFrame Studio, DataDiff, SSH. Still open: which write tool comes first after K3 (recommended `load_file`).
+
+#### K2 Read-only MCP tools (M) — after: K1 · ☑ 2026-11-10
+- **Added by the ADR:** `toolbox_guide`; `environment` field on Vault connections (labels, unlabelled = prod); non-mounted manifest kind for the
+  `vault:` scope; `mcp` SDK pin + wheels; `mcp_server` audit table; canary-secret test; runbook "Connect Claude to Toolbox".
+- `mcp_server/` with `vault_list`, `vault_dataset_preview`, `run_query` (**SELECT only**, checked on the parse tree like
+  `data-lake/query.py`, row/time caps) and `compare` (via `core/clients/datadiff.py`).
+- Tests: no secret ever appears in any output; non-SELECT refused; prod/non-prod label present; caps enforced.
+- **Done when**: an MCP client can list, preview, query and compare against a test setup, and the tests above pass.
+- **Done** (2026-11-10): `mcp_server/` (stdio, hand-written protocol — the SDK conflicts with the project's uvicorn pin), five read-only tools, `environment` labels in the Vault (UI + endpoints),
+  scope via `mcp_server/vault_scope.yaml`, audit table `mcp_server.calls` (fail-closed), limits in `.env` (`MCP_*`, passed by compose), runbook section "Connect Claude to Toolbox".
+  Verified: 68 tests (canary secret never leaks; SELECT-only on Vault Data and on Postgres with a write-capable DB user — INTO / data-modifying CTE / nextval / read-write flip / pg_sleep all
+  stopped, DB unchanged); the official MCP client against the real `docker compose run` command; startup 0.9 s. Details: ADR-MCP §6. Postgres connections only (SQL Server/Oracle declined).
+
+#### K3 `generate_insert_script` (S) — after: K2 · ☑ 2026-11-10
+- Returns a SQL INSERT script as text (quoted/escaped values, row cap). **Never executes it** — no DB write path in the tool.
+- Test: a source that would raise on write proves nothing is executed; output is labelled with the connection's prod/non-prod flag.
+- **Done when**: a script is generated for a sample table and the test shows no write was attempted.
+- **Done** (2026-11-10): `mcp_server/scriptgen.py` (pure) + tool; tests `tests/unit/test_mcp_scriptgen.py` (golden per dialect, injection, refusals, AST purity, partial-result refusal, prod flagging).
+  Round trip on a real PostgreSQL: 600 awkward rows → script → empty copy → identical both ways. SQL Server / Oracle syntax not run on real engines (stated in runbook + ADR).
+
+#### K4 Owner grants, AI activity page, kill switch (M) — after: K2 · ☑ 2026-11-10
+- Implements ADR-MCP **D12**: Postgres `mcp_server.grants` (target, allowed actions, expiry default 30 min / max 8 h, row limit); a Toolbox panel
+  **"AI access"** (per connection / SSH server / workspace: off · read · read+write until …) and a CLI `python -m mcp_server grant …`.
+  **No MCP tool may create or widen a grant** (test). Every MCP call checks the grant; a missing/expired grant gives a plain "owner can turn this on" answer.
+- **AI activity page** (workspace tab): live timeline of AI sessions from the audit table (time, tool, target + environment, command/query text,
+  outcome, rows/bytes, scrubbed excerpt), filters, and the **Stop AI access** kill switch (Redis flag + button; blocks every call, cancels grants).
+- **Done when**: an AI call without a grant is refused with the owner hint; with a grant it works until expiry; the kill switch stops a running session
+  within seconds; the timeline shows every call; tests prove the AI channel cannot change grants.
+- **Done** (2026-11-10): `mcp_server/control.py` (kill switch, scrypt PIN with lockout, grants, `require()`), audit extended (`control`, `grants` tables, `grant_id`), `access_status` tool, owner CLI, new tool `ai-access/` (page + endpoints),
+  Dockerfile `COPY ai-access/`, smoke entries, runbook section, ADR K4 section. **Beyond the plan:** an owner PIN (an AI with a shell could otherwise grant itself rights). Verified: 21 + 11 new unit tests; a LIVE MCP session
+  (grant / revoke / stop refused the very next call / wrong PIN counted / resume read-only); the CLI; the page in headless Chromium incl. a hostile audit row; live DB cleaned afterwards (no PIN, grants or test rows left — set your own PIN).
+  **Limit:** no login on Toolbox, so a shell-capable AI client can still reach the page/CLI (documented).
+
+#### K5 SSH debugging tools (M) — after: K4 · ☑ 2026-11-10
+- Implements ADR-MCP **D13** on top of `ssh-sftp` / `core/ssh_client`: `ssh_servers` (names, environment, AI mode only), `ssh_run` (one non-interactive command,
+  `shlex`-parsed **read-only allow-list**, 30 s / 64 KB caps, pipes only into `grep head tail wc sort uniq`), optional `ssh_read_file` (size-capped). Per-server AI switch
+  **default off**; `environment` label on servers (unlabelled = prod); write commands only inside a K4 grant with dry-run + confirm; `DANGEROUS` stays blocked.
+- Audit rows with exact command, exit code, duration, bytes and a scrubbed 2 KB excerpt; grouped into AI sessions on the K4 page.
+- **Done when**: tests against a real OpenSSH test server (as in the ssh-sftp tests): allowed commands run; `rm`, redirects, `;`, `$(…)`, `sudo` are refused and not executed;
+  nothing runs while the switch is off; the credential never appears in any response/log (canary); the timeline shows the session.
+- **Done** (2026-11-10): `mcp_server/sshcmd.py` (allow-list, rebuild, secret-path refusal, output scrubber), `ssh_run.py` (pinned-key connection on a pty), tools `ssh_servers` + `ssh_run`, `vault_scope.yaml` reads `ssh_server`,
+  vocabulary `run_read_commands` (write commands over SSH deliberately NOT built). Verified: 265 command tests + a 25 000-case stress test, 14 gate tests, 10 live tests on a real OpenSSH server (found and fixed: a timed-out
+  command kept running on the server — now killed via a pseudo-terminal). Throwaway server removed. Not tested on non-OpenSSH / non-Linux servers.
+
+#### K6 DataFrame Studio tools (M) — after: K4 · ☑ 2026-11-10
+- Expose the click-cleaning steps and formula engine (`df-studio/clean_steps.py`, `formula.py`) as MCP tools: `table_clean` (apply named steps to a Vault Data table),
+  `table_add_column` (formula) — **dry-run by default** returning the generated pandas line(s), before/after row counts and a sample; saving the result as a table
+  (with lineage in its description) needs a K4 grant. Same code that the page runs — no second implementation.
+- **Done when**: golden-data tests (known table + steps → exact expected output and counts), dry-run changes nothing, save keeps column types, read-back check passes.
+- **Done** (2026-11-10): `mcp_server/frame.py`, tools `transform_steps` + `table_transform` (preview → dry-run → confirm; grant + single-use `confirm_code` + backup + read-back), `vault_scope.yaml` `data: write` (one caller, AST-enforced).
+  Tests: `tests/unit/test_mcp_frame.py` (host part + 10 cases against the real Vault Data in the image: 42 pass). **Found by the end-to-end test:** the redactor blanked `confirm_token` (renamed `confirm_code`); the page's own decimal rule;
+  catalog drift (now guarded). Not built: append to a table, `load_file`, database writes.
+
 ---
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+
+- 2026-11-10 – **K6 done (NOT committed) — the K series (K1–K6) is complete.** `table_transform` / `transform_steps`: DataFrame Studio's own steps with preview, owner-granted + confirm-coded saves, backup on replace, read-back. Gotcha found by the e2e test: never name a response field `*token*` (the redactor blanks it). Open from the ADR: first write tool after K3 was answered by K6 (table save); `load_file`, SSH writes and database writes are NOT built.
+- 2026-11-10 – **K5 done (NOT committed).** SSH debugging for the AI: grant-gated, read-only allow-list, tracked; live-tested on a real OpenSSH server (see K5 above + ADR K5 section + runbook). Gotcha found live: `exec` channel close doesn't stop the remote command → pty. **Next: K6 (DataFrame Studio tools).**
+- 2026-11-10 – **K4 done (NOT committed).** AI Access page + owner PIN + grants + kill switch (see K4 above, ADR K4 section, runbook). New tool folder `ai-access/` (manifest order 155, runtime data), `mcp_server/control.py`. Live DB test data removed. **Next: K5 (SSH debugging) then K6.**
+- 2026-11-10 – **K3 done (NOT committed).** `generate_insert_script` (see K3 above, ADR-MCP K3 section). Compose passes `MCP_SCRIPT_MAX_ROWS` / `MCP_PROD_SCRIPT_MAX_ROWS`. Next: K4 (owner grants, activity page, kill switch).
+- 2026-11-10 – **K2 done (NOT committed).** MCP server `mcp_server/` + `environment` label in the Vault. Touched outside the package: `core/vault.py` (`environment_of`, `environments`, `set_environment`, `scope_for` file fallback),
+  `vault/server.py` + `vault/ui/index.html` (label UI/endpoints), `Dockerfile` (`COPY mcp_server/`), `docker-compose.yml` (worker `MCP_*` env), `tests/smoke/conftest.py` (browser tests skip switched-off tools) + `test_api.py` (`/environments`),
+  docs (ADR §6, runbook, vault/CLAUDE.md, KNOWLEDGE_MAP index, root router row). Images rebuilt; stack healthy. Temporary Vault entries and a throwaway Postgres used for testing were removed (the Vault is back to 0 entries).
+  **Known, not mine:** smoke browser test for `/tools/text-editor/` fails ("Blocked script execution in 'about:blank' … sandboxed") — comes with the pulled Text Editor "AI name finder" code (e30f99c); not investigated. **Next: K3, then K4.**
+- 2026-11-10 – **K1 done and APPROVED by the owner (docs only, NOT committed): `docs/architecture/ADR-MCP.md`.** Owner amendments added as D12–D15 (no credential access ever; write/edit only by owner grant with expiry + kill switch; SSH debugging off-by-default with read-only allow-list and full tracking; accuracy rules; priority SQL Studio / DataFrame Studio / DataDiff / SSH). New sessions K4–K6 planned. Open: first write tool after K3. Findings: Vault already has
+  per-plugin scopes (`vault:` in manifests); connections have NO prod/non-prod flag (to be added in K2, unlabelled = prod); `kind: service` manifests need an http URL
+  so a scope-only manifest needs a small loader change; `mcp` SDK is not installed (K2 pins it); no `requirements/worker.txt` exists. Next: K2.
+- 2026-11-10 – **O3 done (docs only, NOT committed).** Root `CLAUDE.md` 592 → 107 lines; detail moved verbatim to `docs/architecture/*.md` and tool `CLAUDE.md`s;
+  `KNOWLEDGE_MAP.md` split into 25 `<tool>/KNOWLEDGE_MAP.md` + root index. Script-verified: nothing lost (see O3 section). Unit tests 361 passed, 0 broken links.
+  Gotchas: new rule for sessions — a tool's map is `<folder>/KNOWLEDGE_MAP.md` (DataDiff = `api/`, SharePoint = `sharepoint-lab/`, Notebook = `notebook-lab/`);
+  Dockerfile comments still say "CLAUDE.md 'Standing rule'" (the root keeps a §5 short form, full text in `docs/architecture/stateful-tools-and-workers.md`). Next: K1.
+- 2026-11-10 – **O1 done (config only; O2 deferred).** `.env`: `TOOLBOX_WEB_WORKERS=1`, `TOOLBOX_DATA_WORKERS=1`; `api/manifest.yaml` DataDiff
+  `scaling` min 2 → 1 (max 4 kept); 10 tools switched off via Settings. Idle memory 776 → 604 MiB (`docs/roadmap/measure-O1.md`). Smoke: 73 passed,
+  26 skipped (switched-off tools), 0 failed; unit 361 passed. Not load-tested: DataDiff scale-up with min 1. NOT committed. Next: O3.
+  Gotchas: measure BEFORE running smoke (it loads every tool); `docker compose restart rt-datadiff` starts all 4 pool members (autoscaler stops extras in ~2 min).
+- 2026-11-10 – **Planned (no code changed): P1–P3, O1–O4, K1–K3** added to the Status table and "Planned 2026-11-10" above, all ☐.
+  Suggested order O1 → O3 → K1 → K2 → K3 → P1 → P2 → P3 → O2 → O4. Only `docs/roadmap/ROADMAP.md` was edited (no code, compose, images; nothing committed).
+  Gotcha: the new Optimization **O1** reuses the id of the finished Ops **O1** — see the note in that section.
 
 - 2026-11-01 – **M2 Mini Sheet: draft + per-column wrap + several sheets built (code + docs + tests; NOT rebuilt, NOT committed).** New `mini-sheet/draftstore.py`,
   `ui/wrap.js`; `server.py` (`/draft` GET·PUT·DELETE, `/save-all`, `/wrap.js`, `/import` `all_sheets`, `/export` `sheets`, `/limits` + `max_sheets`), `sheetio.py`

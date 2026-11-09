@@ -1,5 +1,9 @@
 # Notebook — tool-local notes
 
+<!-- O3-pointer -->
+> **Start here:** repo rules `../CLAUDE.md` (hard rules + task→file table) · where things live in this tool: `./KNOWLEDGE_MAP.md` · what was done last / what is left: `../docs/roadmap/ROADMAP.md` Handoff log. Do not change anything outside this tool's folder unless the task says so.
+
+
 Part of the Toolbox monorepo — see `../CLAUDE.md` for repo-wide architecture and `../KNOWLEDGE_MAP.md` (section
 "Tool: Notebook") for the symptom→file map.
 
@@ -61,3 +65,12 @@ gateway at `SP_BRIDGE_URL` (compose sets it; a URL only, never a token — this 
 
 - Vault Data tables as DataFrames inside a cell (needs a credential-free bridge, e.g. a server-side export endpoint).
 - GPU runtimes, autocomplete/inspection, `input()` support, multiple kernels per workspace, outputs of widgets/JS.
+
+## Notebook runtime (roadmap N1) — platform view
+
+> Moved **verbatim** from the root `CLAUDE.md` by roadmap session O3 (2026-11-10). The root keeps only the rules and an index;
+> nothing was reworded. Paths in the text are repo-root relative.
+
+- **Notebook (roadmap N1):** `notebook-lab/` — Colab-style workspaces + Jupyter kernels in its OWN runtime `rt-notebook`
+  (on-demand, one uvicorn worker, volume `notebook_data`). It executes user code, so that container has **no
+  Postgres/S3/Vault credentials** (compose gives it only `TOOLBOX_REDIS_URL` and a bridge URL) — keep it that way; see `notebook-lab/CLAUDE.md`.

@@ -1,5 +1,9 @@
 # Vault — tool-local notes
 
+<!-- O3-pointer -->
+> **Start here:** repo rules `../CLAUDE.md` (hard rules + task→file table) · where things live in this tool: `./KNOWLEDGE_MAP.md` · what was done last / what is left: `../docs/roadmap/ROADMAP.md` Handoff log. Do not change anything outside this tool's folder unless the task says so.
+
+
 Part of the Toolbox monorepo — see `../CLAUDE.md` for repo-wide architecture
 and `../KNOWLEDGE_MAP.md` for the full symptom→file map across every tool.
 This file is just the fast-orientation version scoped to this one folder.
@@ -334,3 +338,12 @@ different engine underneath:
 - Mounted at `/tools/vault/` by `main.py` in the repo root — this folder
   never needs to know that; it's a fully self-contained ASGI app either
   way (verify with `cd vault && uvicorn server:app --reload`).
+
+## Environment label for connections and SSH servers (roadmap K2)
+
+`environment` (`prod` | `non-prod`) is stored INSIDE the encrypted data of a `postgres_connection` / `ssh_server` entry; no label = `unknown` = treated as prod by the MCP
+server (`docs/architecture/ADR-MCP.md` D5). Code: `core/vault.py` (`environment_of`, `environments()`, `set_environment()` — updates only that field), endpoints
+`GET /environments` (`{id: label}`, decrypts server-side, returns labels only — the list view still never exposes data) and `POST /secrets/{id}/environment`, UI: a dropdown in
+"Add connection" and a badge + selector on each connection / SSH server in the list. `mcp_server/vault_scope.yaml` is the Vault scope of the headless MCP package
+(`core.vault.scope_for` falls back to `<folder>/vault_scope.yaml` when no manifest has that name; an invalid file grants nothing).
+

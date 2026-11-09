@@ -189,8 +189,8 @@ identical; a secret decrypted with the restored key).
 | Setting | Default | What it does |
 |---|---|---|
 | `TOOLBOX_HOST_PORT` | 8000 | Port of the website on this machine |
-| `TOOLBOX_WEB_WORKERS` | 4 | Gateway processes (1 = less memory, ~40 MB each) |
-| `TOOLBOX_DATA_WORKERS` | 2 | Processes of the data tools container |
+| `TOOLBOX_WEB_WORKERS` | 4 (this machine: 1 since O1) | Gateway processes (1 = less memory, ~40 MB each). Raise it if many people use Toolbox at once |
+| `TOOLBOX_DATA_WORKERS` | 2 (this machine: 1 since O1) | Processes of the data tools container |
 | `TOOLBOX_WORKER_SCALING` | `1:3` | Min:max background-job workers |
 | `TOOLBOX_IDLE_TIMEOUT_S` | (manifests: 900) | Minutes-unused before LaTeX/SSH/pgtools/Notebook sleep, in seconds (overrides Notebook's own 30 min too) |
 | `TOOLBOX_SLOW_MS` | 2000 | When a request counts as "slow" on the Status page |
@@ -205,3 +205,66 @@ Mask → **🧠 Find names (AI)** needs a one-time download (~127 MB, runs entir
 `./scripts/get-ner-model.sh`, then `docker-compose up -d --force-recreate rt-light`. Without it the button answers "The name
 model is not installed"; everything else in Mask works. The files live in `./models/` (git-ignored); behind a TLS-inspecting
 proxy run the script on the host (it trusts the host's certificates).
+
+## Small-machine setup and how to scale back up (roadmap O1)
+
+This machine runs the "diet" from `docs/roadmap/measure-O1.md` (idle memory ~776 → ~604 MiB). Everything is reversible:
+
+| Change | To undo / scale up |
+|---|---|
+| `TOOLBOX_WEB_WORKERS=1`, `TOOLBOX_DATA_WORKERS=1` in `.env` | Raise the numbers (e.g. 4 and 2), then `docker compose up -d`. |
+| DataDiff keeps 1 replica when idle (`scaling: {min: 1, max: 4}` in `api/manifest.yaml`) | Nothing needed: it adds replicas by itself under load (up to 4). For a permanent 2, set `min: 2` and `docker compose up -d --build`. |
+| Background workers | Already automatic: 1 idle, up to 3 by queue length (`TOOLBOX_WORKER_SCALING`). |
+| Tools switched off (cookie-lab, header-reference, http-methods-status, packet-journey, vlan-designer, subnet-calc, dns-lookup, sharepoint, notebook, mini-sheet) | Home → Settings → switch them on (immediate, no restart). The smoke tests skip tools that are off. |
+
+## Connect Claude to Toolbox (MCP, read-only — roadmap K2)
+
+Claude can use Toolbox's data tools (list tables and connections, preview, run a SELECT, compare two data sets) instead of writing scripts.
+Nothing can be changed through it, and Claude never sees a database password: it names a saved connection and Toolbox does the rest.
+
+1. Keep the stack running (`docker compose up -d`).
+2. In Claude Code run once (change the path to where this repo is):
+   `claude mcp add toolbox -- docker compose -f /home/khushal/Desktop/git_repo_directory/toolbox/docker-compose.yml run --rm -T --no-deps worker python -m mcp_server`
+   For another MCP client use the same command with `docker` as the program and the rest as arguments. It starts in about a second and stops when the client closes.
+3. In Claude ask for something like "call toolbox_guide, then show me the tables". The first call explains what exists, the limits and the rules.
+4. **Label your connections** (Vault → each saved connection → Environment: Prod / Non-prod). A connection without a label is treated as **prod**: tighter limits (100 rows,
+   15 s) and a warning on every result. Nothing ever writes to a database.
+5. **Give the database user read-only rights** as well — it is a second, outside safety net.
+6. **See what the AI did:** `docker compose run --rm -T --no-deps worker python -m mcp_server recent 30` (time, session, tool, connection, prod/non-prod, rows, how long, refusals).
+7. Limits can be changed in `.env` (defaults): `MCP_ROWS=200`, `MCP_MAX_ROWS=5000`, `MCP_PROD_ROWS=100`, `MCP_PROD_MAX_ROWS=500`, `MCP_MAX_BYTES=1000000`, `MCP_SECONDS=30`,
+   `MCP_PROD_SECONDS=15`, `MCP_COMPARE_MAX_ROWS=50000`, `MCP_PROD_COMPARE_MAX_ROWS=5000` (compose passes them to the worker; a change applies the next time Claude starts the server).
+**Scripts:** ask Claude "generate an INSERT script for system.orders into sales.orders (postgres)". Toolbox writes the script as text — it never runs it and never connects to the target;
+you review it and run it yourself (first on a non-prod database). It refuses to build a script from a partial result (more than 5,000 rows, or 500 for prod / unlabelled sources) — raise
+`MCP_SCRIPT_MAX_ROWS` / `MCP_PROD_SCRIPT_MAX_ROWS` in `.env` if you really need more. PostgreSQL syntax is verified end to end; SQL Server and Oracle syntax follows the documented rules but was **not** run against real engines.
+Only PostgreSQL connections can be queried through it for now; SQL Server / Oracle data can be staged into Vault Data first.
+
+### Allow the AI to change things — safely (AI Access, roadmap K4)
+
+By default Claude can only read. Open **🤖 AI Access** in the sidebar:
+1. **Set your PIN first** (6+ characters, only you know it). It is needed to allow changes and to resume after a stop. Write it down — there is no recovery except clearing it in the database.
+2. **⛔ Stop AI access now** — one click (no PIN): every AI request is refused (even reading) and all permissions are removed. **Resume** needs the PIN and comes back read-only.
+3. **Allow changes for a limited time** — pick what (a Vault Data workspace, a database connection or an SSH server), which actions, how long (15 min – 8 h) and an optional row limit, then your PIN. Prod / unlabelled
+   targets need an extra tick. There is no permission to delete or drop anything. The permission ends by itself; **Revoke** ends it at once (no PIN).
+4. **What the AI did** — the live timeline: time, session, tool, which connection (prod in red), the exact query/command (click the row), result, rows, duration. No results or secrets are stored.
+5. Same things from a terminal: `docker compose run --rm -T --no-deps worker python -m mcp_server status | kill | resume | set-pin | grants | revoke <id> | grant <kind> <target> --actions …`
+6. **Know the limit:** Toolbox has no login. If your AI client can also run shell commands on this machine, keep those on manual approval (the PIN stops it from granting itself rights, but it could still read this page or press Stop).
+
+### Let Claude debug a server over SSH (roadmap K5)
+
+1. Save the server in the Vault (**Add SSH server**, confirm its host key) and set its **Environment** (Prod / Non-prod). Claude can only connect to servers whose host key is pinned.
+2. By default Claude cannot use SSH at all. When you want help: **🤖 AI Access → Allow changes for a limited time → SSH server**, pick the server, tick *Run read-only diagnostic commands*, choose how long (15 min – 8 h), enter your PIN. (Prod / unlabelled servers need the extra tick.)
+3. Claude then uses `ssh_servers` and `ssh_run`. Only **read-only** commands work: `ls cat head tail wc du df stat file uname uptime free id date find grep sort uniq cut ps ss ip-show journalctl systemctl-status docker ps/logs/stats git status/log/diff` and
+   a plain `|` pipe into `grep/head/tail/wc/sort/uniq/cut`. Anything that writes, redirects, chains (`;` `&&`), substitutes (`$` `` ` ``), runs `sudo`/shells/editors, follows logs (`-f`) or reads keys / `.env` files is refused and never sent.
+4. Each command is limited to 30 s and 64 KB (15 s / 32 KB on prod); a command that runs too long is killed on the server. Likely secrets in the output (`password=…`, private keys, tokens) are replaced by `[redacted]`.
+5. **Watch it live** on the AI Access page (exact command, exit code, time). **Stop** at any moment with the big red button; the permission also ends by itself.
+6. Remember: logs can still contain things you would not want shared. Enable a server only while you need it, and prefer non-prod.
+
+### Let Claude clean and reshape a table (roadmap K6)
+
+Claude can use DataFrame Studio's cleaning steps (fill empty values, change types, clean text, replace, split/merge columns, dates, duplicates, outliers, bins, rename, filter) and formulas on a Vault Data table.
+1. **Preview needs no permission:** ask "clean `system.orders`: cast amount to number, fill empty with 0, add gross = amount * 1.18". Claude shows the exact pandas code, rows before/after, what each step changed and a sample. Nothing is stored.
+2. **Keeping the result needs your permission:** 🤖 AI Access → Allow changes → *Vault Data workspace* → pick or type the target workspace (a new name is fine) → *Create a NEW Vault Data table* (and, only if you want it, *Replace a table*) → time → PIN.
+3. Claude then does a **dry-run** (shows the plan: target table, rows, columns, what it would replace) and, if that is what you want, **confirms** (a one-time code, valid 10 minutes, only for exactly that plan — it stops working if the source table changed).
+4. The new table is read back and checked. The **source table is never changed**; *Replace* keeps the old table as `<name>_backup_<time>`. Every step is in the audit timeline and stored in the new table's history.
+5. Limits: 200,000 rows (raise `MCP_TRANSFORM_MAX_ROWS` in `.env`), 30 steps. Tables with exact **decimal** columns need a *Change type* step before arithmetic; converting decimals to numbers can round them (Claude is told, and the result says so).
+

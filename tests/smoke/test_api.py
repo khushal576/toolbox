@@ -26,6 +26,9 @@ API_CHECKS = [
     ("mini-sheet", "GET", "/draft", None, "application/json"),             # roadmap M2: the autosaved workbook ({"draft": null} for a fresh browser)
     ("mini-sheet", "GET", "/wrap.js", None, "application/javascript"),                 # the wrap-text line counter (the page loads it)
     ("vault", "GET", "/secrets", None, "application/json"),
+    ("vault", "GET", "/environments", None, "application/json"),   # K2: prod / non-prod labels only, no secret data
+    ("ai-access", "GET", "/status", None, "application/json"),     # K4: kill switch / grants state (no secrets, no PIN material)
+    ("ai-access", "GET", "/calls", None, "application/json"),      # K4: the AI activity timeline
     ("data-lake", "GET", "/workspaces", None, "application/json"),
     ("data-lake", "GET", "/catalog", None, "application/json"),
     ("data-lake", "GET", "/history", None, "application/json"),

@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Access</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+    --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --ok-bg: rgba(21,128,61,0.08); --ok-text: #15803d; --ok-border: rgba(21,128,61,0.3);
+    --warn-bg: rgba(217,119,6,0.09); --warn-text: #92400e; --warn-border: rgba(217,119,6,0.35);
+    --err-bg: rgba(220,38,38,0.06); --err-text: #b91c1c; --err-border: rgba(220,38,38,0.3);
+  }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 24px 20px 60px; }
+  .wrap { max-width: 1060px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 0.85rem; margin: 2px 0 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  .card h2 { font-size: 1rem; margin-bottom: 4px; }
+  .hint { color: var(--muted); font-size: 0.8rem; margin-bottom: 10px; line-height: 1.4; }
+  .banner { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; border-radius: 12px; padding: 14px 18px; margin-bottom: 14px; border: 1px solid; }
+  .banner.on { background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok-text); }
+  .banner.writes { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); }
+  .banner.off { background: var(--err-bg); border-color: var(--err-border); color: var(--err-text); }
+  .banner .big { font-size: 1.05rem; font-weight: 700; }
+  .banner .small { font-size: 0.8rem; opacity: 0.9; margin-top: 2px; }
+  button { font: inherit; font-size: 0.85rem; font-weight: 600; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 7px 14px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.stop { background: #b91c1c; color: #fff; border-color: #b91c1c; padding: 9px 18px; }
+  button.small { padding: 3px 9px; font-size: 0.78rem; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  input, select { font: inherit; font-size: 0.85rem; padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+  label { display: block; font-size: 0.75rem; font-weight: 600; color: var(--muted); margin-bottom: 3px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; align-items: end; }
+  .grid .full { grid-column: 1 / -1; }
+  .grid input:not([type=checkbox]), .grid select { width: 100%; min-width: 0; }
+  input[type=checkbox] { width: auto; flex: 0 0 auto; margin-top: 3px; }
+  .acts label { display: flex; gap: 6px; align-items: flex-start; font-weight: 400; color: var(--text); font-size: 0.82rem; margin: 3px 0; }
+  .msg { font-size: 0.82rem; margin-top: 8px; min-height: 1.1em; }
+  .msg.err { color: var(--err-text); } .msg.ok { color: var(--ok-text); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  th { text-align: left; color: var(--muted); font-weight: 600; padding: 5px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr.sep td { border-top: 2px solid var(--border); }
+  tr.row { cursor: pointer; } tr.row:hover td { background: rgba(79,94,240,0.04); }
+  tr.detail td { background: rgba(0,0,0,0.025); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; }
+  .chip { display: inline-block; border-radius: 10px; padding: 1px 8px; font-size: 0.72rem; font-weight: 600; border: 1px solid var(--border); }
+  .chip.ok { background: var(--ok-bg); color: var(--ok-text); border-color: var(--ok-border); }
+  .chip.refused { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
+  .chip.error, .chip.prod { background: var(--err-bg); color: var(--err-text); border-color: var(--err-border); }
+  .chip.unknown { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
+  .chip.started { background: rgba(79,94,240,0.1); color: var(--accent); border-color: rgba(79,94,240,0.3); }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.76rem; }
+  .muted { color: var(--muted); }
+  .empty { color: var(--muted); font-size: 0.85rem; padding: 8px 0; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; align-items: center; }
+  .sess { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  details summary { cursor: pointer; font-size: 0.82rem; color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🤖 AI <span>Access</span></h1>
+  <p class="sub">You decide what an AI assistant (like Claude) may do with Toolbox. By default it can only <b>read</b>. Everything it does is listed below.</p>
+
+  <div id="banner" class="banner on"><div><div class="big">Loading…</div></div></div>
+
+  <div class="card" id="pinCard" style="display:none">
+    <h2>1. Choose your owner PIN</h2>
+    <p class="hint">The PIN is needed to <b>allow changes</b> and to <b>resume</b> after a stop. It keeps an AI that can run commands on this machine from giving itself permission. Stopping never needs the PIN. Choose something only you know (at least 6 characters). If you forget it, run <span class="mono">python -m mcp_server set-pin</span> after clearing it in the database — so write it down.</p>
+    <div class="grid">
+      <div><label for="pin1">New PIN</label><input id="pin1" type="password" autocomplete="new-password" /></div>
+      <div><label for="pin2">Repeat PIN</label><input id="pin2" type="password" autocomplete="new-password" /></div>
+      <div><button class="primary" id="btnPin">Save PIN</button></div>
+    </div>
+    <div class="msg" id="pinMsg"></div>
+  </div>
+
+  <div class="card" id="grantsCard">
+    <h2>Permissions to change things</h2>
+    <p class="hint">Each permission is for <b>one</b> connection, server or workspace, for a limited time. When it ends the AI is read-only again. There is no permission to delete or drop anything.</p>
+    <div id="grantList"></div>
+    <details style="margin-top:10px" id="newGrant">
+      <summary>＋ Allow changes for a limited time…</summary>
+      <div class="grid" style="margin-top:10px">
+        <div><label for="gKind">What for</label>
+          <select id="gKind">
+            <option value="workspace">Vault Data workspace</option>
+            <option value="connection">Database connection</option>
+            <option value="ssh_server">SSH server</option>
+          </select></div>
+        <div><label for="gTarget">Which one</label><select id="gTarget"></select></div>
+        <div id="newWsBox"><label for="gNewWs">…or a NEW workspace name</label><input id="gNewWs" type="text" maxlength="40" placeholder="e.g. scratch" /></div>
+        <div><label for="gMinutes">For how long</label>
+          <select id="gMinutes"><option value="15">15 minutes</option><option value="30" selected>30 minutes</option><option value="60">1 hour</option><option value="120">2 hours</option><option value="480">8 hours (maximum)</option></select></div>
+        <div><label for="gRows">Max rows (optional)</label><input id="gRows" type="number" min="1" placeholder="no limit" /></div>
+        <div class="full acts" id="gActions"></div>
+        <div class="full"><label for="gNote">Note (why)</label><input id="gNote" type="text" maxlength="200" style="width:100%" placeholder="e.g. load the cleaned orders into scratch" /></div>
+        <div class="full" id="prodBox" style="display:none">
+          <label style="color:var(--err-text)"><input type="checkbox" id="gProd" /> This target is <b id="prodWord">PROD</b>. I understand the AI may change it for this period.</label>
+        </div>
+        <div><label for="gPin">Your PIN</label><input id="gPin" type="password" autocomplete="current-password" /></div>
+        <div><button class="primary" id="btnGrant">Allow</button></div>
+      </div>
+      <div class="msg" id="grantMsg"></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>What the AI did</h2>
+    <p class="hint">Newest first. Click a row to see the exact query or command. Results and secrets are never stored here. Updates every few seconds while this page is open.</p>
+    <div class="filters">
+      <select id="fOutcome"><option value="">All outcomes</option><option value="ok">ok</option><option value="refused">refused</option><option value="error">error</option></select>
+      <select id="fTool"><option value="">All tools</option></select>
+      <span class="muted" id="count"></span>
+    </div>
+    <div id="timeline"></div>
+  </div>
+
+  <div class="card" id="pinChange" style="display:none">
+    <details><summary>Change PIN</summary>
+      <div class="grid" style="margin-top:10px">
+        <div><label for="oldPin">Current PIN</label><input id="oldPin" type="password" /></div>
+        <div><label for="newPin">New PIN</label><input id="newPin" type="password" /></div>
+        <div><button id="btnChangePin">Change</button></div>
+      </div>
+      <div class="msg" id="chgMsg"></div>
+    </details>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let ST = null;           // last /status
+let CALLS = [];
+let expanded = new Set();
+const TOOLS = new Set();     // every tool name ever seen, so the filter keeps its choices while filtered
+let TARGET_SIG = "";
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  let d = {}; try { d = await r.json(); } catch (e) { /* not JSON */ }
+  if (!r.ok || d.ok === false) throw new Error(d.error || ("Request failed (" + r.status + ")"));
+  return d;
+}
+const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+function msg(id, text, kind) { const e = $(id); e.textContent = text || ""; e.className = "msg " + (kind || ""); }
+const fmtLeft = (s) => s >= 3600 ? Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m" : Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+
+// ---- status / banner / grants ----
+function renderBanner() {
+  const b = $("banner");
+  if (!ST) { b.className = "banner off"; b.innerHTML = '<div><div class="big">Cannot reach the Toolbox database</div><div class="small">AI access is treated as stopped until it is back.</div></div>'; return; }
+  if (ST.stopped) {
+    b.className = "banner off";
+    b.innerHTML = '<div><div class="big">⛔ AI access is STOPPED</div><div class="small">Every AI request is refused, even reading. All permissions were removed.</div></div>' +
+      '<div style="display:flex;gap:8px;align-items:center"><input id="resumePin" type="password" placeholder="Your PIN" style="width:130px" autocomplete="current-password" /><button class="primary" id="btnResume">Resume (read-only)</button></div>';
+    const r = $("btnResume"); if (r) r.onclick = resume;
+    const p = $("resumePin"); if (p) p.onkeydown = (e) => { if (e.key === "Enter") resume(); };
+  } else {
+    const n = ST.grants.length;
+    b.className = "banner " + (n ? "writes" : "on");
+    b.innerHTML = '<div><div class="big">' + (n ? "✏️ AI can read, and change " + n + " thing" + (n > 1 ? "s" : "") + " for a limited time" : "👁 AI access is ON — read-only") + "</div>" +
+      '<div class="small">' + (n ? "See the permissions below. They end by themselves." : "It can look at data and generate scripts, but it cannot change anything.") + "</div></div>" +
+      '<button class="stop" id="btnKill">⛔ Stop AI access now</button>';
+    $("btnKill").onclick = kill;
+  }
+}
+async function kill() {
+  if (!confirm("Stop ALL AI access right now?\n\nEvery request is refused and every permission is removed. You need your PIN to resume.")) return;
+  try { await post("kill"); } catch (e) { alert(e.message); }
+  await refresh();
+}
+async function resume() {
+  try { await post("resume", { pin: $("resumePin").value }); await refresh(); }
+  catch (e) { alert(e.message); }
+}
+function renderGrants() {
+  const box = $("grantList");
+  if (!ST || !ST.grants.length) { box.innerHTML = '<div class="empty">No permissions right now — the AI is read-only.</div>'; return; }
+  box.innerHTML = "<table><thead><tr><th>For</th><th>Allowed</th><th>Time left</th><th>Rows</th><th></th></tr></thead><tbody>" +
+    ST.grants.map((g) => "<tr><td><b>" + esc(g.target) + '</b> <span class="muted">' + esc(g.target_kind.replace("_", " ")) + "</span></td><td>" +
+      g.actions.map((a) => '<span class="chip">' + esc(a) + "</span>").join(" ") + '</td><td class="mono" data-left="' + g.seconds_left + '" data-at="' + Date.now() + '">' + fmtLeft(g.seconds_left) +
+      "</td><td>" + (g.row_limit ? g.row_limit.toLocaleString() : "any") + '</td><td><button class="small" data-revoke="' + esc(g.id) + '">Revoke</button></td></tr>').join("") + "</tbody></table>";
+  box.querySelectorAll("[data-revoke]").forEach((b) => b.onclick = async () => { try { await post("grants/" + b.dataset.revoke + "/revoke"); } catch (e) { alert(e.message); } refresh(); });
+}
+setInterval(() => {   // live countdowns between refreshes
+  document.querySelectorAll("[data-left]").forEach((td) => {
+    const left = Math.max(0, Number(td.dataset.left) - Math.floor((Date.now() - Number(td.dataset.at)) / 1000));
+    td.textContent = fmtLeft(left);
+  });
+}, 1000);
+
+// ---- new grant form ----
+function fillTargets() {
+  if (!ST) return;
+  const kind = $("gKind").value;
+  const keep = $("gTarget").value;
+  const list = ST.targets[kind] || [];
+  $("gTarget").innerHTML = list.length ? list.map((t) => '<option value="' + esc(t.name) + '" data-env="' + esc(t.environment) + '">' + esc(t.name) + (kind === "workspace" ? "" : " — " + esc(t.environment)) + "</option>").join("")
+    : '<option value="">(none saved)</option>';
+  if (keep && [...$("gTarget").options].some((o) => o.value === keep)) $("gTarget").value = keep;
+  $("newWsBox").style.display = kind === "workspace" ? "block" : "none";
+  $("gActions").innerHTML = Object.entries(ST.actions[kind] || {}).map(([a, d]) => '<label><input type="checkbox" value="' + esc(a) + '"> <span><b>' + esc(a) + "</b> — " + esc(d) + "</span></label>").join("");
+  checkProd();
+}
+function checkProd() {
+  const o = $("gTarget").selectedOptions[0];
+  const env = o ? o.dataset.env : "non-prod";
+  const protectedEnv = $("gKind").value !== "workspace" && env !== "non-prod";
+  $("prodBox").style.display = protectedEnv ? "block" : "none";
+  $("prodWord").textContent = env === "prod" ? "PROD" : "NOT LABELLED (counts as PROD)";
+  if (!protectedEnv) $("gProd").checked = false;
+}
+$("gKind").onchange = fillTargets;
+$("gTarget").onchange = checkProd;
+$("btnGrant").onclick = async () => {
+  msg("grantMsg", "");
+  const actions = [...document.querySelectorAll("#gActions input:checked")].map((i) => i.value);
+  try {
+    const kind = $("gKind").value;
+    const target = kind === "workspace" && $("gNewWs").value.trim() ? $("gNewWs").value.trim().toLowerCase() : $("gTarget").value;
+    const g = (await post("grants", { target_kind: kind, target, actions, minutes: Number($("gMinutes").value),
+      row_limit: $("gRows").value ? Number($("gRows").value) : null, note: $("gNote").value, pin: $("gPin").value, confirm_prod: $("gProd").checked })).grant;
+    $("gPin").value = ""; $("gNote").value = ""; $("gNewWs").value = "";
+    msg("grantMsg", "Allowed: " + g.actions.join(", ") + " on " + g.target + " for " + Math.round(g.seconds_left / 60) + " minutes.", "ok");
+    refresh();
+  } catch (e) { msg("grantMsg", e.message, "err"); }
+};
+
+// ---- PIN ----
+$("btnPin").onclick = async () => {
+  if ($("pin1").value !== $("pin2").value) { msg("pinMsg", "The two PINs differ.", "err"); return; }
+  try { await post("pin", { new: $("pin1").value }); $("pin1").value = $("pin2").value = ""; refresh(); } catch (e) { msg("pinMsg", e.message, "err"); }
+};
+$("btnChangePin").onclick = async () => {
+  try { await post("pin", { old: $("oldPin").value, new: $("newPin").value }); $("oldPin").value = $("newPin").value = ""; msg("chgMsg", "PIN changed.", "ok"); } catch (e) { msg("chgMsg", e.message, "err"); }
+};
+
+// ---- timeline ----
+const COLORS = ["#4f5ef0", "#0d9488", "#d97706", "#9333ea", "#db2777", "#2563eb", "#65a30d"];
+const sessColor = (id) => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
+function summary(c) {
+  let a = {}; try { a = JSON.parse(c.args || "{}"); } catch (e) { /* keep empty */ }
+  const t = a.sql || a.query || a.command || a.table || (a.left ? "compare" : "") || a.what || "";
+  return String(t).replace(/\s+/g, " ").slice(0, 110);
+}
+function renderTimeline() {
+  CALLS.forEach((c) => TOOLS.add(c.tool));
+  const tools = [...TOOLS].sort();
+  const cur = $("fTool").value;
+  $("fTool").innerHTML = '<option value="">All tools</option>' + tools.map((t) => '<option value="' + esc(t) + '"' + (t === cur ? " selected" : "") + ">" + esc(t) + "</option>").join("");
+  $("count").textContent = CALLS.length + " call" + (CALLS.length === 1 ? "" : "s") + " shown";
+  if (!CALLS.length) { $("timeline").innerHTML = '<div class="empty">Nothing yet. When an AI uses Toolbox through MCP, every call appears here.</div>'; return; }
+  let prev = null, html = "<table><thead><tr><th>Time</th><th>Session</th><th>Tool</th><th>On</th><th>What</th><th>Result</th><th>Rows</th><th>ms</th></tr></thead><tbody>";
+  for (const c of CALLS) {
+    const sep = prev && prev !== c.session ? " sep" : ""; prev = c.session;
+    const env = c.environment ? c.environment.split(", ")[0] : "";
+    html += '<tr class="row' + sep + '" data-id="' + esc(c.id) + '"><td class="mono">' + esc(new Date(c.ts).toLocaleTimeString()) + '</td>' +
+      '<td><span class="sess" style="background:' + sessColor(c.session) + '"></span><span class="mono muted">' + esc(c.session.slice(0, 6)) + "</span></td>" +
+      "<td><b>" + esc(c.tool) + "</b></td><td>" + (c.connection ? esc(c.connection) + (env ? ' <span class="chip ' + esc(env === "prod" ? "prod" : env === "unknown" ? "unknown" : "") + '">' + esc(env) + "</span>" : "") : '<span class="muted">—</span>') +
+      '</td><td class="mono">' + esc(summary(c)) + '</td><td><span class="chip ' + esc(c.outcome) + '">' + esc(c.outcome) + "</span></td><td>" + (c.rows == null ? "" : esc(c.rows)) + "</td><td>" + (c.duration_ms == null ? "" : esc(c.duration_ms)) + "</td></tr>";
+    if (expanded.has(c.id)) {
+      html += '<tr class="detail"><td colspan="8">' + esc("arguments: " + (c.args || "{}") + (c.detail ? "\nresult: " + c.detail : "") + "\nclient: " + (c.client || "?") + "   session: " + c.session + (c.grant_id ? "   grant: " + c.grant_id : "") + "   at: " + c.ts) + "</td></tr>";
+    }
+  }
+  $("timeline").innerHTML = html + "</tbody></table>";
+  $("timeline").querySelectorAll("tr.row").forEach((r) => r.onclick = () => { const id = r.dataset.id; expanded.has(id) ? expanded.delete(id) : expanded.add(id); renderTimeline(); });
+}
+
+// ---- refresh loop ----
+async function refresh() {
+  try { ST = await api("status"); } catch (e) { ST = null; }
+  renderBanner();
+  $("pinCard").style.display = ST && !ST.pin_set ? "block" : "none";
+  $("pinChange").style.display = ST && ST.pin_set ? "block" : "none";
+  $("grantsCard").style.display = ST ? "block" : "none";
+  if (ST) {
+    renderGrants();
+    const sig = JSON.stringify(ST.targets);
+    if (sig !== TARGET_SIG && !$("newGrant").contains(document.activeElement)) { TARGET_SIG = sig; fillTargets(); }
+  }
+  try {
+    const q = new URLSearchParams({ limit: "120", outcome: $("fOutcome").value, tool: $("fTool").value });
+    CALLS = (await api("calls?" + q)).calls;
+  } catch (e) { CALLS = []; }
+  renderTimeline();
+}
+$("fOutcome").onchange = $("fTool").onchange = refresh;
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 4000);
+</script>
+</body>
+</html>

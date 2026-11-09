@@ -149,6 +149,27 @@ async def save_secret(body: SaveSecretRequest) -> JSONResponse:
     return JSONResponse({"ok": True, "id": secret_id})
 
 
+class EnvironmentBody(BaseModel):
+    environment: str = ""  # 'prod' | 'non-prod' | '' (unknown)
+
+
+@app.get("/environments")
+async def environments() -> JSONResponse:
+    """Roadmap K2: {id: 'prod'|'non-prod'|'unknown'} for connections and SSH servers — labels only, no secret data."""
+    return JSONResponse({"ok": True, "environments": await asyncio.to_thread(vault.environments)})
+
+
+@app.post("/secrets/{secret_id}/environment")
+async def set_environment(secret_id: str, body: EnvironmentBody) -> JSONResponse:
+    try:
+        label = await asyncio.to_thread(vault.set_environment, secret_id, body.environment)
+    except vault.SecretNotFound as exc:
+        raise HTTPException(404, "No such saved secret") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return JSONResponse({"ok": True, "environment": label})
+
+
 @app.get("/secrets/{secret_id}/reveal")
 async def reveal_secret(secret_id: str) -> JSONResponse:
     """Decrypts and returns the real data — only ever called by a

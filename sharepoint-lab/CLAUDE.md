@@ -1,5 +1,9 @@
 # SharePoint Lists — tool-local notes
 
+<!-- O3-pointer -->
+> **Start here:** repo rules `../CLAUDE.md` (hard rules + task→file table) · where things live in this tool: `./KNOWLEDGE_MAP.md` · what was done last / what is left: `../docs/roadmap/ROADMAP.md` Handoff log. Do not change anything outside this tool's folder unless the task says so.
+
+
 Part of the Toolbox monorepo — see `../CLAUDE.md` for repo-wide architecture and `../KNOWLEDGE_MAP.md` (section
 "Tool: SharePoint Lists") for the symptom→file map.
 
@@ -90,3 +94,14 @@ To click through the page without a tenant: `tests/unit/sp_dev_server.py` (docst
 
 Resolve lookup/person ids to names and edit them; hyperlink editing; document libraries/files; "Mirror to Vault Data" (so
 DuckDB/DataDiff can join lists); delta sync for very large lists; staging new rows from Python; a certificate credential for app-only.
+
+## SharePoint Lists (roadmap S1) — platform view
+
+> Moved **verbatim** from the root `CLAUDE.md` by roadmap session O3 (2026-11-10). The root keeps only the rules and an index;
+> nothing was reworded. Paths in the text are repo-root relative.
+
+- **SharePoint Lists (roadmap S1):** `sharepoint-lab/` (runtime `data`) — many SharePoint sites via Microsoft Graph, connections in the
+  Vault (kind `sharepoint_connection`), edits are STAGED (Postgres schema `sharepoint_lab`) and written only after a reviewed approval
+  (digest-checked, conflict-checked, audited); **no delete anywhere** (owner decision — `graph._check_write`). Python staging from a
+  notebook through `notebook-lab/lib/toolbox_sharepoint.py`; `rt-notebook` still has no credential (it gets a URL, `SP_BRIDGE_URL`).
+  See `sharepoint-lab/CLAUDE.md`.
