@@ -14,4 +14,4 @@ state: []
 depends_on: [vault]
 requires: []
 order: 10
-scaling: {min: 2, max: 4}   # roadmap D3: rt-datadiff replicas, autoscaled by CPU between 2 and 4
+scaling: {min: 1, max: 4}   # roadmap D3: rt-datadiff replicas, autoscaled by CPU between 1 and 4 (min 2 -> 1 in O1)

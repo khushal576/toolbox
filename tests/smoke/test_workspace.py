@@ -40,10 +40,10 @@ def test_traffic_counters_errors_logs_and_alerts():
     import time
 
     for _ in range(3):
-        assert request("GET", "/tools/subnet-calc/").status == 200
+        assert request("GET", "/tools/encode-decode/").status == 200
     time.sleep(6)  # the request may have landed on another gateway worker: wait for its flush
     m = request("GET", "/api/workspace/metrics").json()
-    assert m["tools"]["subnet-calc"]["hour"]["req"] >= 3 and len(m["tools"]["subnet-calc"]["series"]) == 60
+    assert m["tools"]["encode-decode"]["hour"]["req"] >= 3 and len(m["tools"]["encode-decode"]["series"]) == 60
     assert "errors" in request("GET", "/api/workspace/errors").json()
     names = [c["name"] for c in request("GET", "/api/workspace/overview").json()["containers"]["containers"]]
     gw = next(n for n in names if n.endswith("-toolbox-1"))

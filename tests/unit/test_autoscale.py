@@ -18,7 +18,7 @@ from core_plugins import discover  # noqa: E402
 
 
 def test_datadiff_is_the_scaled_runtime():
-    assert scaled_runtimes(discover(REPO).ordered()) == {"datadiff": (2, 4)}
+    assert scaled_runtimes(discover(REPO).ordered()) == {"datadiff": (1, 4)}  # O1: min 2 -> 1
 
 
 # ---- balancer ----------------------------------------------------------------------------------------------------
