@@ -43,7 +43,8 @@
   .node .car { width: 14px; color: var(--muted); transition: transform 0.1s; }
   .node .car.open { transform: rotate(90deg); }
   .node .acts { display: none; gap: 0; }
-  .node:hover .acts { display: inline-flex; }
+  .node:hover .acts, .node.needs .acts { display: inline-flex; }
+  .err .signin { margin-top: 4px; display: block; }
   .lvl1 { margin-left: 14px; } .lvl2 { margin-left: 30px; }
   .err { color: var(--err); font-size: 0.78rem; padding: 2px 8px 4px 40px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #c9cde0; flex: none; }
@@ -249,7 +250,7 @@ function renderTree() {
   for (const c of S.conns) {
     const open = S.open.has(c.id);
     const needs = c.auth === "device_code" && !c.signed_in;
-    tree.append(h("div", { class: "node", onclick: () => { open ? S.open.delete(c.id) : S.open.add(c.id); saveUi(); if (!open && !S.lists[c.id]) loadLists(c.id); renderTree(); } },
+    tree.append(h("div", { class: "node" + (needs ? " needs" : ""), onclick: () => { open ? S.open.delete(c.id) : S.open.add(c.id); saveUi(); if (!open && !S.lists[c.id]) loadLists(c.id); renderTree(); } },
       h("span", { class: "car" + (open ? " open" : "") }, icon("caret")), h("span", { class: "dot " + (needs ? "warn" : "ok") }),
       h("span", { class: "nm", title: `${c.tenant_id}` }, c.name), c.read_only ? h("span", { class: "chip ro", title: "Read-only: nothing can be written" }, "RO") : null,
       c.staged ? h("span", { class: "badge", title: "Staged changes" }, c.staged) : null,
@@ -259,9 +260,9 @@ function renderTree() {
         h("button", { class: "ib", title: "Edit sites / read-only", onclick: (e) => { e.stopPropagation(); connDialog(c); } }, icon("edit")))));
     if (!open) continue;
     if (S.loading[c.id]) { tree.append(h("div", { class: "muted lvl1", style: "padding:4px 10px" }, "Loading…")); continue; }
-    if (needs && !S.lists[c.id]) { tree.append(h("div", { class: "err" }, "Not signed in")); continue; }
+    if (needs && !S.lists[c.id]) { tree.append(h("div", { class: "err" }, "Not signed in yet.", h("button", { class: "ib primary signin", onclick: () => signIn(c) }, "Sign in"))); continue; }
     for (const o of S.lists[c.id] || []) {
-      if (o.site.error) { tree.append(h("div", { class: "err" }, o.site.url ? `${o.site.url.replace(/^https:\/\//, "")} — ${o.site.error}` : o.site.error)); continue; }
+      if (o.site.error) { tree.append(h("div", { class: "err" }, o.site.url ? `${o.site.url.replace(/^https:\/\//, "")} — ${o.site.error}` : o.site.error, o.site.needs_signin ? h("button", { class: "ib primary signin", onclick: () => signIn(c) }, "Sign in") : null)); continue; }
       tree.append(h("div", { class: "node lvl1", title: o.site.url }, h("span", { class: "muted" }, icon("site")), h("span", { class: "nm" }, o.site.name)));
       for (const l of o.lists) {
         const on = cur && cur.conn === c.id && cur.list === l.id && cur.site === o.site.id;

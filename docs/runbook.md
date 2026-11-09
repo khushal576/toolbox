@@ -180,7 +180,7 @@ identical; a secret decrypted with the restored key).
 | "**N server errors in the last hour**" | Status → Recent errors shows which request failed and the message. |
 | "**jobs are waiting**" | More background work than workers. It scales to 3 workers by itself; persistent backlog → check the worker logs. |
 | "**No backup yet**" / "**last backup N days ago**" | Run `scripts/backup.sh`. |
-| **VaultKeyMismatch** / saved connections don't work | `.env` has the wrong `TOOLBOX_VAULT_KEY`. Put back the right `.env` (from a backup). Never generate a new key while secrets exist. |
+| **VaultKeyMismatch** / saved connections don't work | `.env` has the wrong `TOOLBOX_VAULT_KEY` — or **no `.env` at all**: then only the containers with the old `vault_data` volume (data tools, singletons, worker) find the key, while Data Dumper / Schema Copy (`rt-pgtools`) and SSH & SFTP (`rt-ssh`) make up a new one per container and can't read the Vault. Put back the right `.env` (from a backup; the key also lives on the `vault_data` volume as `/app/data/vault/vault.key`), then `docker-compose up -d`. Never generate a new key while secrets exist. |
 | **Disk filling up** | Status → Storage shows who uses space (dumps, Duck Lab files). Delete old dumps in Data Dumper. Old Docker images: `docker image prune` (safe; removes unused images only). |
 | You changed `docker_proxy_rules` in docker-compose.yml | `docker compose up -d --force-recreate docker-proxy` (compose doesn't notice that change by itself). |
 
@@ -198,3 +198,10 @@ identical; a secret decrypted with the restored key).
 | `TOOLBOX_DATABASE_URL` | bundled Postgres | Use your own Postgres instead (a dedicated `toolbox` database) |
 | `TOOLBOX_DB_PASSWORD`, `TOOLBOX_S3_ACCESS_KEY`, `TOOLBOX_S3_SECRET_KEY` | local-only defaults | Passwords of the bundled services |
 | `TOOLBOX_VAULT_KEY` | (moved here in B7) | The Vault key — **back it up, never change it** while secrets exist |
+
+## Text Editor: finding names with AI (optional)
+
+Mask → **🧠 Find names (AI)** needs a one-time download (~127 MB, runs entirely in your browser afterwards):
+`./scripts/get-ner-model.sh`, then `docker-compose up -d --force-recreate rt-light`. Without it the button answers "The name
+model is not installed"; everything else in Mask works. The files live in `./models/` (git-ignored); behind a TLS-inspecting
+proxy run the script on the host (it trusts the host's certificates).

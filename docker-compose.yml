@@ -135,6 +135,8 @@ services:
     environment: *state-env
     volumes:
       - workspace_data:/app/data/workspace:ro
+      # optional AI name model for the Text Editor's Mask (scripts/get-ner-model.sh downloads it; git-ignored)
+      - ./models:/models:ro
 
   rt-data:
     <<: *tool-service
@@ -151,6 +153,8 @@ services:
       - data_syncer_data:/app/data/data-syncer
       # the shared data folder (roadmap L2): files on this machine the Data Lake can load or read in place — READ-ONLY
       - ${TOOLBOX_DATA_DIR:-~/toolbox-data}:/data:ro
+      # optional extra CA roots for a TLS-inspecting proxy (Zscaler …) — certs/README.md; used by the SharePoint tool
+      - ./certs:/certs:ro
 
   # On-demand (roadmap C3): pgtools, ssh and latex hold only tier-4 tools, so the gateway starts them on first use
   # and stops them after scaling.idle_timeout_s. Limits = the sum of their plugins' manifest `resources`

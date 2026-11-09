@@ -536,3 +536,23 @@ def test_kernel_env_gives_only_the_bridge_url(monkeypatch):
     env = workspaces.kernel_env("x")
     assert env["SP_BRIDGE_URL"].endswith("/tools/sharepoint") and env["PYTHONPATH"].endswith("lib")
     assert not [k for k in env if k.startswith("TOOLBOX")] and "secret" not in "".join(env.values())
+
+
+def test_extra_ca_folder_is_optional(tmp_path, monkeypatch):
+    """No certs folder → default verification; a folder with a CA file → a context that still has the stock roots."""
+    from sharepoint_lab import tls
+    import ssl
+    monkeypatch.setattr(tls, "_cached", None)
+    monkeypatch.setenv(tls.EXTRA_DIR_ENV, str(tmp_path / "missing"))
+    assert tls.verify() is True
+    # a real self-signed root, generated here, must load next to the stock certifi roots
+    import subprocess
+    pem = tmp_path / "proxy-root.crt"
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", str(tmp_path / "k.pem"),
+                    "-out", str(pem), "-days", "2", "-subj", "/CN=Test Proxy Root"], check=True, capture_output=True)
+    monkeypatch.setattr(tls, "_cached", None)
+    monkeypatch.setenv(tls.EXTRA_DIR_ENV, str(tmp_path))
+    ctx = tls.verify()
+    assert isinstance(ctx, ssl.SSLContext) and ctx.verify_mode == ssl.CERT_REQUIRED
+    assert len(ctx.get_ca_certs()) > 100
+    monkeypatch.setattr(tls, "_cached", None)

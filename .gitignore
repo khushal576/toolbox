@@ -45,3 +45,10 @@ wheelhouse/
 # Ops session: backup archives (contain the Vault key!)
 backups/
 .env.before-restore-*
+
+# local TLS-inspection root CAs (certs/README.md)
+certs/*.crt
+certs/*.pem
+
+# downloaded models (scripts/get-ner-model.sh)
+models/

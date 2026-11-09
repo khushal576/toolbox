@@ -234,6 +234,7 @@
       <span id="maskInfo"></span>
       <input type="file" id="maskFile" accept=".json,application/json" style="display:none" />
       <button class="btn" id="maskScan" title="Scan the text again and add anything new (your edits are kept)">↻ Scan</button>
+      <button class="btn" id="maskAI" title="Find people's names written inside ordinary sentences with a name-recognition model that runs in this browser (first use loads ~105 MB from this server; nothing is sent anywhere)">🧠 Find names (AI)</button>
       <button class="btn" id="maskLoad" title="Load a mask JSON you downloaded earlier">📂 Load JSON</button>
       <button class="btn" id="maskDown" title="Download this mask JSON (original → masked)">⬇ Download JSON</button>
       <button class="btn" id="maskUndo" title="Put the original values back, using this JSON (masked → original)">↩ Restore text</button>
@@ -811,6 +812,9 @@ $("pvSize").onchange = () => {
 // a "long token" and a card number is not also a phone). The mapping is applied by exact text, longest key first, in ONE pass
 // (a masked value is never masked again). Everything stays in the browser.
 const luhn = (d) => { let sum = 0, alt = false; for (let i = d.length - 1; i >= 0; i--) { let n = +d[i]; if (alt) { n *= 2; if (n > 9) n -= 9; } sum += n; alt = !alt; } return sum % 10 === 0; };
+const VD = [[0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],[2,3,4,0,1,7,8,9,5,6],[3,4,0,1,2,8,9,5,6,7],[4,0,1,2,3,9,5,6,7,8],[5,9,8,7,6,0,4,3,2,1],[6,5,9,8,7,1,0,4,3,2],[7,6,5,9,8,2,1,0,4,3],[8,7,6,5,9,3,2,1,0,4],[9,8,7,6,5,4,3,2,1,0]];
+const VP = [[0,1,2,3,4,5,6,7,8,9],[1,5,7,6,2,8,3,0,9,4],[5,8,0,3,7,9,6,1,4,2],[8,9,1,6,0,4,3,5,2,7],[9,4,5,3,1,2,6,8,7,0],[4,2,8,6,5,7,3,9,0,1],[2,7,9,3,8,0,6,4,1,5],[7,0,4,6,9,1,3,2,5,8]];
+const verhoeff = (d) => { let c = 0; for (let i = d.length - 1, k = 0; i >= 0; i--, k++) c = VD[c][VP[k % 8][+d[i]]]; return c === 0; };   // the check Aadhaar numbers carry
 const ibanOk = (s) => { const r = (s.slice(4) + s.slice(0, 4)).replace(/[A-Z]/g, (c) => c.charCodeAt(0) - 55); let m = 0; for (const ch of r) m = (m * 10 + +ch) % 97; return m === 1; };
 const SECRET_WORDS = [["password", "PASSWORD"], ["passwd", "PASSWORD"], ["passphrase", "PASSWORD"], ["secret", "SECRET"], ["token", "TOKEN"], ["apikey", "KEY"],
   ["accesskey", "KEY"], ["privatekey", "KEY"], ["authorization", "TOKEN"], ["credential", "SECRET"], ["sessionid", "TOKEN"], ["signature", "SECRET"], ["connectionstring", "SECRET"]];
@@ -818,13 +822,30 @@ const SECRET_EXACT = { pwd: "PASSWORD", pass: "PASSWORD", auth: "TOKEN", cookie:
 const PII_EXACT = { email: "EMAIL", emailaddress: "EMAIL", mail: "EMAIL", phone: "PHONE", phonenumber: "PHONE", mobile: "PHONE", mobilenumber: "PHONE", tel: "PHONE", telephone: "PHONE", cell: "PHONE", contactnumber: "PHONE",
   ssn: "SSN", socialsecuritynumber: "SSN", aadhaar: "AADHAAR", aadhar: "AADHAAR", pan: "PAN", pannumber: "PAN", passport: "ID", passportnumber: "ID", licensenumber: "ID", nationalid: "ID", taxid: "ID",
   name: "NAME", firstname: "NAME", lastname: "NAME", fullname: "NAME", surname: "NAME", givenname: "NAME", familyname: "NAME", middlename: "NAME", username: "NAME", customername: "NAME", displayname: "NAME", contactname: "NAME",
+  user: "NAME", login: "NAME", owner: "NAME", author: "NAME", customer: "NAME", employee: "NAME", patient: "NAME", applicant: "NAME", candidate: "NAME", sender: "NAME", recipient: "NAME", requester: "NAME",
   address: "ADDRESS", streetaddress: "ADDRESS", street: "ADDRESS", addressline1: "ADDRESS", addressline2: "ADDRESS", postcode: "ADDRESS", postalcode: "ADDRESS", zip: "ADDRESS", zipcode: "ADDRESS",
   dob: "DOB", dateofbirth: "DOB", birthdate: "DOB", birthday: "DOB", card: "CARD", cardnumber: "CARD", creditcard: "CARD", iban: "IBAN", accountnumber: "ACCOUNT", bankaccount: "ACCOUNT", ip: "IP", ipaddress: "IP" };
+// Words in front of "name" that mean a thing, not a person (filename, hostname, tablename …): those are not masked by the "…name" rule.
+const NOT_PERSON = /(?:file|host|db|database|table|schema|path|class|type|field|column|col|key|server|domain|dir|folder|node|tag|task|job|package|bucket|app|project|product|item|event|method|function|func|var|variable|property|attribute|index|sheet|list|env|service|container|image|branch|repo|module|label|group|team|org|organization|organisation|company|brand|city|country|state|queue|topic|stream|cluster|instance|region|zone|account|bank|role|dept|department|sys|system|machine|computer|device|code|param|arg)$/;
 function keyCategory(key) {
   const n = key.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (SECRET_EXACT[n]) return [SECRET_EXACT[n], false];
   for (const [w, c] of SECRET_WORDS) if (n.includes(w)) return [c, false];
   if (PII_EXACT[n]) return [PII_EXACT[n], true];       // second item: the value may contain spaces ("Jane Q. Smith")
+  // longer field names: aadhaar_number, applicant_name, Date of Birth, mobile_no, home address …
+  if (n.includes("aadhaar") || n.includes("aadhar") || n === "uid" || n === "uidai") return ["AADHAAR", true];
+  if (n.includes("birth")) return ["DOB", true];
+  if (n.includes("email")) return ["EMAIL", true];
+  if (/(?:mobile|phone|contact|whatsapp)(?:no|num|number)?$/.test(n)) return ["PHONE", true];
+  if (/^pan(?:no|num|number|card)$/.test(n)) return ["PAN", true];
+  if (/(?:passport|licen[cs]e|nationalid|voterid|driving)(?:no|num|number|id)?$/.test(n)) return ["ID", true];
+  if (/(?:ssn|socialsecurity)(?:no|num|number)?$/.test(n)) return ["SSN", true];
+  if (/(?:account|acct|iban)(?:no|num|number)$/.test(n)) return ["ACCOUNT", true];
+  if (/address$/.test(n) && !/^(?:ip|mac|web|url|host|ipv[46])/.test(n)) return ["ADDRESS", true];
+  if (/(?:created|modified|updated|submitted|requested|approved|reviewed|assigned|prepared|raised|entered|uploaded|edited|checked|verified|authori[sz]ed|signed|owned|posted|sent|written|reported|closed|rejected)(?:by|to)$/.test(n)) return ["NAME", true];   // Created By, Assigned To …
+  if (/^(?:approver|requester|requestor|reviewer|submitter|creator|editor|modifier|manager|supervisor|reporter|assignee|initiator|originator|checker|verifier|signatory|beneficiary|payee|payer|holder|cardholder|accountholder)$/.test(n)) return ["NAME", true];
+  if (/^nameof/.test(n)) return ["NAME", true];                  // "Name of applicant"
+  if (n.length > 4 && n.endsWith("name") && !NOT_PERSON.test(n.slice(0, -4))) return ["NAME", true];
   return null;
 }
 const SKIP_VALUE = /^(?:null|none|true|false|undefined|nil|n\/a|\[[A-Z_]+_\d+\]|\$\{.*\}|\{\{.*\}\}|<.*>|\*+|x+)$/i;
@@ -838,11 +859,18 @@ const DETECTORS = [
   ["CARD", /\b\d(?:[ -]?\d){12,18}\b/g, (m) => { const d = m.replace(/\D/g, ""); return /^[2-6]/.test(d) && (d.length >= 14 || /[ -]/.test(m)) && d.length <= 19 && luhn(d); }],
   ["IBAN", /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/g, (m) => { const c = m.replace(/ /g, ""); return c.length >= 15 && c.length <= 34 && ibanOk(c); }],
   ["SSN", /\b\d{3}-\d{2}-\d{4}\b/g, (m) => !/^(000|666|9)/.test(m)],
-  ["AADHAAR", /\b[2-9]\d{3} \d{4} \d{4}\b/g],
+  ["AADHAAR", /\b[2-9]\d{3}[ -]\d{4}[ -]\d{4}\b/g],                                                // 2345 6789 0123 / 2345-6789-0123
+  ["AADHAAR", /(?<=\b(?:aadhaar|aadhar|uid)\b[^\n\d]{0,20})[2-9]\d{3}[ -]?\d{4}[ -]?\d{4}\b/gi],         // any spacing, right after the word
+  ["AADHAAR", /\b[2-9]\d{11}\b/g, (m) => verhoeff(m)],                                                // 12 digits in a row: only if the checksum holds
   ["PAN", /\b[A-Z]{5}\d{4}[A-Z]\b/g],
   ["MAC", /\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b/g],
   ["IP", /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, (m) => m.split(".").every((x) => +x <= 255)],
   ["IP", /\b(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}\b|\b(?:[0-9A-Fa-f]{1,4}:){1,7}:(?:[0-9A-Fa-f]{1,4})?\b/g, (m) => /[a-fA-F]|::/.test(m) || m.split(":").length === 8],
+  ["NAME", /(?<=\b(?:Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Shri|Smt|Sri)\.?[ \t]+)[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){0,2}\b/g],     // Mr. John Smith
+  ["NAME", /(?<=(?:\b[Bb][Yy]|\bCc|\bBcc|\bAttn\.?)[ \t]*[:\-–—]*[ \t]+)(?:[A-Z][a-z]+|[A-Z]{2,})(?:[ \t]+(?:[A-Z][a-z]+|[A-Z]{2,})){1,2}\b/g,   // reviewed by Priya Sharma
+    (m) => !/^(?:The|This|That|Microsoft|Google|Amazon|Default|System|Admin|Default|Support|Team|Email|Mail)\b/.test(m)],
+  ["NAME", /(?<=\b(?:Dear|Hi|Hello|Hey|Regards|Sincerely|Cheers)\b,?[ \t]+)[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+)?\b/g,   // Dear John Smith
+    (m) => !/^(?:Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Shri|Smt|Sri|World|There|All|Team|Everyone|Everybody|Sir|Madam|User|Admin|Support|Again|Friend|Guys|Folks)\b/.test(m)],
   ["PHONE", /(?<![\w.])\+?\d[\d ().-]{8,17}\d(?![\w])/g, (m) => {
     const d = m.replace(/\D/g, "");
     if (d.length < 10 || d.length > 15) return false;
@@ -850,22 +878,74 @@ const DETECTORS = [
     return m.startsWith("+") || /[ ().-]/.test(m) || /^[6-9]\d{9}$/.test(d);   // bare 10 digits only as an Indian mobile (epoch seconds start with 1)
   }],
 ];
+// A table whose HEADER names sensitive columns ("Name,Phone,Aadhaar" / tab / | / ;): every cell under such a header is masked.
+function scanTable(text, claim) {
+  const lines = []; let pos = 0;
+  for (const l of text.split("\n")) { lines.push([pos, l]); pos += l.length + 1; }
+  const cellsOf = (line, d) => {            // [start, end) of each trimmed, unquoted cell
+    const out = []; let start = 0, q = false;
+    for (let i = 0; i <= line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') q = !q;
+      else if (i === line.length || (ch === d && !q)) {
+        let a = start, b = i;
+        while (a < b && /\s/.test(line[a])) a++;
+        while (b > a && /\s/.test(line[b - 1])) b--;
+        if (b - a >= 2 && line[a] === '"' && line[b - 1] === '"') { a++; b--; }
+        out.push([a, b]); start = i + 1;
+      }
+    }
+    return out;
+  };
+  for (let i = 0; i < lines.length - 1; i++) {
+    const [lp, line] = lines[i];
+    if (line.length > 2000 || line.length < 3) continue;
+    for (const d of [",", "\t", "|", ";"]) {
+      if (!line.includes(d)) continue;
+      const head = cellsOf(line, d);
+      if (head.length < 2) continue;
+      const names = head.map(([a, b]) => line.slice(a, b));
+      if (!names.every((x) => !x || /^[A-Za-z_][\w .\/()-]{0,40}$/.test(x))) continue;      // a header is words, not data
+      const cats = names.map((x) => (x ? keyCategory(x) : null));
+      if (!cats.some(Boolean)) continue;
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        const [rp, row] = lines[j];
+        if (!row.trim() || row.length > 5000) break;
+        const cells = cellsOf(row, d);
+        if (cells.length !== head.length) break;
+        cells.forEach(([a, b], k) => {
+          const v = row.slice(a, b);
+          if (cats[k] && v && !SKIP_VALUE.test(v) && !/^[-:\s]+$/.test(v)) claim(rp + a, rp + b, cats[k][0]);
+        });
+      }
+      i = j - 1;
+      break;
+    }
+  }
+}
 function scanSensitive(text, offset) {
   const taken = new Uint8Array(text.length), found = [];
   const free = (s, e) => { for (let i = s; i < e; i++) if (taken[i]) return false; return true; };
   const claim = (s, e, cat) => { if (e <= s || !free(s, e)) return; taken.fill(1, s, e); found.push({ s, value: text.slice(s, e), cat }); };
   for (const [cat, rx, ok] of DETECTORS.slice(0, 3)) for (const m of text.matchAll(rx)) if (!ok || ok(m[0])) claim(m.index, m.index + m[0].length, cat);
   // key = value pairs ("password": "x", PASSWORD=x, name: Jane) — the key decides what the value is
-  const KV = /(["']?)\b([A-Za-z_][\w.-]{0,40})\1[ \t]*[:=][ \t]*(?:"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|([^\s,;&"'}\])][^\n,;&"'}\]]*))/g;
-  for (const m of text.matchAll(KV)) {
+  const KV = /(["']?)\b([A-Za-z_][\w.-]{0,40}(?:[ \t]+[A-Za-z_][\w.-]{0,40}){0,2})\1[ \t]*[:=][ \t]*(?:"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|([^\s,;&"'}\])][^\n,;&"'}\]]*))/g;
+  let m;
+  while ((m = KV.exec(text))) {
+    KV.lastIndex = m.index + m[0].search(/[:=]/) + 1;                 // keep looking right after the separator: a skipped or short value must not hide the next "key:"
     const kc = keyCategory(m[2]); if (!kc) continue;
     let val = m[3] ?? m[4] ?? m[5] ?? "";
-    if (m[5] != null) { val = kc[1] ? val.replace(/\s+$/, "") : val.split(/\s/)[0]; }
     val = val.replace(/^(?:bearer|basic)\s+/i, "");                  // Authorization: Bearer <token> — mask the token only
+    if (m[5] != null) {
+      val = kc[1] ? val.split(/ {2,}|\t|\s+(?=[A-Za-z_][\w.-]{0,40}[ \t]*[:=])/)[0].replace(/\s+$/, "") : val.split(/\s/)[0];   // a name may hold single spaces; stop at the next "key:"
+    }
     if (!val || val.length > 300 || SKIP_VALUE.test(val.trim())) continue;
     const at = m.index + m[0].lastIndexOf(val, m[0].length);
     claim(at, at + val.length, kc[0]);
+    KV.lastIndex = Math.max(KV.lastIndex, at + val.length);
   }
+  scanTable(text, claim);
   for (const [cat, rx, ok] of DETECTORS.slice(3)) for (const m of text.matchAll(rx)) if (!ok || ok(m[0])) claim(m.index, m.index + m[0].length, cat);
   const TOK = /\b[A-Za-z0-9_-]{32,}\b/g;                         // anything long and key-looking that nothing else claimed
   for (const m of text.matchAll(TOK)) {
@@ -892,15 +972,29 @@ function maskStatus() {
   if (r.error) maskInfo(r.error, true); else maskInfo(`${Object.keys(r.map).length.toLocaleString()} value(s) to mask`);
   return r;
 }
-function maskScan(addTo) {   // add every sensitive value in the scope that the mapping doesn't know yet
+function maskScan(addTo, extra) {   // add every sensitive value in the scope that the mapping doesn't know yet
   const text = view.state.sliceDoc(maskScope.from, maskScope.to), map = { ...addTo }, counters = {};
   for (const v of Object.values(map)) { const m = /^\[([A-Z_]+?)_(\d+)\]$/.exec(v); if (m) counters[m[1]] = Math.max(counters[m[1]] || 0, +m[2]); }
   const used = new Set(Object.values(map));
   let added = 0;
-  for (const f of scanSensitive(text)) {
+  const nameMask = {};
+  for (const [k, v] of Object.entries(map)) if (/^\[NAME_\d+\]$/.test(v)) nameMask[k.toLowerCase().replace(/\s+/g, " ")] = v;
+  const found = scanSensitive(text).concat(extra || []);
+  for (const f of found) {   // a name seen once: its other spellings (khushal pandey, KHUSHAL PANDEY) are the same person
+    if (f.cat !== "NAME" || f.value.length < 4) continue;
+    // other spellings of one person: any letter case for a full name (khushal pandey), but for a single word only ALL CAPS
+    // ("amber" the colour must not be masked because "Amber" is a name)
+    const multi = /\s/.test(f.value), pat = f.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rx = multi ? new RegExp("(?<![A-Za-z])" + pat.replace(/\s+/g, "\\s+") + "(?![A-Za-z])", "gi") : new RegExp("(?<![A-Za-z])" + pat.toUpperCase() + "(?![A-Za-z])", "g");
+    for (const m of text.matchAll(rx)) if (m[0] !== f.value && !found.some((o) => o.value === m[0])) found.push({ s: m.index, value: m[0], cat: "NAME", of: f.value });
+  }
+  for (const f of found) {
     if (f.value in map) continue;
+    const low = f.value.toLowerCase().replace(/\s+/g, " ");        // one person, one mask — whatever the letter case
+    if (f.cat === "NAME" && nameMask[low]) { map[f.value] = nameMask[low]; added++; continue; }
     let mask; do { counters[f.cat] = (counters[f.cat] || 0) + 1; mask = maskTpl(f.cat, counters[f.cat]); } while (used.has(mask));
     used.add(mask); map[f.value] = mask; added++;
+    if (f.cat === "NAME") nameMask[low] = mask;
   }
   return { map, added };
 }
@@ -943,6 +1037,76 @@ $("maskScan").onclick = () => {
   const { map, added } = maskScan(r.map);
   maskView.dispatch({ changes: { from: 0, to: maskView.state.doc.length, insert: JSON.stringify(map, null, 2) } });
   maskStatus(); $("maskInfo").textContent += added ? ` (${added} new)` : " (nothing new)";
+};
+// ---- Find names (AI): a BERT name-recognition model (bert-base-NER) run by transformers.js IN THE BROWSER. The files come from
+// this server (/ner/…, installed by scripts/get-ner-model.sh); nothing is fetched from the internet and no text leaves the page.
+let nerPipe = null, aiBusy = false;
+async function loadNer(say) {
+  if (nerPipe) return nerPipe;
+  nerPipe = (async () => {
+    let tf;
+    try { tf = await import("./ner/transformers.min.js"); }
+    catch (e) { throw new Error("The name model is not installed — run scripts/get-ner-model.sh, then restart rt-light."); }
+    const { pipeline, env } = tf;
+    env.allowRemoteModels = false; env.allowLocalModels = true; env.useBrowserCache = false;
+    env.localModelPath = new URL("./ner/models/", location.href).href;
+    env.backends.onnx.wasm.wasmPaths = new URL("./ner/", location.href).href;
+    env.backends.onnx.wasm.numThreads = 1;
+    say("Loading the name model (first time takes a few seconds)…");
+    return pipeline("token-classification", "Xenova/bert-base-NER", { dtype: "q8" });
+  })();
+  nerPipe.catch(() => { nerPipe = null; });
+  return nerPipe;
+}
+function nerChunks(text, size = 1000) {   // pieces ≤ size chars, cut at line ends / sentence ends / spaces
+  const out = []; let i = 0;
+  while (i < text.length) {
+    let j = Math.min(text.length, i + size);
+    if (j < text.length) { const cut = Math.max(text.lastIndexOf("\n", j), text.lastIndexOf(". ", j) + 1, text.lastIndexOf(" ", j)); if (cut > i + size / 2) j = cut; }
+    out.push(text.slice(i, j)); i = j;
+  }
+  return out;
+}
+async function aiNames(text, say) {   // → every spelling of every person's name found in `text`
+  const ner = await loadNer(say), cands = new Set(), chunks = nerChunks(text);
+  for (let c = 0; c < chunks.length; c++) {
+    say(`Finding names… ${Math.round((c / chunks.length) * 100)}%`);
+    await new Promise((r) => setTimeout(r));                              // let the page repaint between pieces
+    // every piece the model calls a person (even unsure ones: the end of a long name is often 0.4), kept as a name when the
+    // run is confident ON AVERAGE; the real spelling is then looked up in the text below
+    const toks = (await ner(chunks[c])).filter((t) => /PER$/.test(t.entity) && t.score >= 0.3).sort((a, b) => a.index - b.index);
+    let cur = null, last = -9, sum = 0, n = 0;
+    const flush = () => { if (cur && n && sum / n >= 0.6 && cur.replace(/[^\p{L}]/gu, "").length >= 3) cands.add(cur.trim()); cur = null; sum = 0; n = 0; };
+    for (const t of toks) {
+      if (t.index !== last + 1) flush();
+      cur = cur === null ? t.word : t.word.startsWith("##") ? cur + t.word.slice(2) : cur + " " + t.word;
+      last = t.index; sum += t.score; n++;
+    }
+    flush();
+  }
+  const found = new Set();   // the model gives the name as it tokenised it; find the real spelling(s) in the text (spaces, dots, hyphens may differ)
+  for (const cand of cands) {
+    if (keyCategory(cand)) continue;                                      // the model sometimes tags a field label ("Aadhaar", "Email", "Password") as a person
+    const letters = [...cand.replace(/[^\p{L}]/gu, "")].map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    if (letters.length > 60) continue;
+    const rx = new RegExp("(?<!\\p{L})" + letters.join("[\\s.'\u2019-]{0,2}") + "\\p{L}*", "gu");   // \\p{L}*: the model may stop a few letters short of the word
+    for (const m of text.matchAll(rx)) if (!keyCategory(m[0])) found.add(m[0]);   // …and not a label the look-up grew into (Aad → Aadhaar)
+  }
+  return [...found];
+}
+$("maskAI").onclick = async () => {
+  if (aiBusy) return;
+  const r = maskParse(maskView.state.doc.toString()); if (r.error) { maskStatus(); return; }
+  aiBusy = true; $("maskAI").disabled = true;
+  const say = (m) => maskInfo(m);
+  try {
+    const text = view.state.sliceDoc(maskScope.from, maskScope.to);
+    const names = await aiNames(text, say);
+    const { map, added } = maskScan(r.map, names.map((v, i) => ({ s: i, value: v, cat: "NAME" })));
+    maskView.dispatch({ changes: { from: 0, to: maskView.state.doc.length, insert: JSON.stringify(map, null, 2) } });
+    maskStatus(); $("maskInfo").textContent += added ? ` (${added} new, ${names.length} name spelling(s) found by AI)` : " (the AI found no new names)";
+  } catch (e) { maskInfo(String((e && e.message) || e), true); }
+  finally { aiBusy = false; $("maskAI").disabled = false; }
 };
 $("maskApply").onclick = () => {
   const r = maskStatus(); if (r.error) return;

@@ -28,6 +28,11 @@ from urllib.parse import quote, urlparse
 import httpx
 
 try:
+    from sharepoint_lab import tls
+except ImportError:  # flat import when run standalone
+    import tls
+
+try:
     from sharepoint_lab.auth import AuthError, TokenProvider
 except ImportError:  # flat import when run from this folder
     from auth import AuthError, TokenProvider
@@ -108,7 +113,7 @@ class Graph:
             token = await self.provider.token()
             hdrs = {"Authorization": f"Bearer {token}", "Accept": "application/json", **(headers or {})}
             try:
-                async with httpx.AsyncClient(timeout=TIMEOUT, transport=self.transport) as client:
+                async with httpx.AsyncClient(timeout=TIMEOUT, transport=self.transport, verify=tls.verify()) as client:
                     resp = await client.request(method, url, params=params, json=json, headers=hdrs)
             except httpx.HTTPError as exc:
                 if attempt < MAX_ATTEMPTS:

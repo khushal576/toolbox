@@ -23,6 +23,11 @@ from typing import Any, Awaitable, Callable, Optional
 
 import httpx
 
+try:
+    from sharepoint_lab import tls
+except ImportError:  # flat import when run standalone
+    import tls
+
 KIND = "sharepoint_connection"
 
 CLOUDS = {
@@ -115,7 +120,7 @@ def _explain(resp: httpx.Response, data: dict[str, Any]) -> AuthError:
 
 async def _post(url: str, form: dict[str, str], data: dict[str, Any], transport: Optional[httpx.AsyncBaseTransport]) -> httpx.Response:
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, transport=transport) as client:
+        async with httpx.AsyncClient(timeout=TIMEOUT, transport=transport, verify=tls.verify()) as client:
             return await client.post(url, data=form)
     except httpx.HTTPError as exc:
         raise AuthError(f"Could not reach Microsoft sign-in ({type(exc).__name__}).") from exc

@@ -20,6 +20,7 @@ ever sent to it.
 | Everything else (tabs, validation, formatters, line/regex tools, compare, persistence) | `ui/index.html` |
 | The bundle (CodeMirror 6 + lang-json/xml/html/python/sql + lint + merge + js-beautify + sql-formatter + ruff loader) and its entry file | `ui/vendor/editor-bundle.js`, `ui/vendor/entry.js` |
 | The Python formatter engine (ruff compiled to WebAssembly, fetched only on first Format of Python) | `ui/vendor/ruff_fmt_bg.wasm` |
+| The optional AI name model + transformers.js (served from `/models/ner`, installed by `scripts/get-ner-model.sh`) | `server.py` `/ner/…`, `../scripts/get-ner-model.sh` |
 
 ## Things that will bite you
 
@@ -47,8 +48,26 @@ ever sent to it.
   everything, one undo step. **Restore text** applies the JSON backwards (refused when two originals share a mask).
   Download / Load JSON move the mapping in and out; it is also remembered per tab for the session (`t.maskMap`), and
   **Scan** only ADDS entries (counters continue from the existing `[CAT_n]`). Heuristics are deliberately loose — cards
-  need Luhn, IBANs mod 97, bare 10-digit phones only as Indian mobiles — and names/addresses are found only through
-  their JSON/`key:` field; free text names are not detected (add them by hand).
+  need Luhn, IBANs mod 97, bare 10-digit phones only as Indian mobiles. **Aadhaar:** 4-4-4 groups with space or hyphen, any
+  spacing right after the word aadhaar/aadhar/uid, or 12 bare digits only when the Verhoeff checksum holds (an order id
+  of 12 digits is left alone — add it by hand if it is real). **Names/addresses/dates of birth** are found through their
+  field: the key may be several words ("Customer Name:", "Date of Birth:") and `keyCategory` knows longer names
+  (`applicant_name`, `aadhaar_number`, `mobile_no` … ; "…name" counts as a person unless the word before it is a thing —
+  `NOT_PERSON`: hostname, filename …), through the HEADER of a CSV / TSV / `|` / `;` table (`scanTable`: every cell under a
+  Name/Phone/Aadhaar … column), after "Mr./Dr./Shri …", "Dear/Hi/Hello …" or "by / Cc:" ("reviewed by Priya Sharma"), and under
+  person fields such as Created By / Submitted By / Assigned To / Approver. A name found once is also masked in its other
+  letter cases (`khushal pandey`, `KHUSHAL PANDEY`) with the SAME mask (`maskScan`, `nameMask`). A name that appears only inside
+  running text and never after a label is not found by the rules — use **🧠 Find names (AI)** in the Mask dialog.
+  **Find names (AI)** (`aiNames`/`loadNer`): `bert-base-NER` (quantised, 105 MB) run by transformers.js 3.5.2 (onnxruntime-web,
+  WebAssembly, 1 thread) IN THE BROWSER, lazily on first click; the text is cut into ≤1000-char pieces, the model's person
+  tokens are grouped into names (a run counts when its average score ≥ 0.6 — the tail of a long name is often 0.4), and each
+  name's real spelling is looked up in the text (`\p{L}*` after it, because the model may stop a few letters short). Names it
+  finds are fed to `maskScan` like any detector hit (same case-variant / one-mask-per-person logic). It misses lowercase / ALL-CAPS
+  names on its own (those come from the case-variant pass once the proper spelling is found). **Files are NOT in git or the
+  image:** `scripts/get-ner-model.sh` downloads them into `./models/ner` (127 MB, git-ignored), compose mounts `./models` at
+  `/models` in `rt-light`, and `server.py` serves `/ner/<path>` from there (path-checked, 404 with the install hint when
+  missing). Re-run the script after a fresh clone, then `docker-compose up -d --force-recreate rt-light`. Speed ≈ 0.1–0.3 s
+  per 1000 characters after the model has loaded (~1–3 s).
 - **Visualize** (`👁`, Ctrl+Shift+P, HTML tabs only): a live (300 ms debounce) `srcdoc` iframe beside the editor. The
   sandbox is EMPTY by default; "run scripts" adds `allow-scripts` only — never `allow-same-origin` (with scripts it would
   let a pasted page reach the Toolbox origin), and there is deliberately no "open in new tab" (a blob URL would be

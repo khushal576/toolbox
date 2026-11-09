@@ -8,14 +8,19 @@ regex search, validation, formatting, sorting, comparing — runs in the browser
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
 app = FastAPI(title="Text Editor", description="Client-side text editor: regex, multi-cursor, validate/format, compare.")
 
 _UI = Path(__file__).resolve().parent / "ui"
+# the optional name-finding model for Mask → "Find names (AI)": downloaded by scripts/get-ner-model.sh into ./models/ner,
+# mounted read-only at /models in rt-light. Served from here so the page never has to reach the internet.
+_NER = Path(os.environ.get("TOOLBOX_MODELS_DIR", "/models")) / "ner"
+_NER_TYPES = {".js": "text/javascript", ".mjs": "text/javascript", ".wasm": "application/wasm", ".json": "application/json"}
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -37,3 +42,14 @@ async def serve_ruff_wasm() -> FileResponse:
     application/wasm so the browser can compile it while it downloads; the page asks for it with ?v=<version>."""
     return FileResponse(_UI / "vendor" / "ruff_fmt_bg.wasm", media_type="application/wasm",
                         headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.get("/ner/{path:path}", include_in_schema=False)
+async def serve_ner(path: str) -> FileResponse:
+    """transformers.js, its WebAssembly runtime and the name model (static files; the page loads them on demand)."""
+    base = _NER.resolve()
+    f = (base / path).resolve()
+    if base not in f.parents or not f.is_file():
+        raise HTTPException(404, "The name model is not installed — run scripts/get-ner-model.sh, then restart rt-light.")
+    return FileResponse(f, media_type=_NER_TYPES.get(f.suffix.lower(), "application/octet-stream"),
+                        headers={"Cache-Control": "public, max-age=86400"})
