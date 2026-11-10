@@ -44,7 +44,7 @@ Work happens in numbered sessions ("Roadmap: do session `<ID>`"): do **only** th
 ## 3. Where to look (task → file)
 | If you are… | Read |
 |---|---|
-| Adding a tool | `docs/architecture/adding-a-tool.md` (checklist, §4 below is the short form) |
+| Adding or removing a tool | §4 below (`scripts/new_tool.py`, `scripts/remove_tool.py`); full checklist `docs/architecture/adding-a-tool.md`; the template `tools/_template/` |
 | Changing how the site is wired: `main.py`, manifests, lazy loading, on/off switches, structure | `docs/architecture/platform-overview.md` |
 | Touching the gateway, runtimes/images, on-demand start/stop, autoscaling, Status page, workspace UI, custom apps, installable app | `docs/architecture/gateway-and-runtimes.md` |
 | Touching Redis/Postgres/S3, the Vault, `SqlStore`, background jobs, backups | `docs/architecture/state-jobs-vault.md` |
@@ -59,14 +59,16 @@ Work happens in numbered sessions ("Roadmap: do session `<ID>`"): do **only** th
 | Measuring memory/speed | `tools/bench/baseline.py`, `docs/roadmap/measure-*.md` |
 | Colors for a new page | `theme-tokens.css` (copy the six `:root` variables; never linked) |
 
-## 4. Adding a tool — short form (full checklist: `docs/architecture/adding-a-tool.md`)
-1. New top-level folder with a uniquely named package exposing an ASGI `app`; relative-path frontend; copy the six `:root` colors from `theme-tokens.css`.
-2. `<tool>/manifest.yaml` (name, title, description, icon, category, `kind: python`, `entry: <pkg>.server:app`, runtime, tier, state, `vault:` scopes, order).
-   If the Dockerfile copies file-by-file, also copy the manifest (a unit test checks).
-3. Add it to `tests/smoke/test_api.py` (`API_CHECKS` or `PAGE_ONLY`); dependencies into `requirements.txt` + `requirements/<runtime>.txt`.
-4. Write `<tool>/CLAUDE.md` (short) and `<tool>/KNOWLEDGE_MAP.md`, add a row to the root `KNOWLEDGE_MAP.md` index.
-5. Rebuild (`docker compose up -d --build`), run the tests (§6), tick the roadmap session.
-Prefer **client-side (tier 1)** designs when a tool can run in the browser.
+## 4. Add a tool in 5 steps (full checklist and the reasons: `docs/architecture/adding-a-tool.md`)
+1. **Scaffold it:** `python3 scripts/new_tool.py my-tool "My Tool" --icon 🧩 --description "What it does"` (add `--dry-run` first if unsure; `--runtime data` only for pandas / DuckDB / DB drivers).
+   It copies `tools/_template/`, fills in the names, and makes the edits people forget: the Dockerfile `COPY` lines + package `__init__`, the smoke `API_CHECKS` line, `tests/smoke/test_my_tool.py`, the `KNOWLEDGE_MAP.md` index row. It is all-or-nothing and refuses names that collide with Toolbox / stdlib packages.
+2. **Build it:** edit `my-tool/server.py` and `ui/index.html` — relative `fetch` paths, state outside the process (`core/state/`), secrets only through `vault_store.scoped` with the kinds declared in `manifest.yaml`. Prefer tier 1 (browser-only) designs. Never edit `main.py`; never reuse the names `core` / `api`.
+3. **Packages:** a new Python package goes into `requirements.txt` AND `requirements/<runtime>.txt`, then `./download-wheels.sh`.
+4. **Document it:** fill in the stubs `my-tool/CLAUDE.md` and `my-tool/KNOWLEDGE_MAP.md` so a future session can work from them alone.
+5. **Verify:** `docker compose up -d --build`, `python3 -m pytest tests/unit -q`, `scripts/smoke.sh`; tick the roadmap session and add a Handoff line.
+**Removing a tool:** `python3 scripts/remove_tool.py my-tool` is a **dry run** (prints what it would delete, what blocks it, what data it leaves). `--apply` does it (plus `--confirm my-tool` when the tool is enabled / unknown / has data;
+`--remove-volumes` also deletes its Docker volume). It undoes exactly what `new_tool.py` adds, refuses while other code still uses the tool, and never touches Postgres / Vault / S3 data.
+(A tool that is only a static page or a link needs no code at all: drop it in `plugins/`, see `plugins/README.md`. Your own Python plugin without rebuilding: P1, `TOOLBOX_TRUSTED_PLUGINS=1`.)
 
 ## 5. Stateful tools and workers — short form (full text and history: `docs/architecture/stateful-tools-and-workers.md`)
 - The gateway runs `TOOLBOX_WEB_WORKERS` processes (1 on this machine since O1; image default 1, compose default 4); every stateful tool already keeps its state outside the process.

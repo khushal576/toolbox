@@ -193,6 +193,7 @@ identical; a secret decrypted with the restored key).
 | `TOOLBOX_DATA_WORKERS` | 2 (this machine: 1 since O1) | Processes of the data tools container |
 | `TOOLBOX_WORKER_SCALING` | `1:3` | Min:max background-job workers |
 | `TOOLBOX_IDLE_TIMEOUT_S` | (manifests: 900) | Minutes-unused before LaTeX/SSH/pgtools/Notebook sleep, in seconds (overrides Notebook's own 30 min too) |
+| `TOOLBOX_TRUSTED_PLUGINS` | 0 (off) | Allow your own **Python** plugins in `plugins/` (`1` = on). They are trusted code with full access (database, secrets) — see `plugins/README.md` before turning it on. |
 | `TOOLBOX_SLOW_MS` | 2000 | When a request counts as "slow" on the Status page |
 | `TOOLBOX_DATA_DIR` | `~/toolbox-data` | The folder Vault Data → Load files can read from (shared read-only) |
 | `TOOLBOX_DATABASE_URL` | bundled Postgres | Use your own Postgres instead (a dedicated `toolbox` database) |
@@ -267,4 +268,13 @@ Claude can use DataFrame Studio's cleaning steps (fill empty values, change type
 3. Claude then does a **dry-run** (shows the plan: target table, rows, columns, what it would replace) and, if that is what you want, **confirms** (a one-time code, valid 10 minutes, only for exactly that plan — it stops working if the source table changed).
 4. The new table is read back and checked. The **source table is never changed**; *Replace* keeps the old table as `<name>_backup_<time>`. Every step is in the audit timeline and stored in the new table's history.
 5. Limits: 200,000 rows (raise `MCP_TRANSFORM_MAX_ROWS` in `.env`), 30 steps. Tables with exact **decimal** columns need a *Change type* step before arithmetic; converting decimals to numbers can round them (Claude is told, and the result says so).
+
+## Remove a tool you no longer want (roadmap P3)
+
+Just switching a tool **off** in Settings is reversible and enough in most cases (it then uses no memory). To remove it for good:
+1. `python3 scripts/remove_tool.py <tool>` — a **dry run**: it lists what it would delete, **what still uses the tool** (it refuses while other tools import it or call its URL), and the data it would leave behind.
+2. If that looks right: `python3 scripts/remove_tool.py <tool> --apply` (add `--confirm <tool>` — typing the name — when the tool is enabled, when Toolbox is not running, or when it has stored data).
+3. Its saved data is **never deleted automatically**: Postgres tables, Vault entries and S3 files stay (the plan prints how to drop them yourself if you want). Its Docker volume is kept unless you add `--remove-volumes` (the files in it are then gone for good).
+4. Then `docker compose up -d --build` so the image no longer contains it. Mentions of the tool in other docs are listed for you to tidy up; they are not rewritten.
+The core tools (Vault, DataDiff) can't be removed with the script.
 

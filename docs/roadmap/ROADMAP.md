@@ -101,9 +101,9 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | K4 | MCP: owner grants (write/edit only when the owner says), AI activity page (live timeline), kill switch (+ owner PIN) | M | K2 | ☑ (2026-11-10) |
 | K5 | MCP: SSH debugging tools (off by default via owner grant, read-only command allow-list, every command tracked) | M | K4 | ☑ (2026-11-10) |
 | K6 | MCP: DataFrame Studio tools (cleaning steps/formulas with dry-run preview, save as table) | M | K4 | ☑ (2026-11-10) |
-| P1 | Plugins: trusted Python plugins from `plugins/` behind `TOOLBOX_TRUSTED_PLUGINS=1` | M | – | ☐ |
-| P2 | Plugins: new-tool template `tools/_template/` + "add a tool in 5 steps" | S | P1 | ☐ |
-| P3 | Plugins: script to remove a tool cleanly | S | P2 | ☐ |
+| P1 | Plugins: trusted Python plugins from `plugins/` behind `TOOLBOX_TRUSTED_PLUGINS=1` | M | – | ☑ (2026-11-10) |
+| P2 | Plugins: new-tool template `tools/_template/` + "add a tool in 5 steps" | S | P1 | ☑ (2026-11-10) |
+| P3 | Plugins: script to remove a tool cleanly | S | P2 | ☑ (2026-11-10) |
 | O2 | Optimization: replace SeaweedFS with local-disk storage or Garage behind `core/state/objects` | M | O1 | ⏸ deferred (SeaweedFS is only ~50–75 MiB; not worth the migration risk) |
 | O4 | Optimization: Mini Sheet — list what is missing, then adopt a grid library or remove the tool | M | O1 | ☐ |
 
@@ -470,7 +470,7 @@ tick the status, add to the Handoff log, commit/push only when the owner says so
 
 ### Plugin sessions
 
-#### P1 Trusted Python plugins (M) — after: – · ☐
+#### P1 Trusted Python plugins (M) — after: – · ☑ 2026-11-10
 - Today the loader **refuses** `kind: python` in `plugins/` (A5). Allow it only when `TOOLBOX_TRUSTED_PLUGINS=1`
   (**default off**; set in `.env`, passed to the gateway and the runtimes that mount `plugins/` in compose).
 - Update the loader's refusal message (it must say how to enable it, and that python plugins are trusted code with the same
@@ -478,20 +478,34 @@ tick the status, add to the Handoff log, commit/push only when the owner says so
 - Unit test for **both modes**: flag off → python plugin skipped with the new message; flag on → discovered and mountable;
   static/external unaffected in both.
 - **Done when**: both tests pass, docs match the loader, nothing changes for anyone who does not set the flag.
+- **Done** (2026-11-10): `core_plugins/loader.py` (`trusted_plugins_enabled`, `extra_dir_kinds_for`, `_check_trusted_python`, new refusal message), `main.py` (appends `plugins/` to `sys.path` only when on; `trusted_plugins` in `/api/workspace/status`),
+  compose (flag passed to `toolbox` / `rt-light` / `rt-data` with default `0`; `./plugins` mounted read-only into exactly those three), sample `plugins/examples/hello_python/` (in `examples/` so a default install logs no refusal), docs (plugin-manifest.md,
+  plugins/README.md, runbook, KNOWLEDGE_MAP). Rules when ON: folder name = import name (lowercase identifier, no shadowing of Toolbox / stdlib packages), `entry` starts with it, runtime `light` or `data` only, no `singleton`.
+  Tests: `tests/unit/test_trusted_plugins.py` (both modes + every rule + the sample + the compose wiring, 56 cases). Verified LIVE: OFF → refused with the new message; ON → plugin loaded, switched on in Settings, served through the gateway by rt-light, page JS fine in headless Chromium; `.env` / `workspace.yaml` restored afterwards.
+  **Important correction found on the way:** every runtime (incl. `light`) receives `TOOLBOX_VAULT_KEY` via the shared state env, so a trusted plugin can read the saved secrets in either runtime — the docs and the refusal message say so.
 
-#### P2 New-tool template (S) — after: P1 · ☐
+#### P2 New-tool template (S) — after: P1 · ☑ 2026-11-10
 - `tools/_template/`: `manifest.yaml`, `server.py` (minimal FastAPI `app`, relative-path page), `CLAUDE.md`, and a smoke-test
   skeleton (the `API_CHECKS` / `PAGE_ONLY` entry to copy). Placeholders are obvious (`__NAME__`), and the template is
   **never discovered as a tool** (underscore folder, `enabled_by_default: false`, or skipped by the loader — a unit test proves it).
 - Root `CLAUDE.md`: a short **"add a tool in 5 steps"** section pointing at the template (the long 10-step checklist stays as the reference).
 - **Done when**: copying the template, renaming it and running the unit + smoke tests gives a working empty tool.
+- **Done** (2026-11-10): `tools/_template/` (manifest, server, ui, CLAUDE.md, KNOWLEDGE_MAP.md, smoke test skeleton, README — placeholders `__TOOL_*__`, invalid on purpose so a stray copy can never mount) and, beyond the plan, `scripts/new_tool.py`
+  (copy + rename + the Dockerfile `COPY`/`touch` lines, smoke `API_CHECKS` line, smoke test file, index row; all-or-nothing with rollback; `--dry-run`; escapes titles per file type; refuses colliding names). A Dockerfile marker line
+  (`# >>> scripts/new_tool.py …`) is where new COPY lines go — keep it. Root `CLAUDE.md` §4 is now "Add a tool in 5 steps". Tests: `tests/unit/test_new_tool_template.py` (48). Verified LIVE: scaffolded `demo-live` in the real repo with zero edits → unit 893 pass,
+  rebuilt, listed on the home page, page/health/echo answered through the gateway, smoke 103 passed; then removed and the three edited files restored byte for byte (P3 will automate that removal). Bugs found by the tests: trailing-hyphen names, a title with a double quote broke the generated `server.py`.
 
-#### P3 Remove a tool cleanly (S) — after: P2 · ☐
+#### P3 Remove a tool cleanly (S) — after: P2 · ☑ 2026-11-10
 - Script (e.g. `scripts/remove-tool.sh <name>`): removes the tool folder, its Docker volume(s), its `docs/runbook.md` /
   `CLAUDE.md` mentions, its `KNOWLEDGE_MAP.md` entry (per-tool file after O3), its Dockerfile `COPY` lines, and its smoke entry.
 - **Dry-run by default** (lists what it would delete), deletes only with an explicit flag, refuses while the tool is enabled
   or has data without a typed confirmation; never touches Vault / Postgres data without asking.
 - **Done when**: adding a tool from the template (P2) and removing it with the script leaves `git status` clean and tests green.
+- **Done** (2026-11-10): `scripts/remove_tool.py` (named with an underscore like `new_tool.py`; the roadmap said `remove-tool.sh`). Dry run by default: plan with WILL DELETE/EDIT, BLOCKERS, LEFT IN PLACE, REVIEW BY HAND. `--apply` (+ `--confirm <name>` when enabled / unknown / has data),
+  `--remove-volumes` (only with the confirmation), `--ignore-references`. Reverses exactly what `new_tool.py` adds, plus compose volume mounts and the tool's own tests; refuses while other code imports the package / calls `/tools/<name>/` / lists it in `depends_on`;
+  hard-protects `vault` and `datadiff-pro`; never touches Postgres, Vault, S3 or workspace.yaml (lists what stays and prints, but never runs, `DROP SCHEMA …`); all-or-nothing with rollback; custom apps in `plugins/` = folder delete only.
+  Tests: `tests/unit/test_remove_tool.py` (27, incl. round trips, confirmation matrix, blockers, volumes with a mocked docker, rollback, a dry run on every real tool). **Verified on the real repo:** scaffold → dry run → apply → content hash of every changed/untracked file identical to before; unit suite green.
+  Limits: prose in docs is listed, not rewritten; tests whose names merely share the tool's prefix are listed in the plan so you can see them before `--apply`; not tested against a tool with file-by-file Dockerfile COPYs whose comments sit above the lines (those comments stay and are for you to tidy).
 
 ### Optimization sessions
 
@@ -619,6 +633,9 @@ tick the status, add to the Handoff log, commit/push only when the owner says so
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
 
+- 2026-11-10 – **P3 done (NOT committed).** `scripts/remove_tool.py` — the P2/P3 pair is complete (scaffold ↔ remove, round trip proven byte-identical on the real repo). **Roadmap left: O4 (Mini Sheet decision, needs the owner's list); O2 stays deferred.** P1+P2+P3 are uncommitted.
+- 2026-11-10 – **P2 done (NOT committed).** `tools/_template/` + `scripts/new_tool.py` + root CLAUDE.md "add a tool in 5 steps"; live-verified with a real scaffolded tool, then removed. Gotcha: in zsh a loop variable named `path` overwrites PATH. **Next: P3 (remove-tool script — reverse exactly what new_tool.py adds: folder, Dockerfile lines, smoke line + file, index row, volume).**
+- 2026-11-10 – **P1 done (NOT committed).** Trusted Python plugins behind `TOOLBOX_TRUSTED_PLUGINS=1` (default off), live-verified in both modes, see P1 above. Also: MCP unit tests no longer write `data/mcp_server/` into the repo (autouse isolation + .gitignore). **Next: P2 (new-tool template), P3 (remove-tool script).**
 - 2026-11-10 – **K6 done (NOT committed) — the K series (K1–K6) is complete.** `table_transform` / `transform_steps`: DataFrame Studio's own steps with preview, owner-granted + confirm-coded saves, backup on replace, read-back. Gotcha found by the e2e test: never name a response field `*token*` (the redactor blanks it). Open from the ADR: first write tool after K3 was answered by K6 (table save); `load_file`, SSH writes and database writes are NOT built.
 - 2026-11-10 – **K5 done (NOT committed).** SSH debugging for the AI: grant-gated, read-only allow-list, tracked; live-tested on a real OpenSSH server (see K5 above + ADR K5 section + runbook). Gotcha found live: `exec` channel close doesn't stop the remote command → pty. **Next: K6 (DataFrame Studio tools).**
 - 2026-11-10 – **K4 done (NOT committed).** AI Access page + owner PIN + grants + kill switch (see K4 above, ADR K4 section, runbook). New tool folder `ai-access/` (manifest order 155, runtime data), `mcp_server/control.py`. Live DB test data removed. **Next: K5 (SSH debugging) then K6.**

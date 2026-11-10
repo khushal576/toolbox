@@ -5,6 +5,14 @@
 
 ## Adding a new tool
 
+> **Since roadmap P2 most of the mechanical steps below are automated:** `python3 scripts/new_tool.py <name> "<Title>"` creates the folder from `tools/_template/`
+> (steps 1, 4, 5, 9 below: package name, manifest, relative-path page, colours), adds the Dockerfile `COPY`/`touch` lines (step 10's build wiring), the smoke
+> `API_CHECKS` line (step 6) and the `KNOWLEDGE_MAP.md` index row (step 8). You still do steps 2–3 and 7 yourself (the real code, colours if you want them different,
+> dependencies) and write the tool's `CLAUDE.md`. The list below stays as the reference for WHY each step exists.
+>
+> **Removing a tool (roadmap P3):** `python3 scripts/remove_tool.py <name>` (dry run by default) reverses this list: folder, Dockerfile `COPY`/`touch`, smoke entries and tests, index row, compose volume mounts. It never touches data in
+> Postgres / the Vault / S3 (it lists what stays), deletes a Docker volume only with `--remove-volumes --confirm <name>`, and refuses while other code still imports the tool or calls `/tools/<name>/`.
+
 (Followed twice already — Encode/Decode and Subnet Calculator — this is the
 tested checklist, not a guess.)
 
