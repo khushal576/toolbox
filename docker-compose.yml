@@ -68,6 +68,8 @@ services:
     environment:
       <<: *state-env
       TOOLBOX_PLUGINS_DIR: /app/plugins
+      # roadmap P1: allow `kind: python` plugins in plugins/ (default OFF — trusted code, see plugins/README.md)
+      TOOLBOX_TRUSTED_PLUGINS: ${TOOLBOX_TRUSTED_PLUGINS:-0}
       TOOLBOX_WEB_WORKERS: ${TOOLBOX_WEB_WORKERS:-4}
       # where each manifest `runtime:` is served (roadmap C2); singletons separately (roadmap B9)
       TOOLBOX_RUNTIME_URLS: light=http://rt-light:8080,data=http://rt-data:8080,pgtools=http://rt-pgtools:8080,ssh=http://rt-ssh:8080,notebook=http://rt-notebook:8080,latex=http://rt-latex:8080,datadiff=http://rt-datadiff:8080
@@ -132,8 +134,13 @@ services:
     <<: *tool-service
     build: {context: ., target: light}
     image: toolbox-rt-light
-    environment: *state-env
+    environment:
+      <<: *state-env
+      # roadmap P1: custom Python plugins (trusted code: they can read the DB and the Vault key) run in `light` or `data` only — the only runtimes that mount plugins/
+      TOOLBOX_PLUGINS_DIR: /app/plugins
+      TOOLBOX_TRUSTED_PLUGINS: ${TOOLBOX_TRUSTED_PLUGINS:-0}
     volumes:
+      - ./plugins:/app/plugins:ro
       - workspace_data:/app/data/workspace:ro
       # optional AI name model for the Text Editor's Mask (scripts/get-ner-model.sh downloads it; git-ignored)
       - ./models:/models:ro
@@ -146,7 +153,11 @@ services:
       <<: *state-env
       # 2 processes: DataDiff/pandas work is CPU-bound; every tool here keeps its state outside the process
       TOOLBOX_WEB_WORKERS: ${TOOLBOX_DATA_WORKERS:-2}
+      # roadmap P1 (see rt-light): trusted custom Python plugins; choose `data` only if the plugin needs pandas / DuckDB (every runtime holds the Vault key)
+      TOOLBOX_PLUGINS_DIR: /app/plugins
+      TOOLBOX_TRUSTED_PLUGINS: ${TOOLBOX_TRUSTED_PLUGINS:-0}
     volumes:
+      - ./plugins:/app/plugins:ro
       - workspace_data:/app/data/workspace:ro
       # legacy files (one-time migration sources, B6/B7 — already migrated here; harmless afterwards)
       - vault_data:/app/data/vault

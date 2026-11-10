@@ -1,0 +1,17 @@
+# SAMPLE trusted Python plugin (roadmap P1). To try it: copy THIS folder to plugins/hello_python/ , set TOOLBOX_TRUSTED_PLUGINS=1 in .env,
+# run `docker compose up -d`, then switch "Hello (Python)" on in Settings. It lives in examples/ on purpose: a folder here is never scanned.
+# Rules for a Python plugin in plugins/: the FOLDER name is the import name (plain lowercase identifier), `entry` starts with it,
+# runtime must be `light` (or `data` if you need pandas/DuckDB). It is trusted code: it can read the database and the Vault key.
+schema_version: 1
+name: hello-python
+title: Hello (Python)
+description: Sample trusted Python plugin — shows which runtime serves it
+icon: 🐍
+category: tool
+kind: python
+entry: hello_python.server:app
+runtime: light
+tier: 2
+state: []
+order: 901
+enabled_by_default: false

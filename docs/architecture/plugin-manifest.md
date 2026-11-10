@@ -82,9 +82,18 @@ Rules checked by the model:
 ## Custom apps (`plugins/`, roadmap A5)
 - `main.py` also scans `$TOOLBOX_PLUGINS_DIR` (compose: `./plugins` bind-mounted read-only at `/app/plugins`).
   New apps there need a restart, not an image rebuild. How-to: `plugins/README.md`.
-- Only `kind: static` and `kind: external` are accepted there (`core_plugins/loader.py` `EXTRA_DIR_KINDS`); a
-  `python`/`service` manifest in a custom-app folder is rejected with an error, because it would run with full
-  access inside the container (Vault included).
+- Only `kind: static` and `kind: external` are accepted there **by default** (`core_plugins/loader.py` `EXTRA_DIR_KINDS`); a
+  `python` manifest in a custom-app folder is rejected with an error that says how to enable it, and a `service` manifest is
+  always rejected, because it would run with full access inside the container (database, Redis, S3 and the Vault key).
+- **Trusted Python plugins (roadmap P1).** With `TOOLBOX_TRUSTED_PLUGINS=1` (set in `.env`, then `docker compose up -d`; **default off**;
+  only `1/true/yes/on` count) a `kind: python` plugin may live in `plugins/`. It is trusted code — it can read everything the runtime can,
+  including the Vault key — so the loader adds rules: (1) the **folder name is the import name**: a plain lowercase identifier, not starting with
+  `_`, and not the name of a Toolbox or standard-library package; (2) `entry` must start with the folder name (`my_tool.server:app` in
+  `plugins/my_tool/`); (3) `runtime` must be `light` (or `data` if it needs pandas/DuckDB) — the only runtimes that mount `plugins/`
+  (compose mounts it read-only into `toolbox`, `rt-light` and `rt-data` only); (4) no `singleton`. `main.py` appends `plugins/` to `sys.path`
+  (appended, so Toolbox's own packages always win) only when the flag is on. Each accepted plugin logs a "trusted code" warning at start,
+  and `GET /api/workspace/status` shows `trusted_plugins`. A starter lives in `plugins/examples/hello_python/` (copy it up one level).
+  Built-in tools are not subject to these rules. Tests: `tests/unit/test_trusted_plugins.py`.
 - `static` → `StaticApp` (`core_plugins/lazy.py`): serves the entry for `/` and other files inside the folder only
   (no `..`, no hidden files, never `manifest.yaml`, GET/HEAD only), with
   `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads` — no

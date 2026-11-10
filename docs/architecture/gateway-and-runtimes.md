@@ -18,7 +18,7 @@
 - **Custom apps (roadmap A5):** `plugins/` (bind-mounted read-only at
   `/app/plugins`, `TOOLBOX_PLUGINS_DIR`) holds `kind: static` / `kind:
   external` plugins — added with a restart, no rebuild (`plugins/README.md`).
-  Python plugins are **refused** there by the loader. Static apps are served
+  Python plugins are **refused** there by the loader unless `TOOLBOX_TRUSTED_PLUGINS=1` (roadmap P1, default off; see `plugin-manifest.md`). Static apps are served
   sandboxed (CSP `sandbox` without `allow-same-origin`): their JS runs but
   cannot call Toolbox APIs/Vault. The two samples ship `enabled_by_default:
   false`.

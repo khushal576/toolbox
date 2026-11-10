@@ -45,6 +45,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,7 @@ from pydantic import BaseModel
 from core_plugins import (DisabledApp, ExternalApp, LazyApp, ProxyApp, Slot, StaticApp, default_path, discover,
                           load_workspace)
 from core_plugins import metrics
+from core_plugins.loader import trusted_plugins_enabled
 from core_plugins.autoscale import ScaledService, scaled_runtimes
 from core_plugins.balancer import Balancer
 from core_plugins.supervisor import RuntimeSupervisor, Supervisor, on_demand_runtimes
@@ -87,6 +89,10 @@ if ROLE == "runtime" and RUNTIME not in ("light", "data", "pgtools", "latex", "s
 # Custom apps (roadmap A5): folders with a manifest.yaml of kind static/external, bind-mounted in compose so a new
 # app needs no image rebuild. Python plugins are refused there (see core_plugins/loader.py EXTRA_DIR_KINDS).
 _PLUGINS_DIR = Path(os.environ.get("TOOLBOX_PLUGINS_DIR") or _REPO / "plugins")
+# Roadmap P1: with TOOLBOX_TRUSTED_PLUGINS=1 a `kind: python` plugin may live in plugins/. It is imported by its folder name, so the folder is put
+# on the import path (APPENDED: Toolbox's own packages always win; the loader also refuses names that would shadow them). Default OFF.
+if trusted_plugins_enabled() and _PLUGINS_DIR.is_dir() and str(_PLUGINS_DIR) not in sys.path:
+    sys.path.append(str(_PLUGINS_DIR))
 _registry = discover(_REPO, extra_dirs=[_PLUGINS_DIR] if _PLUGINS_DIR.is_dir() else [])
 for _err in _registry.errors:
     logger.error("Plugin manifest problem — plugin skipped: %s", _err)
@@ -485,7 +491,8 @@ async def workspace_status() -> dict[str, Any]:
     for p in plugins:
         counts[p["state"]] = counts.get(p["state"], 0) + 1
     return {"plugins": plugins, "counts": counts, "workspace_file": str(_workspace.path),
-            "manifest_errors": _registry.errors, "workspace_errors": _workspace.errors}
+            "manifest_errors": _registry.errors, "workspace_errors": _workspace.errors,
+            "trusted_plugins": trusted_plugins_enabled()}
 
 
 class _ToggleBody(BaseModel):
