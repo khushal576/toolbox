@@ -1,0 +1,19 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# TEMPLATE (roadmap P2): not a tool. `python3 scripts/new_tool.py <name> "<Title>"` copies this folder to <repo>/<name>/ and fills the __TOOL_*__ placeholders.
+# (The placeholders are not valid values on purpose, so even a stray copy of this file can never be mounted as a tool.)
+schema_version: 1
+name: __TOOL_NAME__
+title: __TOOL_TITLE__
+description: __TOOL_DESCRIPTION__
+icon: __TOOL_ICON__
+category: tool                    # `learn` cards stay hidden until the home page's "Show learning tools" toggle
+kind: python
+entry: __TOOL_PACKAGE__.server:app
+runtime: __TOOL_RUNTIME__         # light = no heavy libraries; data = pandas / DuckDB / DB drivers (see requirements/<runtime>.txt)
+tier: 2                           # 1 = runs in the browser only · 2 light Python · 3 data-heavy · 4 special image
+state: []                         # [] = nothing kept on the server. Anything kept between requests goes to core/state (Redis / Postgres / S3), never process memory
+depends_on: []
+requires: []
+order: __TOOL_ORDER__             # display order (built-in tools use 10–200)
+enabled_by_default: true
+# vault: {read: [postgres_connection]}   # only if the server code needs saved secrets: list the kinds, nothing more

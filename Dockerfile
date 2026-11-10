@@ -206,6 +206,7 @@ COPY latex-pdf/server.py ./latex_pdf/server.py
 COPY latex-pdf/manifest.yaml ./latex_pdf/manifest.yaml
 COPY latex-pdf/ui/       ./latex_pdf/ui/
 
+# >>> scripts/new_tool.py adds new tools' COPY lines ABOVE this marker (roadmap P2); scripts/remove_tool.py (P3) removes them again. Keep it.
 # Plugin model + discovery (roadmap A1/A2). main.py imports it at startup and
 # builds the home page and mounts from every /app/*/manifest.yaml (whole-folder
 # copies above bring their manifest along; file-by-file copies list it).

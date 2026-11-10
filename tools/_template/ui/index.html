@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>__TOOL_TITLE__</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  /* the six canonical colours — copied verbatim from theme-tokens.css (never linked) */
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+    --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --ok-text: #15803d; --err-text: #b91c1c;
+  }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 24px 20px 60px; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 0.85rem; margin: 2px 0 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  input { font: inherit; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; width: 100%; max-width: 360px; }
+  button { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; margin-left: 6px; }
+  .out { margin-top: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; min-height: 1.2em; }
+  .out.ok { color: var(--ok-text); } .out.err { color: var(--err-text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>__TOOL_ICON__ __TOOL_TITLE__</h1>
+  <p class="sub">__TOOL_DESCRIPTION__</p>
+  <div class="card">
+    <input id="text" type="text" placeholder="type something" />
+    <button id="go">Echo</button>
+    <div class="out" id="out"></div>
+  </div>
+</div>
+<script>
+"use strict";
+const out = document.getElementById("out");
+// RELATIVE paths only ('echo', not '/echo'): the page lives under /tools/__TOOL_NAME__/
+document.getElementById("go").onclick = async () => {
+  try {
+    const r = await fetch("echo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: document.getElementById("text").value }) });
+    const d = await r.json();
+    out.className = "out ok"; out.textContent = JSON.stringify(d);          // textContent, never innerHTML, for anything that came from a user
+  } catch (e) { out.className = "out err"; out.textContent = e.message; }
+};
+</script>
+</body>
+</html>
