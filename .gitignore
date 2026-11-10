@@ -52,3 +52,6 @@ certs/*.pem
 
 # downloaded models (scripts/get-ner-model.sh)
 models/
+
+# local SQLite of the MCP server when run outside Docker (roadmap K2) — never commit
+data/mcp_server/

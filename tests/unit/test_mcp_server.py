@@ -65,6 +65,16 @@ def vault(monkeypatch):
     safety.REDACTOR._secrets.clear()
 
 
+@pytest.fixture(autouse=True)
+def _never_touch_the_real_audit_db(tmp_path, monkeypatch):
+    """Tests that call the protocol without asking for audit_db used to create data/mcp_server/ inside the repo. Every test gets its own."""
+    from core.state.sqlstore import SqlStore
+
+    store = SqlStore("mcp_server", sqlite_path=tmp_path / "auto_audit.db", ddl=audit._SCHEMA, add_columns=audit.ADD_COLUMNS, backend="sqlite")
+    monkeypatch.setattr(audit, "STORE", store)
+    monkeypatch.setattr(audit, "_ready", False)
+
+
 @pytest.fixture()
 def audit_db(tmp_path, monkeypatch):
     from core.state.sqlstore import SqlStore
