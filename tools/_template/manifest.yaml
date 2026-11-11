@@ -17,3 +17,9 @@ requires: []
 order: __TOOL_ORDER__             # display order (built-in tools use 10–200)
 enabled_by_default: true
 # vault: {read: [postgres_connection]}   # only if the server code needs saved secrets: list the kinds, nothing more
+# ai:                                     # optional (roadmap H3): what an AI can do with this tool — READ-only GET actions, searched by the AI helper.
+#   actions:                              # spec: docs/architecture/plugin-manifest.md "AI actions". Declare only stateless GETs (no session, no writes).
+#     - name: list_things
+#       summary: List the things this tool knows about, in the words a user would use
+#       path: things                      # must be a GET route in server.py (a test checks)
+

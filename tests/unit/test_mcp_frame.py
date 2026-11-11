@@ -322,7 +322,7 @@ def test_the_confirmation_code_survives_the_redactor(db, monkeypatch):
 
 def test_tool_schema_has_no_permission_fields():
     t = tools.REGISTRY["table_transform"]
-    assert set(t.schema["properties"]) == {"table", "steps", "save_as", "mode", "confirm_code", "sample_rows"}
+    assert set(t.schema["properties"]) == {"table", "steps", "flatten_json", "save_as", "mode", "confirm_code", "sample_rows"}
     assert not re.search(r"pin|grant|expires|minutes", json.dumps(t.schema), re.I)
 
 

@@ -57,6 +57,28 @@ CREATE TABLE IF NOT EXISTS confirmations (   -- roadmap K6: single-use tokens th
     expires_at TEXT NOT NULL,
     used_at TEXT
 );
+CREATE TABLE IF NOT EXISTS approvals (       -- roadmap H4: a write the AI asked for, shown to the owner as a card (approvals.py)
+    id TEXT PRIMARY KEY,
+    tool TEXT NOT NULL,
+    target_kind TEXT NOT NULL,
+    target TEXT NOT NULL,
+    action TEXT NOT NULL,
+    plan TEXT NOT NULL,                 -- JSON, scrubbed: what / where / rows / columns / source / environment
+    digest TEXT NOT NULL,
+    status TEXT NOT NULL,               -- pending | approved | rejected | used
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    decided_at TEXT,
+    grant_id TEXT                       -- the single-use grant the owner's click created
+);
+CREATE TABLE IF NOT EXISTS recipes (         -- roadmap H5: a pipeline that worked once, replayed by the owner with NO AI (recipes.py)
+    name TEXT PRIMARY KEY,
+    description TEXT,
+    steps TEXT NOT NULL,                -- JSON list of {tool, args, expects?}
+    created_at TEXT NOT NULL,
+    last_run_at TEXT,
+    last_status TEXT
+);
 CREATE TABLE IF NOT EXISTS grants (
     id TEXT PRIMARY KEY,
     target_kind TEXT NOT NULL,          -- connection | ssh_server | workspace

@@ -1,0 +1,50 @@
+[
+  {
+    "tools": 25,
+    "actions": 86,
+    "registry_up_front": 5766,
+    "tools_list": 3323,
+    "guide": 2443,
+    "one_search": 227,
+    "one_describe": 133,
+    "naive_up_front": 9627,
+    "first_search_s": 0.12,
+    "warm_search_ms": 1.2
+  },
+  {
+    "tools": 100,
+    "actions": 311,
+    "registry_up_front": 5962,
+    "tools_list": 3323,
+    "guide": 2639,
+    "one_search": 227,
+    "one_describe": 133,
+    "naive_up_front": 25152,
+    "first_search_s": 0.38,
+    "warm_search_ms": 2.4
+  },
+  {
+    "tools": 300,
+    "actions": 911,
+    "registry_up_front": 5972,
+    "tools_list": 3323,
+    "guide": 2649,
+    "one_search": 227,
+    "one_describe": 133,
+    "naive_up_front": 66702,
+    "first_search_s": 0.91,
+    "warm_search_ms": 5.0
+  },
+  {
+    "tools": 1000,
+    "actions": 3011,
+    "registry_up_front": 5972,
+    "tools_list": 3323,
+    "guide": 2649,
+    "one_search": 228,
+    "one_describe": 133,
+    "naive_up_front": 212127,
+    "first_search_s": 2.99,
+    "warm_search_ms": 18.7
+  }
+]

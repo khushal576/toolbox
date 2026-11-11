@@ -80,6 +80,11 @@ services:
       TOOLBOX_WORKER_SCALING: ${TOOLBOX_WORKER_SCALING:-1:3}
       # empty = each runtime's manifest scaling.idle_timeout_s (900 s); set it in .env/shell to override (testing)
       TOOLBOX_IDLE_TIMEOUT_S: ${TOOLBOX_IDLE_TIMEOUT_S:-}
+      # roadmap H1: the AI helper bridge runs on the HOST (it holds the owner's Claude login); both set by `python3 ai-bridge/install.py install --write-env`
+      TOOLBOX_HELPER_URL: ${TOOLBOX_HELPER_URL:-}
+      TOOLBOX_HELPER_TOKEN: ${TOOLBOX_HELPER_TOKEN:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Workspace settings (which tools are on) — core_plugins/workspace.py, roadmap A3/A4. Shared read-only
       # with the tool containers so a turned-off tool is off everywhere.
@@ -297,6 +302,9 @@ services:
       <<: *state-env
       # the orchestrator CLI (and future jobs) compare through DataDiff's API, not its code (roadmap D1)
       TOOLBOX_DATADIFF_URL: http://rt-datadiff:8080/tools/datadiff-pro
+      # roadmap H3: the MCP server's run_action calls a tool's declared read-only endpoint through the gateway
+      TOOLBOX_GATEWAY_URL: http://toolbox:8080
+      MCP_ACTION_SECONDS: ${MCP_ACTION_SECONDS:-20}
       # MCP server limits (roadmap K2, docs/runbook.md "Connect Claude to Toolbox"); the defaults are in mcp_server/safety.py
       MCP_ROWS: ${MCP_ROWS:-200}
       MCP_MAX_ROWS: ${MCP_MAX_ROWS:-5000}

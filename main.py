@@ -74,6 +74,11 @@ _REPO = Path(__file__).resolve().parent
 #            one image per runtime — light / data / pgtools / ssh / latex; the gateway routes to them from C2).
 ROLE = os.environ.get("TOOLBOX_ROLE", "web")
 RUNTIME = (os.environ.get("TOOLBOX_RUNTIME") or "").strip()
+
+if ROLE == "web":  # roadmap H1: the AI helper's gateway side (passes questions to the bridge on the host; see core_plugins/helper.py)
+    from core_plugins.helper import router as _helper_router
+
+    app.include_router(_helper_router)
 SINGLETON_URL = (os.environ.get("TOOLBOX_SINGLETON_URL") or "").strip()
 # Gateway mode (roadmap C2): "light=http://rt-light:8080,data=http://rt-data:8080,…" — in the web role every python
 # plugin whose runtime has a URL here is proxied there instead of imported in this process.

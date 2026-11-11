@@ -15,3 +15,14 @@ depends_on: [vault]
 requires: []
 order: 110
 vault: {datasets: read, data: write}   # Vault scope (roadmap B7): load datasets; L4: load/save Vault Data tables
+# What an AI can do with this tool without a session (roadmap H3, docs/architecture/plugin-manifest.md "AI actions"): read-only GETs on this tool's API.
+ai:
+  actions:
+    - name: formula_help
+      summary: List the functions available in the formula bar (where, coalesce, round, cut, lower, year …) with one-line help
+      path: formula/help
+      returns: functions - a list of {name, help}
+    - name: list_templates
+      summary: List the saved DataFrame Studio pipeline templates (reusable cleaning steps)
+      path: template/list
+      returns: templates - a list of saved pipelines

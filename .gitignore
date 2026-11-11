@@ -55,3 +55,7 @@ models/
 
 # local SQLite of the MCP server when run outside Docker (roadmap K2) — never commit
 data/mcp_server/
+
+# Ask Claude helper (H1-H5): env backups made by ai-bridge/install.py hold the Vault key + helper token; local test databases
+.env.bak*
+data/lake/

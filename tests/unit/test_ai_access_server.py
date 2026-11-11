@@ -183,3 +183,58 @@ def test_a_script_tag_in_a_query_is_data_not_markup(ready, monkeypatch):
     protocol.call_tool("vault_list", {"sql": "<img src=x onerror=alert(1)>"})
     body = ready.get("/calls").json()["calls"][0]["args"]
     assert "<img" in body        # stored and returned as plain text; the PAGE escapes it (proved in a real browser: see the K4 handoff note)
+
+
+# ------------------------------------------------------------------------------------------------------------ plan cards (roadmap H4)
+
+def _card(plan_rows=5):
+    from mcp_server import approvals
+
+    return approvals.ask_owner("table_transform", "workspace", "scratch", "create_table",
+                               {"what": "Create the Vault Data table scratch.out", "target": "scratch.out", "environment": "non-prod", "rows": plan_rows, "columns": ["a"]}, "dg1")
+
+
+def test_cards_are_listed_without_pin_material(ready):
+    c = _card()
+    r = ready.get("/approvals").json()
+    assert r["ok"] and [x["id"] for x in r["cards"]] == [c["id"]] and r["cards"][0]["plan"]["rows"] == 5
+    assert "grant_id" not in r["cards"][0] and PIN not in str(r)
+
+
+def test_approving_needs_the_right_pin_and_makes_a_card_grant(ready):
+    c = _card()
+    bad = post(ready, f"/approvals/{c['id']}/approve", pin="wrong-pin-1").json()
+    assert bad["ok"] is False and ready.get("/status").json()["grants"] == []
+    ok = post(ready, f"/approvals/{c['id']}/approve", pin=PIN).json()
+    assert ok["ok"] is True and ok["minutes"] == 10
+    g = ready.get("/status").json()["grants"]
+    assert len(g) == 1 and g[0]["actions"] == ["create_table"] and g[0]["row_limit"] == 5
+    assert post(ready, f"/approvals/{c['id']}/approve", pin=PIN).json()["ok"] is False        # not twice
+
+
+def test_rejecting_needs_no_pin_and_grants_nothing(ready):
+    c = _card()
+    assert post(ready, f"/approvals/{c['id']}/reject").json()["ok"] is True
+    assert ready.get("/status").json()["grants"] == [] and ready.get("/approvals").json()["cards"][0]["status"] == "rejected"
+
+
+def test_card_ids_are_validated(ready):
+    assert post(ready, "/approvals/..%2Fx/approve", pin=PIN).status_code in (404, 422)
+    assert post(ready, "/approvals/zzzz/approve", pin=PIN).status_code == 404
+    assert post(ready, "/approvals/abcdefabcdef/approve", pin=PIN).json()["ok"] is False
+
+
+# ------------------------------------------------------------------------------------------------------------ recipes (roadmap H5)
+
+def test_recipes_list_run_and_delete_endpoints(ready, monkeypatch):
+    from mcp_server import protocol, recipes
+
+    recipes.save("daily-load", "demo", [{"tool": "run_query", "args": {"sql": "SELECT 1"}}])
+    r = ready.get("/recipes").json()
+    assert r["ok"] and r["recipes"][0]["name"] == "daily-load" and r["recipes"][0]["steps"][0]["writes"] is False
+    monkeypatch.setattr(protocol, "call_tool", lambda tool, args: {"ok": True, "data": {"returned": 1}})
+    out = post(ready, "/recipes/daily-load/run").json()
+    assert out["ok"] and out["status"] == "done" and out["steps"][0]["summary"] == "1 rows"
+    assert post(ready, "/recipes/nope-nope/run").status_code == 404
+    assert post(ready, "/recipes/Bad Name/run").status_code in (404, 422)
+    assert ready.delete("/recipes/daily-load").json()["deleted"] is True and ready.get("/recipes").json()["recipes"] == []

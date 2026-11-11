@@ -15,3 +15,10 @@ depends_on: [vault]
 requires: [duckdb]
 order: 155
 vault: {data: write, read: [postgres_connection, s3_location]}   # L1/L2: writes Vault Data tables; L4: DB connections to stage; L5: S3 locations
+# What an AI can do with this tool without a session (roadmap H3): read-only GETs on this tool's API.
+ai:
+  actions:
+    - name: list_column_maps
+      summary: List the saved column maps (templates for renaming, casting and masking columns while loading files)
+      path: colmaps
+      returns: templates - a list of saved column maps (secrets are never stored in them)

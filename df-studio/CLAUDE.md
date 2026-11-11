@@ -405,3 +405,6 @@ Goal (owner): data cleaning and feature engineering without writing a `def trans
 - **Gotchas:** every Add still replays the whole pipeline (each step works on a copy) — fine for normal files, DF6 is the planned
   fix. `Int64`/`string`/`boolean` pandas dtypes are used on purpose (nullable); `date` = datetime at midnight (the page shows it as
   `date`). Verified with pandas 2.2.2 / numpy 1.26.4 / Python 3.11 (the image) and pandas 2.3 / numpy 2.4 / Python 3.13.
+
+## Ask Claude panel hook (helper)
+`postHelperContext(preview)` in `ui/index.html` posts `{type:"toolbox-context", text}` to the workspace after every `applyPreview`: table, row count, current columns + types, steps applied so far (last 12). The panel sends it with each question so Claude writes only the NEXT step. Keep it small and plain text (the panel caps it at 2,800 characters). Tested in `tests/smoke/test_helper_panel.py`.

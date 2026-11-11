@@ -55,6 +55,7 @@ Work happens in numbered sessions ("Roadmap: do session `<ID>`"): do **only** th
 | Finding which file owns a behaviour (repo-wide) | `KNOWLEDGE_MAP.md`; per tool: `<tool>/KNOWLEDGE_MAP.md` |
 | Working on one tool | `<tool>/CLAUDE.md` — DataDiff: `api/`; Vault Data loader: `data-lake/` (+ `vault/`); Notebook: `notebook-lab/`; SharePoint: `sharepoint-lab/` |
 | Letting an AI client (Claude) use Toolbox: tools, safety rules, prod/non-prod labels, audit | `mcp_server/CLAUDE.md` and `docs/architecture/ADR-MCP.md` (rules are tested — do not weaken them) |
+| The "Ask Claude" helper inside every tool (bridge, panel, threads, capability registry, recipes) | `docs/architecture/ADR-AI-HELPER.md` + roadmap sessions H1–H6 (H3 built: the `ai:` manifest section + `find_actions`; H1 built: host bridge `ai-bridge/` — read `ai-bridge/CLAUDE.md`; H2 built: the panel in `core_plugins/ui/workspace.html`; H4 built: plan cards `mcp_server/approvals.py`; H5 built: `mcp_server/pipeline.py` + `recipes.py`; the rest planned) |
 | Calling engines without a browser | `orchestrator/CLAUDE.md` (`docker compose exec worker python -m orchestrator.cli …`) |
 | Measuring memory/speed | `tools/bench/baseline.py`, `docs/roadmap/measure-*.md` |
 | Colors for a new page | `theme-tokens.css` (copy the six `:root` variables; never linked) |

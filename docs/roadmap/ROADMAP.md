@@ -106,6 +106,12 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | P3 | Plugins: script to remove a tool cleanly | S | P2 | ☑ (2026-11-10) |
 | O2 | Optimization: replace SeaweedFS with local-disk storage or Garage behind `core/state/objects` | M | O1 | ⏸ deferred (SeaweedFS is only ~50–75 MiB; not worth the migration risk) |
 | O4 | Optimization: Mini Sheet — list what is missing, then adopt a grid library or remove the tool | M | O1 | ☐ |
+| H3 | AI helper: capability registry (`ai:` in manifests) + general MCP verbs `find_actions` / `describe_action` / `run_action`; token test with 1,000 tools | M | K2 | ☑ (2026-11-11) |
+| H1 | AI helper: the bridge on the host — `claude -p` with the owner's Pro login, auto-start at login, localhost only, only Toolbox tools allowed | M | H3 | ☑ (2026-11-11) |
+| H2 | AI helper: "Ask Claude" panel beside every tool (hidden, 🤖 / Ctrl+J), threads (new / continue, per tool), context hook | M | H1 | ☑ (2026-11-11) |
+| H4 | AI helper: plan cards — the owner approves each write in the panel (PIN when needed) | S | H2, K4 | ☑ (2026-11-11) |
+| H5 | AI helper: the gap actions (stage query → table, flatten JSON, load table → DB) + recipes (save once, replay without AI) | M | H3, H4 | ☑ (2026-11-11) |
+| H6 | AI helper: adapters for other AIs (Codex CLI, Gemini CLI, API key, local model) — optional | S | H1 | ☐ |
 
 About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 before committing to C–F.
 
@@ -628,10 +634,78 @@ tick the status, add to the Handoff log, commit/push only when the owner says so
   Tests: `tests/unit/test_mcp_frame.py` (host part + 10 cases against the real Vault Data in the image: 42 pass). **Found by the end-to-end test:** the redactor blanked `confirm_token` (renamed `confirm_code`); the page's own decimal rule;
   catalog drift (now guarded). Not built: append to a table, `load_file`, database writes.
 
+## Planned 2026-11-11 – AI helper inside every tool (H)
+
+Owner request (2026-11-11): "a helper in each tool, in the same window, hidden by default, usable as a chat bot, but it knows everything and works as a
+helper" — to fill the gaps between tools (query → load → JSON → transform → load), using the **Claude Pro subscription the owner already has** (local
+Claude Code in headless mode — no API purchase), and not token hungry even with 1,000 tools. **Design: `docs/architecture/ADR-AI-HELPER.md` (status PROPOSED —
+owner approval before H1).** All the ADR-MCP safety rules stay as they are; the helper reuses the MCP server, grants, kill switch and audit log.
+**Order: H3 → H1 → H2 → H4 → H5, then H6 only if wanted.** (H3 first, so it scales from the first day.)
+
+#### H3 Capability registry + general MCP verbs (M) — after: K2 · ☑ 2026-11-11
+- Optional `ai:` section in `manifest.yaml`: each tool lists its actions (name, one-line purpose, input schema, read or write, which grant a write needs);
+  validated in `core_plugins/manifest.py`; spec in `plugin-manifest.md`; added to the P2 template so new tools describe themselves.
+- MCP verbs `find_actions(query)` (best ~5), `describe_action(name)`, `run_action(name, inputs)` — `run_action` goes through the existing safety path (audit first,
+  kill switch, `control.require`, dry-run + confirm code, read-back). The 11 existing MCP tools become registry actions; their names keep working.
+- **Token test:** generate 1,000 fake tools, measure what the start of a question costs (target ≈ the same as with 25 tools); write `docs/roadmap/measure-H3.md`.
+- **Done when:** every existing MCP tool is reachable through the verbs; a removed tool disappears from search; the 1,000-tool measurement is recorded and within target.
+- **Done** (2026-11-11): `ai:` manifest section (read GETs only; `core_plugins/manifest.py`, `core_plugins/ai.py`), `mcp_server/registry.py`, the three verbs, bounded `toolbox_guide`, real actions in df-studio / data-lake, compose `TOOLBOX_GATEWAY_URL`, P2 template comment, docs.
+  Tests: `test_ai_manifest.py` + `test_mcp_registry.py` (100; incl. 1,000 tools); suite 1,020 pass on the host, 231 MCP-related in the image. **Measured** (`measure-H3.md`): ≈ 6,000 tokens at the start with 1,000 tools (≈ the same as with 25; a tool-per-action design would need 212,000).
+  Verified live through the official MCP client; owner state (switch, test rows, workspace.yaml) restored afterwards. Found by the tests: re-tokenising per query made 3,000-action searches take 2.7 s (now cached per index).
+
+#### H1 The bridge on the host (M) — after: H3 · ☑ 2026-11-11
+- Small local service on the HOST (not Docker), auto-started at login (systemd user service), **localhost only**; the gateway proxies the panel to it.
+- Runs `claude -p --output-format stream-json` with the owner's login (never `--bare`), working directory = the repo, `--allowedTools` = Toolbox MCP tools only
+  (no Bash / Edit / file writes), `--resume` for continued threads. Engine adapter interface from day one (`ask(thread, message, context) → events`).
+- Plain-words states: logged out, Pro limit reached, bridge down, slow start. Measure start-up time; warm the MCP server if it is too slow.
+- **Done when:** a question sent through the gateway streams back an answer; a forbidden tool (Bash) is refused; the service survives a reboot; runbook section
+  "Set up the AI helper" (one-time steps) written; nothing of the login is copied into any container.
+- **Built 2026-11-11 (NOT committed):** `ai-bridge/` (engine, bridge, install) + `core_plugins/helper.py` + compose env; 33 tests (`test_ai_bridge.py`, fake `claude`). Live on the bridge port: streamed answer, 14 Toolbox tools only, Bash refused, `--resume` works, systemd restarts it after a kill. **Open:** the gateway container cannot reach the host (ufw drops it) → owner runs once `sudo ufw allow from 172.16.0.0/12 to any port 8787 proto tcp`, then `/api/helper/status` should say ready (tick ☑ then). Not testable here: real logout / Pro limit / full reboot. Details: ADR-AI-HELPER §7.
+
+#### H2 The panel beside every tool (M) — after: H1 · ☑ 2026-11-11
+- Built once in the workspace shell (`core_plugins/ui/workspace.html`), shown beside every tool tab, **hidden by default**, opened with 🤖 or Ctrl+J (check clashes).
+- Threads: **New chat** / continue; each tool lists its own recent threads; a thread can follow the owner to another tool. Metadata in Postgres; transcripts stay with Claude Code.
+- **Context hook:** a tool may post a small, size-capped summary of what is on screen (query, table, selection, last error); tools without it still send name + description.
+  Start with SQL Studio, DataFrame Studio and Vault Data; others later.
+- Answers stream; every call shows in the AI Access timeline; the kill switch stops the panel too.
+- **Done when:** in headless Chromium the panel opens in three different tools, keeps a thread across two tools, and sends the right context; no tool's own code was changed
+  except the optional hook in the three tools above.
+- **Built 2026-11-11 (NOT committed):** panel in `core_plugins/ui/workspace.html` (🤖 button, Ctrl+J, Esc stops an answer, streaming, tool chips, plain-words states, Chats list, New chat, continue the last chat if < 1 h old). Browser test `tests/smoke/test_helper_panel.py` (helper stubbed in the page; hidden by default, three tools, ONE thread across them, New chat = new session, context sent and capped, only a tool's own frame is believed). **Simplifications:** thread list is kept in the browser (localStorage; transcripts stay with Claude Code) instead of Postgres; the context hook is the generic `postMessage({type:'toolbox-context', text})` — the three tools do not send it yet (every tool still sends its name + description). Details: ADR-AI-HELPER §8.
+
+#### H4 Plan cards: approve each write in the panel (S) — after: H2, K4 · ☑ 2026-11-11
+- A write's dry-run shows as a card (what, where, rows, prod / non-prod) with **Approve** / **Reject**. Approve comes from the owner's click in the page (with the PIN when no grant
+  covers it) and issues a short, single-action permission + the confirm code. The AI can still never approve for itself.
+- **Done when:** a `table_transform` save done from the panel needs the click; Reject leaves nothing written; the audit row links the approval.
+- **Built 2026-11-11 (NOT committed):** `mcp_server/approvals.py` + table `approvals`; `table_transform` turns a no-grant refusal into a pending card (deduped, max 10, 30 min) and spends the card's grant after the write (single use); owner endpoints `GET /tools/ai-access/approvals`, `POST …/{id}/approve` (PIN) and `…/reject`; card UI in the panel (facts, PIN box, Approve/Reject; Approve also tells Claude to go ahead). Approve = a 10-minute grant for that one target + action + the plan's row count, `created_via='card'` (audit rows carry its `grant_id`). Tests: `test_mcp_approvals.py` (12), 4 in `test_ai_access_server.py`, 2 browser tests (card + PIN + reject). **Live:** a real question made Claude try a save → refused → a card appeared with the right facts; I rejected it. **Not live-tested:** the Approve click with a real PIN (the owner has not set one) — set the PIN on AI Access, then try it. Only `table_transform` creates cards so far (other write tools will when they exist: H5 DB load).
+
+#### H5 The gap actions + recipes (M) — after: H3, H4 · ☑ 2026-11-11
+- Registry actions for the owner's real gap: **stage a query result into a Vault Data table** (reuse data-lake staging), **flatten JSON columns** (new), **load a Vault Data table
+  into a database** (write: grant + plan card + read-back; Postgres first). Existing actions reused: `run_query`, `compare`, `table_transform`, `generate_insert_script`.
+- **Recipes:** "Save as recipe" after a pipeline works; "Run recipe" replays the exact actions **without the AI and without tokens**, same safety path; a changed source is reported first.
+- **Done when:** the owner's example (query dev-db → stage → flatten JSON → clean → load into a non-prod table) runs once through the helper and again as a recipe with no AI,
+  with identical results (compared with `compare`).
+- **Built 2026-11-11 (NOT committed):** `mcp_server/pipeline.py` (`stage_query`: SELECT → Vault Data table; `load_table`: Vault Data table → EXISTING Postgres table, INSERT only, ONE transaction, count checked inside and after; both = grant + plan card + dry-run + confirm code bound to a hash of the exact data + read-back), `frame.flatten_json` + the `flatten_json` argument of `table_transform` (lists stay as JSON text, exact decimals, ints stay ints), `mcp_server/recipes.py` (`keep_recipe` stores text only; the OWNER runs a recipe from the panel — `POST /tools/ai-access/recipes/{name}/run` — through `protocol.call_tool`, i.e. kill switch, audit, grants, cards; a write step without a grant stops with "waiting for approval", Continue resumes at that step; a changed source table stops the run unless "Run anyway"). Cards for PROD targets carry an "I understand this is PROD" tick. 17 MCP tools now (guide summaries shortened to keep `toolbox_guide` small). Tests: `test_mcp_pipeline.py` (32) + endpoint tests + 2 more browser tests. **Live:** `_insert` on the real Postgres (exact numeric/jsonb, duplicate key rolled back everything); `find_actions` finds `mcp.load_table`. **Not live-tested:** the full chain with real approvals (needs the owner's PIN) and a PROD-labelled connection.
+
+#### H6 Other AIs (S, optional) — after: H1 · ☐
+- One adapter per engine (Codex CLI, Gemini CLI, an API key, a local model), each tested on its own before it is offered; the panel shows which engine answers. Only if wanted.
+
 ---
 
 ## Handoff log
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
+
+- 2026-11-11 – **DF Studio command-only + pipeline context (NOT committed):** `postHelperContext` (columns + steps so far) → incremental commands; mode switch hidden in DF Studio; staging approach documented (ADR §11). 16 browser tests.
+- 2026-11-11 – **Panel follow-up 2 (NOT committed):** per-tool policies + 👍/👎 reviews → rules, Command/Run mode (command default), browser-freeze fix (throttled drawing; test streams a long table), decided cards auto-hide. 50 bridge tests, 15 browser tests.
+- 2026-11-11 – **Panel follow-up (NOT committed):** chat log on the host (`ai-bridge/store.py`, paged, survives reload / browsers), editable policy (⚙️ + `policy.md`), action-first prompt, safe markdown in answers, tool auto-refresh after a real save, icon-only header. 45 bridge tests + 11 browser tests. Next idea: `toolbox-command` hooks so the helper can drive the tool on screen (DataFrame Studio first).
+- 2026-11-11 – **H5 built (NOT committed):** `stage_query`, `load_table` (INSERT only, one transaction), `table_transform … flatten_json`, `keep_recipe` + owner-run recipes (panel "Recipes ▾", no AI). Real INSERT verified on the stack's Postgres (exact decimals, JSON, duplicate-key → full rollback). **Owner to do: set PIN, then try the whole chain once in the panel. H6 (other AIs) is optional and NOT started.**
+- 2026-11-11 – **H4 built (NOT committed):** plan cards (see H4 block). **Owner to do: set the PIN on AI Access, then ask Claude in the panel to save a cleaned table and click Approve once.** Next: H5 (gap actions + recipes).
+- 2026-11-11 – **H1+H2 verified live (NOT committed):** owner added the ufw rule; `/api/helper/status` ready; a real question through the gateway streamed back in 3 s with the context used. **Next: H4 plan cards.**
+- 2026-11-11 – **H2 built (NOT committed):** the Ask Claude panel in the workspace shell + 2 browser tests; no tool changed. Real answers need H1's ufw rule. **Next: owner runs the ufw rule → tick H1+H2 after one real question through the panel; then H4 (plan cards). Optional: add the `toolbox-context` message to SQL Studio / DataFrame Studio / Vault Data.**
+- 2026-11-11 – **H1 built (NOT committed), ◐ waiting for one owner step:** host bridge `ai-bridge/` + gateway `/api/helper/*`; live-verified directly (stream, tools-only, Bash refused, resume, auto-restart); runbook "Set up the AI helper". Gateway→host blocked by ufw until `sudo ufw allow from 172.16.0.0/12 to any port 8787 proto tcp`. **Next: owner runs that, check `/api/helper/status`; then H2 (panel).**
+- 2026-11-11 – **H3 done (NOT committed).** Capability registry: manifest `ai:` (read GETs only) + `find_actions` / `describe_action` / `run_action`; ≈ 6,000 tokens up front at 1,000 tools (`measure-H3.md`); live-verified. ADR-AI-HELPER marked approved (+ "as built"). **Next: H1 (the bridge on the host — `claude -p`, auto-start, localhost only).** Open for H1–H2: thread default, model, shortcut (ADR §4).
+- 2026-11-11 – **Planned (docs only, no code): AI helper inside every tool, sessions H1–H6** + design record `docs/architecture/ADR-AI-HELPER.md` (status PROPOSED — owner approval before H1).
+  Uses the owner's local Claude Code (`claude -p`, Pro login, no API key) through a localhost bridge on the host; one panel in the workspace shell beside every tool; threads; capability
+  registry + search so 1,000 tools stay cheap; plan cards for writes; recipes replay without AI. Order H3 → H1 → H2 → H4 → H5 (H6 optional). Not committed.
 
 - 2026-11-10 – **P3 done (NOT committed).** `scripts/remove_tool.py` — the P2/P3 pair is complete (scaffold ↔ remove, round trip proven byte-identical on the real repo). **Roadmap left: O4 (Mini Sheet decision, needs the owner's list); O2 stays deferred.** P1+P2+P3 are uncommitted.
 - 2026-11-10 – **P2 done (NOT committed).** `tools/_template/` + `scripts/new_tool.py` + root CLAUDE.md "add a tool in 5 steps"; live-verified with a real scaffolded tool, then removed. Gotcha: in zsh a loop variable named `path` overwrites PATH. **Next: P3 (remove-tool script — reverse exactly what new_tool.py adds: folder, Dockerfile lines, smoke line + file, index row, volume).**

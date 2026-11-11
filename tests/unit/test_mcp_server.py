@@ -216,11 +216,12 @@ def test_initialize_negotiates_and_describes_itself():
 
 def test_every_tool_is_listed_as_read_only_with_a_manual():
     tools = rpc("tools/list")["result"]["tools"]
-    assert [t["name"] for t in tools] == ["toolbox_guide", "vault_list", "vault_dataset_preview", "run_query", "compare",
-                                          "access_status", "ssh_servers", "ssh_run", "transform_steps", "table_transform", "generate_insert_script"]
+    assert [t["name"] for t in tools] == ["toolbox_guide", "find_actions", "describe_action", "run_action", "vault_list", "vault_dataset_preview", "run_query", "compare",
+                                          "access_status", "ssh_servers", "ssh_run", "transform_steps", "table_transform", "stage_query", "load_table", "keep_recipe", "generate_insert_script"]
     for t in tools:
-        # every tool is read-only EXCEPT table_transform, which says so: it can save a NEW table, but only with an owner grant + a confirm token
-        assert t["annotations"]["readOnlyHint"] is (t["name"] != "table_transform"), t["name"]
+        # every tool is read-only EXCEPT table_transform (saves a NEW table, only with an owner grant + confirm code) and run_action (it can run
+        # table_transform through the registry, with the very same guards) — both say so
+        assert t["annotations"]["readOnlyHint"] is (t["name"] not in ("table_transform", "run_action", "stage_query", "load_table", "keep_recipe")), t["name"]
         assert t["annotations"]["destructiveHint"] is False
         assert len(t["description"]) > 80 and t["inputSchema"]["type"] == "object"
         assert "Example" in t["description"] or t["name"] == "toolbox_guide"
@@ -231,6 +232,8 @@ def test_no_tool_can_write_or_grant():
     names = " ".join(t["name"] for t in rpc("tools/list")["result"]["tools"] if t["name"] != "generate_insert_script").lower()
     # (ssh_servers / ssh_run are read-only diagnostics, gated by an owner grant — tests/unit/test_mcp_ssh.py)
     names = names.replace("ssh_servers", "").replace("ssh_run", "").replace("table_transform", "").replace("transform_steps", "")
+    names = names.replace("stage_query", "").replace("load_table", "").replace("keep_recipe", "")      # H5: gated writes (grant + card + dry-run + confirm code) and a text-only store
+    names = names.replace("find_actions", "").replace("describe_action", "").replace("run_action", "")     # the registry verbs (roadmap H3)
     for bad in ("write", "save", "delete", "drop", "grant", "execute", "insert", "update", "ssh", "password", "secret"):
         assert bad not in names
 

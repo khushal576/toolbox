@@ -15,7 +15,7 @@ A Toolbox tool (runtime `data`, 🤖 in the sidebar) where the OWNER controls wh
   granting itself rights; it could still press "Stop" (harmless) or read this page. Keep shell commands on manual approval in such a client, or use a client without a shell.
 
 ## Where things are
-`server.py` (endpoints: `GET /status`, `GET /calls`, `POST /kill`, `/resume`, `/pin`, `/grants`, `/grants/{id}/revoke`), `ui/index.html` (single page, all dynamic text escaped — a hostile `<img onerror>` row was verified inert in headless Chromium),
+`server.py` (endpoints: `GET /status`, `GET /calls`, `POST /kill`, `/resume`, `/pin`, `/grants`, `/grants/{id}/revoke`, H5 recipes: `GET /recipes`, `POST /recipes/{name}/run`, `DELETE /recipes/{name}`, and H4 plan cards: `GET /approvals`, `POST /approvals/{id}/approve` (PIN) and `/reject`), `ui/index.html` (single page, all dynamic text escaped — a hostile `<img onerror>` row was verified inert in headless Chromium),
 `manifest.yaml` (`vault: {read: [postgres_connection, ssh_server], data: read}` only to list NAMES for the target dropdowns).
 
 ## Gotchas

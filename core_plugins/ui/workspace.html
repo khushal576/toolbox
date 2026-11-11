@@ -171,6 +171,74 @@
     body.in-tool.side-open #side { transform: none; }
     body.in-tool #menuBtn { display: block; }
 
+
+    /* ---- "Ask Claude" helper panel (roadmap H2): hidden by default, beside every tool ---- */
+    #helper { width: 380px; flex: none; display: none; flex-direction: column; min-height: 0; background: var(--surface); border-left: 1px solid var(--border); }
+    body.helper-open #helper { display: flex; }
+    #helper header { display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 0.9rem; }
+    #helper header .sp { flex: 1; }
+    #helper header button { padding: 4px 8px; border-radius: 6px; font-size: 1.05rem; line-height: 1; color: var(--muted); font-weight: 400; white-space: nowrap; }
+    #helper header button:hover { background: var(--bg); color: var(--text); }
+    #hlpWhere { padding: 6px 12px; font-size: 0.76rem; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--bg); }
+    #hlpState { padding: 7px 12px; font-size: 0.8rem; display: none; }
+    #hlpState.show { display: block; background: #fff7e6; color: #6b4e00; border-bottom: 1px solid #f3dca7; }
+    #hlpState.err { background: #fdecea; color: var(--err); border-color: #f5c6c0; }
+    #hlpThreads { display: none; padding: 6px 8px; border-bottom: 1px solid var(--border); max-height: 160px; overflow-y: auto; font-size: 0.8rem; }
+    #hlpThreads.show { display: block; }
+    #hlpThreads button { display: block; width: 100%; text-align: left; padding: 4px 6px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #hlpThreads button:hover, #hlpThreads button.cur { background: var(--bg); }
+    #hlpRecipes { display: none; padding: 6px 8px; border-bottom: 1px solid var(--border); max-height: 220px; overflow-y: auto; font-size: 0.8rem; }
+    #hlpRecipes.show { display: block; }
+    .rcp { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; }
+    .rcp b { font-size: .84rem; } .rcp .st { color: var(--muted); font-size: .74rem; } .rcp .acts { display: flex; gap: 6px; margin-top: 4px; }
+    .rcp button, .hbtn { border: 1px solid var(--border); border-radius: 6px; padding: 2px 9px; font-size: .78rem; }
+    .rcp button.run, .hbtn.run { background: var(--accent); color: #fff; border-color: var(--accent); }
+    #hlpPolicy { display: none; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 0.8rem; }
+    #hlpPolicy.show { display: block; }
+    #hlpPolicy textarea { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 7px; font: inherit; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .76rem; background: var(--bg); color: var(--text); resize: vertical; }
+    #hlpPolicy .acts { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+    #hlpCards { display: none; padding: 8px 10px; border-bottom: 1px solid var(--border); background: #fffaf0; max-height: 45%; overflow-y: auto; gap: 8px; flex-direction: column; }
+    #hlpCards.show { display: flex; }
+    .pcard { border: 1px solid #f3dca7; background: var(--surface); border-radius: 10px; padding: 9px 11px; font-size: 0.82rem; line-height: 1.45; }
+    .pcard h4 { font-size: 0.86rem; margin: 0 0 4px; }
+    .pcard .kv { color: var(--muted); } .pcard .kv b { color: var(--text); font-weight: 600; }
+    .pcard .env { display: inline-block; font-size: .68rem; font-weight: 700; text-transform: uppercase; border-radius: 5px; padding: 0 6px; background: #e7f6ec; color: #17653a; }
+    .pcard .env.prod { background: #fdecea; color: var(--err); }
+    .pcard .acts { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+    .pcard input { flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px; font: inherit; font-size: .8rem; background: var(--bg); color: var(--text); }
+    .pcard .ok { background: var(--accent); color: #fff; border-radius: 6px; padding: 5px 10px; }
+    .pcard .no { border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; }
+    .pcard .msg { margin-top: 5px; font-size: .78rem; color: var(--err); }
+    .pcard.done { opacity: .75; }
+    #hlpLog { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; font-size: 0.86rem; line-height: 1.5; }
+    .hm { white-space: pre-wrap; word-break: break-word; padding: 7px 10px; border-radius: 10px; max-width: 94%; }
+    .hm.me { align-self: flex-end; background: rgba(79,94,240,0.10); }
+    .hm.ai { align-self: flex-start; background: var(--bg); border: 1px solid var(--border); }
+    .rate { margin-top: 4px; display: flex; gap: 4px; align-items: center; font-size: .78rem; color: var(--muted); opacity: .55; }
+    .hm.ai:hover .rate, .rate:focus-within { opacity: 1; }
+    .rate button { padding: 0 5px; border-radius: 5px; } .rate button:hover { background: var(--border); }
+    .rate input { flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; font-size: .78rem; background: var(--surface); color: var(--text); }
+    .hm.ai { white-space: normal; } .hm.ai p { margin: 0 0 6px; } .hm.ai p:last-child, .hm.ai ul:last-child { margin-bottom: 0; } .hm.ai ul { margin: 0 0 6px; padding-left: 18px; }
+    .hm.ai pre { position: relative; margin: 4px 0 6px; background: #1f2430; color: #e8eaf0; border-radius: 8px; padding: 8px 10px; overflow-x: auto; font-size: .76rem; white-space: pre; }
+    .hm.ai pre code { background: none; padding: 0; color: inherit; }
+    .hm.ai pre .cpy { position: absolute; top: 4px; right: 4px; font-size: .7rem; color: #cfd3df; border: 1px solid #4a5163; border-radius: 5px; padding: 0 7px; }
+    .hm.ai code { background: rgba(0,0,0,.06); border-radius: 4px; padding: 0 4px; font-size: .8rem; }
+    .hm.ai table { width: auto; max-width: 100%; display: block; overflow-x: auto; font-size: .78rem; margin: 4px 0; }
+    .hm.ai th, .hm.ai td { padding: 3px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+    .hm.sys { align-self: center; color: var(--muted); font-size: 0.78rem; background: none; text-align: center; }
+    .hm.bad { color: var(--err); }
+    .hchip { align-self: flex-start; font-size: 0.74rem; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; }
+    .hchip.error { color: var(--err); border-color: #f5c6c0; }
+    #hlpModeRow { display: flex; align-items: center; gap: 8px; padding: 6px 10px 0; border-top: 1px solid var(--border); font-size: .76rem; }
+    #hlpMode { border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: .78rem; background: var(--bg); }
+    #hlpMode.run { background: rgba(79,94,240,0.12); color: var(--accent); border-color: var(--accent); }
+    #hlpForm { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border); align-items: flex-end; }
+    #hlpIn { flex: 1; resize: none; min-height: 64px; max-height: 160px; overflow-y: auto; line-height: 1.4; border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 0.86rem; background: var(--bg); color: var(--text); }
+    #hlpIn:focus { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--surface); }
+    #hlpSend { background: var(--accent); color: #fff; border-radius: 8px; padding: 8px 12px; align-self: flex-end; height: 38px; }
+    #helperBtn.on { background: rgba(79,94,240,0.12); color: var(--accent); }
+    #hlpSend:disabled { opacity: .5; cursor: default; }
+    @media (max-width: 760px) { #helper { position: fixed; z-index: 30; inset: 0 0 0 auto; width: min(100%, 420px); box-shadow: -4px 0 24px rgba(0,0,0,0.15); } }
     @media (max-width: 760px) {
       #side { position: fixed; z-index: 20; inset: 0 auto 0 0; transform: translateX(-100%); transition: transform 0.2s;
               box-shadow: 4px 0 24px rgba(0,0,0,0.12); }
@@ -195,6 +263,7 @@
       <button id="menuBtn" title="Tools (Ctrl+K)" aria-label="Open the tools list">☰</button>
       <div id="tabList" style="display:flex"></div>
       <div class="tab-tools">
+        <button id="helperBtn" title="Ask Claude (Ctrl+J)" aria-label="Ask Claude">🤖 Ask Claude</button>
         <button id="reloadBtn" title="Reload this tool">⟳ Reload</button>
         <button id="popBtn" title="Open this tool in a new browser tab">↗ New window</button>
       </div>
@@ -251,6 +320,24 @@
       </section>
     </div>
   </main>
+
+  <aside id="helper" aria-label="Ask Claude">
+    <header><span class="sp"></span>
+      <button id="hlpThreadsBtn" title="Earlier chats" aria-label="Earlier chats">🕘</button><button id="hlpRecipesBtn" title="Recipes: saved steps you can re-run with one click, without AI" aria-label="Recipes">📋</button><button id="hlpPolicyBtn" title="Policy: how the helper should behave (you can edit it)" aria-label="Helper policy">⚙️</button><button id="hlpNew" title="New chat" aria-label="New chat">➕</button><button id="hlpClose" title="Hide (Ctrl+J)" aria-label="Hide the helper panel">✕</button></header>
+    <div id="hlpWhere"></div>
+    <div id="hlpState"></div>
+    <div id="hlpThreads"></div>
+    <div id="hlpRecipes"></div>
+    <div id="hlpPolicy"><div class="muted" style="margin-bottom:4px">How the helper should behave. Plain words; applies from your next question. It can shape style and habits, never the safety rules.</div>
+      <select id="polScope" style="width:100%;margin-bottom:6px;padding:4px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)"></select>
+      <div class="muted" id="polSum" style="margin-bottom:4px"></div>
+      <textarea id="polText" rows="9" spellcheck="false"></textarea>
+      <div class="acts"><button class="run hbtn" id="polSave">Save</button><button class="hbtn" id="polReset">Reset to default</button><span class="muted" id="polCount"></span></div><div class="muted" id="polMsg"></div><div id="polRev"></div></div>
+    <div id="hlpCards" aria-live="polite"></div>
+    <div id="hlpLog" aria-live="polite"></div>
+    <div id="hlpModeRow"><button type="button" id="hlpMode"></button><span class="muted" id="hlpModeHint"></span></div>
+    <form id="hlpForm"><textarea id="hlpIn" rows="2" maxlength="8000" placeholder="Ask Claude… (Enter sends)"></textarea><button id="hlpSend" type="submit" title="Send (Enter)">➤</button></form>
+  </aside>
 
   <div id="logBox" role="dialog" aria-modal="true" aria-label="Container log">
     <header><span id="logTitle">Log</span><button class="linkbtn" id="logRefresh">Refresh</button>
@@ -347,6 +434,7 @@
       document.body.classList.remove("side-open");
       document.body.classList.toggle("in-tool", !!byName[name]);
       persist(); renderTabs(); renderNav();
+      if (typeof hWhere === "function") hWhere();
     }
     function close(name) {
       var i = state.open.indexOf(name);
@@ -636,6 +724,389 @@
       else if (h === "status") open("status");
       else if (h === "" && state.active !== "home" && location.hash) open("home");
     }
+
+
+    // ---------- "Ask Claude" helper panel (roadmap H2, ADR-AI-HELPER) ----------
+    // Talks only to /api/helper/* (the gateway passes it to the bridge on this computer). Nothing here holds a key or a login.
+    var HK = "toolbox_helper_cur", HOUR = 3600 * 1000, CTX_MAX = 2800, PAGE = 30, COMMAND_ONLY = { "df-studio": 1 };
+    var H = { open: false, busy: false, ctrl: null, chats: [], cur: null, ctx: {}, ready: null, oldest: null, more: false, loading: false };
+    function hLog(cls, text) { var d = document.createElement("div"); d.className = cls; d.textContent = text; $("hlpLog").appendChild(d); $("hlpLog").scrollTop = 1e9; return d; }
+    function hState(msg, isErr) { var el = $("hlpState"); el.textContent = msg || ""; el.className = msg ? "show" + (isErr ? " err" : "") : ""; }
+    function hTool() { return byName[state.active] || null; }
+    function hWhere() {
+      if (typeof hModeShow === "function") hModeShow();
+      var t = hTool();
+      $("hlpWhere").textContent = t ? "📍 " + t.title + (H.ctx[t.name] ? " · " + H.ctx[t.name].split("\n")[0].slice(0, 70) : "") : "📍 Toolbox home — ask me what Toolbox can do";
+    }
+    // Mode: COMMAND (default) = Claude gives code/command to copy and run yourself (fast, nothing is run); RUN = Claude does it with Toolbox's tools.
+    function hMode() { var t = hTool(); if (t && COMMAND_ONLY[t.name]) return "command"; return store.get("toolbox_helper_mode") === "run" ? "run" : "command"; }
+    function hModeShow() {
+      var m = hMode(), b = $("hlpMode"); b.className = m === "run" ? "run" : "";
+      b.textContent = m === "run" ? "⚡ Run it" : "⌨️ Give me the command";
+      var t = hTool(), only = !!(t && COMMAND_ONLY[t.name]);
+      b.disabled = only; b.style.display = only ? "none" : "";                       // DataFrame Studio: command only — nothing to choose
+      $("hlpModeHint").textContent = only ? "Command mode: Claude gives code to copy, written for your current steps" : m === "run" ? "Claude runs it with Toolbox's tools" : "Claude gives code to copy — fastest, you stay in control";
+    }
+    function hContext() {
+      var t = hTool(), mode = "Mode: " + (hMode() === "run" ? "RUN" : "COMMAND") + ".\n";
+      return mode + hContext2(t);
+    }
+    function hContext2(t) {
+      if (!t) return "Open page: " + (state.active === "home" ? "Toolbox home" : state.active) + ".";
+      return "Open tool: " + t.title + " (id " + t.name + "). " + (t.description || "") + (H.ctx[t.name] ? "\nOn screen: " + H.ctx[t.name] : "");
+    }
+    // A tool may tell the panel what is on screen: window.parent.postMessage({type:"toolbox-context", text:"…"}, "*"). Only the active tool's own frame is believed; capped.
+    window.addEventListener("message", function (e) {
+      var d = e.data;
+      if (!d || d.type !== "toolbox-context" || typeof d.text !== "string") return;
+      Object.keys(byName).forEach(function (n) {
+        var p = $("pane-tool-" + n), f = p && p.querySelector("iframe");
+        if (f && f.contentWindow === e.source) { H.ctx[n] = d.text.slice(0, CTX_MAX); if (n === state.active) hWhere(); }
+      });
+    });
+    function hCheck() {
+      return fetch("/api/helper/status").then(function (r) { return r.json(); }).then(function (s) {
+        H.ready = s.state === "ready";
+        hState(H.ready ? (s.billing === "other" ? s.message : "") : s.message, !H.ready);
+      }).catch(function () { H.ready = false; hState("Could not reach Toolbox to check the helper.", true); });
+    }
+    // The chat log lives on this computer next to the helper (not in this browser): any browser shows the same chats, and long chats load a page at a time.
+    // tiny, safe markdown for answers: everything is escaped FIRST, then only bold, `code`, bullet lists and pipe tables are turned into tags
+    function mdInline(t) { return t.replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>"); }
+    function md(text) {
+      var L = esc(text).split("\n"), out = [], i = 0, isRow = function (l) { return /^\s*\|.*\|\s*$/.test(l || ""); };
+      while (i < L.length) {
+        var l = L[i];
+        if (/^\s*```/.test(l)) {                                               // fenced code: shown as-is (already escaped) with a Copy button
+          var code = []; i++; while (i < L.length && !/^\s*```/.test(L[i])) { code.push(L[i]); i++; } i++;
+          out.push('<pre><button class="cpy" type="button">Copy</button><code>' + code.join("\n") + "</code></pre>");
+        } else if (isRow(l) && /^\s*\|?[\s:|-]+\|?\s*$/.test(L[i + 1] || "") && (L[i + 1] || "").indexOf("-") >= 0) {
+          var cells = function (r) { return r.trim().replace(/^\||\|$/g, "").split("|").map(function (c) { return mdInline(c.trim()); }); };
+          var h = cells(l), body = []; i += 2;
+          while (i < L.length && isRow(L[i])) { body.push(cells(L[i])); i++; }
+          out.push("<table><thead><tr>" + h.map(function (c) { return "<th>" + c + "</th>"; }).join("") + "</tr></thead><tbody>" + body.map(function (r) { return "<tr>" + r.map(function (c) { return "<td>" + c + "</td>"; }).join("") + "</tr>"; }).join("") + "</tbody></table>");
+        } else if (/^\s*[-*] /.test(l)) {
+          var items = []; while (i < L.length && /^\s*[-*] /.test(L[i])) { items.push("<li>" + mdInline(L[i].replace(/^\s*[-*] /, "")) + "</li>"); i++; }
+          out.push("<ul>" + items.join("") + "</ul>");
+        } else if (!l.trim()) { i++; }
+        else { var para = []; while (i < L.length && L[i].trim() && !isRow(L[i]) && !/^\s*[-*] /.test(L[i])) { para.push(mdInline(L[i])); i++; } out.push("<p>" + para.join("<br>") + "</p>"); }
+      }
+      return out.join("");
+    }
+    function hMsgEl(m) {
+      var d = document.createElement("div"), meta = m.meta || {};
+      if (m.role === "user") { d.className = "hm me"; d.textContent = m.text; }
+      else if (m.role === "assistant") { d.className = "hm ai"; d.innerHTML = md(m.text); }
+      else if (m.role === "tool") { d.className = "hchip" + (meta.status === "error" ? " error" : ""); d.textContent = meta.status === "error" ? "⚠ " + m.text + " failed" : meta.saved ? "✓ saved " + (meta.what || "") : "🔧 " + m.text; }
+      else { d.className = "hm sys" + (meta.error ? " bad" : ""); d.textContent = m.text; }
+      d.dataset.id = m.id;
+      return d;
+    }
+    // 👍 / 👎 on an answer: your review of it. A 👎 with a note can become a rule in that tool's policy (⚙️), which is how the helper improves for each tool.
+    function hRate(messageId) {
+      var a = Array.prototype.filter.call($("hlpLog").children, function (n) { return n.classList.contains("ai"); }).pop();
+      if (!a || a.querySelector(".rate") || !H.cur) return;
+      var tl = hTool(), tool = tl ? tl.name : "home", chat = H.cur, row = document.createElement("div"); row.className = "rate";
+      function send(rating, note) {
+        fetch("/api/helper/reviews", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat: chat, message_id: messageId || null, tool: tool, rating: rating, note: note || "" }) })
+          .then(function (r) { return r.json(); }).then(function (d) { row.textContent = d.ok ? (rating === "up" ? "👍 Thanks" : "👎 Saved — you can turn it into a rule in ⚙️") : "Could not save the review."; })
+          .catch(function () { row.textContent = "Could not save the review."; });
+      }
+      var up = document.createElement("button"), down = document.createElement("button");
+      up.textContent = "👍"; down.textContent = "👎"; up.title = "Good answer"; down.title = "Not what I wanted";
+      up.onclick = function () { send("up"); };
+      down.onclick = function () {
+        row.innerHTML = '<input type="text" maxlength="300" placeholder="What should it do instead? (optional)" /><button class="send">Save</button>';
+        var inp = row.querySelector("input"); inp.focus();
+        row.querySelector(".send").onclick = function () { send("down", inp.value); };
+        inp.onkeydown = function (e) { if (e.key === "Enter") send("down", inp.value); };
+      };
+      row.appendChild(up); row.appendChild(down); a.appendChild(row);
+    }
+    function hLoadChats() {
+      return fetch("/api/helper/chats?limit=60").then(function (r) { return r.json(); }).then(function (d) { H.chats = (d && d.chats) || []; }).catch(function () { H.chats = []; });
+    }
+    function hRenderThreads() {
+      var el = $("hlpThreads"), tn = state.active, list = H.chats;
+      var mine = list.filter(function (t) { return t.tool === tn; }), rest = list.filter(function (t) { return t.tool !== tn; });
+      function row(t) { return '<div style="display:flex"><button data-thread="' + esc(t.id) + '"' + (t.id === H.cur ? ' class="cur"' : "") + ' title="' + esc(t.title) + '" style="flex:1">' + esc((byName[t.tool] || {}).icon || "💬") + " " + esc(t.title) +
+        '</button><button data-thread-del="' + esc(t.id) + '" title="Remove this chat from the list (Claude\'s own memory is not touched)" style="width:auto;padding:4px 7px">✕</button></div>'; }
+      var html = "";
+      if (mine.length) html += '<div class="muted" style="font-size:.72rem;margin:2px 4px">This tool</div>' + mine.slice(0, 8).map(row).join("");
+      if (rest.length) html += '<div class="muted" style="font-size:.72rem;margin:6px 4px 2px">Other tools</div>' + rest.slice(0, 12).map(row).join("");
+      el.innerHTML = html || '<div class="muted" style="padding:4px">No earlier chats yet.</div>';
+    }
+    function hOlderBox() {
+      var b = $("hlpOlder");
+      if (!b) { b = document.createElement("div"); b.id = "hlpOlder"; b.className = "hm sys"; b.style.cursor = "pointer"; b.textContent = "⟳ Load older messages"; b.onclick = hLoadOlder; }
+      return b;
+    }
+    function hShowChat(id) {
+      H.cur = id; H.oldest = null; H.more = false; $("hlpLog").innerHTML = ""; store.set(HK, id || "");
+      $("hlpThreads").classList.remove("show"); hWhere();
+      if (!id) { hLog("hm sys", "New chat."); return Promise.resolve(); }
+      return fetch("/api/helper/chats/" + encodeURIComponent(id) + "/messages?limit=" + PAGE).then(function (r) { return r.json(); }).then(function (d) {
+        var ms = (d && d.messages) || [], log = $("hlpLog");
+        if (!ms.length) { hLog("hm sys", "Continuing this chat. Claude remembers it."); return; }
+        ms.forEach(function (m) { log.appendChild(hMsgEl(m)); });
+        H.oldest = ms[0].id; H.more = !!d.has_more;
+        if (H.more) log.insertBefore(hOlderBox(), log.firstChild);
+        log.scrollTop = 1e9;
+      }).catch(function () { hLog("hm sys bad", "Could not load this chat."); });
+    }
+    function hLoadOlder() {
+      if (!H.more || H.loading || !H.cur || !H.oldest) return;
+      H.loading = true;
+      fetch("/api/helper/chats/" + encodeURIComponent(H.cur) + "/messages?limit=" + PAGE + "&before=" + H.oldest).then(function (r) { return r.json(); }).then(function (d) {
+        var ms = (d && d.messages) || [], log = $("hlpLog"), box = hOlderBox(), before = log.scrollHeight, frag = document.createDocumentFragment();
+        ms.forEach(function (m) { frag.appendChild(hMsgEl(m)); });
+        if (box.parentNode === log) log.removeChild(box);
+        log.insertBefore(frag, log.firstChild);
+        if (ms.length) H.oldest = ms[0].id;
+        H.more = !!d.has_more;
+        if (H.more) log.insertBefore(box, log.firstChild);
+        log.scrollTop = log.scrollHeight - before;                 // stay where the reader was
+      }).catch(function () {}).then(function () { H.loading = false; });
+    }
+    function hNew() { if (H.busy) return; hShowChat(null); $("hlpIn").focus(); }
+    function hOpen(on) {
+      H.open = on === undefined ? !H.open : on;
+      document.body.classList.toggle("helper-open", H.open);
+      $("helperBtn").classList.toggle("on", H.open); $("helperBtn").textContent = H.open ? "🤖 Hide Claude" : "🤖 Ask Claude";
+      if (H.open) {
+        hWhere(); hCheck(); cardsLoop();
+        if (!$("hlpLog").children.length) {              // first open: show the chat you were in (or the newest) if it is under an hour old, else start fresh (ADR §4.1)
+          hLoadChats().then(function () {
+            var want = store.get(HK), c = H.chats.filter(function (x) { return x.id === want; })[0] || H.chats[0];
+            hShowChat(c && Date.now() / 1000 - c.last < HOUR / 1000 ? c.id : null);
+          });
+        }
+        $("hlpIn").focus();
+      }
+    }
+    function hAsk(text) {
+      if (H.busy || !text.trim()) return;
+      H.busy = true; $("hlpSend").disabled = true;
+      hLog("hm me", text);
+      var answer = null, got = "", thread = H.cur, tl = hTool(), ctrl = new AbortController(), timer = null, dirty = false; H.ctrl = ctrl;
+      // The answer arrives in many tiny pieces. Re-drawing it for every piece froze the browser on long answers (tables), so draw at most ~6 times a second.
+      function paint() { timer = null; if (answer && dirty) { dirty = false; var log = $("hlpLog"), near = log.scrollHeight - log.scrollTop - log.clientHeight < 80; answer.innerHTML = md(got); if (near) log.scrollTop = 1e9; } }
+      function schedule() { dirty = true; if (!timer) timer = setTimeout(paint, 160); }
+      function settle() { if (timer) { clearTimeout(timer); } paint(); }
+      fetch("/api/helper/ask", { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+        body: JSON.stringify({ message: text, thread_id: thread, context: hContext(), tool: tl ? tl.name : "home" }) })
+        .then(function (r) {
+          if (!r.body) throw new Error("This browser cannot stream the answer.");
+          var rd = r.body.getReader(), dec = new TextDecoder(), buf = "";
+          function pump() {
+            return rd.read().then(function (x) {
+              if (x.done) return;
+              buf += dec.decode(x.value, { stream: true });
+              var parts = buf.split("\n\n"); buf = parts.pop();
+              parts.forEach(function (p) { if (p.indexOf("data: ") === 0) { try { hEvent(JSON.parse(p.slice(6))); } catch (e) { if (window.console) console.error("helper event", e); } } });
+              return pump();
+            });
+          }
+          function hEvent(ev) {
+            if (ev.type === "start") { if (!thread && ev.thread_id) { thread = ev.thread_id; H.cur = thread; store.set(HK, thread); } }
+            else if (ev.type === "text") { if (!answer) answer = hLog("hm ai", ""); got += ev.text; schedule(); }
+            else if (ev.type === "tool") {
+              if (ev.status === "running") { settle(); answer = null; got = ""; dirty = false; hLog("hchip", "🔧 " + ev.name + "…"); }
+              else if (ev.status === "error") hLog("hchip error", "⚠ " + ev.name + " failed");
+              else if (ev.saved) {                                   // a write really happened: make it visible in the tool you are looking at
+                hLog("hchip", "✓ saved " + (ev.what || "") + " — tool refreshed");
+                var f = document.querySelector(".pane.active iframe");
+                if (f) { try { f.contentWindow.postMessage({ type: "toolbox-refresh", what: ev.what || "" }, "*"); } catch (e) {} f.src = f.src; }
+              }
+            }
+            else if (ev.type === "warning") hLog("hm sys", ev.message);
+            else if (ev.type === "done") { settle(); if (!answer && ev.text) hLog("hm ai", "").innerHTML = md(ev.text); hRate(ev.message_id); }
+            else if (ev.type === "error") { settle(); hLog("hm sys bad", ev.message); if (ev.code === "thread_not_found") { H.cur = null; store.set(HK, ""); } hCheck(); }
+          }
+          return pump();
+        })
+        .catch(function (e) { if (e.name === "AbortError") hLog("hm sys", "Stopped."); else hLog("hm sys bad", "The connection to the helper broke."); })
+        .then(function () { settle(); H.busy = false; H.ctrl = null; $("hlpSend").disabled = false; cardsPoll(); hLoadChats(); });
+    }
+
+    // ---- the owner's policy: how the helper should behave (plain text, kept on this computer next to the helper; safety rules cannot be changed here) ----
+    var P = { tools: [] };
+    function polScope() { return $("polScope").value; }
+    function polFillScope(keep) {
+      var want = keep != null ? keep : (byName[state.active] ? state.active : ""), sel = $("polScope");
+      sel.innerHTML = '<option value="">All tools (general policy)</option>' + tools.map(function (t) { return '<option value="' + esc(t.name) + '">' + esc(t.icon || "") + " " + esc(t.title) + (P.tools.indexOf(t.name) >= 0 ? " ✓" : "") + "</option>"; }).join("");
+      sel.value = want;
+    }
+    function polLoad() {
+      var tool = polScope(); $("polMsg").textContent = "";
+      fetch("/api/helper/policy" + (tool ? "?tool=" + encodeURIComponent(tool) : "")).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.policy == null) { $("polMsg").textContent = d.message || "The helper is not available."; return; }
+        P.tools = d.tools || []; var keep = polScope(); polFillScope(keep);
+        $("polText").value = d.policy; $("polText").maxLength = d.max_chars || 4000; polCount();
+        $("polMsg").textContent = tool && P.tools.indexOf(tool) < 0 ? "Not saved yet — this is the starting text. Edit it and press Save." : "";
+      }).catch(function () { $("polMsg").textContent = "Could not load the policy."; });
+      polReviews();
+    }
+    function polReviews() {
+      var tool = polScope(), box = $("polRev"), sum = $("polSum");
+      if (!tool) { box.innerHTML = ""; sum.textContent = "General rules for every tool. Pick a tool above to give it its own rules and see your reviews."; return; }
+      fetch("/api/helper/reviews/summary?tool=" + encodeURIComponent(tool)).then(function (r) { return r.json(); }).then(function (d) {
+        var t = (d.tools || {})[tool] || { up: 0, down: 0 }; sum.textContent = "Your reviews of this tool, last " + (d.days || 30) + " days: 👍 " + t.up + " · 👎 " + t.down;
+      }).catch(function () {});
+      fetch("/api/helper/reviews?tool=" + encodeURIComponent(tool) + "&status=new").then(function (r) { return r.json(); }).then(function (d) {
+        var list = (d && d.reviews) || [];
+        box.innerHTML = list.length ? '<div style="margin-top:8px;font-weight:600">Your 👎 notes — turn them into rules</div>' + list.map(function (r) {
+          return '<div class="rcp"><div>' + esc(r.note) + '</div><div class="acts"><button class="run" data-rev-rule="' + r.id + '" data-note="' + esc(r.note) + '">Make it a rule</button><button data-rev-no="' + r.id + '">Dismiss</button></div></div>';
+        }).join("") : "";
+      }).catch(function () {});
+    }
+    function polOpen() {
+      var box = $("hlpPolicy"); box.classList.toggle("show");
+      if (!box.classList.contains("show")) return;
+      $("hlpThreads").classList.remove("show"); $("hlpRecipes").classList.remove("show");
+      polFillScope(); polLoad();
+    }
+    function polCount() { $("polCount").textContent = $("polText").value.length + " / " + $("polText").maxLength; }
+    function polPut(body, done) {
+      fetch("/api/helper/policy", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ tool: polScope() }, body)) })
+        .then(function (r) { return r.json(); }).then(function (d) {
+          if (d.policy == null) { $("polMsg").textContent = d.message || "Could not save."; return; }
+          P.tools = d.tools || P.tools; $("polText").value = d.policy; polCount(); polFillScope(polScope()); done && done();
+        }).catch(function () { $("polMsg").textContent = "Could not save."; });
+    }
+    function polSave(reset) { polPut(reset ? { reset: true } : { policy: $("polText").value }, function () { $("polMsg").textContent = reset ? "Back to the starting text. Applies from your next question." : "Saved. Applies from your next question."; }); }
+    function addLearned(text, note) {                       // append "- note" under "## Learned" (create the section when missing)
+      var line = "- " + note.replace(/\s+/g, " ").trim(), i = text.search(/^## Learned.*$/m);
+      if (text.indexOf(line) >= 0) return text;
+      if (i < 0) return text.replace(/\s*$/, "") + "\n\n## Learned (accepted suggestions land here)\n" + line + "\n";
+      var rest = text.slice(i), nl = rest.indexOf("\n"), head = text.slice(0, i + (nl < 0 ? rest.length : nl)), tail = nl < 0 ? "" : text.slice(i + nl);
+      return head + "\n" + line + tail.replace(/^\n?/, "\n");
+    }
+    $("hlpPolicyBtn").addEventListener("click", polOpen);
+    $("polText").addEventListener("input", polCount);
+    $("polScope").addEventListener("change", polLoad);
+    $("polRev").addEventListener("click", function (e) {
+      var rule = e.target.closest("[data-rev-rule]"), no = e.target.closest("[data-rev-no]");
+      function mark(id, st) { return fetch("/api/helper/reviews/" + id + "/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: st }) }); }
+      if (rule) { polPut({ policy: addLearned($("polText").value, rule.dataset.note) }, function () { mark(rule.dataset.revRule, "used").then(polReviews); $("polMsg").textContent = "Added as a rule and saved. Applies from your next question."; }); }
+      else if (no) mark(no.dataset.revNo, "dismissed").then(polReviews);
+    });
+    $("polSave").addEventListener("click", function () { polSave(false); });
+    $("polReset").addEventListener("click", function () { if (confirm("Replace your policy with the default text?")) polSave(true); });
+    $("hlpLog").addEventListener("click", function (e) {
+      var b = e.target.closest(".cpy"); if (!b) return;
+      var txt = b.parentNode.querySelector("code").textContent;
+      var done = function () { b.textContent = "Copied ✓"; setTimeout(function () { b.textContent = "Copy"; }, 1500); };
+      try { navigator.clipboard.writeText(txt).then(done, function () { var t = document.createElement("textarea"); t.value = txt; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); done(); }); } catch (x) { done(); }
+    });
+    $("hlpLog").addEventListener("scroll", function () { if (this.scrollTop < 60) hLoadOlder(); });
+
+    // ---- plan cards (roadmap H4): a write the AI asked for. Approve/Reject come from THIS click (+ the owner's PIN); the AI cannot press them. ----
+    var C = { sig: "", timer: null, hidden: {}, seen: {} };
+    function cardHtml(c) {
+      var p = c.plan || {}, env = p.environment || "non-prod", done = c.status !== "pending";
+      var h = '<div class="pcard' + (done ? " done" : "") + '" data-card="' + esc(c.id) + '"><h4>🛡️ ' + esc(p.what || (c.action + " " + c.target)) + ' <span class="env ' + (env === "non-prod" ? "" : "prod") + '">' + esc(env === "non-prod" ? "non-prod" : "PROD") + "</span></h4>";
+      h += '<div class="kv">Where: <b>' + esc(p.target || c.target) + "</b> · Rows: <b>" + esc(p.rows == null ? "?" : Number(p.rows).toLocaleString()) + "</b>" + (p.source ? " · From: <b>" + esc(p.source) + "</b>" : "") + (p.steps != null ? " · Steps: <b>" + esc(p.steps) + "</b>" : "") + "</div>";
+      if (p.columns && p.columns.length) h += '<div class="kv">Columns: ' + esc(p.columns.slice(0, 12).join(", ")) + (p.columns.length > 12 ? "…" : "") + "</div>";
+      if (p.replaces) h += '<div class="kv">Replaces a table of <b>' + esc(Number(p.replaces.rows || 0).toLocaleString()) + "</b> rows; the old one is kept as a backup table.</div>";
+      if (done) h += '<button class="no" data-card-x="' + esc(c.id) + '" title="Dismiss" style="float:right;padding:0 7px">✕</button><div class="kv"><b>' + (c.status === "rejected" ? "Rejected — nothing was written." : c.status === "used" ? "Approved and used — the permission is spent." : "Approved for 10 minutes — one save only.") + "</b></div>";
+      else h += (env !== "non-prod" ? '<label class="kv" style="display:block;margin-top:6px"><input type="checkbox" class="cprod" /> This target is <b>' + esc(env === "prod" ? "PROD" : "not labelled (treated as PROD)") + '</b>. I understand the AI may change it once.</label>' : "") + '<div class="acts"><input type="password" class="cpin" placeholder="Your PIN" autocomplete="current-password" /><button class="ok" data-card-ok="' + esc(c.id) + '">Approve</button><button class="no" data-card-no="' + esc(c.id) + '">Reject</button></div><div class="msg"></div>';
+      return h + "</div>";
+    }
+    function cardsPoll() {
+      if (!H.open) return;
+      fetch("/tools/ai-access/approvals").then(function (r) { return r.json(); }).then(function (d) {
+        var now = Date.now(), cards = ((d && d.cards) || []).filter(function (c) {
+          if (C.hidden[c.id]) return false;
+          if (c.status !== "pending") { C.seen[c.id] = C.seen[c.id] || now; if (now - C.seen[c.id] > 3500) { C.hidden[c.id] = 1; return false; } }   // a decided card shows its result for a moment, then goes away
+          return true;
+        }), sig = JSON.stringify(cards.map(function (c) { return [c.id, c.status]; }));
+        if (sig === C.sig) return;
+        var typing = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("cpin");
+        if (typing) return;                                   // never wipe a PIN the owner is typing
+        C.sig = sig; var el = $("hlpCards"); if (cards.some(function (c) { return c.status !== "pending"; })) setTimeout(cardsPoll, 3700);
+        el.innerHTML = cards.map(cardHtml).join(""); el.classList.toggle("show", cards.length > 0);
+      }).catch(function () {});
+    }
+    function cardsLoop() { cardsPoll(); clearTimeout(C.timer); C.timer = setTimeout(function () { if (H.open) cardsLoop(); }, 3000); }
+    function cardCall(id, what, body) {
+      return fetch("/tools/ai-access/approvals/" + encodeURIComponent(id) + "/" + what, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+        .then(function (r) { return r.json(); });
+    }
+    $("hlpCards").addEventListener("click", function (e) {
+      var ok = e.target.closest("[data-card-ok]"), no = e.target.closest("[data-card-no]"), card = e.target.closest(".pcard"), x = e.target.closest("[data-card-x]");
+      if (x) { C.hidden[x.dataset.cardX] = 1; C.sig = ""; cardsPoll(); return; }
+      if (!card) return;
+      var msg = card.querySelector(".msg");
+      if (ok) {
+        var pin = card.querySelector(".cpin").value;
+        if (!pin) { msg.textContent = "Type your PIN to approve."; return; }
+        cardCall(ok.dataset.cardOk, "approve", { pin: pin, confirm_prod: !!(card.querySelector(".cprod") && card.querySelector(".cprod").checked) }).then(function (r) {
+          card.querySelector(".cpin").value = "";
+          if (!r.ok) { msg.textContent = r.error || "Could not approve."; return; }
+          C.sig = ""; cardsPoll(); hLog("hm sys", "You approved one save (valid 10 minutes).");
+          if (!H.busy) hAsk("I approved the request. Please go ahead and repeat the same save now.");
+        }).catch(function () { msg.textContent = "Toolbox could not be reached."; });
+      } else if (no) {
+        cardCall(no.dataset.cardNo, "reject").then(function (r) {
+          if (!r.ok) { msg.textContent = r.error || "Could not reject."; return; }
+          C.hidden[no.dataset.cardNo] = 1; C.sig = ""; cardsPoll(); hLog("hm sys", "You rejected the request. Nothing was written.");
+        });
+      }
+    });
+
+    // ---- recipes (roadmap H5): a saved pipeline, run by the owner's click with NO AI and no tokens; writes still stop at an approval card ----
+    function rcpLoad() {
+      fetch("/tools/ai-access/recipes").then(function (r) { return r.json(); }).then(function (d) {
+        var el = $("hlpRecipes"), list = (d && d.recipes) || [];
+        el.innerHTML = list.length ? list.map(function (r) {
+          return '<div class="rcp"><b>' + esc(r.name) + '</b> <span class="st">' + esc(r.steps.length) + " step(s)" + (r.last_status ? " · last: " + esc(r.last_status) : "") + "</span>" +
+            (r.description ? '<div class="st">' + esc(r.description) + "</div>" : "") +
+            '<div class="st">' + r.steps.map(function (s, i) { return (i + 1) + ". " + (s.writes ? "✍ " : "") + esc(s.tool) + " " + esc(s.summary); }).join("<br>") + "</div>" +
+            '<div class="acts"><button class="run" data-rcp-run="' + esc(r.name) + '">Run (no AI)</button><button data-rcp-del="' + esc(r.name) + '">Delete</button></div></div>';
+        }).join("") : '<div class="muted" style="padding:4px">A recipe is a set of steps saved once and re-run with one click, with no AI. After something works, ask Claude: “save this as a recipe”.</div>';
+      }).catch(function () { $("hlpRecipes").textContent = "Could not load recipes."; });
+    }
+    function rcpRun(name, opts) {
+      hLog("hm sys", "Running recipe “" + name + "” (no AI)…");
+      fetch("/tools/ai-access/recipes/" + encodeURIComponent(name) + "/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(opts || {}) })
+        .then(function (r) { return r.json(); }).then(function (r) {
+          if (!r.ok) { hLog("hm sys bad", r.error || "The recipe could not run."); return; }
+          (r.steps || []).forEach(function (st) { hLog("hchip" + (st.ok ? "" : " error"), (st.ok ? "✓ " : "⚠ ") + "step " + st.step + " · " + st.tool + " · " + st.summary); });
+          var d = hLog("hm sys" + (r.status === "failed" ? " bad" : ""), r.message || r.status);
+          if (r.status === "waiting_for_approval" || r.status === "source_changed") {
+            var b = document.createElement("button"); b.className = "hbtn run"; b.style.marginLeft = "8px";
+            b.textContent = r.status === "source_changed" ? "Run anyway" : "Continue";
+            b.onclick = function () { b.disabled = true; rcpRun(name, r.status === "source_changed" ? { accept_changes: true } : { from_step: r.next_from_step }); };
+            d.appendChild(b);
+          }
+          cardsPoll(); rcpLoad();
+        }).catch(function () { hLog("hm sys bad", "Toolbox could not be reached."); });
+    }
+    $("hlpRecipesBtn").addEventListener("click", function () { $("hlpRecipes").classList.toggle("show"); if ($("hlpRecipes").classList.contains("show")) { $("hlpThreads").classList.remove("show"); $("hlpPolicy").classList.remove("show"); rcpLoad(); } });
+    $("hlpRecipes").addEventListener("click", function (e) {
+      var run = e.target.closest("[data-rcp-run]"), del = e.target.closest("[data-rcp-del]");
+      if (run) { $("hlpRecipes").classList.remove("show"); rcpRun(run.dataset.rcpRun, {}); }
+      else if (del && confirm("Delete the recipe “" + del.dataset.rcpDel + "”? (Nothing else is deleted.)")) fetch("/tools/ai-access/recipes/" + encodeURIComponent(del.dataset.rcpDel), { method: "DELETE" }).then(rcpLoad);
+    });
+    $("hlpMode").addEventListener("click", function () { store.set("toolbox_helper_mode", hMode() === "run" ? "command" : "run"); hModeShow(); });
+    hModeShow();
+    $("helperBtn").addEventListener("click", function () { hOpen(); });
+    $("hlpClose").addEventListener("click", function () { hOpen(false); });
+    $("hlpNew").addEventListener("click", hNew);
+    $("hlpThreadsBtn").addEventListener("click", function () { $("hlpRecipes").classList.remove("show"); $("hlpPolicy").classList.remove("show"); hLoadChats().then(hRenderThreads); $("hlpThreads").classList.toggle("show"); });
+    $("hlpThreads").addEventListener("click", function (e) {
+      var del = e.target.closest("[data-thread-del]"), b = e.target.closest("[data-thread]");
+      if (del) { fetch("/api/helper/chats/" + encodeURIComponent(del.dataset.threadDel), { method: "DELETE" }).then(function () { if (H.cur === del.dataset.threadDel) hShowChat(null); return hLoadChats(); }).then(hRenderThreads); }
+      else if (b && !H.busy) hShowChat(b.dataset.thread);
+    });
+    $("hlpForm").addEventListener("submit", function (e) { e.preventDefault(); var t = $("hlpIn").value; if (t.trim()) { $("hlpIn").value = ""; $("hlpIn").style.height = ""; hAsk(t); } });
+    $("hlpIn").addEventListener("input", function () { this.style.height = "auto"; this.style.height = Math.min(this.scrollHeight, 160) + "px"; });
+    $("hlpIn").addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("hlpForm").requestSubmit(); } });
+    document.addEventListener("keydown", function (e) {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") { e.preventDefault(); hOpen(); }
+      else if (e.key === "Escape" && H.busy && H.ctrl && document.activeElement === $("hlpIn")) H.ctrl.abort();
+    });
 
     // ---------- start ----------
     $("showLearning").checked = store.get(LEARN_KEY) === "true";

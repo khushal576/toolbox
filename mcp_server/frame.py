@@ -209,6 +209,81 @@ def plan_digest(table: dict, steps: list, save_as: str, mode: str) -> str:
     return hashlib.sha256(canon.encode()).hexdigest()
 
 
+# ---- flatten JSON columns (roadmap H5) -----------------------------------------------------------------------------------------------
+
+MAX_FLAT_COLUMNS = 200
+
+
+def flatten_json(df: Any, columns: Any, sep: str = ".", max_depth: int = 3) -> tuple[Any, list[str]]:
+    """Replace each JSON column (JSON text, dict or list per cell) by one column per key: `col.key`, `col.key.sub` … (nested objects up to max_depth;
+    anything deeper, and every list, stays as JSON text in its column — never silently dropped or exploded). Numbers keep exact decimals.
+    Returns (new DataFrame, notes). The original column is replaced; row count never changes."""
+    import decimal
+
+    import pandas as pd
+
+    if not isinstance(columns, list) or not columns or not all(isinstance(c, str) for c in columns):
+        raise ToolError("flatten_json needs 'columns': a list of column names holding JSON.")
+    sep = str(sep or ".")[:3]
+    try:
+        max_depth = max(1, min(int(max_depth), 6))
+    except (TypeError, ValueError):
+        raise ToolError("flatten_json 'max_depth' must be a whole number (1-6).") from None
+    missing = [c for c in columns if c not in df.columns]
+    if missing:
+        raise ToolError(f"No such column: {', '.join(missing)}.", hint="Columns: " + ", ".join(map(str, df.columns)))
+    notes: list[str] = []
+
+    def parse(v: Any) -> Any:
+        if isinstance(v, str) and v.strip()[:1] in ("{", "["):
+            try:
+                return json.loads(v, parse_float=decimal.Decimal)
+            except ValueError:
+                notes.append("a value that looked like JSON could not be parsed and was left as text")
+        return v
+
+    seen_objects = [0]
+
+    def walk(prefix: str, v: Any, depth: int, out: dict) -> None:
+        if isinstance(v, dict) and depth == 1:
+            seen_objects[0] += 1
+        if isinstance(v, dict) and depth <= max_depth:
+            for k, x in v.items():
+                walk(f"{prefix}{sep}{k}", x, depth + 1, out)
+        elif isinstance(v, (dict, list)):
+            out[prefix] = json.dumps(v, default=str, ensure_ascii=False)
+        else:
+            out[prefix] = v
+
+    result = df.copy()
+    for col in columns:
+        flat_rows = []
+        seen_objects[0] = 0
+        for v in df[col].tolist():
+            out: dict = {}
+            v = parse(v) if not (v is None or (isinstance(v, float) and v != v)) else None
+            if v is not None:
+                walk(col, v, 1, out)
+            flat_rows.append(out)
+        names: list[str] = []
+        for r in flat_rows:
+            for k in r:
+                if k not in names:
+                    names.append(k)
+        if not names or not seen_objects[0]:
+            raise ToolError(f"Column '{col}' has no JSON objects to flatten (lists and plain values are not flattened).")
+        if len(names) > MAX_FLAT_COLUMNS:
+            raise ToolError(f"Flattening '{col}' would create {len(names)} columns (limit {MAX_FLAT_COLUMNS}).", hint="Use a smaller max_depth, or flatten fewer columns.")
+        clash = [n for n in names if n in result.columns and n != col]
+        if clash:
+            raise ToolError(f"Flattening '{col}' would overwrite existing columns: {', '.join(clash[:5])}.")
+        new = pd.DataFrame({n: pd.Series([r.get(n) for r in flat_rows], index=result.index, dtype=object) for n in names})   # object: a missing key must not turn ints into floats
+        pos = list(result.columns).index(col)
+        result = pd.concat([result.iloc[:, :pos], new, result.iloc[:, pos + 1:]], axis=1)
+        notes.append(f"'{col}' became {len(names)} column(s): {', '.join(names[:8])}{'…' if len(names) > 8 else ''}")
+    return result, sorted(set(notes), key=notes.index)
+
+
 # ---- writing (the ONLY function here that changes anything; call it only after control.require + a consumed confirmation) -----------
 
 def write_result(df: Any, workspace: str, name: str, *, mode: str, source: dict, description: str) -> dict[str, Any]:

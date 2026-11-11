@@ -1187,8 +1187,25 @@
       .replace(/'/g, "&#39;");
   }
 
+  // Tell the "Ask Claude" panel (if this page is shown inside Toolbox) what is on screen: the current columns and the steps already applied,
+  // so a new command is written for THIS frame and only adds the next step. Small, plain text; sent after every pipeline change.
+  function postHelperContext(preview) {
+    try {
+      if (window.parent === window) return;
+      const cols = (preview.columns || []).map((c) => c.name + " (" + (c.sql_type || c.dtype) + ")");
+      const all = (preview.steps || []).map((s, i) => (i + 1) + ". " + (s.enabled === false ? "[off] " : "") + s.label + ": " + String(s.code || "").replace(/\s+/g, " ").slice(0, 150));
+      const steps = all.length > 12 ? ["…(" + (all.length - 12) + " earlier steps)"].concat(all.slice(-12)) : all;
+      const text = "Table: " + (preview.table_ref || "?") + " · " + preview.row_count + " rows\nColumns now (" + cols.length + "): " + cols.slice(0, 50).join(", ") + (cols.length > 50 ? ", …" : "") +
+        "\nSteps already applied, in order (new code runs AFTER these):\n" + (steps.join("\n") || "(none yet)");
+      window.parent.postMessage({ type: "toolbox-context", text: text }, "*");
+    } catch (e) { /* the helper is optional */ }
+  }
+
+  window.__helperContext = postHelperContext;     // (the page test calls it directly)
+
   function applyPreview(preview) {
     clearError();
+    postHelperContext(preview);
     if (preview.warnings && preview.warnings.length) showWarning(preview.warnings.join(" "));  // roadmap DF1: "3 values couldn't be converted…"
     dfPreview = preview; viewFrame = null;   // a change to the pipeline/tables shows df again
     renderTable(preview);

@@ -102,3 +102,27 @@ Rules checked by the model:
   target site's frame policy; "New window" always works.
 - Static/external plugins report state `ready` in `/api/workspace/status` and have the same on/off switch.
 
+## AI actions (`ai:`, roadmap H3)
+A `kind: python` tool may describe what an AI can do with it, in an optional `ai:` section. The AI helper does not read every tool's description — it **searches** these actions
+(`find_actions` → `describe_action` → `run_action`, ADR-AI-HELPER D6), so a new tool teaches the helper about itself and a removed tool disappears from it.
+
+```yaml
+ai:
+  actions:
+    - name: list_templates              # lowercase letters, digits, _ (2-41 chars); unique within the tool
+      summary: List the saved pipeline templates   # 3-200 chars, in the user's words — this is what find_actions searches
+      path: template/list               # GET /tools/<name>/template/list ; relative, no '..', no query string; {id} placeholders allowed
+      inputs:                           # optional; flat: string | integer | number | boolean, each may have description, enum, max_length, minimum, maximum, default
+        limit: {type: integer, minimum: 1, maximum: 100, default: 20}
+      required: []                      # names from inputs; every {placeholder} in the path must be listed here, and be an integer or a string with max_length/enum
+      returns: templates - a list       # one line (optional)
+```
+Rules (enforced by `core_plugins/manifest.py`; the checks on a call by `core_plugins/ai.py`):
+- **Only stateless READ actions can be declared**: `effect` can only be `read`, `method` only `GET`. A manifest can never expose a write; anything that changes data is an MCP tool in `mcp_server/`
+  with the owner's grant, dry-run, confirm code and read-back (ADR-MCP D7).
+- The AI's inputs are validated against the declared types and limits, unknown inputs are refused, and a value placed in the path may only contain letters, digits and `_ . @ : + = , -` — an action can
+  never reach another tool or another endpoint than the declared one. No redirects are followed, no cookies kept, answers over 1 MB are refused.
+- Do not declare actions that depend on a browser session (cookies) or on a connected database — the AI has neither. Static / external tools have no API and cannot declare actions.
+- A test (`tests/unit/test_ai_manifest.py`) fails if a declared path is not a `GET` route in the tool's own code. At most 20 actions per tool; keep summaries unique.
+Where it runs: the MCP server (worker container) calls `$TOOLBOX_GATEWAY_URL` (compose: `http://toolbox:8080`), so a switched-off tool answers "switched off", an on-demand runtime is started as usual.
+
