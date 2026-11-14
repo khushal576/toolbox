@@ -43,6 +43,7 @@ map, because it actively misleads. If a file's job changes, update its row in th
 | SharePoint Lists | `/tools/sharepoint/` | [`sharepoint-lab/KNOWLEDGE_MAP.md`](sharepoint-lab/KNOWLEDGE_MAP.md) | [`sharepoint-lab/CLAUDE.md`](sharepoint-lab/CLAUDE.md) |
 | Notebook | `/tools/notebook/` | [`notebook-lab/KNOWLEDGE_MAP.md`](notebook-lab/KNOWLEDGE_MAP.md) | [`notebook-lab/CLAUDE.md`](notebook-lab/CLAUDE.md) |
 | Mini Sheet | `/tools/mini-sheet/` | [`mini-sheet/KNOWLEDGE_MAP.md`](mini-sheet/KNOWLEDGE_MAP.md) | [`mini-sheet/CLAUDE.md`](mini-sheet/CLAUDE.md) |
+| SQL Practice | `/tools/sql-practice/` | [`sql-practice/KNOWLEDGE_MAP.md`](sql-practice/KNOWLEDGE_MAP.md) | [`sql-practice/CLAUDE.md`](sql-practice/CLAUDE.md) |
 
 Not tools: `mcp_server/` (stdio MCP server for AI clients — [`mcp_server/KNOWLEDGE_MAP.md`](mcp_server/KNOWLEDGE_MAP.md), [`mcp_server/CLAUDE.md`](mcp_server/CLAUDE.md), design `docs/architecture/ADR-MCP.md`), `orchestrator/` (headless CLI — `orchestrator/CLAUDE.md`), `core/` (shared libraries — see the repo-wide section below and
 `docs/architecture/shared-connectors.md`), `core_plugins/` (manifest loader, gateway, supervisor, autoscaler, Status page).

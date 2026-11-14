@@ -206,6 +206,11 @@ COPY latex-pdf/server.py ./latex_pdf/server.py
 COPY latex-pdf/manifest.yaml ./latex_pdf/manifest.yaml
 COPY latex-pdf/ui/       ./latex_pdf/ui/
 
+COPY sql-practice/server.py ./sql_practice/server.py
+COPY sql-practice/provision.py ./sql_practice/provision.py
+COPY sql-practice/manifest.yaml ./sql_practice/manifest.yaml
+COPY sql-practice/ui/ ./sql_practice/ui/
+
 # >>> scripts/new_tool.py adds new tools' COPY lines ABOVE this marker (roadmap P2); scripts/remove_tool.py (P3) removes them again. Keep it.
 # Plugin model + discovery (roadmap A1/A2). main.py imports it at startup and
 # builds the home page and mounts from every /app/*/manifest.yaml (whole-folder
@@ -214,7 +219,7 @@ COPY core_plugins/ ./core_plugins/
 COPY main.py .
 
 # Create empty __init__.py files so Python treats these as packages.
-RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py text_editor/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py data_lake/__init__.py notebook_lab/__init__.py sharepoint_lab/__init__.py mini_sheet/__init__.py ai_access/__init__.py
+RUN touch core/__init__.py api/__init__.py encode_decode/__init__.py text_editor/__init__.py subnet_calc/__init__.py dns_lookup/__init__.py vlan_designer/__init__.py packet_journey/__init__.py curl_builder/__init__.py header_reference/__init__.py http_methods_status/__init__.py cookie_lab/__init__.py df_studio/__init__.py sql_studio/__init__.py schema_map/__init__.py duck_lab/__init__.py orchestrator/__init__.py orchestrator/connectors/__init__.py orchestrator/recipes/__init__.py vault/__init__.py data_syncer/__init__.py schema_copy/__init__.py data_dumper/__init__.py ssh_sftp/__init__.py latex_pdf/__init__.py data_lake/__init__.py notebook_lab/__init__.py sharepoint_lab/__init__.py mini_sheet/__init__.py ai_access/__init__.py sql_practice/__init__.py
 
 # --- Python packages: wheelhouse + one deps stage per image ----------------------
 # wheelhouse/ (gitignored) holds pre-downloaded wheels for this exact platform/Python version — see

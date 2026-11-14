@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SQL Practice</title>
+<script>
+// Diagnostic banner (same idea as SQL Studio): a script error shows on screen instead of buttons silently doing nothing.
+(function () {
+  function show(msg) {
+    var b = document.getElementById("__pageErr");
+    if (!b) {
+      b = document.createElement("div"); b.id = "__pageErr";
+      b.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:99999;background:#b91c1c;color:#fff;font:13px/1.4 system-ui,sans-serif;padding:8px 14px;white-space:pre-wrap;";
+      (document.body || document.documentElement).appendChild(b);
+    }
+    b.textContent = "Page problem: " + msg + "  (press Ctrl+Shift+R; if it stays, send this text)";
+  }
+  window.__showPageError = show;
+  window.addEventListener("error", function (e) { show((e.message || "script error") + (e.filename ? " @ " + e.filename.split("/").slice(-2).join("/") + ":" + e.lineno : "")); });
+  window.addEventListener("unhandledrejection", function (e) { show("unhandled: " + (e.reason && e.reason.message || e.reason)); });
+})();
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  /* the six canonical colours — copied verbatim from theme-tokens.css (never linked) */
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+    --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --ok-text: #15803d; --err-text: #b91c1c; --warn-text: #b45309;
+  }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 16px 20px 40px; }
+  .top { max-width: 1500px; margin: 0 auto 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.5px; }
+  h1 span { color: var(--accent); }
+  .pill { font-size: 0.74rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); }
+  .pill.ok { color: var(--ok-text); border-color: rgba(21,128,61,.35); }
+  .pill.bad { color: var(--err-text); border-color: rgba(185,28,28,.35); }
+  .spacer { flex: 1; }
+  button { font: inherit; font-size: 0.85rem; font-weight: 600; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button.secondary { background: var(--surface); color: var(--accent); }
+  button.secondary:hover { background: var(--bg); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.secondary.on { background: var(--accent); color: #fff; }
+  .link { background: none; border: none; color: var(--accent); padding: 0; font-size: 0.8rem; cursor: pointer; font-weight: 600; text-decoration: none; }
+
+  /* Schema panel — sits ABOVE the main screen */
+  /* Floats OVER the page (position: fixed) — opening it never moves or re-renders the question/editor underneath. */
+  #schemaPanel { position: fixed; z-index: 100; top: 58px; left: 20px; right: 20px; max-width: 1500px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: none; box-shadow: 0 18px 50px rgba(28,32,53,.28); }
+  #schemaPanel.open { display: block; }
+  .sp-head { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+  .sp-head b { font-weight: 700; }
+  #schemaFrame { width: 100%; height: min(520px, calc(100vh - 150px)); border: 0; display: block; background: #fff; }
+  #schemaNative { padding: 24px 14px; display: block; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; max-height: 480px; overflow: auto; }
+  .tbl { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; font-size: 0.8rem; }
+  .tbl h4 { background: var(--bg); padding: 5px 10px; font-size: 0.82rem; }
+  .tbl div { display: flex; justify-content: space-between; gap: 8px; padding: 2px 10px; border-top: 1px solid var(--border); }
+  .tbl div span:last-child { color: var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.74rem; text-align: right; }
+
+  .main { max-width: 1500px; margin: 0 auto; display: grid; grid-template-columns: 310px 1fr; gap: 14px; align-items: start; }
+  @media (max-width: 900px) { .main { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .side input, .side select { font: inherit; font-size: 0.85rem; padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; width: 100%; background: var(--surface); color: var(--text); }
+  .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0 8px; }
+  #qlist { max-height: 72vh; overflow: auto; margin: 0 -6px; }
+  .qi { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 8px; padding: 7px 8px; color: var(--text); font-weight: 500; font-size: 0.84rem; cursor: pointer; }
+  .qi:hover { background: var(--bg); }
+  .qi.sel { background: rgba(79,94,240,.10); }
+  .qi small { display: block; color: var(--muted); font-size: 0.72rem; margin-top: 1px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .easy { background: #16a34a; } .medium { background: #d97706; } .hard { background: #dc2626; } .brutal { background: #7c3aed; }
+  .count { color: var(--muted); font-size: 0.75rem; margin: 2px 0 4px; }
+
+  .qhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .qhead h2 { font-size: 1.1rem; }
+  .badge { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; padding: 2px 8px; border-radius: 999px; color: #fff; }
+  .tag { font-size: 0.72rem; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+  .prompt { font-size: 0.92rem; line-height: 1.6; margin: 8px 0 10px; }
+  .prompt p { margin-bottom: 8px; }
+  .prompt code, .hint code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: 0.85em; }
+  .prompt ul { margin: 0 0 8px 20px; }
+  .hint { font-size: 0.84rem; color: var(--muted); margin: 4px 0; }
+
+  .editor-wrap { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 8px; }
+  .cm-editor { height: 100%; position: relative; }
+  .cm-editor .cm-scroller { font-family: 'Cascadia Code', 'Fira Code', 'Courier New', monospace; font-size: 0.85rem; line-height: 1.55; max-height: 50vh; }
+  .cm-editor .cm-content { min-height: 200px; }
+  .cm-editor.cm-focused { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .stat { color: var(--muted); font-size: 0.78rem; }
+  .stat.err { color: var(--err-text); white-space: pre-wrap; }
+
+  #result { margin-top: 10px; overflow: auto; max-height: 46vh; border: 1px solid var(--border); border-radius: 8px; display: none; }
+  #result table { border-collapse: collapse; font-size: 0.8rem; width: 100%; }
+  #result th { position: sticky; top: 0; background: var(--bg); text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  #result td { padding: 4px 10px; border-bottom: 1px solid var(--border); font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
+  #result td.null { color: var(--muted); font-style: italic; }
+  .setup { max-width: 1500px; margin: 0 auto 12px; padding: 10px 14px; border: 1px solid rgba(180,83,9,.35); background: rgba(180,83,9,.07); border-radius: 10px; font-size: 0.85rem; display: none; align-items: center; gap: 10px; }
+  .setup.show { display: flex; }
+  .prog { margin: 4px 0 8px; font-size: 0.78rem; color: var(--muted); }
+  .prog .track { height: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; margin-top: 4px; }
+  .prog .track i { display: block; height: 100%; background: #16a34a; width: 0; transition: width .3s; }
+  .opts { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.78rem; color: var(--muted); margin: 0 0 6px; }
+  .opts label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .opts input { width: auto; }
+  .qi.locked { opacity: .5; cursor: not-allowed; }
+  .qi.next { box-shadow: inset 3px 0 0 var(--accent); }
+  .qi .ic { display: inline-block; width: 18px; text-align: center; margin-right: 4px; }
+  .badge.done { background: #16a34a; } .badge.rev { background: #6b7180; }
+  .box { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 10px; font-size: 0.85rem; }
+  .box h4 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-bottom: 6px; }
+  .box.ok { border-color: rgba(21,128,61,.4); background: rgba(21,128,61,.06); }
+  .box.bad { border-color: rgba(185,28,28,.35); background: rgba(185,28,28,.05); }
+  .box table { border-collapse: collapse; font-size: 0.78rem; margin: 4px 0 8px; }
+  .box th, .box td { border: 1px solid var(--border); padding: 3px 9px; text-align: left; white-space: nowrap; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .box th { background: var(--bg); }
+  .box td.null { color: var(--muted); font-style: italic; }
+  .box td.yours { background: rgba(185,28,28,.10); } .box td.exp { background: rgba(21,128,61,.10); }
+  .box pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; overflow: auto; font-size: 0.82rem; margin: 4px 0 8px; }
+  .box p { margin: 4px 0; line-height: 1.55; }
+  .scroll { overflow: auto; max-width: 100%; }
+  .empty { color: var(--muted); padding: 40px 10px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>🏋️ SQL <span>Practice</span></h1>
+  <span class="pill" id="dbPill">checking…</span>
+  <span class="spacer"></span>
+  <button class="secondary" id="btnSchema" title="Show / hide the schema over the page — Alt+S or F2">🗺️ Schema <small style="opacity:.7">Alt+S</small></button>
+  <button class="secondary" id="btnSetup" title="Create the practice database and load every dataset (safe to repeat)">Set up / refresh data</button>
+</div>
+
+<div class="setup" id="setupBanner"><span id="setupMsg"></span><span class="spacer"></span><button id="btnSetupNow">Set up now</button></div>
+
+<section id="schemaPanel">
+  <div class="sp-head">
+    <b id="spTitle">Schema</b><span class="stat" id="spNote"></span>
+    <span class="spacer"></span>
+    <a class="link" id="spOpen" target="_blank" rel="noopener" style="display:none">Open in new tab ↗</a>
+    <button class="secondary" id="spClose">Close ✕</button>
+  </div>
+  <iframe id="schemaFrame" sandbox="allow-scripts" style="display:none" title="Schema map"></iframe>
+  <div id="schemaNative" style="display:none"></div>
+</section>
+
+<div class="main">
+  <aside class="card side">
+    <input type="search" id="qSearch" placeholder="Search questions, topics, tags…" />
+    <div class="filters">
+      <select id="fTopic"><option value="">All topics</option></select>
+      <select id="fDiff"><option value="">Any difficulty</option><option>easy</option><option>medium</option><option>hard</option><option>brutal</option></select>
+    </div>
+    <div class="prog"><span id="progText"></span><div class="track"><i id="progBar"></i></div></div>
+    <div class="opts">
+      <label title="Hide the questions you have already completed"><input type="checkbox" id="optHide" /> Hide completed</label>
+      <label title="Questions unlock one after another, in path order. Untick to open any question."><input type="checkbox" id="optOrder" /> Keep order</label>
+    </div>
+    <div class="count" id="qCount"></div>
+    <div id="qlist"></div>
+  </aside>
+
+  <section class="card" id="work">
+    <div class="empty" id="emptyState">Pick a question on the left to start.</div>
+    <div id="qpane" style="display:none">
+      <div class="qhead">
+        <h2 id="qTitle"></h2><span class="badge" id="qBadge"></span><span class="tag" id="qTopic"></span><span class="tag" id="qDataset"></span>
+      </div>
+      <div class="prompt" id="qPrompt"></div>
+      <div class="box" id="sampleBox"></div>
+      <div id="hints"></div>
+      <button class="link" id="btnHint">💡 Show a hint</button>
+      <div class="editor-wrap"><div id="editor"></div></div>
+      <div class="bar">
+        <button id="btnRun">▶ Run</button>
+        <button id="btnCheck" title="Run your query and the reference answer, compare both with DataDiff (Ctrl+Shift+Enter)">✔ Check answer</button>
+        <button class="secondary" id="btnFormat" title="Format the query (Alt+Shift+F)">Format</button>
+        <button class="secondary" id="btnReset" title="Clear back to an empty editor">Clear</button>
+        <span class="stat" id="runStat">Ctrl+Enter runs your query · Ctrl+Shift+Enter checks it. Nothing you type can change the data.</span>
+      </div>
+      <div id="result"></div>
+      <div id="verdict"></div>
+      <div id="solutionBox"></div>
+      <div class="bar" id="afterBar" style="display:none"></div>
+    </div>
+  </section>
+</div>
+
+<script type="module" onerror="__showPageError('the main page script failed to load (a file it needs could not be fetched)')">
+// CodeMirror + sql-formatter: this tool's OWN copy of SQL Studio's bundle (ui/vendor/cm-bundle.js), so changes to
+// SQL Studio can never break this editor.
+import { EditorView, basicSetup, EditorState, Compartment, keymap, sql, PostgreSQL, format as sqlFormat } from "./vendor/cm-bundle.js";
+
+const $ = (id) => document.getElementById(id);
+const DRAFT_KEY = "sql_practice_draft_";
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked — drafts just don't persist */ } },
+};
+
+let state = { status: null, questions: [], current: null, schemas: {} };
+
+// ---------------------------------------------------------------- helpers
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* non-JSON error page */ }
+  if (!res.ok || data.ok === false) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+// tiny markdown: **bold**, `code`, "- " lists, blank-line paragraphs — everything escaped first
+function renderMd(src) {
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  return src.trim().split(/\n\s*\n/).map((block) => {
+    const lines = block.split("\n");
+    if (lines.every((l) => /^\s*[-*] /.test(l))) return "<ul>" + lines.map((l) => "<li>" + inline(l.replace(/^\s*[-*] /, "")) + "</li>").join("") + "</ul>";
+    return "<p>" + lines.map(inline).join("<br>") + "</p>";
+  }).join("");
+}
+
+// ---------------------------------------------------------------- editor (autocomplete follows the dataset's schema)
+const langC = new Compartment();
+const toNamespace = (schemaObj) => {
+  const ns = {};
+  for (const [t, cols] of Object.entries(schemaObj || {})) ns[t] = Object.entries(cols).map(([c, ty]) => ({ label: c, type: "property", detail: String(ty) }));
+  return ns;
+};
+const sqlExt = (schemaObj) => sql({ dialect: PostgreSQL, schema: toNamespace(schemaObj), upperCaseKeywords: true });
+
+const view = new EditorView({
+  state: EditorState.create({
+    doc: "",
+    extensions: [
+      // our keys FIRST: an earlier extension wins, and basicSetup's default keymap binds Mod-Enter to "insert blank line"
+      keymap.of([
+        { key: "Mod-Enter", run: () => { runQuery(); return true; } },
+        { key: "Mod-Shift-Enter", run: () => { checkAnswer(); return true; } },
+        { key: "Alt-Shift-f", run: () => { formatQuery(); return true; } },
+      ]),
+      basicSetup, langC.of(sqlExt({})),
+      EditorView.updateListener.of((u) => { if (u.docChanged && state.current) store.set(DRAFT_KEY + state.current.id, u.state.doc.toString()); }),
+    ],
+  }),
+  parent: $("editor"),
+});
+const setDoc = (text) => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+const getDoc = () => view.state.doc.toString();
+
+function formatQuery() {
+  const cur = getDoc();
+  if (!cur.trim()) return;
+  try { setDoc(sqlFormat(cur, { language: "postgresql", tabWidth: 2, keywordCase: "upper" })); }
+  catch (e) { $("runStat").className = "stat err"; $("runStat").textContent = "Could not format: " + e.message; }
+}
+
+async function loadSchema(dataset) {
+  if (!state.schemas[dataset]) {
+    try { state.schemas[dataset] = (await api(`datasets/${encodeURIComponent(dataset)}/schema.json`)).schema; }
+    catch (e) { state.schemas[dataset] = null; return null; }
+  }
+  view.dispatch({ effects: langC.reconfigure(sqlExt(state.schemas[dataset])) });
+  return state.schemas[dataset];
+}
+
+// ---------------------------------------------------------------- status + setup
+function showStatus(s) {
+  state.status = s;
+  const pill = $("dbPill"), banner = $("setupBanner");
+  if (s.ready) { pill.textContent = "● practice database ready · " + s.datasets.map((d) => d.name).join(", "); pill.className = "pill ok"; banner.classList.remove("show"); }
+  else {
+    pill.textContent = "practice database not loaded"; pill.className = "pill bad";
+    $("setupMsg").textContent = s.content_found ? "The practice database is missing or out of date." : `Content folder ${s.content_dir} not found — mount learn-sql/practice (see docker-compose.yml).`;
+    banner.classList.add("show");
+  }
+}
+async function refreshStatus() {
+  try { showStatus(await api("status")); } catch (e) { $("dbPill").textContent = "status unavailable"; $("dbPill").className = "pill bad"; $("setupMsg").textContent = e.message; $("setupBanner").classList.add("show"); }
+}
+async function runSetup() {
+  $("btnSetup").disabled = $("btnSetupNow").disabled = true;
+  $("dbPill").textContent = "loading datasets…"; $("dbPill").className = "pill";
+  try {
+    const r = await api("setup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reset: false }) });
+    $("dbPill").textContent = `loaded ${r.loaded.length ? r.loaded.join(", ") : "nothing new"} in ${r.seconds}s`;
+    state.schemas = {}; $("schemaFrame").dataset.src = "";
+  } catch (e) { $("setupMsg").textContent = e.message; $("setupBanner").classList.add("show"); }
+  $("btnSetup").disabled = $("btnSetupNow").disabled = false;
+  await refreshStatus();
+  if (state.current) loadSchema(state.current.dataset);
+}
+$("btnSetup").onclick = $("btnSetupNow").onclick = runSetup;
+
+// ---------------------------------------------------------------- question list
+async function loadFacets() {
+  const f = await api("facets");
+  const sel = $("fTopic");
+  f.topics.forEach((t) => { const o = el("option", "", t); o.value = t; sel.appendChild(o); });
+}
+const ICON = { solved: "✅", revealed: "👁", locked: "🔒", next: "▶", attempted: "◐", new: "○" };
+const strictOrder = () => $("optOrder").checked;
+async function loadQuestions() {
+  const p = new URLSearchParams({ q: $("qSearch").value, topic: $("fTopic").value, difficulty: $("fDiff").value });
+  const r = await api("questions?" + p);
+  state.questions = r.questions; state.summary = r.summary;
+  const sm = r.summary, pct = sm.total ? Math.round((sm.solved / sm.total) * 100) : 0;
+  $("progText").textContent = `✅ ${sm.solved} of ${sm.total} completed` + (sm.revealed ? ` · 👁 ${sm.revealed} revealed (revisit)` : "");
+  $("progBar").style.width = pct + "%";
+  const hide = $("optHide").checked;
+  const shown = state.questions.filter((q) => !(hide && q.status === "solved"));
+  const box = $("qlist"); box.textContent = "";
+  $("qCount").textContent = `${shown.length} question${shown.length === 1 ? "" : "s"}` + (hide && shown.length !== state.questions.length ? ` (${state.questions.length - shown.length} completed hidden)` : "");
+  shown.forEach((q) => {
+    const locked = q.locked && strictOrder();
+    const b = el("button", "qi" + (state.current && state.current.id === q.id ? " sel" : "") + (locked ? " locked" : "") + (q.next ? " next" : ""));
+    const icon = locked ? ICON.locked : q.status === "new" && q.next ? ICON.next : ICON[q.status] || ICON.new;
+    b.appendChild(el("span", "ic", icon));
+    b.appendChild(document.createTextNode(q.title));
+    b.appendChild(el("small", "", `#${q.seq} · ${q.id} · ${q.difficulty} · ${q.topic}`));
+    b.title = locked ? "Locked — finish the question before it first (or untick “Keep order”)." : "";
+    b.onclick = () => { if (!locked) openQuestion(q.id); };
+    box.appendChild(b);
+  });
+  if (!shown.length) box.appendChild(el("div", "empty", hide ? "Everything here is completed 🎉" : "No questions match."));
+}
+let searchTimer;
+$("qSearch").oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadQuestions, 200); };
+$("fTopic").onchange = $("fDiff").onchange = loadQuestions;
+// the two list options are remembered between visits
+for (const [id, key, dflt] of [["optHide", "sql_practice_hide", false], ["optOrder", "sql_practice_order", true]]) {
+  const saved = store.get(key); $(id).checked = saved === null ? dflt : saved === "1";
+  $(id).onchange = () => { store.set(key, $(id).checked ? "1" : "0"); loadQuestions(); };
+}
+
+// ---------------------------------------------------------------- one question
+let hintsShown = 0;
+async function openQuestion(id) {
+  const { question: q } = await api("questions/" + encodeURIComponent(id));
+  state.current = q; hintsShown = 0;
+  $("emptyState").style.display = "none"; $("qpane").style.display = "block";
+  $("qTitle").textContent = q.title;
+  const badge = $("qBadge"); badge.textContent = q.difficulty; badge.className = "badge " + q.difficulty;
+  $("qTopic").textContent = q.topic; $("qDataset").textContent = "dataset: " + q.dataset;
+  renderSample(q); renderStatus(q);
+  $("qPrompt").innerHTML = renderMd(q.prompt);
+  $("hints").textContent = ""; $("solutionBox").textContent = ""; $("btnHint").style.display = (q.hints || []).length ? "" : "none"; $("btnHint").textContent = "💡 Show a hint"; $("btnHint").disabled = false;
+  $("result").style.display = "none"; $("verdict").textContent = ""; $("runStat").className = "stat"; $("runStat").textContent = "Ctrl+Enter runs your query · Ctrl+Shift+Enter checks it. Nothing you type can change the data.";
+  setDoc(store.get(DRAFT_KEY + q.id) || "");
+  document.querySelectorAll(".qi").forEach((b) => b.classList.remove("sel"));
+  loadQuestions();
+  loadSchema(q.dataset);
+  if (!$("schemaPanel").classList.contains("open")) return;
+  renderSchemaPanel();
+}
+$("btnHint").onclick = () => {
+  const hs = state.current.hints || [];
+  if (hintsShown >= hs.length) return;
+  const d = el("div", "hint"); d.innerHTML = `<b>Hint ${hintsShown + 1}:</b> ` + renderMd(hs[hintsShown]).replace(/^<p>|<\/p>$/g, "");
+  $("hints").appendChild(d); hintsShown++;
+  $("btnHint").textContent = hintsShown >= hs.length ? "No more hints" : "💡 Show another hint";
+  $("btnHint").disabled = hintsShown >= hs.length;
+};
+
+// ---------------------------------------------------------------- sample output, status, verdict, solution
+function table(cols, rows, cellClass) {
+  const wrap = el("div", "scroll"), t = el("table"), hr = el("tr");
+  cols.forEach((c) => hr.appendChild(el("th", "", c))); const th = el("thead"); th.appendChild(hr); t.appendChild(th);
+  const tb = el("tbody");
+  rows.forEach((r) => {
+    const tr = el("tr");
+    (Array.isArray(r) ? r : cols.map((c) => r[c])).forEach((v, i) => {
+      const td = v === null || v === undefined ? el("td", "null", "NULL") : el("td", cellClass && cellClass(i) || "", typeof v === "object" ? JSON.stringify(v) : String(v));
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb); wrap.appendChild(t); return wrap;
+}
+function renderSample(q) {
+  const box = $("sampleBox"); box.textContent = ""; box.className = "box";
+  box.appendChild(el("h4", "", "Expected output — use exactly these column names"));
+  if (!q.sample) { box.appendChild(el("p", "", "The sample could not be computed (is the practice database loaded?).")); return; }
+  box.appendChild(table(q.sample.columns, q.sample.rows));
+  box.appendChild(el("p", "stat", `${q.sample.total_rows}${q.sample.truncated ? "+" : ""} row${q.sample.total_rows === 1 ? "" : "s"} in the full answer (first ${q.sample.rows.length} shown). ` +
+    (q.ordered ? "Row ORDER matters for this question." : "Row order does not matter.") + " Numbers are compared to 2 decimals."));
+}
+function renderStatus(q) {
+  const badge = $("qBadge");
+  if (q.status === "solved") { badge.textContent = "✓ completed"; badge.className = "badge done"; }
+  else if (q.status === "revealed") { badge.textContent = "👁 revealed — redo later"; badge.className = "badge rev"; }
+  else { badge.textContent = q.difficulty; badge.className = "badge " + q.difficulty; }
+  renderSolution(q.solution);
+  renderAfter(q);
+}
+function renderSolution(sol) {
+  const box = $("solutionBox"); box.textContent = "";
+  if (!sol) return;
+  const b = el("div", "box"); b.appendChild(el("h4", "", "Reference solution"));
+  b.appendChild(el("pre", "", sol.sql));
+  if (sol.trap) { b.appendChild(el("h4", "", "The trap")); const d = el("div"); d.innerHTML = renderMd(sol.trap); b.appendChild(d); }
+  if (sol.followup) { b.appendChild(el("h4", "", "Interviewer follow-up")); const d = el("div"); d.innerHTML = renderMd(sol.followup); b.appendChild(d); }
+  (sol.alternatives || []).forEach((a, i) => { b.appendChild(el("h4", "", "Another way" + ((sol.alternatives.length > 1) ? ` ${i + 1}` : ""))); b.appendChild(el("pre", "", a)); });
+  box.appendChild(b);
+}
+function renderAfter(q) {
+  const bar = $("afterBar"); bar.textContent = ""; bar.style.display = "none";
+  const done = q.status === "solved" || q.status === "revealed";
+  if (!done && !q.can_reveal) return;
+  bar.style.display = "flex";
+  if (!done && q.can_reveal) {
+    const b = el("button", "secondary", "👁 Give up and show the solution"); b.title = "Counts as skipped, not completed — it comes back for revisiting.";
+    b.onclick = async () => { if (!confirm("Show the solution? This question will NOT get the completed mark.")) return; const r = await api(`questions/${encodeURIComponent(q.id)}/reveal`, { method: "POST" }); state.current = r.question; renderStatus(r.question); await loadQuestions(); };
+    bar.appendChild(b);
+  }
+  if (done) {
+    const nx = el("button", "", "Next question →"); nx.onclick = async () => { await loadQuestions(); const id = state.summary.next_id; if (id && id !== q.id) openQuestion(id); else nx.textContent = "That was the last one 🎉"; };
+    const redo = el("button", "secondary", "↺ Redo this question"); redo.onclick = async () => { await api(`questions/${encodeURIComponent(q.id)}/reset`, { method: "POST" }); openQuestion(q.id); };
+    bar.appendChild(nx); bar.appendChild(redo);
+  }
+}
+function renderVerdict(r) {
+  const v = $("verdict"); v.textContent = "";
+  const box = el("div", "box " + (r.correct ? "ok" : "bad")); v.appendChild(box);
+  if (r.correct) {
+    box.appendChild(el("p", "", `✅ Correct — completed (attempt ${r.attempts}). Your result matches the expected output exactly: ${r.rows_expected} rows.`));
+    return;
+  }
+  box.appendChild(el("p", "", `❌ Not yet — attempt ${r.attempts}.`));
+  if (!r.columns_ok) {
+    box.appendChild(el("p", "", r.reason));
+    box.appendChild(el("h4", "", "Expected columns")); box.appendChild(table(r.expected_columns, []));
+    box.appendChild(el("h4", "", "Your columns")); box.appendChild(table(r.your_columns, []));
+  } else {
+    if (r.reason) box.appendChild(el("p", "", r.reason));
+    box.appendChild(el("p", "", `Rows: yours ${r.rows_yours}, expected ${r.rows_expected}.`));
+    if (r.order_only) box.appendChild(el("p", "", "🔀 Right rows, wrong order — this question needs the rows in a specific order (add or fix ORDER BY, and a tie-breaker for rows that share the sort value)."));
+    if (r.rows_first) box.appendChild(el("p", "", "First get the right ROWS — the order is checked after that."));
+    if (r.missing_total) { box.appendChild(el("h4", "", `Missing from your result (${r.missing_total}${r.missing_total > r.missing.length ? ", first " + r.missing.length : ""})`)); box.appendChild(table(r.expected_columns, r.missing, () => "exp")); }
+    if (r.unexpected_total && r.unexpected.length) { box.appendChild(el("h4", "", `Rows you returned that should not be there (${r.unexpected_total}${r.unexpected_total > r.unexpected.length ? ", first " + r.unexpected.length : ""})`)); box.appendChild(table(r.your_columns, r.unexpected, () => "yours")); }
+    if (r.cell_diffs_total && !r.order_only) {
+      box.appendChild(el("h4", "", `Different values (${r.cell_diffs_total}${r.cell_diffs_total > r.cell_diffs.length ? ", first " + r.cell_diffs.length : ""})`));
+      const cols = r.ordered ? ["row", "column", "yours", "expected"] : ["column", "yours", "expected"];
+      box.appendChild(table(cols, r.cell_diffs.map((d) => (r.ordered ? [d.row, d.column, d.yours, d.expected] : [d.column, d.yours, d.expected])), (i) => (i === cols.length - 2 ? "yours" : i === cols.length - 1 ? "exp" : "")));
+    }
+  }
+  box.appendChild(el("p", "stat", "Compared with DataDiff — numbers to 2 decimals, text exactly (case counts)."));
+}
+async function checkAnswer() {
+  if (!state.current) return;
+  const stat = $("runStat"); stat.className = "stat"; stat.textContent = "Checking…"; $("btnCheck").disabled = true;
+  try {
+    const r = await api("check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: state.current.id, sql: getDoc() }) });
+    stat.textContent = r.correct ? "Correct ✅" : "Not yet — see the comparison below.";
+    renderVerdict(r);
+    Object.assign(state.current, { status: r.status, attempts: r.attempts, failed: r.failed, can_reveal: r.can_reveal, solution: r.solution });
+    renderStatus(state.current);
+    await loadQuestions();
+  } catch (e) { $("verdict").textContent = ""; stat.className = "stat err"; stat.textContent = e.message; }
+  $("btnCheck").disabled = false;
+}
+$("btnCheck").onclick = checkAnswer;
+
+// ---------------------------------------------------------------- run
+function renderResult(r) {
+  const box = $("result"); box.textContent = ""; box.style.display = "block";
+  const t = el("table"), thead = el("thead"), hr = el("tr");
+  r.columns.forEach((c) => hr.appendChild(el("th", "", c))); thead.appendChild(hr); t.appendChild(thead);
+  const tb = el("tbody");
+  r.rows.forEach((row) => {
+    const tr = el("tr");
+    row.forEach((v) => { const td = v === null ? el("td", "null", "NULL") : el("td", "", typeof v === "object" ? JSON.stringify(v) : String(v)); tr.appendChild(td); });
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb); box.appendChild(t);
+}
+async function runQuery() {
+  if (!state.current) return;
+  const stat = $("runStat"); stat.className = "stat"; stat.textContent = "Running…"; $("btnRun").disabled = true;
+  try {
+    const r = await api("run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataset: state.current.dataset, sql: getDoc(), limit: 200 }) });
+    renderResult(r);
+    stat.textContent = `${r.row_count} row${r.row_count === 1 ? "" : "s"}${r.truncated ? " (first 200 shown)" : ""} · ${r.ms} ms`;
+  } catch (e) { $("result").style.display = "none"; stat.className = "stat err"; stat.textContent = e.message; }
+  $("btnRun").disabled = false;
+}
+$("btnRun").onclick = runQuery;
+$("btnFormat").onclick = formatQuery;
+$("btnReset").onclick = () => { setDoc(""); $("result").style.display = "none"; };
+
+// ---------------------------------------------------------------- schema panel (above the main screen)
+async function renderSchemaPanel() {
+  const ds = state.current ? state.current.dataset : ((state.status && state.status.datasets[0]) || {}).name;
+  if (!ds) { $("spTitle").textContent = "Schema"; $("spNote").textContent = "Pick a question first."; return; }
+  const meta = ((state.status && state.status.datasets) || []).find((d) => d.name === ds) || {};
+  $("spTitle").textContent = "Schema — " + (meta.title || ds);
+  const frame = $("schemaFrame"), nat = $("schemaNative"), open = $("spOpen");
+  if (meta.loaded) {
+    // The generated schema page (graph + left column list; or a hand-saved datasets/<name>/schema.html if one exists).
+    $("spNote").textContent = "click a table to highlight its relationships";
+    const url = `datasets/${encodeURIComponent(ds)}/schema.html`;
+    if (frame.dataset.src !== url) { frame.src = url; frame.dataset.src = url; }
+    frame.style.display = "block"; nat.style.display = "none"; open.href = url; open.style.display = "";
+  } else {
+    // Database not loaded yet: nothing to draw from.
+    $("spNote").textContent = "";
+    frame.style.display = "none"; open.style.display = "none"; nat.style.display = "block";
+    nat.textContent = "The practice database is not loaded yet — press “Set up / refresh data”.";
+  }
+}
+function toggleSchema(force) {
+  const p = $("schemaPanel");
+  const open = force === undefined ? !p.classList.contains("open") : force;
+  p.classList.toggle("open", open); $("btnSchema").classList.toggle("on", open);
+  if (open) renderSchemaPanel(); else view.focus();      // closing puts the cursor straight back in the editor
+}
+$("btnSchema").onclick = () => toggleSchema();
+// Alt+S or F2 toggles the schema from anywhere (capture phase: CodeMirror cannot swallow it). Esc closes it.
+window.addEventListener("keydown", (e) => {
+  const isToggle = (e.altKey && !e.ctrlKey && !e.metaKey && e.code === "KeyS") || (e.key === "F2" && !e.altKey && !e.ctrlKey);
+  if (isToggle) { e.preventDefault(); e.stopPropagation(); toggleSchema(); }
+  else if (e.key === "Escape" && $("schemaPanel").classList.contains("open")) toggleSchema(false);
+}, true);
+// The schema page lives in an iframe; once you click inside it the keys go there, so it forwards the same shortcuts.
+window.addEventListener("message", (e) => {
+  if (e.source === $("schemaFrame").contentWindow && e.data && e.data.type === "schema-toggle") toggleSchema();
+});
+$("spClose").onclick = () => toggleSchema(false);
+
+// ---------------------------------------------------------------- start
+(async function init() {
+  await refreshStatus();
+  if (state.status && state.status.content_found && !state.status.ready) await runSetup();   // first open: load everything once
+  await loadFacets();
+  await loadQuestions();
+})();
+</script>
+</body>
+</html>

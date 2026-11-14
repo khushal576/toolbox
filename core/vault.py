@@ -200,6 +200,40 @@ def _ready_store() -> None:
                     except Exception:  # noqa: BLE001 - retried on next start / on first load
                         logger.exception("vault: could not upload legacy blob %s", name)
         _ready = True
+    _seed_default_connections()
+
+
+DEFAULT_CONNECTION_NAME = "Toolbox database (built-in)"
+PRACTICE_CONNECTION_NAME = "Practice database (built-in)"   # SQL Practice's `practice` DB, read-only role (sql-practice/provision.py)
+
+
+def _seed_default_connections() -> None:
+    """Always keep saved SQL Studio / Schema Map connections in the Vault to the databases Toolbox ships with: its OWN
+    Postgres and the SQL Practice database (same server, other database, restricted read-only login). Built from
+    TOOLBOX_DATABASE_URL as seen from inside the compose network (host `postgres`). Idempotent: an entry is created
+    when missing, so deleting one only lasts until the next process start. Never breaks Vault start-up."""
+    try:
+        from urllib.parse import unquote, urlparse
+        u = urlparse(os.environ.get("TOOLBOX_DATABASE_URL", ""))
+        if u.scheme not in ("postgresql", "postgres") or not u.hostname:
+            return
+        wanted = [
+            (DEFAULT_CONNECTION_NAME, (u.path or "/toolbox").lstrip("/") or "toolbox", unquote(u.username or ""),
+             unquote(u.password or "")),
+            (PRACTICE_CONNECTION_NAME, "practice", "practice_user",
+             os.environ.get("TOOLBOX_PRACTICE_PASSWORD") or "practice-local-only"),
+        ]
+        for name, database, username, password in wanted:
+            try:
+                find_id_by_name(name, "postgres_connection")
+                continue
+            except SecretNotFound:
+                pass
+            save_secret(name, "postgres_connection", {
+                "host": u.hostname, "port": u.port or 5432, "database": database, "username": username,
+                "password": password, "db_type": "postgres", "ssh_tunnel": None})
+    except Exception:  # noqa: BLE001 - a convenience entry must never stop the Vault
+        logger.exception("vault: could not seed the built-in database connections")
 
 
 # ---------------------------------------------------------------------------------------------------- chunked blobs

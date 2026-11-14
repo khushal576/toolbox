@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Schema</title>
+<!-- Same look and the same Cytoscape version as Schema Map's static export. If the CDN is unreachable the column list on the left still works. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.34.3/cytoscape.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef; --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0; --hot: #f2994a; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; }
+  .side { width: 300px; flex: none; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+  .side h1 { font-size: 0.95rem; padding: 10px 12px 2px; }
+  .side p.sub { font-size: 0.72rem; color: var(--muted); padding: 0 12px 8px; }
+  .side input { margin: 0 12px 8px; padding: 5px 9px; font: inherit; font-size: 0.8rem; border: 1px solid var(--border); border-radius: 7px; }
+  #tables { overflow: auto; flex: 1; padding: 0 8px 12px; }
+  details { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; background: var(--surface); }
+  details.hot { border-color: var(--hot); box-shadow: 0 0 0 2px rgba(242,153,74,.25); }
+  details.dim { opacity: .45; }
+  summary { cursor: pointer; padding: 6px 10px; font-size: 0.85rem; font-weight: 700; list-style: none; display: flex; justify-content: space-between; gap: 8px; }
+  summary::-webkit-details-marker { display: none; }
+  summary small { font-weight: 500; color: var(--muted); font-size: 0.7rem; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.76rem; }
+  td { padding: 3px 10px; border-top: 1px solid var(--border); vertical-align: top; }
+  td.t { color: var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.7rem; text-align: right; }
+  .pk { color: #b45309; font-size: 0.68rem; font-weight: 700; margin-left: 4px; }
+  .fk { color: var(--accent); font-size: 0.68rem; margin-left: 4px; cursor: help; }
+  .rels { font-size: 0.72rem; color: var(--muted); padding: 5px 10px 8px; border-top: 1px solid var(--border); line-height: 1.5; }
+  .rels b { color: var(--accent); cursor: pointer; font-weight: 600; }
+  .main { flex: 1; min-width: 0; position: relative; background: var(--surface); }
+  #cy { position: absolute; inset: 0; }
+  .zoom { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: 0 4px 14px rgba(28,32,53,.12); }
+  .zoom button { border: 0; background: var(--surface); width: 32px; height: 32px; font-size: 1rem; font-weight: 700; cursor: pointer; }
+  .zoom button + button { border-top: 1px solid var(--border); }
+  .zoom button:hover { background: var(--bg); color: var(--accent); }
+  .hint { position: absolute; left: 12px; bottom: 12px; font-size: 0.72rem; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 4px 9px; }
+  #nocy { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; color: var(--muted); font-size: 0.85rem; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+<aside class="side">
+  <h1 id="title"></h1>
+  <p class="sub" id="sub"></p>
+  <input type="search" id="filter" placeholder="Filter tables / columns…" />
+  <div id="tables"></div>
+</aside>
+<div class="main">
+  <div id="cy"></div>
+  <div id="nocy">The diagram needs the Cytoscape library (cdnjs) — you appear to be offline. The column list on the left works without it.</div>
+  <div class="zoom"><button id="zi" title="Zoom in">+</button><button id="zo" title="Zoom out">−</button><button id="zf" title="Fit">⊡</button></div>
+  <div class="hint">Click a table (graph or list) to highlight what it connects to · * = NOT NULL · PK = primary key · 🔗 = foreign key</div>
+</div>
+<script>
+(function () {
+  var DATA = /*__DATA__*/null;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
+  $("title").textContent = DATA.title;
+  $("sub").textContent = DATA.tables.length + " tables · " + DATA.foreign_keys.length + " relationships";
+
+  var colsOf = {}, outOf = {}, inOf = {}, fkOutCols = {}, fkInCols = {};
+  DATA.tables.forEach(function (t) { colsOf[t.name] = []; outOf[t.name] = []; inOf[t.name] = []; });
+  DATA.columns.forEach(function (c) { (colsOf[c.table] = colsOf[c.table] || []).push(c); });
+  DATA.foreign_keys.forEach(function (f) {
+    outOf[f.from_table].push(f); inOf[f.to_table].push(f);
+    fkOutCols[f.from_table + "." + f.from_column] = f; fkInCols[f.to_table + "." + f.to_column] = f;
+  });
+
+  // ---- left: every table with its columns
+  var list = $("tables");
+  DATA.tables.forEach(function (t) {
+    var d = document.createElement("details"); d.id = "t_" + t.name; d.dataset.table = t.name;
+    var rows = colsOf[t.name].map(function (c) {
+      var fk = fkOutCols[t.name + "." + c.name];
+      var badge = (c.pk ? '<span class="pk">PK</span>' : "") +
+        (fk ? '<span class="fk" title="references ' + esc(fk.to_table + "." + fk.to_column) + '">🔗</span>' : "");
+      return "<tr><td>" + esc(c.name) + (c.nullable ? "" : " *") + badge + '</td><td class="t">' + esc(c.type) + "</td></tr>";
+    }).join("");
+    var refs = outOf[t.name].map(function (f) { return esc(f.from_column) + " → <b data-go=\"" + esc(f.to_table) + "\">" + esc(f.to_table) + "</b>." + esc(f.to_column); });
+    var back = inOf[t.name].map(function (f) { return "<b data-go=\"" + esc(f.from_table) + "\">" + esc(f.from_table) + "</b>." + esc(f.from_column) + " → " + esc(f.to_column); });
+    var rel = (refs.length ? "References: " + refs.join("; ") + "<br>" : "") + (back.length ? "Referenced by: " + back.join("; ") : "");
+    d.innerHTML = "<summary><span>" + esc(t.name) + "</span><small>" + (t.rows < 0 ? "" : t.rows.toLocaleString() + " rows") + "</small></summary><table>" + rows + "</table>" + (rel ? '<div class="rels">' + rel + "</div>" : "");
+    list.appendChild(d);
+  });
+  list.addEventListener("click", function (e) { var g = e.target.getAttribute && e.target.getAttribute("data-go"); if (g) focusTable(g, true); });
+  list.addEventListener("click", function (e) { var sm = e.target.closest && e.target.closest("summary"); if (sm) highlight(sm.parentNode.dataset.table, false); });
+
+  $("filter").addEventListener("input", function () {
+    var q = this.value.trim().toLowerCase();
+    DATA.tables.forEach(function (t) {
+      var hit = !q || t.name.toLowerCase().indexOf(q) >= 0 || colsOf[t.name].some(function (c) { return c.name.toLowerCase().indexOf(q) >= 0; });
+      $("t_" + t.name).style.display = hit ? "" : "none";
+      if (q && hit) $("t_" + t.name).open = true;
+    });
+  });
+
+  // ---- right: the graph (Schema Map style: circles sized by row count, arrows = foreign keys)
+  var cy = null;
+  var maxRows = Math.max(1, Math.max.apply(null, DATA.tables.map(function (t) { return Math.max(t.rows, 0); })));
+  if (typeof cytoscape === "function") {
+    cy = cytoscape({
+      container: $("cy"),
+      elements: {
+        nodes: DATA.tables.map(function (t) { return { data: { id: t.name, label: t.name, size: 30 + Math.round(Math.sqrt(Math.max(t.rows, 0) / maxRows) * 55) } }; }),
+        edges: DATA.foreign_keys.map(function (f, i) { return { data: { id: "e" + i, source: f.from_table, target: f.to_table } }; }),
+      },
+      autoungrabify: false, minZoom: 0.2, maxZoom: 4,
+      style: [
+        { selector: "node", style: { "background-color": "#4f5ef0", label: "data(label)", "font-size": "11px", color: "#1c2035", "text-valign": "top", "text-margin-y": -6, width: "data(size)", height: "data(size)", "text-background-color": "#fff", "text-background-opacity": .85, "text-background-shape": "roundrectangle", "text-background-padding": "2px" } },
+        { selector: "edge", style: { width: 1.5, "line-color": "#9aa3c2", "target-arrow-color": "#9aa3c2", "target-arrow-shape": "triangle", "curve-style": "bezier" } },
+        { selector: ".hot", style: { "background-color": "#f2994a", "z-index": 10 } },
+        { selector: "edge.hot", style: { "line-color": "#f2994a", "target-arrow-color": "#f2994a", width: 2.5 } },
+        { selector: ".dim", style: { opacity: .25 } },
+      ],
+      layout: { name: "cose", animate: false, padding: 30, randomize: false, nodeRepulsion: function () { return 60000; }, idealEdgeLength: function () { return 110; } },
+    });
+    cy.on("tap", "node", function (e) { focusTable(e.target.id(), false); });
+    cy.on("tap", function (e) { if (e.target === cy) clearHighlight(); });
+    $("zi").onclick = function () { cy.zoom({ level: cy.zoom() * 1.25, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } }); };
+    $("zo").onclick = function () { cy.zoom({ level: cy.zoom() / 1.25, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } }); };
+    $("zf").onclick = function () { cy.fit(undefined, 30); };
+  } else {
+    $("cy").style.display = "none"; $("nocy").style.display = "flex"; document.querySelector(".zoom").style.display = "none";
+  }
+
+  // Inside the iframe the parent page cannot hear the keyboard: forward the toggle shortcuts (Alt+S, F2, Esc).
+  window.addEventListener("keydown", function (e) {
+    var toggle = (e.altKey && !e.ctrlKey && !e.metaKey && e.code === "KeyS") || (e.key === "F2" && !e.altKey && !e.ctrlKey) || e.key === "Escape";
+    if (toggle) { e.preventDefault(); window.parent.postMessage({ type: "schema-toggle" }, "*"); }
+  }, true);
+
+  function clearHighlight() {
+    if (cy) cy.elements().removeClass("hot dim");
+    document.querySelectorAll("details").forEach(function (d) { d.classList.remove("hot", "dim"); });
+  }
+  // highlight a table, its neighbours, and (optionally) scroll the list to it
+  function highlight(name, scrollList) {
+    clearHighlight();
+    var near = {}; near[name] = true;
+    outOf[name].forEach(function (f) { near[f.to_table] = true; });
+    inOf[name].forEach(function (f) { near[f.from_table] = true; });
+    document.querySelectorAll("details").forEach(function (d) { d.classList.toggle("dim", !near[d.dataset.table]); d.classList.toggle("hot", d.dataset.table === name); });
+    if (cy) {
+      var n = cy.getElementById(name), hood = n.closedNeighborhood();
+      cy.elements().not(hood).addClass("dim"); hood.addClass("hot"); n.removeClass("hot").addClass("hot");
+    }
+    var d = $("t_" + name); if (scrollList && d) { d.open = true; d.scrollIntoView({ block: "nearest" }); }
+  }
+  function focusTable(name, centerGraph) {
+    if (!colsOf[name]) return;
+    highlight(name, true);
+    if (cy && centerGraph) cy.animate({ center: { eles: cy.getElementById(name) } }, { duration: 250 });
+  }
+})();
+</script>
+</body>
+</html>

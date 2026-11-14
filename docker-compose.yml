@@ -158,6 +158,8 @@ services:
       <<: *state-env
       # 2 processes: DataDiff/pandas work is CPU-bound; every tool here keeps its state outside the process
       TOOLBOX_WEB_WORKERS: ${TOOLBOX_DATA_WORKERS:-2}
+      # SQL Practice's Check compares result sets through DataDiff's API (the shared rt-datadiff pool), like the worker does
+      TOOLBOX_DATADIFF_URL: http://rt-datadiff:8080/tools/datadiff-pro
       # roadmap P1 (see rt-light): trusted custom Python plugins; choose `data` only if the plugin needs pandas / DuckDB (every runtime holds the Vault key)
       TOOLBOX_PLUGINS_DIR: /app/plugins
       TOOLBOX_TRUSTED_PLUGINS: ${TOOLBOX_TRUSTED_PLUGINS:-0}
@@ -171,6 +173,8 @@ services:
       - ${TOOLBOX_DATA_DIR:-~/toolbox-data}:/data:ro
       # optional extra CA roots for a TLS-inspecting proxy (Zscaler …) — certs/README.md; used by the SharePoint tool
       - ./certs:/certs:ro
+      # SQL Practice content (datasets + questions), READ-ONLY; edit on the host, then press Set up in the tool
+      - ${TOOLBOX_PRACTICE_DIR:-../learn-sql/practice}:/practice:ro
 
   # On-demand (roadmap C3): pgtools, ssh and latex hold only tier-4 tools, so the gateway starts them on first use
   # and stops them after scaling.idle_timeout_s. Limits = the sum of their plugins' manifest `resources`
@@ -357,6 +361,11 @@ services:
       - POSTGRES_PASSWORD=${TOOLBOX_DB_PASSWORD:-toolbox-local-only}
     volumes:
       - postgres_data:/var/lib/postgresql   # PG 18 images keep data under /var/lib/postgresql/18/docker
+    # Owner access: the real Toolbox database is reachable from THIS machine only (loopback), for DBeaver/psql/SQL Studio.
+    #   psql "postgresql://toolbox:<TOOLBOX_DB_PASSWORD, default toolbox-local-only>@127.0.0.1:5433/toolbox"
+    # 5433 because 5432 is usually taken by a local Postgres; change with TOOLBOX_DB_HOST_PORT in .env.
+    ports:
+      - "127.0.0.1:${TOOLBOX_DB_HOST_PORT:-5433}:5432"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U toolbox -d toolbox"]
