@@ -7,6 +7,9 @@ SQL Practice — server. See CLAUDE.md for the design; provision.py holds the da
   GET  /facets, /questions, /questions/{id}      browse / search (the reference SQL is never sent)
   GET  /datasets/{name}/schema.json              {table: {column: type}} for editor autocomplete
   GET  /datasets/{name}/schema.html              the stored Schema Map export (static) — shown by the Schema button
+  POST /explain               plan tree of YOUR query (EXPLAIN, not executed)   {dataset, sql}
+  GET  /mocks, /mocks/{set}, POST /mocks/{set}/start|finish   mock interviews (timed sets of 3 questions)
+  GET  /revisits, /weak-topics   revisit queue (reveal / hard-won -> due in 3 days, then 10) and per-topic weakness
   POST /run                   run YOUR query read-only on the question's dataset
 """
 
@@ -152,7 +155,60 @@ async def schema_html(name: str) -> Response:
 async def validate() -> JSONResponse:
     """Authoring check: runs every question's reference SQL (see provision.validate_questions)."""
     report = await asyncio.to_thread(pv.validate_questions)
-    return JSONResponse({"ok": all(r["ok"] for r in report), "questions": report})
+    mocks = await asyncio.to_thread(pv.validate_mocks)
+    return JSONResponse({"ok": all(r["ok"] for r in report) and all(r["ok"] for r in mocks), "questions": report, "mocks": mocks})
+
+
+@app.get("/revisits")
+async def revisits() -> JSONResponse:
+    return JSONResponse({"ok": True, **await asyncio.to_thread(pv.revisits)})
+
+
+@app.get("/weak-topics")
+async def weak_topics() -> JSONResponse:
+    return JSONResponse({"ok": True, **await asyncio.to_thread(pv.weak_topics)})
+
+
+# ---- mock interviews: timed sets of 3 chained questions (clock kept by the server)
+
+async def _mock(fn, *args) -> JSONResponse:
+    try:
+        return JSONResponse({"ok": True, **await asyncio.to_thread(fn, *args)})
+    except pv.MockError as e:
+        return _err(str(e), e.status)
+    except pv.PracticeError as e:
+        return _err(str(e), 404)
+
+
+@app.get("/mocks")
+async def mocks() -> JSONResponse:
+    return await _mock(pv.mock_list)
+
+
+@app.get("/mocks/questions")
+async def mock_questions() -> JSONResponse:
+    return JSONResponse({"ok": True, "questions": await asyncio.to_thread(pv.mock_questions)})
+
+
+@app.post("/mocks/runs/{run_id}/discard")
+async def mock_discard(run_id: int) -> JSONResponse:
+    await asyncio.to_thread(pv.mock_discard, run_id)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/mocks/{set_id}")
+async def mock_get(set_id: str) -> JSONResponse:
+    return await _mock(pv.mock_get, set_id)
+
+
+@app.post("/mocks/{set_id}/start")
+async def mock_start(set_id: str) -> JSONResponse:
+    return await _mock(pv.mock_start, set_id)
+
+
+@app.post("/mocks/{set_id}/finish")
+async def mock_finish(set_id: str) -> JSONResponse:
+    return await _mock(pv.mock_finish, set_id)
 
 
 class RunBody(BaseModel):
@@ -168,4 +224,15 @@ async def run(body: RunBody) -> JSONResponse:
     except pv.PracticeError as e:
         return _err(str(e))
     except Exception as e:  # noqa: BLE001 - e.g. practice database missing -> tell the learner to run Set up
+        return _err(f"Could not reach the practice database ({e}). Press Set up.", 503)
+
+
+@app.post("/explain")
+async def explain(body: RunBody) -> JSONResponse:
+    """The plan tree of a query (EXPLAIN (FORMAT JSON), never executed): {nodes, node_types, text}."""
+    try:
+        return JSONResponse({"ok": True, **await asyncio.to_thread(pv.explain_plan, body.dataset, body.sql)})
+    except pv.PracticeError as e:
+        return _err(str(e))
+    except Exception as e:  # noqa: BLE001
         return _err(f"Could not reach the practice database ({e}). Press Set up.", 503)

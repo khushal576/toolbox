@@ -64,3 +64,48 @@ def test_check_marks_a_question_complete_and_only_then_shows_the_solution():
         assert post("questions/ag-001/reveal").status == 403           # the solution unlocks only after 3 wrong Checks
     finally:
         post(f"questions/{qid}/reset")                                # leave the owner's real progress untouched
+
+
+def test_explain_returns_the_plan_tree_and_rejects_bad_sql():
+    """POST /explain: plan only (never executed), same restricted role. Plan questions are matched against these node types."""
+    r = request("POST", f"{TOOL}/explain", {"dataset": "ecommerce", "sql": "SELECT * FROM orders WHERE customer_id + 0 = 42"})
+    assert r.status == 200
+    j = r.json()
+    assert j["ok"] and "Seq Scan" in j["node_types"] and "Seq Scan on orders" in j["text"]
+    assert j["nodes"][0]["depth"] == 0 and any(n["relation"] == "orders" for n in j["nodes"])
+    idx = request("POST", f"{TOOL}/explain", {"dataset": "ecommerce", "sql": "SELECT * FROM orders WHERE customer_id = 42"}).json()
+    assert any("Index" in t for t in idx["node_types"]), idx["text"]       # orders(customer_id) is indexed
+    assert request("POST", f"{TOOL}/explain", {"dataset": "ecommerce", "sql": "SELEC 1"}).status == 400
+    assert request("POST", f"{TOOL}/explain", {"dataset": "ecommerce", "sql": "DELETE FROM orders"}).status == 400
+
+
+def test_mock_interviews_api_needs_no_real_set():
+    """Mock mode: the list answers, unknown sets are 404, a never-started set has no screen, and mock questions
+    (when any exist) are not in the normal list."""
+    r = request("GET", f"{TOOL}/mocks")
+    assert r.status == 200 and isinstance(r.json()["sets"], list)
+    assert request("POST", f"{TOOL}/mocks/no-such-set/start", {}).status == 404
+    assert request("POST", f"{TOOL}/mocks/no-such-set/finish", {}).status == 404
+    assert request("GET", f"{TOOL}/mocks/no-such-set").status == 404
+    assert request("GET", f"{TOOL}/mocks/questions").json()["ok"] is True
+    v = request("GET", f"{TOOL}/validate").json()
+    assert isinstance(v["mocks"], list) and all(m["ok"] for m in v["mocks"]), v["mocks"]
+    listed = {q["id"] for q in request("GET", f"{TOOL}/questions").json()["questions"]}
+    mock_ids = {q["id"] for q in request("GET", f"{TOOL}/mocks/questions").json()["questions"]}
+    assert not (listed & mock_ids), "mock questions must not appear in the normal list"
+
+
+def test_revisits_and_weak_topics_shapes():
+    r = request("GET", f"{TOOL}/revisits")
+    assert r.status == 200
+    d = r.json()
+    assert d["ok"] and isinstance(d["due"], list) and isinstance(d["upcoming"], list)
+    assert set(d["counts"]) >= {"due", "upcoming", "mastered"}
+    for it in d["due"] + d["upcoming"]:
+        assert set(it) >= {"id", "title", "topic", "due_at", "stage"}
+    w = request("GET", f"{TOOL}/weak-topics")
+    assert w.status == 200
+    topics = w.json()["topics"]
+    assert topics and "mock-interviews" not in {t["topic"] for t in topics}
+    for t in topics:
+        assert set(t) >= {"topic", "total", "solved", "revealed", "attempted", "hard_won", "failed_checks", "accuracy"}

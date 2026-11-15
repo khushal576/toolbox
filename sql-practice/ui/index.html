@@ -108,6 +108,7 @@
   .qi .ic { display: inline-block; width: 18px; text-align: center; margin-right: 4px; }
   .badge.done { background: #16a34a; } .badge.rev { background: #6b7180; }
   .box { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 10px; font-size: 0.85rem; }
+  pre.plan-text, .plan pre { font-family: ui-monospace, Menlo, monospace; font-size: 0.78rem; background: rgba(127,127,127,.1); padding: 8px 10px; border-radius: 8px; overflow-x: auto; margin: 4px 0 8px; white-space: pre; }
   .box h4 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-bottom: 6px; }
   .box.ok { border-color: rgba(21,128,61,.4); background: rgba(21,128,61,.06); }
   .box.bad { border-color: rgba(185,28,28,.35); background: rgba(185,28,28,.05); }
@@ -120,6 +121,37 @@
   .box p { margin: 4px 0; line-height: 1.55; }
   .scroll { overflow: auto; max-width: 100%; }
   .empty { color: var(--muted); padding: 40px 10px; text-align: center; }
+  /* mock interviews */
+  #mockHome { max-width: 1500px; margin: 0 auto 14px; display: none; }
+  #mockHome.show { display: block; }
+  .mset { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin: 8px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .mset .grow { flex: 1; min-width: 240px; }
+  .mset small { color: var(--muted); display: block; margin-top: 2px; }
+  #revHome, #weakHome { max-width: 1500px; margin: 0 auto 14px; display: none; }
+  #revHome.show, #weakHome.show { display: block; }
+  .revitem { border: 1px solid var(--border); border-radius: 10px; padding: 8px 14px; margin: 6px 0; display: flex; gap: 12px; align-items: center; cursor: pointer; background: transparent; width: 100%; text-align: left; color: inherit; }
+  .revitem.due { border-color: #d97706; }
+  .revitem small { color: var(--muted); display: block; }
+  .revitem .grow { flex: 1; }
+  #revBanner { display: none; margin: 8px 0; padding: 8px 12px; border: 1px solid #d97706; border-radius: 8px; font-size: .88rem; }
+  #weakTable { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: 8px; }
+  #weakTable th, #weakTable td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  .accbar { display: inline-block; width: 90px; height: 8px; border-radius: 4px; background: var(--border); vertical-align: middle; margin-right: 6px; overflow: hidden; }
+  .accbar i { display: block; height: 100%; background: #16a34a; }
+  .main.mock { grid-template-columns: 1fr; }
+  .main.mock aside { display: none; }
+  #mockBar { display: none; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  #mockBar.show { display: block; }
+  #mockBar .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #mockClock { font-variant-numeric: tabular-nums; font-size: 1.5rem; font-weight: 700; }
+  #mockClock.low { color: var(--err-text); }
+  #mockClock.done { color: var(--muted); }
+  .mtab { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: .85rem; cursor: pointer; }
+  .mtab.sel { border-color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); font-weight: 600; }
+  #mockIntro { font-size: .88rem; line-height: 1.55; margin-top: 8px; }
+  #mockIntro p { margin-bottom: 6px; }
+  #mockResult { margin-top: 8px; }
+  #mockResult table td, #mockResult table th { font-family: inherit; }
 </style>
 </head>
 <body>
@@ -128,11 +160,25 @@
   <h1>🏋️ SQL <span>Practice</span></h1>
   <span class="pill" id="dbPill">checking…</span>
   <span class="spacer"></span>
+  <button class="secondary" id="btnMock" title="Timed sets of 3 chained questions, like a real SQL interview">🎯 Mock interviews</button>
+  <button class="secondary" id="btnRev" title="Questions where you needed help come back after 3 days, then after 10 days">🔁 Review <span id="revCount"></span></button>
+  <button class="secondary" id="btnWeak" title="Which topics need more practice">📉 Weak topics</button>
   <button class="secondary" id="btnSchema" title="Show / hide the schema over the page — Alt+S or F2">🗺️ Schema <small style="opacity:.7">Alt+S</small></button>
   <button class="secondary" id="btnSetup" title="Create the practice database and load every dataset (safe to repeat)">Set up / refresh data</button>
 </div>
 
 <div class="setup" id="setupBanner"><span id="setupMsg"></span><span class="spacer"></span><button id="btnSetupNow">Set up now</button></div>
+
+<section class="card" id="mockHome"><div class="row" style="display:flex;align-items:center;gap:10px"><b>🎯 Mock interviews</b>
+  <span class="stat">A set is 3 chained questions on one business story, with a server-side clock. No “give up”: solutions open when you solve a question or finish the set.</span>
+  <span style="flex:1"></span><button class="secondary" id="btnMockClose">Close ✕</button></div><div id="mockSets"></div></section>
+
+<section class="card" id="revHome"><div style="display:flex;align-items:center;gap:10px"><b>🔁 Review queue</b>
+  <span class="stat">A question you revealed (or solved after 3+ wrong Checks) comes back 3 days later; solve it again without the solution and it returns once more after 10 days.</span>
+  <span style="flex:1"></span><button class="secondary" id="btnRevClose">Close ✕</button></div><div id="revList"></div></section>
+<section class="card" id="weakHome"><div style="display:flex;align-items:center;gap:10px"><b>📉 Weak topics</b>
+  <span class="stat">Weakest first: lowest share solved among the questions you started, then most wrong Checks per started question.</span>
+  <span style="flex:1"></span><button class="secondary" id="btnWeakClose">Close ✕</button></div><div id="weakBody"></div></section>
 
 <section id="schemaPanel">
   <div class="sp-head">
@@ -145,7 +191,7 @@
   <div id="schemaNative" style="display:none"></div>
 </section>
 
-<div class="main">
+<div class="main" id="mainGrid">
   <aside class="card side">
     <input type="search" id="qSearch" placeholder="Search questions, topics, tags…" />
     <div class="filters">
@@ -162,18 +208,29 @@
   </aside>
 
   <section class="card" id="work">
+    <div id="mockBar">
+      <div class="row"><b id="mockTitle"></b><span class="tag" id="mockDomain"></span><span style="flex:1"></span>
+        <span id="mockClock">--:--</span>
+        <button id="btnMockFinish" class="secondary">🏁 Finish</button><button id="btnMockExit" class="secondary" title="Leave the mock screen; the clock keeps running">Leave</button></div>
+      <div class="row" id="mockTabs" style="margin-top:8px"></div>
+      <details id="mockIntroBox" open><summary class="stat" style="cursor:pointer;margin-top:6px">The interviewer's brief</summary><div id="mockIntro"></div></details>
+      <div id="mockResult"></div>
+    </div>
     <div class="empty" id="emptyState">Pick a question on the left to start.</div>
     <div id="qpane" style="display:none">
       <div class="qhead">
         <h2 id="qTitle"></h2><span class="badge" id="qBadge"></span><span class="tag" id="qTopic"></span><span class="tag" id="qDataset"></span>
       </div>
+      <div id="revBanner"></div>
       <div class="prompt" id="qPrompt"></div>
       <div class="box" id="sampleBox"></div>
+      <div class="stat" id="planNote" style="display:none;margin:4px 0"></div>
       <div id="hints"></div>
       <button class="link" id="btnHint">💡 Show a hint</button>
       <div class="editor-wrap"><div id="editor"></div></div>
       <div class="bar">
         <button id="btnRun">▶ Run</button>
+        <button class="secondary" id="btnExplain" title="Show the query plan (EXPLAIN, the query is not executed)">🔍 Explain</button>
         <button id="btnCheck" title="Run your query and the reference answer, compare both with DataDiff (Ctrl+Shift+Enter)">✔ Check answer</button>
         <button class="secondary" id="btnFormat" title="Format the query (Alt+Shift+F)">Format</button>
         <button class="secondary" id="btnReset" title="Clear back to an empty editor">Clear</button>
@@ -309,6 +366,7 @@ async function loadQuestions() {
   const sm = r.summary, pct = sm.total ? Math.round((sm.solved / sm.total) * 100) : 0;
   $("progText").textContent = `✅ ${sm.solved} of ${sm.total} completed` + (sm.revealed ? ` · 👁 ${sm.revealed} revealed (revisit)` : "");
   $("progBar").style.width = pct + "%";
+  $("revCount").textContent = sm.revisits_due ? `(${sm.revisits_due})` : "";
   const hide = $("optHide").checked;
   const shown = state.questions.filter((q) => !(hide && q.status === "solved"));
   const box = $("qlist"); box.textContent = "";
@@ -318,7 +376,7 @@ async function loadQuestions() {
     const b = el("button", "qi" + (state.current && state.current.id === q.id ? " sel" : "") + (locked ? " locked" : "") + (q.next ? " next" : ""));
     const icon = locked ? ICON.locked : q.status === "new" && q.next ? ICON.next : ICON[q.status] || ICON.new;
     b.appendChild(el("span", "ic", icon));
-    b.appendChild(document.createTextNode(q.title));
+    b.appendChild(document.createTextNode(q.title + (q.revisit_due ? " 🔁" : "")));
     b.appendChild(el("small", "", `#${q.seq} · ${q.id} · ${q.difficulty} · ${q.topic}`));
     b.title = locked ? "Locked — finish the question before it first (or untick “Keep order”)." : "";
     b.onclick = () => { if (!locked) openQuestion(q.id); };
@@ -345,12 +403,14 @@ async function openQuestion(id) {
   const badge = $("qBadge"); badge.textContent = q.difficulty; badge.className = "badge " + q.difficulty;
   $("qTopic").textContent = q.topic; $("qDataset").textContent = "dataset: " + q.dataset;
   renderSample(q); renderStatus(q);
+  $("planNote").style.display = q.check ? "" : "none"; $("planNote").textContent = q.check ? "🧭 " + q.check.note : "";
   $("qPrompt").innerHTML = renderMd(q.prompt);
   $("hints").textContent = ""; $("solutionBox").textContent = ""; $("btnHint").style.display = (q.hints || []).length ? "" : "none"; $("btnHint").textContent = "💡 Show a hint"; $("btnHint").disabled = false;
+  renderSolution(q.solution);       // after the clear above: a completed question (or a finished mock) opens with its solution
   $("result").style.display = "none"; $("verdict").textContent = ""; $("runStat").className = "stat"; $("runStat").textContent = "Ctrl+Enter runs your query · Ctrl+Shift+Enter checks it. Nothing you type can change the data.";
   setDoc(store.get(DRAFT_KEY + q.id) || "");
   document.querySelectorAll(".qi").forEach((b) => b.classList.remove("sel"));
-  loadQuestions();
+  if (state.mock) renderMockBar(); else loadQuestions();
   loadSchema(q.dataset);
   if (!$("schemaPanel").classList.contains("open")) return;
   renderSchemaPanel();
@@ -394,6 +454,9 @@ function renderStatus(q) {
   else { badge.textContent = q.difficulty; badge.className = "badge " + q.difficulty; }
   renderSolution(q.solution);
   renderAfter(q);
+  const rb = $("revBanner"), rv = q.revisit;
+  if (rv && rv.open) { rb.style.display = "block"; rb.textContent = `🔁 Revisit due — solve it again without the solution (stage ${rv.stage} of 2)`; }
+  else { rb.style.display = "none"; rb.textContent = ""; }
 }
 function renderSolution(sol) {
   const box = $("solutionBox"); box.textContent = "";
@@ -408,6 +471,7 @@ function renderSolution(sol) {
 function renderAfter(q) {
   const bar = $("afterBar"); bar.textContent = ""; bar.style.display = "none";
   const done = q.status === "solved" || q.status === "revealed";
+  if (q.mock) return;                     // mock questions: no give-up / next / redo — the set's own bar handles it
   if (!done && !q.can_reveal) return;
   bar.style.display = "flex";
   if (!done && q.can_reveal) {
@@ -424,11 +488,19 @@ function renderAfter(q) {
 function renderVerdict(r) {
   const v = $("verdict"); v.textContent = "";
   const box = el("div", "box " + (r.correct ? "ok" : "bad")); v.appendChild(box);
+  if (r.plan_checked) {
+    // shown for pass and fail alike: the learner learns to read plans
+    const pb = el("div", "plan");
+    pb.appendChild(el("h4", "", r.plan_ok ? "Query plan — rules satisfied ✅" : "Query plan — rules broken ❌"));
+    (r.plan_failures || []).forEach((m) => pb.appendChild(el("p", "", "⚠ " + m)));
+    pb.appendChild(el("pre", "", r.plan_text));
+    box.appendChild(pb);
+  }
   if (r.correct) {
     box.appendChild(el("p", "", `✅ Correct — completed (attempt ${r.attempts}). Your result matches the expected output exactly: ${r.rows_expected} rows.`));
     return;
   }
-  box.appendChild(el("p", "", `❌ Not yet — attempt ${r.attempts}.`));
+  box.appendChild(el("p", "", `❌ Not yet — attempt ${r.attempts}.` + (r.plan_checked && r.columns_ok && !r.missing_total && !r.unexpected_total && !r.cell_diffs_total ? " Your result is right; the plan is not." : "")));
   if (!r.columns_ok) {
     box.appendChild(el("p", "", r.reason));
     box.appendChild(el("h4", "", "Expected columns")); box.appendChild(table(r.expected_columns, []));
@@ -455,10 +527,10 @@ async function checkAnswer() {
     const r = await api("check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: state.current.id, sql: getDoc() }) });
     stat.textContent = r.correct ? "Correct ✅" : "Not yet — see the comparison below.";
     renderVerdict(r);
-    Object.assign(state.current, { status: r.status, attempts: r.attempts, failed: r.failed, can_reveal: r.can_reveal, solution: r.solution });
+    Object.assign(state.current, { status: r.status, attempts: r.attempts, failed: r.failed, can_reveal: r.can_reveal, solution: r.solution, revisit: r.revisit });
     renderStatus(state.current);
-    await loadQuestions();
-  } catch (e) { $("verdict").textContent = ""; stat.className = "stat err"; stat.textContent = e.message; }
+    if (state.mock) await refreshMock(); else await loadQuestions();
+  } catch (e) { $("verdict").textContent = ""; stat.className = "stat err"; stat.textContent = e.message; if (state.mock) refreshMock().catch(() => {}); }
   $("btnCheck").disabled = false;
 }
 $("btnCheck").onclick = checkAnswer;
@@ -487,6 +559,18 @@ async function runQuery() {
   $("btnRun").disabled = false;
 }
 $("btnRun").onclick = runQuery;
+async function explainQuery() {
+  if (!state.current) return;
+  const stat = $("runStat"); stat.className = "stat"; stat.textContent = "Planning…"; $("btnExplain").disabled = true;
+  try {
+    const r = await api("explain", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataset: state.current.dataset, sql: getDoc() }) });
+    const box = $("result"); box.textContent = ""; box.style.display = "block";
+    box.appendChild(el("h4", "", "Query plan (estimated, not executed)")); box.appendChild(el("pre", "plan-text", r.text));
+    stat.textContent = "Plan only — est. rows are the planner's guess. Read bottom-up: the deepest steps run first.";
+  } catch (e) { $("result").style.display = "none"; stat.className = "stat err"; stat.textContent = e.message; }
+  $("btnExplain").disabled = false;
+}
+$("btnExplain").onclick = explainQuery;
 $("btnFormat").onclick = formatQuery;
 $("btnReset").onclick = () => { setDoc(""); $("result").style.display = "none"; };
 
@@ -528,6 +612,151 @@ window.addEventListener("message", (e) => {
   if (e.source === $("schemaFrame").contentWindow && e.data && e.data.type === "schema-toggle") toggleSchema();
 });
 $("spClose").onclick = () => toggleSchema(false);
+
+
+// ---------------------------------------------------------------- mock interviews (reuse the question pane above)
+const fmtClock = (sec) => { sec = Math.max(0, Math.round(sec)); return String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0"); };
+const fmtUsed = (sec) => { const m = Math.floor(sec / 60); return `${m} min ${sec % 60} s`; };
+let mockTimer = null;
+function mockRemaining() {            // server-side clock: remaining at fetch time minus what elapsed here since (immune to local clock skew)
+  const m = state.mock; if (!m || m.run.finished) return 0;
+  return Math.max(0, m.run.remaining_seconds - (performance.now() - m.fetchedAt) / 1000);
+}
+function setMock(d) { state.mock = Object.assign({}, d, { fetchedAt: performance.now() }); }
+async function loadMockHome() {
+  const r = await api("mocks"), box = $("mockSets"); box.textContent = "";
+  if (!r.sets.length) box.appendChild(el("div", "empty", "No mock sets yet."));
+  r.sets.forEach((s) => {
+    const row = el("div", "mset"), info = el("div", "grow");
+    info.appendChild(el("b", "", s.title)); info.appendChild(el("small", "", `${s.domain ? s.domain + " · " : ""}${s.minutes} min · 3 questions`));
+    const st = s.status === "in_progress" ? `⏱ in progress — ${fmtClock(s.remaining_seconds)} left` : s.status === "finished" ? "finished" : "not started";
+    info.appendChild(el("small", "", st + (s.best_score !== null ? ` · best ${s.best_score}/3 · last ${s.last_score}/3 in ${fmtUsed(s.last_used_seconds)} · ${s.runs} run${s.runs === 1 ? "" : "s"}` : "")));
+    row.appendChild(info);
+    const go = el("button", "", s.status === "in_progress" ? "▶ Resume" : s.status === "finished" ? "↻ Start again" : "▶ Start"); go.dataset.set = s.id;
+    go.onclick = async () => { if (s.status !== "in_progress" && !confirm(`Start “${s.title}”? The ${s.minutes}-minute clock starts now and cannot be paused.`)) return; await enterMock(s.id, true); };
+    row.appendChild(go);
+    if (s.status === "finished") { const v = el("button", "secondary", "View results"); v.onclick = () => enterMock(s.id, false); row.appendChild(v); }
+    box.appendChild(row);
+  });
+}
+async function toggleMockHome(force) {
+  const h = $("mockHome"), open = force === undefined ? !h.classList.contains("show") : force;
+  h.classList.toggle("show", open);
+  if (open) { try { await loadMockHome(); } catch (e) { $("mockSets").textContent = e.message; } }
+}
+async function enterMock(setId, start) {
+  try { setMock(start ? await api(`mocks/${encodeURIComponent(setId)}/start`, { method: "POST" }) : await api("mocks/" + encodeURIComponent(setId))); }
+  catch (e) { alert(e.message); return; }
+  toggleMockHome(false);
+  $("mainGrid").classList.add("mock"); $("mockBar").classList.add("show");
+  $("mockTitle").textContent = state.mock.set.title; $("mockDomain").textContent = state.mock.set.domain;
+  $("mockIntro").innerHTML = renderMd(state.mock.set.intro);
+  $("mockIntroBox").open = !state.mock.run.finished;
+  clearInterval(mockTimer); mockTimer = setInterval(tickMock, 1000);
+  await openQuestion(state.mock.set.questions[0]);
+  tickMock();
+}
+function leaveMock() {
+  clearInterval(mockTimer); state.mock = null;
+  $("mainGrid").classList.remove("mock"); $("mockBar").classList.remove("show");
+  state.current = null; $("qpane").style.display = "none"; $("emptyState").style.display = "";
+  loadQuestions();
+}
+function renderMockBar() {
+  const m = state.mock; if (!m) return;
+  const tabs = $("mockTabs"); tabs.textContent = "";
+  m.questions.forEach((q, i) => {
+    const b = el("button", "mtab" + (state.current && state.current.id === q.id ? " sel" : ""), `${ICON[q.status] || ICON.new} Q${i + 1} · ${q.difficulty}`);
+    b.title = q.title; b.onclick = () => openQuestion(q.id); tabs.appendChild(b);
+  });
+  $("btnMockFinish").style.display = m.run.finished ? "none" : "";
+  renderMockResult();
+}
+function renderMockResult() {
+  const m = state.mock, box = $("mockResult"); box.textContent = "";
+  if (!m.run.finished) return;
+  const solved = m.questions.filter((q) => q.status === "solved").length;
+  const b = el("div", "box " + (solved === 3 ? "ok" : "")); b.appendChild(el("h4", "", "Result"));
+  b.appendChild(el("p", "", `Solved ${solved} of 3 · time used ${fmtUsed(m.run.used_seconds)} of ${m.set.minutes} min. Every solution, trap and follow-up is open below — click a question tab.`));
+  const t = el("table"), th = el("tr"); ["Question", "Status", "Attempts"].forEach((c) => th.appendChild(el("th", "", c))); t.appendChild(th);
+  m.questions.forEach((q, i) => { const tr = el("tr"); [`Q${i + 1} ${q.title}`, q.status === "solved" ? "✅ solved" : q.status === "attempted" ? "◐ attempted, not solved" : "○ not attempted", String(q.attempts)].forEach((c) => tr.appendChild(el("td", "", c))); t.appendChild(tr); });
+  b.appendChild(t); box.appendChild(b);
+}
+async function refreshMock() {
+  if (!state.mock) return;
+  const wasFinished = state.mock.run.finished;
+  setMock(await api("mocks/" + encodeURIComponent(state.mock.set.id)));
+  renderMockBar();
+  if (!wasFinished && state.mock.run.finished) await openQuestion(state.current.id);   // the solutions just opened
+}
+async function tickMock() {
+  const m = state.mock; if (!m) return;
+  const clock = $("mockClock");
+  if (m.run.finished) { clock.textContent = "finished"; clock.className = "done"; clearInterval(mockTimer); return; }
+  const rem = mockRemaining();
+  clock.textContent = fmtClock(rem); clock.className = rem < 300 ? "low" : "";
+  if (rem <= 0 && !m.polling) { m.polling = true; try { await refreshMock(); $("mockIntroBox").open = false; } finally { if (state.mock) state.mock.polling = false; } }
+}
+// ---------------------------------------------------------------- review queue + weak topics
+function fmtDue(iso) {
+  const ms = new Date(iso).getTime() - Date.now(), d = Math.round(ms / 86400000);
+  return ms <= 0 ? "due now" : d <= 0 ? "due in under a day" : `due in ${d} day${d === 1 ? "" : "s"}`;
+}
+async function toggleRev(force) {
+  const h = $("revHome"), open = force === undefined ? !h.classList.contains("show") : force;
+  h.classList.toggle("show", open);
+  if (!open) return;
+  if (open) { $("weakHome").classList.remove("show"); }
+  const box = $("revList"); box.textContent = "";
+  try {
+    const r = await api("revisits");
+    const add = (it, due) => {
+      const b = el("button", "revitem" + (due ? " due" : ""));
+      const g = el("div", "grow"); g.appendChild(el("b", "", (due ? "🔁 " : "") + it.title));
+      g.appendChild(el("small", "", `${it.id} · ${it.topic} · stage ${it.stage} of 2 · ${due ? "due now" : fmtDue(it.due_at)}`));
+      b.appendChild(g);
+      b.onclick = () => { if (state.mock) return; toggleRev(false); openQuestion(it.id); };
+      box.appendChild(b);
+    };
+    r.due.forEach((it) => add(it, true)); r.upcoming.forEach((it) => add(it, false));
+    if (!r.due.length && !r.upcoming.length) box.appendChild(el("div", "empty", "Nothing to review yet. Reveal a solution or solve something the hard way and it will show up here."));
+    box.appendChild(el("div", "stat", `${r.counts.due} due · ${r.counts.upcoming} upcoming · ${r.counts.mastered} mastered`));
+  } catch (e) { box.textContent = e.message; }
+}
+async function toggleWeak(force) {
+  const h = $("weakHome"), open = force === undefined ? !h.classList.contains("show") : force;
+  h.classList.toggle("show", open);
+  if (!open) return;
+  $("revHome").classList.remove("show");
+  const box = $("weakBody"); box.textContent = "";
+  try {
+    const r = await api("weak-topics");
+    const t = el("table"); t.id = "weakTable";
+    const hr = el("tr"); ["Topic", "Solved / total", "Revealed", "Failed checks", "Accuracy", ""].forEach((c) => hr.appendChild(el("th", "", c))); t.appendChild(hr);
+    r.topics.forEach((x) => {
+      const tr = el("tr"); tr.dataset.topic = x.topic;
+      tr.appendChild(el("td", "", x.topic)); tr.appendChild(el("td", "", `${x.solved} / ${x.total}`));
+      tr.appendChild(el("td", "", String(x.revealed))); tr.appendChild(el("td", "", String(x.failed_checks)));
+      const acc = el("td"), bar = el("span", "accbar"), fill = el("i"); fill.style.width = x.accuracy === null ? "0%" : Math.round(x.accuracy * 100) + "%";
+      bar.appendChild(fill); acc.appendChild(bar); acc.appendChild(document.createTextNode(x.accuracy === null ? "–" : Math.round(x.accuracy * 100) + "%")); tr.appendChild(acc);
+      const go = el("td"), pb = el("button", "secondary", "Practice");
+      pb.onclick = () => { if (state.mock) return; $("fTopic").value = x.topic; toggleWeak(false); loadQuestions(); };
+      go.appendChild(pb); tr.appendChild(go); t.appendChild(tr);
+    });
+    box.appendChild(t);
+  } catch (e) { box.textContent = e.message; }
+}
+$("btnRev").onclick = () => toggleRev(); $("btnRevClose").onclick = () => toggleRev(false);
+$("btnWeak").onclick = () => toggleWeak(); $("btnWeakClose").onclick = () => toggleWeak(false);
+
+$("btnMock").onclick = () => toggleMockHome();
+$("btnMockClose").onclick = () => toggleMockHome(false);
+$("btnMockExit").onclick = leaveMock;
+$("btnMockFinish").onclick = async () => {
+  if (!confirm("Finish the interview now? You cannot answer any more; every solution opens.")) return;
+  try { const wasId = state.current.id; setMock(await api(`mocks/${encodeURIComponent(state.mock.set.id)}/finish`, { method: "POST" })); renderMockBar(); await openQuestion(wasId); tickMock(); }
+  catch (e) { alert(e.message); }
+};
 
 // ---------------------------------------------------------------- start
 (async function init() {

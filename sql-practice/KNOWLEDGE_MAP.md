@@ -8,6 +8,7 @@
 | An endpoint, request/response shape | `server.py` |
 | How the tool is listed / mounted (title, icon, runtime, order, secrets) | `manifest.yaml` |
 | Its image / packages | `../Dockerfile` (`COPY sql-practice/…`), `../requirements/data.txt` |
+| The revisit queue / weak topics (rules, endpoints `/revisits` `/weak-topics`, 🔁 + 📉 UI) | `provision.py` (`revisit_*`, `revisits`, `weak_topics`), `CLAUDE.md` "Revisit queue", `../tests/unit/test_sql_practice_revisit.py` |
 | Its smoke tests | `../tests/smoke/test_sql_practice.py`, the `API_CHECKS` line in `../tests/smoke/test_api.py` |
 | The practice database: role/DB creation, dataset loading, safe query running, question files, validator | `provision.py` |
 | A dataset or a question (content, not code) | `../../learn-sql/practice/{datasets,questions}/` — then `GET /tools/sql-practice/validate` |
