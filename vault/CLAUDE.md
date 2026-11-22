@@ -347,3 +347,6 @@ server (`docs/architecture/ADR-MCP.md` D5). Code: `core/vault.py` (`environment_
 "Add connection" and a badge + selector on each connection / SSH server in the list. `mcp_server/vault_scope.yaml` is the Vault scope of the headless MCP package
 (`core.vault.scope_for` falls back to `<folder>/vault_scope.yaml` when no manifest has that name; an invalid file grants nothing).
 
+## Kind `key_store` (Key Store, roadmap KS2)
+Key Store saves its entries here under `kind: key_store` with names `ks-<random>` (the real name is inside the encrypted data). They appear in this page's list as `key_store · ks-…`;
+do not "clean them up" by hand: use Key Store (its trash and "Delete forever"). `ScopedVault.delete_secret` (added in KS2) lets a plugin delete only kinds in its own `write` list. The MCP server never lists this kind.

@@ -33,6 +33,8 @@
   Tool code reaches secrets only via `vault_store.scoped("<tool>")`, limited
   to the kinds its manifest declares under `vault:`; a unit test fails if a
   tool imports `core.vault` unscoped. See `vault/CLAUDE.md`.
+  `ScopedVault` offers list/get/save/update, and (since KS2) `delete_secret` for kinds in the plugin's `write` list only (datasets refused).
+  The Vault needs `cryptography` + a DB driver, so tools that use it run in the `data` runtime (not `light`).
 - **Tool records in Postgres (roadmap B6):** schema-map, data-syncer,
   schema-copy, data-dumper and ssh-sftp keep their tables in Toolbox's
   Postgres, one schema each (`schema_map`, `data_syncer`, …), through

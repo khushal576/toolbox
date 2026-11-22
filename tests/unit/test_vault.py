@@ -116,6 +116,30 @@ def test_scoped_access_follows_the_manifest(v, tmp_path):
         v.scoped("encode-decode").list_secrets("postgres_connection")  # no `vault:` → no access
 
 
+def test_scoped_delete_follows_the_write_scope(v, tmp_path):
+    """KS2: a plugin may delete only credentials of a kind it may WRITE; never datasets, never another plugin's kinds."""
+    own = v.save_secret("n", "key_store", {"k": 1})
+    db = v.save_secret("db", "postgres_connection", {"password": "pw"})
+    ssh = v.save_secret("srv", "ssh_server", {"host": "h"})
+    ks = v.scoped("key-store")                         # manifest: vault: {read: [key_store], write: [key_store]}
+    with pytest.raises(v.ScopeError):
+        ks.delete_secret(db)
+    with pytest.raises(v.ScopeError):
+        v.scoped("data-syncer").delete_secret(db)      # read-only scope: no delete
+    with pytest.raises(v.ScopeError):
+        v.scoped("ssh-sftp").delete_secret(db)         # writes ssh_server, not postgres_connection
+    v.scoped("ssh-sftp").delete_secret(ssh)
+    ks.delete_secret(own)
+    assert [s["id"] for s in v.list_secrets()] == [db]
+    with pytest.raises(v.SecretNotFound):
+        ks.delete_secret(own)
+    src = tmp_path / "d.csv"
+    src.write_text("a\n1\n")
+    ds = v.scoped("duck-lab").save_dataset("d", "duckdb_result", {"format": "csv"}, src)
+    with pytest.raises(v.ScopeError):
+        v.scoped("duck-lab").delete_secret(ds)
+
+
 def test_plugin_tokens(v):
     t = v.plugin_token("data-syncer")
     assert v.verify_token("data-syncer", t) and not v.verify_token("ssh-sftp", t) and not v.verify_token("", "")

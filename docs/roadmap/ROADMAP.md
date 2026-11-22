@@ -112,6 +112,10 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | H4 | AI helper: plan cards — the owner approves each write in the panel (PIN when needed) | S | H2, K4 | ☑ (2026-11-11) |
 | H5 | AI helper: the gap actions (stage query → table, flatten JSON, load table → DB) + recipes (save once, replay without AI) | M | H3, H4 | ☑ (2026-11-11) |
 | H6 | AI helper: adapters for other AIs (Codex CLI, Gemini CLI, API key, local model) — optional | S | H1 | ☐ |
+| KS1 | Key Store: scaffold + password generator (browser-only, CSPRNG, passphrase/PIN/token/UUID, strength) | S | P2 | ☑ (2026-11-22) |
+| KS2 | Key Store: save / list / search / one-click copy in the Vault (own `kind`, tags, type, prod label, masked, trash) | M | KS1 | ☑ (2026-11-22) |
+| KS3 | Key Store: import from messy txt files (preview) + encrypted export / `.env` export | S | KS2 | ☐ |
+| KS4 | Key Store: extras (old values, clipboard auto-clear, copy-as, health check, expiry) — optional master lock decided here | S | KS3 | ☐ |
 
 About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 before committing to C–F.
 
@@ -692,6 +696,16 @@ owner approval before H1).** All the ADR-MCP safety rules stay as they are; the 
 ---
 
 ## Handoff log
+
+- 2026-11-22 – **KS2 done (Key Store: save / search / copy).** Entries in the Vault, kind `key_store`, **names encrypted** (Vault name = `ks-…`); manifest `vault:` limited to that kind, runtime moved `light`→`data` (light has no `cryptography`).
+  One shared change: `core.vault.ScopedVault.delete_secret` (kind must be in the plugin's `write` list; datasets refused) + tests in `test_vault.py`. No `ai:` section and no `postMessage` (tests); MCP scope unchanged and tested not to see `key_store`.
+  Page: search (name/tag/note/type, optional inside values), one-click Copy + Enter copies first, 👁 reveal auto-masks after 10 s, add/edit form with 🎲 generate, tags, prod / dev-test label, pin, duplicate, trash (30 days, Undo), "Save to Store…" from the generator.
+  Tests: backend + HTTP against a temp Vault, a real-browser end-to-end (`test_key_store_ui.py`, ~45 checks, 5/5 green). **Nothing committed.** Next: KS3 (import messy txt with preview, encrypted export / `.env` export).
+
+- 2026-11-22 – **KS1 done (Key Store: scaffold + generator).** `key-store/` (package `key_store`, light, tier 2, order 25) from `new_tool.py`; the page makes no network calls, all
+  randomness is `crypto.getRandomValues` + rejection sampling (`ui/keygen.js`, tested by node: 73k checks incl. uniformity, option rules, EFF word list integrity). Page served with a strict CSP.
+  Unit suite 1134 passed; stack rebuilt and smoke-tested. Branch `feature/key-store` (cut from `feature/sql-practice` so the container keeps SQL Practice). **Nothing committed.**
+  Next: KS2 (store in the Vault under `kind=key_store`, declare it in the manifest `vault:`, make sure `vault_list`/MCP never lists it — add a test).
 <!-- Newest first. 2–5 lines per session: what changed, what is left, gotchas. -->
 
 - 2026-11-11 – **DF Studio command-only + pipeline context (NOT committed):** `postHelperContext` (columns + steps so far) → incremental commands; mode switch hidden in DF Studio; staging approach documented (ADR §11). 16 browser tests.

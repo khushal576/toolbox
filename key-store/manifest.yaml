@@ -1,0 +1,20 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# TEMPLATE (roadmap P2): not a tool. `python3 scripts/new_tool.py <name> "<Title>"` copies this folder to <repo>/<name>/ and fills the __TOOL_*__ placeholders.
+# (The placeholders are not valid values on purpose, so even a stray copy of this file can never be mounted as a tool.)
+schema_version: 1
+name: key-store
+title: "Key Store"
+description: "Generate strong passwords and keep your keys, URLs and connection strings in one searchable place. One click copies."
+icon: "🔑"
+category: tool                    # `learn` cards stay hidden until the home page's "Show learning tools" toggle
+kind: python
+entry: key_store.server:app
+runtime: data         # needs the Vault (encryption library + DB driver), which only the data runtime has — the light runtime cannot reach the Vault
+tier: 2                           # 1 = runs in the browser only · 2 light Python · 3 data-heavy · 4 special image
+state: [durable]                  # entries live in the Vault (Postgres), never in process memory
+depends_on: []
+requires: []
+order: 25             # display order (built-in tools use 10–200)
+enabled_by_default: true
+vault: {read: [key_store], write: [key_store]}   # Vault scope (roadmap KS2): its own entries only — never connections, SSH logins or datasets
+# deliberately NO `ai:` section: the AI helper / MCP must never be able to call this tool

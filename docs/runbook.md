@@ -288,6 +288,18 @@ Check / stop / remove: `python3 ai-bridge/install.py status` · `systemctl --use
 After Claude **saves** something (a table, rows), the tool you are looking at reloads by itself so you can check it; a plain preview or question changes nothing on screen.
 Usage counts against your Pro limits (shared with claude.ai and VS Code). Keep Toolbox on localhost — anyone who can open it could spend your quota.
 
+## Key Store: passwords and keys in one place (roadmap KS1–KS2)
+
+**🔑 Key Store** in the sidebar has two tabs.
+- **Generator:** pick Password / Passphrase / PIN / Token / UUID, adjust, **Copy**. Made inside your browser, never sent anywhere. For a connection string or URL tick **Safe for connection strings and URLs**.
+- **Store:** your keys, URLs, connection strings, hosts and passwords in one searchable list. Type in the search box (press **/** to jump there); **Enter copies the first result**, or press **Copy** on any row.
+  Values stay hidden (••••) until you press 👁 (they hide again after 10 s). **+ New entry** or **💾 Save to Store…** in the generator adds one; give it a type, tags and a **Prod / Dev-test** label.
+  🗑 moves an entry to the **Trash** (kept 30 days, with Undo); **Delete forever** is in the Trash view.
+- **Where it lives:** inside the Vault, encrypted (names too), included in Vault backups. **Keep `.env` backed up** — without its `TOOLBOX_VAULT_KEY` the entries cannot be read (see §3–§5).
+  In the Vault tool's list you will see them as `key_store · ks-…`: that is normal; manage them in Key Store, not there.
+- **Private from the AI:** Claude / MCP and the "Ask Claude" helper cannot see or use Key Store, by design.
+- Anyone who can open Toolbox on this computer can open Key Store (Toolbox has no login). A master lock is a possible later step.
+
 ## Remove a tool you no longer want (roadmap P3)
 
 Just switching a tool **off** in Settings is reversible and enough in most cases (it then uses no memory). To remove it for good:

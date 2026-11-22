@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Key Store</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  /* the six canonical colours — copied verbatim from theme-tokens.css (never linked) */
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+    --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --ok-bg: rgba(21,128,61,0.08); --ok-text: #15803d; --ok-border: rgba(21,128,61,0.3);
+    --warn-text: #b45309; --err-text: #b91c1c; --err-bg: rgba(220,38,38,0.06); --err-border: rgba(220,38,38,0.3);
+    --c-digit: #1d4ed8; --c-symbol: #be123c;
+  }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 24px 20px 60px; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
+  .sub { color: var(--muted); font-size: 0.85rem; margin: 2px 0 14px; }
+  .trust { display: inline-flex; gap: 6px; align-items: center; background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok-border);
+           border-radius: 20px; padding: 4px 12px; font-size: 0.78rem; font-weight: 600; margin-bottom: 14px; }
+  .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .tab { background: none; border: none; border-bottom: 2px solid transparent; padding: 9px 14px; font: inherit; font-weight: 600; font-size: 0.88rem; color: var(--muted); cursor: pointer; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .badge { font-size: 0.7rem; background: var(--accent); color: #fff; border-radius: 10px; padding: 1px 8px; margin-left: 6px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  h2 { font-size: 0.95rem; margin-bottom: 10px; }
+  .hidden { display: none !important; }
+  .note { color: var(--muted); font-size: 0.8rem; margin-top: 6px; }
+  .err { color: var(--err-text); background: var(--err-bg); border-radius: 8px; padding: 8px 12px; font-size: 0.85rem; margin-top: 10px; }
+  button.act { font: inherit; font-weight: 600; font-size: 0.88rem; padding: 7px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button.act.alt { background: var(--surface); color: var(--accent); }
+  button.act:active { transform: translateY(1px); }
+  button.act[disabled] { opacity: 0.5; cursor: not-allowed; }
+  input[type=text], input[type=search], input[type=number], select, textarea { font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; width: 100%; background: var(--surface); color: var(--text); }
+  textarea { resize: vertical; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+
+  /* ---- generator ---- */
+  .modes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .mode { font: inherit; font-weight: 600; font-size: 0.85rem; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+  .mode.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .result { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.25rem; line-height: 1.5; word-break: break-all; background: var(--bg);
+            border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; min-height: 3.4em; user-select: all; }
+  .c-d { color: var(--c-digit); } .c-s { color: var(--c-symbol); }
+  .meter { height: 8px; border-radius: 6px; background: var(--border); overflow: hidden; flex: 1; min-width: 120px; }
+  .meter > i { display: block; height: 100%; width: 0; transition: width 0.15s, background 0.15s; }
+  .tone-bad { color: var(--err-text); } .tone-warn { color: var(--warn-text); } .tone-good { color: var(--ok-text); }
+  .strength { font-size: 0.85rem; font-weight: 600; }
+  .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 22px; }
+  .opt { font-size: 0.88rem; }
+  .opt label { display: flex; align-items: center; gap: 0 8px; flex-wrap: wrap; cursor: pointer; }
+  .opt label .note { flex-basis: 100%; margin: 0 0 0 26px; }
+  .opt .lab { display: block; font-weight: 600; margin-bottom: 4px; }
+  .opt input[type=range] { width: 100%; }
+  .more-item { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--border); }
+  .more-item:first-child { border-top: none; }
+  .more-item code { flex: 1; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.92rem; word-break: break-all; }
+  button.mini { font: inherit; font-size: 0.78rem; font-weight: 600; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); cursor: pointer; }
+
+  /* ---- store ---- */
+  .searchrow { display: flex; gap: 8px; }
+  #q { flex: 1; font-size: 1rem; padding: 10px 14px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 10px; font-size: 0.84rem; }
+  .filters select { width: auto; padding: 5px 8px; }
+  .filters label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip { font: inherit; font-size: 0.78rem; font-weight: 600; padding: 3px 11px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip small { opacity: 0.7; margin-left: 3px; }
+  .entry { display: flex; gap: 12px; align-items: flex-start; padding: 12px 2px; border-top: 1px solid var(--border); }
+  .entry:first-child { border-top: none; }
+  .eicon { font-size: 1.35rem; width: 2rem; text-align: center; flex: none; }
+  .emain { flex: 1; min-width: 0; }
+  .etitle { font-weight: 600; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .b2 { font-size: 0.68rem; font-weight: 700; border-radius: 10px; padding: 1px 8px; background: var(--border); color: var(--muted); }
+  .b2.prod { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border); }
+  .emeta { color: var(--muted); font-size: 0.8rem; margin-top: 2px; word-break: break-word; }
+  .tagpill { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 0 7px; margin-right: 4px; font-size: 0.74rem; }
+  .evalue { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; margin-top: 5px; word-break: break-all; white-space: pre-wrap; }
+  .evalue.masked { color: var(--muted); letter-spacing: 1px; }
+  .eactions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; flex: none; }
+  button.icon { font: inherit; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 0.95rem; }
+  button.icon:hover { border-color: var(--accent); }
+  .empty { text-align: center; padding: 26px 10px; color: var(--muted); }
+  .empty b { display: block; color: var(--text); font-size: 1.05rem; margin-bottom: 6px; }
+  .trashbar { display: flex; justify-content: space-between; align-items: center; font-size: 0.84rem; margin-bottom: 14px; color: var(--muted); }
+  button.link { font: inherit; font-size: 0.84rem; background: none; border: none; color: var(--accent); cursor: pointer; font-weight: 600; margin-left: 10px; }
+  button.link.danger { color: var(--err-text); }
+
+  /* ---- entry dialog ---- */
+  dialog { border: none; border-radius: 14px; padding: 0; width: min(580px, 94vw); box-shadow: 0 20px 60px rgba(20, 24, 40, 0.35); color: var(--text); margin: auto; }
+  dialog::backdrop { background: rgba(20, 24, 40, 0.45); }
+  .dlg { padding: 20px 22px; }
+  .dlg h2 { font-size: 1.1rem; margin-bottom: 4px; }
+  .dlg label.lab, .dlg span.lab { display: block; font-weight: 600; font-size: 0.82rem; margin: 12px 0 4px; }
+  .dlg .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .dlg .valrow { display: flex; gap: 6px; align-items: flex-start; }
+  .dlg .valrow textarea { flex: 1; font-family: ui-monospace, Menlo, Consolas, monospace; min-height: 4.4em; }
+  .dlg .valrow .side { display: flex; flex-direction: column; gap: 6px; }
+  textarea.hiddenval { -webkit-text-security: disc; text-security: disc; }
+  @supports not (-webkit-text-security: disc) { textarea.hiddenval { filter: blur(5px); } }   /* Firefox has no text-security: blur instead */
+  .dlg .envrow { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.88rem; }
+  .dlg .envrow label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .dlg .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .tagbox { display: flex; flex-wrap: wrap; gap: 5px; border: 1px solid var(--border); border-radius: 8px; padding: 5px 7px; background: var(--surface); }
+  .tagbox input { border: none; flex: 1; min-width: 110px; padding: 3px 4px; width: auto; }
+  .tagbox .tagpill button { border: none; background: none; cursor: pointer; margin-left: 3px; color: var(--muted); }
+
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--text); color: #fff; padding: 9px 18px; border-radius: 22px;
+           font-size: 0.85rem; opacity: 0; pointer-events: none; transition: opacity 0.2s; display: flex; gap: 12px; align-items: center; }
+  .toast.show { opacity: 0.96; pointer-events: auto; }
+  .toast button { font: inherit; font-weight: 700; background: none; border: none; color: #a5b0ff; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔑 Key Store</h1>
+  <p class="sub">Generate strong passwords and keep your keys, URLs and connection strings in one searchable place. One click copies.</p>
+
+  <div class="tabs">
+    <button class="tab" id="tabGen" type="button">Generator</button>
+    <button class="tab" id="tabStore" type="button">Store<span class="badge hidden" id="storeCount"></span></button>
+  </div>
+
+  <!-- =========================== Generator =========================== -->
+  <div id="paneGen">
+    <span class="trust">🔒 Passwords are made in your browser and are never sent anywhere</span>
+    <div class="card">
+      <div class="modes" id="modes" role="tablist"></div>
+
+      <div class="result" id="result" aria-live="polite"></div>
+      <div class="row">
+        <button class="act" id="copy" type="button">Copy</button>
+        <button class="act alt" id="saveBtn" type="button">💾 Save to Store…</button>
+        <button class="act alt" id="regen" type="button">↻ Generate another</button>
+        <span class="strength" id="strengthLabel"></span>
+        <div class="meter" aria-hidden="true"><i id="meterFill"></i></div>
+      </div>
+      <div class="note" id="crack"></div>
+      <div class="note" id="modeNote"></div>
+      <div class="err hidden" id="error"></div>
+    </div>
+
+    <div class="card">
+      <h2>Options</h2>
+
+      <div class="opts" data-mode="password">
+        <div class="opt"><span class="lab">Length: <b id="lenShow"></b></span><input type="range" id="p_length" min="8" max="128" /></div>
+        <div class="opt"><label><input type="checkbox" id="p_lower" /> Lowercase letters (a–z)</label></div>
+        <div class="opt"><label><input type="checkbox" id="p_upper" /> Uppercase letters (A–Z)</label></div>
+        <div class="opt"><label><input type="checkbox" id="p_digits" /> Numbers (0–9)</label></div>
+        <div class="opt"><label><input type="checkbox" id="p_symbols" /> Symbols (! @ # $ …)</label></div>
+        <div class="opt"><label><input type="checkbox" id="p_urlSafe" /> Safe for connection strings and URLs <span class="note">(symbols limited to - _ . ~)</span></label></div>
+        <div class="opt"><label><input type="checkbox" id="p_noLookalikes" /> Avoid look-alikes <span class="note">(0 O 1 l I |)</span></label></div>
+        <div class="opt"><label><input type="checkbox" id="p_requireEach" /> Include at least one of each kind</label></div>
+        <div class="opt"><span class="lab">Never use these characters</span><input type="text" id="p_exclude" maxlength="40" placeholder="for example  ' &quot; \ `" autocomplete="off" spellcheck="false" /></div>
+      </div>
+
+      <div class="opts hidden" data-mode="passphrase">
+        <div class="opt"><span class="lab">Words: <b id="wordsShow"></b></span><input type="range" id="w_words" min="3" max="10" /></div>
+        <div class="opt"><span class="lab">Separator</span>
+          <select id="w_separator"><option value="-">Dash  ( - )</option><option value=" ">Space</option><option value=".">Dot  ( . )</option><option value="_">Underscore  ( _ )</option><option value="">None</option></select></div>
+        <div class="opt"><label><input type="checkbox" id="w_capitalize" /> Capitalize each word</label></div>
+        <div class="opt"><label><input type="checkbox" id="w_number" /> Add a number</label></div>
+      </div>
+
+      <div class="opts hidden" data-mode="pin">
+        <div class="opt"><span class="lab">Digits: <b id="pinShow"></b></span><input type="range" id="n_length" min="4" max="12" /></div>
+      </div>
+
+      <div class="opts hidden" data-mode="token">
+        <div class="opt"><span class="lab">Type</span>
+          <select id="t_kind"><option value="hex">Hex (0–9, a–f)</option><option value="base64url">Base64 URL-safe</option><option value="alnum">Letters and numbers</option></select></div>
+        <div class="opt"><span class="lab" id="t_sizeLab">Size</span><input type="number" id="t_size" min="8" max="256" /></div>
+        <div class="opt"><span class="lab">Prefix (optional)</span><input type="text" id="t_prefix" maxlength="20" placeholder="for example  sk_live_" autocomplete="off" spellcheck="false" /></div>
+      </div>
+
+      <div class="opts hidden" data-mode="uuid"><div class="opt note">A random UUID (version 4). Nothing to set.</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Need a few to choose from?</h2>
+      <button class="act alt" id="moreBtn" type="button">Show 5 more with the same options</button>
+      <div id="moreList"></div>
+    </div>
+  </div>
+
+  <!-- ============================== Store ============================== -->
+  <div id="paneStore" class="hidden">
+    <div class="card">
+      <div class="searchrow">
+        <input type="search" id="q" placeholder="Search name, tag or note…   ( press / )" autocomplete="off" spellcheck="false" />
+        <button class="act" id="newBtn" type="button">+ New entry</button>
+      </div>
+      <div class="filters">
+        <select id="fType" aria-label="Type"></select>
+        <select id="fEnv" aria-label="Environment">
+          <option value="">All environments</option><option value="prod">Prod only</option><option value="non-prod">Dev / test only</option><option value="unset">Not labelled</option>
+        </select>
+        <select id="fSort" aria-label="Sort">
+          <option value="name">A–Z</option><option value="recent">Recently used</option><option value="new">Newest first</option>
+        </select>
+        <label><input type="checkbox" id="fValues" /> Also search inside values</label>
+      </div>
+      <div class="chips" id="tagbar"></div>
+      <div class="note" id="enterHint">Press Enter to copy the first result.</div>
+    </div>
+
+    <div class="trashbar"><span id="listInfo"></span><span><button class="link" id="trashToggle" type="button">🗑 Trash</button><button class="link danger hidden" id="emptyTrash" type="button">Empty trash</button></span></div>
+    <div class="card" id="list"></div>
+    <div class="err hidden" id="storeError"></div>
+  </div>
+</div>
+
+<dialog id="dlg">
+  <form method="dialog" class="dlg" id="dlgForm" autocomplete="off">
+    <h2 id="dlgTitle">New entry</h2>
+    <label class="lab" for="eName">Name</label>
+    <input type="text" id="eName" maxlength="120" placeholder="for example  Billing DB (prod)" spellcheck="false" />
+
+    <div class="two">
+      <div><label class="lab" for="eType">Type</label><select id="eType"></select></div>
+      <div><span class="lab">Environment</span>
+        <div class="envrow">
+          <label><input type="radio" name="eEnv" value="" checked /> Not set</label>
+          <label><input type="radio" name="eEnv" value="non-prod" /> Dev / test</label>
+          <label><input type="radio" name="eEnv" value="prod" /> <b style="color:var(--err-text)">Prod</b></label>
+        </div></div>
+    </div>
+
+    <label class="lab" for="eValue">Value</label>
+    <div class="valrow">
+      <textarea id="eValue" class="hiddenval" rows="3" spellcheck="false" autocomplete="off" placeholder="the password, key, URL or connection string"></textarea>
+      <div class="side">
+        <button type="button" class="act alt" id="eReveal" title="Show or hide the value">👁</button>
+        <button type="button" class="act alt" id="eGen" title="Generate a strong value">🎲</button>
+      </div>
+    </div>
+
+    <label class="lab" for="eTagIn">Tags <span class="note">(press Enter or comma after each)</span></label>
+    <div class="tagbox" id="eTagBox"><input type="text" id="eTagIn" maxlength="40" list="tagList" spellcheck="false" placeholder="billing, aws, …" /></div>
+    <datalist id="tagList"></datalist>
+
+    <label class="lab" for="eNote">Note</label>
+    <textarea id="eNote" rows="2" maxlength="2000" placeholder="who owns it, when it expires, where it is used …"></textarea>
+
+    <div class="err hidden" id="dlgError"></div>
+    <div class="actions">
+      <button type="button" class="act alt" id="dlgCancel">Cancel</button>
+      <button type="submit" class="act" id="dlgSave">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status"></div>
+<div class="toast" id="toast2" role="status"></div>
+
+<script src="keygen.js"></script>
+<script src="words.js"></script>
+<script src="generator.js"></script>
+<script src="store.js"></script>
+<script>
+"use strict";
+// Tabs: remember the last one used in this browser (a tab name, nothing secret).
+(function () {
+  const $ = (id) => document.getElementById(id);
+  function show(which) {
+    $("paneGen").classList.toggle("hidden", which !== "gen");
+    $("paneStore").classList.toggle("hidden", which !== "store");
+    $("tabGen").classList.toggle("active", which === "gen");
+    $("tabStore").classList.toggle("active", which === "store");
+    try { localStorage.setItem("keystore.tab", which); } catch (e) { /* private mode: fine */ }
+    if (which === "store" && window.KeyStoreUI) window.KeyStoreUI.activated();
+  }
+  $("tabGen").addEventListener("click", () => show("gen"));
+  $("tabStore").addEventListener("click", () => show("store"));
+  document.addEventListener("keystore:save", () => show("store"));     // "Save to Store…" in the generator switches tabs; store.js opens the form
+  let first = "gen";
+  try { first = localStorage.getItem("keystore.tab") === "store" ? "store" : "gen"; } catch (e) { /* ignore */ }
+  show(first);
+})();
+</script>
+</body>
+</html>

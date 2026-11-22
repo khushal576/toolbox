@@ -14,6 +14,7 @@ LATEX = r"\documentclass{article}\begin{document}Smoke test.\end{document}"
 
 # (tool, method, path, body, expected content type)
 API_CHECKS = [
+    ("key-store", "GET", "/health", None, "application/json"),   # scaffolded by scripts/new_tool.py (roadmap P2)
     ("sql-practice", "GET", "/health", None, "application/json"),   # scaffolded by scripts/new_tool.py (roadmap P2)
     ("datadiff-pro", "POST", "/compare", SMALL_DIFF, "application/json"),
     ("df-studio", "GET", "/template/list", None, "application/json"),

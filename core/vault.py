@@ -663,6 +663,7 @@ class ScopedVault:
 
     SecretNotFound = SecretNotFound  # so callers can keep `except vault.SecretNotFound`
     ScopeError = ScopeError
+    VaultKeyMismatch = VaultKeyMismatch  # so a tool can report a wrong key without importing core.vault unscoped (KS2)
 
     def __init__(self, scope: Scope):
         self.scope = scope
@@ -699,6 +700,16 @@ class ScopedVault:
         if kind not in self.scope.write:
             raise self._deny(f"update Vault secrets of kind '{kind}'")
         update_secret(secret_id, data)
+
+    def delete_secret(self, secret_id: str) -> None:
+        """Delete one credential of a kind this plugin may write (Key Store's "delete forever"). Datasets and other
+        plugins' kinds are refused, so a tool can only ever remove what it created itself."""
+        row = _row(secret_id)
+        if row["blob_path"] is not None:
+            raise self._deny("delete datasets as credentials")
+        if row["kind"] not in self.scope.write:
+            raise self._deny(f"delete Vault secrets of kind '{row['kind']}'")
+        delete_secret(secret_id)
 
     def load_dataset_file(self, secret_id: str) -> Path:
         if self.scope.datasets == "none":
