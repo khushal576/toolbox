@@ -4,7 +4,8 @@
 
 | If you need to change... | Go to |
 |---|---|
-| The notes or the questions | the `learn-aws-services` repo, then `python3 learn-aws/sync.py` → `notes/`, `mcq/` |
+| The notes | `notes/` (layout: `NOTE-TEMPLATE.md`; plan: `PLAN.md`) |
+| The questions | `mcq/` (format and rules: `MCQ-GUIDE.md`) |
 | The page: layout, look, Markdown rendering, search box | `ui/index.html` (`render`, `inline`, `buildNav`, `openNote`) |
 | The quiz screens | `ui/index.html` (`openPractice`, `startQuiz`, `showQuestion`, `showSummary`) |
 | Endpoints, ordering, search ranking | `server.py` (`_load`, `_load_mcq`, `search`, `mcq_questions`) |

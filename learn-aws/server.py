@@ -1,5 +1,5 @@
 """
-Learn AWS — serves the plain-English AWS service notes (learn-aws/notes/, copied from the learn-aws-services repo by sync.py).
+Learn AWS — serves the plain-English AWS service notes (learn-aws/notes/) and practice questions (learn-aws/mcq/). This folder is the only copy.
 
 Read-only: nothing is stored, nothing is written, no secrets. The notes are loaded once at start-up into an in-memory INDEX; that is a read-only cache
 of files baked into the image, not request state, so it does not break the "no state in process memory" rule.

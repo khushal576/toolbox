@@ -3,7 +3,7 @@
 Plain-English refresher guides, one folder per AWS service. Open any service, read the files in order, and you can answer questions about it and design with it.
 
 ## How to use
-- **Read it as a website:** open `index.html` in a browser (works offline, no server). Rebuild it after any change with `python3 build.py`. See [mcq/README.md](mcq/README.md) for the quiz format.
+- **Read it in Toolbox:** open Learn AWS (`/tools/learn-aws/`). It has search, the Practice questions, and a Quiz for each service that has questions.
 - Pick a category, then a service folder.
 - Read the files **in number order**: what it is, how it works, setup, data in/out, performance, availability and backup, security, cost, troubleshooting, limits, scenarios.
 - Each service folder stands alone. You never need another folder to understand it.
