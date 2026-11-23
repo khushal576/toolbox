@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Learn AWS</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  /* the six canonical colours — copied verbatim from theme-tokens.css (never linked); the reading themes below are this tool's own */
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --border: #dde1ef;
+    --text: #1c2035; --muted: #6b7180; --accent: #4f5ef0;
+    --ok-text: #15803d; --err-text: #b91c1c;
+  }
+  /* reading themes: light (default, white page on a soft blue-grey desk) and night */
+  :root { --desk: #eef1f8; --page: #ffffff; --ink: #1f2433; --soft: #6b7385; --rule: #e3e6ef; --link: #2f5fe0; --linkbg: #e8eeff; --codebg: #f3f5fa; --hl: #ffe7a0; --toc: #ffffff; --edge: #d6dbe8; --shadow: 0 1px 3px rgba(20,30,60,.10), 0 10px 28px rgba(20,30,60,.08); }
+  :root[data-theme="night"] { --desk: #0d1120; --page: #171c2c; --ink: #e6e9f2; --soft: #9aa3b8; --rule: #283047; --link: #7ea6ff; --linkbg: #1f2a4a; --codebg: #10141f; --hl: #6b5a1a; --toc: #121726; --edge: #2c3550; --shadow: 0 1px 3px rgba(0,0,0,.5), 0 10px 28px rgba(0,0,0,.35); }
+  body { font-family: Inter, 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--desk); color: var(--ink); height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 10px 18px; background: var(--toc); border-bottom: 1px solid var(--edge); display: flex; gap: 14px; align-items: center; }
+  h1.brand { font-size: 1rem; font-weight: 700; white-space: nowrap; }
+  #q { flex: 1; min-width: 140px; max-width: 460px; font: inherit; font-size: .86rem; padding: 7px 12px; border: 1px solid var(--edge); border-radius: 9px; background: var(--desk); color: var(--ink); }
+  #q:focus { outline: 2px solid var(--link); outline-offset: -1px; background: var(--page); }
+  #bar { height: 3px; background: var(--link); width: 0; transition: width .1s; }
+  .layout { flex: 1; display: flex; min-height: 0; }
+  nav { width: 290px; flex: none; overflow-y: auto; background: var(--toc); border-right: 1px solid var(--edge); padding: 0 8px 50px; }
+  nav h2.toc { position: sticky; top: 0; z-index: 1; background: var(--toc); display: flex; justify-content: space-between; align-items: center; font-size: .86rem; font-weight: 700; padding: 14px 8px 10px; }
+  nav h2.toc .badge { font-size: .7rem; font-weight: 600; color: var(--soft); background: var(--desk); border: 1px solid var(--edge); border-radius: 10px; padding: 1px 8px; }
+  nav details { margin-bottom: 1px; }
+  nav summary { cursor: pointer; padding: 6px 8px; font-weight: 600; font-size: .82rem; border-radius: 7px; }
+  nav summary:hover, nav a:hover { background: var(--desk); }
+  nav summary .no { color: var(--link); font-weight: 600; margin-right: 5px; font-size: .75rem; }
+  nav details details { margin-left: 8px; }
+  nav details details summary { font-weight: 500; }
+  nav a { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; padding: 0 8px 0 22px; margin: 4px 0; border-width: 1.5px; font-size: .78rem; line-height: 1.35; color: var(--soft); text-decoration: none; border-radius: 7px; border: 1.5px solid transparent; }
+  nav a.on { background: var(--linkbg); color: var(--link); border-color: var(--link); font-weight: 600; }
+  nav .book { font-size: .66rem; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--soft); margin: 16px 8px 4px; }
+  nav.collapsed { display: none; }
+  nav, main { scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
+  main { flex: 1; overflow-y: auto; padding: 0 20px 70px; position: relative; }
+  .pill { position: sticky; top: 12px; z-index: 3; width: fit-content; margin: 12px auto -6px; display: flex; gap: 4px; align-items: center; background: var(--page); border: 1px solid var(--edge); border-radius: 12px; padding: 5px 8px; box-shadow: var(--shadow); font-size: .75rem; }
+  .pill.bar { position: static; margin: 0 0 0 auto; box-shadow: none; }
+  .pill .lbl { font-weight: 700; letter-spacing: 1.3px; font-size: .66rem; color: var(--soft); text-transform: uppercase; padding: 0 6px; }
+  .pill button { font: inherit; font-size: .78rem; padding: 4px 10px; border: 1px solid var(--edge); border-radius: 8px; background: var(--page); color: var(--ink); cursor: pointer; }
+  .pill button:hover { background: var(--linkbg); border-color: var(--link); color: var(--link); }
+  .sheet { max-width: 800px; margin: 22px auto 0; background: var(--page); padding: 36px 60px 34px; border-radius: 3px; box-shadow: var(--shadow); }
+  .crumb { display: flex; justify-content: space-between; gap: 12px; font-size: .72rem; color: var(--ink); font-weight: 600; padding-bottom: 7px; border-bottom: 1.5px solid var(--ink); margin-bottom: 22px; }
+  .crumb span:last-child { color: var(--soft); font-weight: 500; white-space: nowrap; }
+  article { line-height: var(--lh, 1.7); font-size: var(--fs, 1.02rem); font-family: Georgia, 'Times New Roman', serif; }
+  article h1 { font-size: 1.75em; line-height: 1.25; margin: 0 0 14px; font-weight: 700; }
+  article h2 { font-size: 1.25em; margin: 28px 0 8px; font-weight: 600; }
+  article h2 .mk, article h3 .mk { color: var(--link); margin-right: 6px; font-weight: 500; }
+  article h3 { font-size: 1.04em; margin: 18px 0 4px; font-weight: 600; }
+  article p { margin: 9px 0; }
+  article ul { margin: 6px 0 10px 4px; list-style: none; }
+  article ul ul { margin-left: 14px; }
+  article ul > li { margin: 6px 0; padding-left: 38px; position: relative; }
+  article ul > li::before { content: ""; position: absolute; left: 18px; top: .72em; width: 6px; height: 6px; border-radius: 50%; background: var(--link); opacity: .75; }
+  article strong { font-weight: 700; }
+  article code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .82em; background: var(--codebg); padding: 1px 5px; border-radius: 4px; }
+  article pre { background: var(--codebg); padding: 12px 14px; border-radius: 6px; overflow-x: auto; margin: 12px 0; border: 1px solid var(--rule); }
+  article pre code { background: none; padding: 0; }
+  article blockquote { border-left: 3px solid var(--link); padding: 4px 14px; color: var(--soft); margin: 10px 0; background: var(--codebg); border-radius: 0 6px 6px 0; }
+  article table { border-collapse: collapse; margin: 12px 0; display: block; overflow-x: auto; font-size: .86em; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
+  article th, article td { border-bottom: 1px solid var(--rule); padding: 7px 12px; text-align: left; vertical-align: top; }
+  article th { border-bottom: 1.5px solid var(--ink); font-size: .85em; text-transform: uppercase; letter-spacing: .6px; color: var(--soft); }
+  article a { color: var(--link); }
+  article ol { margin: 8px 0 10px 26px; }
+  article ol > li { margin: 12px 0; padding-left: 4px; }
+  article ol > li::marker { color: var(--link); font-weight: 700; }
+  details.ans { margin: 6px 0 12px 2px; }
+  details.ans > summary { cursor: pointer; color: var(--link); font-size: .82em; font-family: Inter, 'Segoe UI', system-ui, sans-serif; font-weight: 600; }
+  details.ans > .ansb { border-left: 3px solid var(--link); padding: 4px 14px; margin: 6px 0 4px; background: var(--linkbg); border-radius: 0 8px 8px 0; }
+  details.ans > .ansb p { margin: 4px 0; }
+  .pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--rule); font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
+  .pager a { color: var(--link); text-decoration: none; font-weight: 600; font-size: .82rem; max-width: 42%; }
+  .pager .pg { color: var(--soft); font-size: .74rem; text-align: center; }
+  .hit { border-bottom: 1px solid var(--rule); padding: 10px 0; }
+  .hit a { color: var(--link); font-weight: 700; text-decoration: none; }
+  .hit .p { color: var(--soft); font-size: .72rem; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
+  .hit .s { font-size: .88em; margin-top: 4px; }
+  mark { background: var(--hl); color: inherit; border-radius: 2px; }
+  .opt { display: block; width: 100%; text-align: left; font: inherit; font-size: .95em; line-height: 1.5; color: var(--ink); background: var(--page); border: 1.5px solid var(--edge); border-radius: 10px; padding: 10px 14px; margin: 8px 0 0; cursor: pointer; }
+  .opt:hover { border-color: var(--link); background: var(--linkbg); }
+  .opt.sel { border-color: var(--link); background: var(--linkbg); }
+  .opt.right { border-color: var(--ok-text); background: color-mix(in srgb, var(--ok-text) 12%, var(--page)); }
+  .opt.wrong { border-color: var(--err-text); background: color-mix(in srgb, var(--err-text) 12%, var(--page)); }
+  .opt.missed { border-style: dashed; border-color: var(--ok-text); }
+  .opt .sub { font-size: .8em; color: var(--soft); margin-top: 2px; }
+  .why { font-size: .86em; color: var(--soft); margin: 4px 4px 0 14px; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
+  .qmeta { font-family: Inter, 'Segoe UI', system-ui, sans-serif; font-size: .78rem; color: var(--soft); margin-bottom: 8px; }
+  .qtext { font-size: 1.06em; font-weight: 600; margin: 4px 0 10px; }
+  .qbar { display: flex; gap: 10px; align-items: center; margin-top: 16px; font-family: Inter, 'Segoe UI', system-ui, sans-serif; }
+  .btn { font: inherit; font-size: .85rem; font-weight: 600; padding: 7px 16px; border-radius: 9px; border: 1.5px solid var(--link); background: var(--link); color: #fff; cursor: pointer; }
+  .btn.ghost { background: var(--page); color: var(--link); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .verdict { font-weight: 700; margin: 14px 0 4px; }
+  .verdict.ok { color: var(--ok-text); } .verdict.no { color: var(--err-text); }
+  .box { border-left: 3px solid var(--link); background: var(--linkbg); padding: 8px 14px; border-radius: 0 8px 8px 0; margin: 10px 0; font-size: .92em; }
+  .box b { display: block; font-family: Inter, 'Segoe UI', system-ui, sans-serif; font-size: .72rem; letter-spacing: 1px; text-transform: uppercase; color: var(--link); margin-bottom: 2px; }
+  .box ul { margin: 2px 0 0 18px; list-style: disc; } .box li { padding-left: 0; margin: 3px 0; } .box li::before { display: none; }
+  .practice-link { display: inline-block; margin: 22px 0 0; }
+  .err { color: var(--err-text); }
+  .empty { color: var(--soft); }
+  @media (max-width: 860px) { nav { width: 230px; } .sheet { padding: 26px 22px; } }
+  @media (max-width: 640px) { nav { display: none; } nav.open { display: block; position: fixed; z-index: 5; top: 56px; bottom: 0; left: 0; width: 82%; } .pill .lbl { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 class="brand">☁️ Learn AWS</h1>
+  <input id="q" type="search" placeholder="Search the whole book…" autocomplete="off" />
+  <div class="pill bar"><span class="lbl">Read</span>
+      <button id="toc-btn" type="button" title="Show or hide the contents">☰ Contents</button>
+      <button id="smaller" type="button" title="Smaller text">A−</button>
+      <button id="bigger" type="button" title="Bigger text">A+</button>
+      <button id="theme" type="button" title="Light / night">🌙</button>
+    </div>
+</header>
+<div id="bar"></div>
+<div class="layout">
+  <nav id="nav" aria-label="Contents"></nav>
+  <main id="main">
+    <div class="sheet"><div class="crumb"><span id="crumb"></span><span id="pageno"></span></div><article id="doc"><p class="empty">Opening the book…</p></article></div>
+  </main>
+</div>
+<script>
+"use strict";
+// Everything that came from a note is put on the page with textContent / createElement — never the HTML-injection API.
+// RELATIVE paths only ('tree', not '/tree'): the page lives under /tools/learn-aws/
+const $ = (id) => document.getElementById(id);
+const doc = $("doc"), nav = $("nav"), main = $("main");
+let TREE = null, ORDER = [], current = null, searchTimer = 0;
+
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  if (props) for (const k of Object.keys(props)) { if (k === "class") e.className = props[k]; else e.setAttribute(k, props[k]); }
+  for (const k of kids) e.append(k);
+  return e;
+}
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(r.status === 404 ? "Not found." : "Request failed (" + r.status + ").");
+  return r.json();
+}
+
+/* ---------- tiny, safe markdown: headings, bullets (nested), tables, code fences, quotes, **bold**, *italic*, `code`, [links](x.md) ---------- */
+function resolve(base, href) {
+  if (/^[a-z]+:/i.test(href) || href.startsWith("#")) return null;
+  const parts = base.split("/").slice(0, -1);
+  for (const seg of href.split("#")[0].split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") parts.pop(); else parts.push(seg);
+  }
+  const p = parts.join("/");
+  return p.endsWith(".md") ? p : null;
+}
+function inline(text, base, parent) {
+  const re = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*|\[[^\]]+\]\([^)]+\))/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) parent.append(text.slice(last, m.index));
+    const t = m[0];
+    if (t[0] === "`") parent.append(el("code", null, t.slice(1, -1)));
+    else if (t.startsWith("**")) { const b = el("strong"); inline(t.slice(2, -2), base, b); parent.append(b); }
+    else if (t[0] === "*") { const i = el("em"); inline(t.slice(1, -1), base, i); parent.append(i); }
+    else {
+      const mm = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(t), target = resolve(base, mm[2].trim());
+      if (target && NOTES_HAS(target)) { const a = el("a", { href: "#" + encodeURIComponent(target) }); a.textContent = mm[1]; parent.append(a); }
+      else parent.append(mm[1]);
+    }
+    last = m.index + t.length;
+  }
+  if (last < text.length) parent.append(text.slice(last));
+}
+function NOTES_HAS(p) { return KNOWN.has(p); }
+let KNOWN = new Set();
+
+function takeDetails(lines, i, base) {
+  const buf = [lines[i]];
+  while (!/<\/details>/i.test(buf[buf.length - 1]) && i + 1 < lines.length) { i++; buf.push(lines[i]); }
+  const raw = buf.join("\n"), m = /<summary>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/i.exec(raw);
+  const d = el("details", { class: "ans" });
+  if (m) {
+    d.append(el("summary", null, m[1].trim() || "Answer"));
+    const body = el("div", { class: "ansb" }); body.append(render(m[2].trim(), base)); d.append(body);
+  } else d.append(el("div", null, raw.replace(/<[^>]+>/g, "")));
+  return [d, i + 1];
+}
+function cells(line) { return line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim()); }
+function render(text, base) {
+  const out = document.createDocumentFragment();
+  const lines = text.replace(/\r/g, "").split("\n");
+  let i = 0;
+  while (i < lines.length) {
+    const ln = lines[i];
+    if (!ln.trim()) { i++; continue; }
+    if (ln.startsWith("```")) {
+      const buf = []; i++;
+      while (i < lines.length && !lines[i].startsWith("```")) buf.push(lines[i++]);
+      i++; out.append(el("pre", null, el("code", null, buf.join("\n")))); continue;
+    }
+    if (/^<details>/i.test(ln)) { const [d, ni] = takeDetails(lines, i, base); out.append(d); i = ni; continue; }
+    if (/^\d+\.\s+/.test(ln)) {
+      const ol = el("ol", { start: String(parseInt(ln, 10)) });
+      while (i < lines.length) {
+        const m = /^(\d+)\.\s+(.*)$/.exec(lines[i]);
+        if (!m) break;
+        const li = el("li"); inline(m[2], base, li); i++;
+        while (i < lines.length && lines[i].trim() && !/^<details>/i.test(lines[i]) && !/^\d+\.\s/.test(lines[i]) && /^\s+\S/.test(lines[i])) { li.append(" "); inline(lines[i++].trim(), base, li); }
+        if (i < lines.length && /^<details>/i.test(lines[i])) { const [d, ni] = takeDetails(lines, i, base); li.append(d); i = ni; }
+        ol.append(li);
+        let j = i; while (j < lines.length && !lines[j].trim()) j++;
+        if (j < lines.length && /^\d+\.\s/.test(lines[j])) i = j; else break;
+      }
+      out.append(ol); continue;
+    }
+    const h = /^(#{1,3})\s+(.*)$/.exec(ln);
+    if (h) {
+      const e = el("h" + h[1].length), mk = /^((?:[A-Z]|\d+)\.)\s+(.*)$/.exec(h[2]);
+      if (mk && h[1].length > 1) { e.append(el("span", { class: "mk" }, mk[1])); inline(mk[2], base, e); } else inline(h[2], base, e);
+      out.append(e); i++; continue;
+    }
+    if (/^\|/.test(ln) && i + 1 < lines.length && /^\|?\s*:?-{2,}/.test(lines[i + 1])) {
+      const t = el("table"), thead = el("thead"), tb = el("tbody"), tr = el("tr");
+      for (const c of cells(ln)) { const th = el("th"); inline(c, base, th); tr.append(th); }
+      thead.append(tr); t.append(thead); i += 2;
+      while (i < lines.length && /^\|/.test(lines[i])) {
+        const r = el("tr");
+        for (const c of cells(lines[i])) { const td = el("td"); inline(c, base, td); r.append(td); }
+        tb.append(r); i++;
+      }
+      t.append(tb); out.append(t); continue;
+    }
+    if (/^\s*[-*]\s+/.test(ln)) {
+      const root = el("ul"), stack = [{ indent: 0, ul: root }];
+      while (i < lines.length && (/^\s*[-*]\s+/.test(lines[i]) || (/^\s+\S/.test(lines[i]) && stack.length))) {
+        const m = /^(\s*)[-*]\s+(.*)$/.exec(lines[i]);
+        if (!m) { // continuation line of the previous bullet
+          const li = stack[stack.length - 1].ul.lastElementChild;
+          if (li) li.append(" ", ...(() => { const s = el("span"); inline(lines[i].trim(), base, s); return [s]; })());
+          i++; continue;
+        }
+        const indent = m[1].length;
+        while (stack.length > 1 && indent < stack[stack.length - 1].indent) stack.pop();
+        let top = stack[stack.length - 1];
+        if (indent > top.indent) { const ul = el("ul"); const last = top.ul.lastElementChild; (last || top.ul).append(ul); top = { indent, ul }; stack.push(top); }
+        const li = el("li"); inline(m[2], base, li); top.ul.append(li); i++;
+      }
+      out.append(root); continue;
+    }
+    if (ln.startsWith(">")) {
+      const buf = [];
+      while (i < lines.length && lines[i].startsWith(">")) buf.push(lines[i++].replace(/^>\s?/, ""));
+      const q = el("blockquote"); inline(buf.join(" "), base, q); out.append(q); continue;
+    }
+    const buf = [];
+    while (i < lines.length && lines[i].trim() && !/^(#{1,3}\s|```|\||\s*[-*]\s|>|<details>|\d+\.\s)/i.test(lines[i])) buf.push(lines[i++].trim());
+    if (!buf.length) { buf.push(lines[i++].trim()); }
+    const p = el("p"); inline(buf.join(" "), base, p); out.append(p);
+  }
+  return out;
+}
+
+/* ---------- navigation ---------- */
+function buildNav() {
+  nav.replaceChildren(el("h2", { class: "toc" }, "Contents", el("span", { class: "badge" }, String(Object.keys(TITLES).length))));
+  const top = el("details", { open: "" }, el("summary", null, "Start here"));
+  for (const x of TREE.extras) top.append(link(x.path, x.title));
+  if (TREE.questions) top.append(link("practice", "✎ Practice questions · " + TREE.questions));
+  nav.append(top);
+    TREE.categories.forEach((c, ci) => {
+    const sum = el("summary", null, el("span", { class: "no" }, "Part " + (ci + 1) + " ·"), c.name);
+    const d = el("details", { "data-cat": c.id }, sum);
+    if (c.readme) d.append(link(c.readme, "About " + c.name));
+    c.services.forEach((s, si) => {
+      const sd = el("details", { "data-svc": c.id + "/" + s.id }, el("summary", null, el("span", { class: "no" }, (ci + 1) + "." + (si + 1)), s.name));
+      for (const f of s.files) sd.append(link(f.path, f.title.includes(" – ") ? f.title.split(" – ").slice(1).join(" – ") : f.title));
+      if (s.questions) sd.append(link("quiz:" + c.id + "/" + s.id, "✎ Quiz · " + s.questions + " questions"));
+      d.append(sd);
+    });
+    nav.append(d);
+  });
+}
+function link(path, title) {
+  const a = el("a", { href: "#" + encodeURIComponent(path), "data-path": path, title });
+  a.textContent = title; return a;
+}
+function mark(path) {
+  nav.querySelectorAll("a.on").forEach((a) => a.classList.remove("on"));
+  const a = nav.querySelector('a[data-path="' + CSS.escape(path) + '"]');
+  if (!a) return;
+  a.classList.add("on");
+  for (let p = a.parentElement; p && p !== nav; p = p.parentElement) if (p.tagName === "DETAILS") p.open = true;
+  a.scrollIntoView({ block: "nearest" });
+}
+async function openNote(path) {
+  try {
+    const n = await api("note?path=" + encodeURIComponent(path));
+    current = path; doc.replaceChildren(render(n.text, path));
+    const seq = ORDER, i = seq.indexOf(path), pager = el("div", { class: "pager" });
+    const prev = i > 0 ? seq[i - 1] : null, next = i >= 0 && i < seq.length - 1 ? seq[i + 1] : null;
+    PREV = prev; NEXT = next;
+    pager.append(prev ? link(prev, "← " + TITLES[prev]) : el("span"), el("span", { class: "pg" }, i >= 0 ? "page " + (i + 1) + " of " + seq.length : ""), next ? link(next, TITLES[next] + " →") : el("span"));
+    const sv = SVCOF[path];
+    if (sv && sv.q) doc.append(el("div", { class: "practice-link" }, (() => { const a = link("quiz:" + sv.key, "✎ Practice " + sv.name + " — " + sv.q + " questions"); a.className = "btn ghost"; a.style.textDecoration = "none"; a.style.display = "inline-block"; return a; })()));
+    doc.append(pager); $("crumb").textContent = (CRUMB[path] || "").split(" · file ")[0].split(" · chapter ")[0]; $("pageno").textContent = i >= 0 ? "Page " + (i + 1) + " of " + seq.length : ""; main.scrollTop = 0; setBar();
+    document.title = n.title + " — Learn AWS"; mark(path); store("last", path);
+  } catch (e) { doc.replaceChildren(el("p", { class: "err" }, e.message)); }
+}
+let PREV = null, NEXT = null, CRUMB = {};
+function store(k, v) { try { if (v === undefined) return localStorage.getItem("learnAws." + k); localStorage.setItem("learnAws." + k, v); } catch (e) { /* private mode: fine */ } return null; }
+function setBar() { const m = main.scrollHeight - main.clientHeight; $("bar").style.width = (m > 0 ? Math.min(100, main.scrollTop / m * 100) : 0) + "%"; }
+main.addEventListener("scroll", setBar);
+function applyLook() {
+  const forced = new URLSearchParams(location.search).get("theme");
+  if (forced === "night" || forced === "paper") store("theme", forced);
+  document.documentElement.setAttribute("data-theme", store("theme") === "night" ? "night" : "paper");
+  $("theme").textContent = store("theme") === "night" ? "☀️" : "🌙";
+  const fs = parseFloat(store("fs")) || 1.05; document.documentElement.style.setProperty("--fs", fs + "rem");
+}
+$("theme").onclick = () => { store("theme", store("theme") === "night" ? "paper" : "night"); applyLook(); };
+$("bigger").onclick = () => { store("fs", String(Math.min(1.6, (parseFloat(store("fs")) || 1.05) + 0.08))); applyLook(); };
+$("smaller").onclick = () => { store("fs", String(Math.max(0.85, (parseFloat(store("fs")) || 1.05) - 0.08))); applyLook(); };
+$("toc-btn").onclick = () => nav.classList.toggle(window.innerWidth <= 640 ? "open" : "collapsed");
+nav.addEventListener("click", (e) => { if (e.target.closest("a")) nav.classList.remove("open"); });
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input, textarea") || e.ctrlKey || e.metaKey || e.altKey) return;
+  const go = e.key === "ArrowRight" ? NEXT : e.key === "ArrowLeft" ? PREV : null;
+  if (go) { location.hash = "#" + encodeURIComponent(go); e.preventDefault(); }
+});
+applyLook();
+let TITLES = {}, SVCOF = {};
+
+/* ---------- search ---------- */
+function highlight(text, terms, parent) {
+  const lower = text.toLowerCase(); let i = 0;
+  const spots = [];
+  for (const t of terms) { let at = lower.indexOf(t); while (at >= 0) { spots.push([at, at + t.length]); at = lower.indexOf(t, at + t.length); } }
+  spots.sort((a, b) => a[0] - b[0]);
+  for (const [s, e] of spots) { if (s < i) continue; parent.append(text.slice(i, s), el("mark", null, text.slice(s, e))); i = e; }
+  parent.append(text.slice(i));
+}
+async function runSearch(q) {
+  if (!q.trim()) { route(); return; }
+  try {
+    const d = await api("search?q=" + encodeURIComponent(q));
+    const terms = (q.toLowerCase().match(/[a-z0-9][a-z0-9.\-_]*/g) || []);
+    doc.replaceChildren(el("h1", null, "Search: " + q));
+    if (!d.results.length) doc.append(el("p", { class: "empty" }, "No note has all of these words. Try fewer words."));
+    for (const r of d.results) {
+      const card = el("div", { class: "hit" }, link(r.path, r.title), el("div", { class: "p" }, r.path));
+      for (const s of r.snippets) { const sn = el("div", { class: "s" }); highlight(s, terms, sn); card.append(sn); }
+      doc.append(card);
+    }
+    if (d.truncated) doc.append(el("p", { class: "empty" }, "Showing the best " + d.results.length + " of " + d.total + ". Add a word to narrow it."));
+    main.scrollTop = 0;
+  } catch (e) { doc.replaceChildren(el("p", { class: "err" }, e.message)); }
+}
+$("q").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => runSearch($("q").value), 250); });
+
+/* ---------- practice quiz (questions come from the notes repo's mcq/ files; progress stays in this browser) ---------- */
+let quiz = null; const QCACHE = {};
+function qLoad() { try { const m = JSON.parse(store("quiz") || "{}"); return m && typeof m === "object" ? m : {}; } catch (e) { return {}; } }
+function qSave(m) { store("quiz", JSON.stringify(m)); }
+function shuffle(a) { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; }
+async function getQuestions(key) {
+  if (!QCACHE[key]) QCACHE[key] = (await api("mcq/questions?service=" + encodeURIComponent(key))).questions;
+  return QCACHE[key];
+}
+function quizHeader(crumb) { current = "quiz"; PREV = NEXT = null; $("crumb").textContent = crumb; $("pageno").textContent = ""; document.title = "Practice — Learn AWS"; main.scrollTop = 0; setBar(); }
+async function openPractice() {
+  quizHeader("Practice");
+  const hist = qLoad(), all = await getQuestions("ALL");
+  const right = all.filter((q) => hist[q.id] === 1).length, seen = all.filter((q) => q.id in hist).length;
+  doc.replaceChildren(el("h1", null, "Practice questions"),
+    el("p", { class: "empty" }, all.length + " exam-style questions. " + seen + " answered, " + right + " answered correctly last time. Your progress is saved in this browser only."));
+  doc.append(mixRow("Mixed: every service", all.length + " questions in random order", "all"));
+  const todo = all.filter((q) => hist[q.id] !== 1).length, miss = all.filter((q) => hist[q.id] === 0).length;
+  if (todo && todo < all.length) doc.append(mixRow("Only what I have not got right yet", todo + " questions", "todo"));
+  if (miss) doc.append(mixRow("Retry my misses", miss + " questions", "miss"));
+  doc.append(el("h2", null, "By service"));
+  for (const c of TREE.categories) for (const s of c.services) if (s.questions) {
+    const b = el("button", { class: "opt", type: "button" }, s.name, el("div", { class: "sub" }, s.questions + " questions"));
+    b.onclick = () => { location.hash = "#" + encodeURIComponent("quiz:" + c.id + "/" + s.id); };
+    doc.append(b);
+  }
+}
+function mixRow(label, sub, filter) {
+  const b = el("button", { class: "opt", type: "button" }, label, el("div", { class: "sub" }, sub));
+  b.onclick = () => startQuiz("ALL", filter, label);
+  return b;
+}
+async function startQuiz(key, filter, title) {
+  const hist = qLoad(); let qs = await getQuestions(key);
+  if (filter === "todo") qs = qs.filter((q) => hist[q.id] !== 1);
+  else if (filter === "miss") qs = qs.filter((q) => hist[q.id] === 0);
+  quiz = { qs: shuffle(qs), i: 0, ok: 0, missed: [], title, key };
+  showQuestion();
+}
+function showQuestion() {
+  const Q = quiz.qs[quiz.i];
+  if (!Q) { showSummary(); return; }
+  quizHeader("Practice · " + quiz.title);
+  const multi = Q.answer.length > 1, picked = new Set(), order = shuffle(Q.options.map((_, i) => i)), rows = [];
+  doc.replaceChildren(el("div", { class: "qmeta" }, "Question " + (quiz.i + 1) + " of " + quiz.qs.length + " · " + quiz.ok + " correct so far" + (Q.skill ? " · skill " + Q.skill : "")));
+  const qt = el("p", { class: "qtext" }); inline(Q.q, "", qt); doc.append(qt);
+  if (multi) doc.append(el("p", { class: "empty" }, "Choose " + Q.answer.length + "."));
+  const check = el("button", { class: "btn", type: "button", disabled: "" }, "Check answer"), need = multi ? Q.answer.length : 1;
+  let done = false;
+  for (const oi of order) {
+    const b = el("button", { class: "opt", type: "button" }); inline(Q.options[oi].t, "", b);
+    b.onclick = () => {
+      if (done) return;
+      if (multi) { if (picked.has(oi)) { picked.delete(oi); b.classList.remove("sel"); } else if (picked.size < need) { picked.add(oi); b.classList.add("sel"); } }
+      else { picked.clear(); rows.forEach((r) => r.b.classList.remove("sel")); picked.add(oi); b.classList.add("sel"); }
+      if (picked.size === need) check.removeAttribute("disabled"); else check.setAttribute("disabled", "");
+    };
+    rows.push({ oi, b }); doc.append(b);
+  }
+  const bar = el("div", { class: "qbar" }, check); doc.append(bar);
+  check.onclick = () => {
+    done = true; check.remove();
+    const right = new Set(Q.answer), ok = picked.size === right.size && [...picked].every((i) => right.has(i));
+    for (const { oi, b } of rows) {
+      const isRight = right.has(oi), isPicked = picked.has(oi);
+      b.classList.remove("sel"); b.classList.add(isRight ? (isPicked ? "right" : "missed") : (isPicked ? "wrong" : "x"));
+      const w = el("div", { class: "why" }); inline(Q.options[oi].why, "", w); b.after(w);
+    }
+    const hist = qLoad(); hist[Q.id] = ok ? 1 : 0; qSave(hist);
+    if (ok) quiz.ok++; else quiz.missed.push(Q);
+    bar.before(el("div", { class: "verdict " + (ok ? "ok" : "no") }, ok ? "Correct" : "Not quite"));
+    const box = (title, node) => { const d = el("div", { class: "box" }, el("b", null, title)); d.append(node); bar.before(d); };
+    if (Q.explain) { const p = el("span"); inline(Q.explain, "", p); box("Why", p); }
+    if (Q.remember) { const p = el("span"); inline(Q.remember, "", p); box("Remember", p); }
+    if (Q.variants && Q.variants.length) { const ul = el("ul"); for (const v of Q.variants) { const li = el("li"); inline(v, "", li); ul.append(li); } box("If the question changes", ul); }
+    const src = Q.source ? Q.service + "/" + Q.source : null;
+    if (src && KNOWN.has(src)) { const a = link(src, "Open the notes for this question"); box("Source", a); }
+    const next = el("button", { class: "btn", type: "button" }, quiz.i + 1 < quiz.qs.length ? "Next question" : "See result");
+    next.onclick = () => { quiz.i++; showQuestion(); };
+    bar.append(next); next.focus();
+  };
+}
+function showSummary() {
+  quizHeader("Practice · " + quiz.title);
+  const n = quiz.qs.length;
+  doc.replaceChildren(el("h1", null, n ? "Result" : "Nothing to practise"),
+    el("p", null, n ? quiz.ok + " of " + n + " correct (" + Math.round(100 * quiz.ok / n) + "%)." : "No questions match this choice yet."));
+  const bar = el("div", { class: "qbar" });
+  if (quiz.missed.length) { const r = el("button", { class: "btn", type: "button" }, "Retry the " + quiz.missed.length + " I missed"); r.onclick = () => { quiz = { qs: shuffle(quiz.missed), i: 0, ok: 0, missed: [], title: quiz.title + " (misses)", key: quiz.key }; showQuestion(); }; bar.append(r); }
+  const again = el("button", { class: "btn ghost", type: "button" }, "Practice menu"); again.onclick = () => { location.hash = "#practice"; if (location.hash === "#practice") route(); }; bar.append(again);
+  doc.append(bar);
+}
+
+/* ---------- start ---------- */
+function route() {
+  let p = "";
+  try { p = decodeURIComponent(location.hash.slice(1)); } catch (e) { p = ""; }
+  if (p === "practice" && TREE.questions) { $("q").value = ""; openPractice(); mark("practice"); return; }
+  if (p.startsWith("quiz:") && p.length > 5) { $("q").value = ""; const key = p.slice(5), sv = Object.values(SVCOF).find((x) => x.key === key); startQuiz(key, "all", sv ? sv.name : key).catch((e) => doc.replaceChildren(el("p", { class: "err" }, e.message))); mark(p); return; }
+  if (p && KNOWN.has(p)) { if ($("q").value && p !== current) $("q").value = ""; openNote(p); }
+  else { const last = store("last"); openNote(last && KNOWN.has(last) ? last : (TREE.extras.length ? TREE.extras[0].path : ORDER[0])); }
+}
+window.addEventListener("hashchange", route);
+(async () => {
+  try {
+    TREE = await api("tree");
+    for (const x of TREE.extras) { KNOWN.add(x.path); TITLES[x.path] = x.title; CRUMB[x.path] = "Start here"; }
+    TREE.categories.forEach((c, ci) => {
+      if (c.readme) { KNOWN.add(c.readme); TITLES[c.readme] = "About " + c.name; CRUMB[c.readme] = "Part " + (ci + 1) + " · " + c.name; }
+      c.services.forEach((s, si) => s.files.forEach((f, fi) => {
+        KNOWN.add(f.path); TITLES[f.path] = f.title; ORDER.push(f.path); SVCOF[f.path] = { key: c.id + "/" + s.id, name: s.name, q: s.questions || 0 };
+        CRUMB[f.path] = "Part " + (ci + 1) + " · " + c.name + " — " + s.name + " · file " + (fi + 1) + " of " + s.files.length;
+      }));
+    });
+    buildNav(); route();
+  } catch (e) { doc.replaceChildren(el("p", { class: "err" }, "Could not load the notes: " + e.message)); }
+})();
+</script>
+</body>
+</html>

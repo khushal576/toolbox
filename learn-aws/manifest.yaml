@@ -1,0 +1,34 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# TEMPLATE (roadmap P2): not a tool. `python3 scripts/new_tool.py <name> "<Title>"` copies this folder to <repo>/<name>/ and fills the __TOOL_*__ placeholders.
+# (The placeholders are not valid values on purpose, so even a stray copy of this file can never be mounted as a tool.)
+schema_version: 1
+name: learn-aws
+title: "Learn AWS"
+description: "Your AWS service notes (65 services, in study order) with search and exam-style practice questions"
+icon: "☁️"
+category: learn
+kind: python
+entry: learn_aws.server:app
+runtime: light         # light = no heavy libraries; data = pandas / DuckDB / DB drivers (see requirements/<runtime>.txt)
+tier: 2                           # 1 = runs in the browser only · 2 light Python · 3 data-heavy · 4 special image
+state: []                         # [] = nothing kept on the server. Anything kept between requests goes to core/state (Redis / Postgres / S3), never process memory
+depends_on: []
+requires: []
+order: 82             # display order (built-in tools use 10–200)
+enabled_by_default: true
+# vault: {read: [postgres_connection]}   # only if the server code needs saved secrets: list the kinds, nothing more
+# ai:                                     # optional (roadmap H3): what an AI can do with this tool — READ-only GET actions, searched by the AI helper.
+#   actions:                              # spec: docs/architecture/plugin-manifest.md "AI actions". Declare only stateless GETs (no session, no writes).
+#     - name: list_things
+#       summary: List the things this tool knows about, in the words a user would use
+#       path: things                      # must be a GET route in server.py (a test checks)
+
+ai:
+  actions:
+    - name: search_notes
+      summary: Search the AWS service notes (every word must match), e.g. "s3 lifecycle glacier"
+      path: search
+      inputs:
+        query: {type: string, max_length: 200, description: "words to find"}
+      required: [query]
+      returns: matching notes with up to 3 matching lines each
