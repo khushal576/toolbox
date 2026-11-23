@@ -70,7 +70,7 @@ def test_gateway_routes_every_runtime_and_full_stays_the_default_target():
     urls = dict(p.split("=", 1) for p in gw["environment"]["TOOLBOX_RUNTIME_URLS"].split(","))
     assert set(urls) == set(RUNTIMES) and all(urls[r] == f"http://rt-{r}:8080" for r in RUNTIMES)
     assert gw["environment"]["TOOLBOX_SINGLETON_URL"] == "http://singletons:8080"
-    assert list(gw["ports"]) == ["${TOOLBOX_HOST_PORT:-8000}:8080"] and all("ports" not in services[f"rt-{r}"] for r in RUNTIMES)
+    assert list(gw["ports"]) == ["${TOOLBOX_BIND:-127.0.0.1}:${TOOLBOX_HOST_PORT:-8000}:8080"] and all("ports" not in services[f"rt-{r}"] for r in RUNTIMES)
 
 
 # ---- roadmap C3: on-demand runtimes ------------------------------------------------------------------------------

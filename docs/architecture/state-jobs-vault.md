@@ -17,7 +17,8 @@
 - **Backups (Ops session):** `scripts/backup.sh` → one dated archive in
   `backups/` (git-ignored, mode 600): Postgres dump (pg_dump in a one-off
   `docker compose run` of the worker), every S3 object (`core/state/backup.py`
-  streams a tar), `.env` (Vault key!), `workspace.yaml`; keeps the last 7.
+  streams a tar; objects under `drop-rooms/` are skipped — temporary Drop Rooms files are not backed up and a restore does not delete them, `SKIP_PREFIXES`),
+  `.env` (Vault key!), `workspace.yaml`; keeps the last 7.
   `scripts/restore.sh <file>` stops the tool containers, `pg_restore --clean
   --single-transaction`, replaces the bucket, puts `.env`/settings back,
   starts everything. Tested by restoring into a second compose project

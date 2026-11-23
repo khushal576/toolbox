@@ -189,6 +189,7 @@ identical; a secret decrypted with the restored key).
 | Setting | Default | What it does |
 |---|---|---|
 | `TOOLBOX_HOST_PORT` | 8000 | Port of the website on this machine |
+| `TOOLBOX_BIND` | 127.0.0.1 | Who may reach the website: `127.0.0.1` = only this computer (safe; since DR0). `0.0.0.0` = every device on your network, **with no login** — do not set it unless something else protects Toolbox |
 | `TOOLBOX_WEB_WORKERS` | 4 (this machine: 1 since O1) | Gateway processes (1 = less memory, ~40 MB each). Raise it if many people use Toolbox at once |
 | `TOOLBOX_DATA_WORKERS` | 2 (this machine: 1 since O1) | Processes of the data tools container |
 | `TOOLBOX_WORKER_SCALING` | `1:3` | Min:max background-job workers |
@@ -299,6 +300,22 @@ Usage counts against your Pro limits (shared with claude.ai and VS Code). Keep T
   In the Vault tool's list you will see them as `key_store · ks-…`: that is normal; manage them in Key Store, not there.
 - **Private from the AI:** Claude / MCP and the "Ask Claude" helper cannot see or use Key Store, by design.
 - Anyone who can open Toolbox on this computer can open Key Store (Toolbox has no login). A master lock is a possible later step.
+
+## Drop Rooms: private rooms for text, files and folders between devices (roadmap DR0–DR2)
+
+**📥 Drop Rooms** in the sidebar. A *room* is a private place to drop text; everyone who joins with the room's **key** sees everything in it, like a chat.
+- **Create a room:** *+ Create a room* → a name, a nickname for this device → you get a long **key** (and a join link). Share it only with the people/devices that should be in the room. *🔗 Invite* shows it again to anyone in the room.
+- **Join:** *Join with a key* → paste the key and pick a nickname.
+- **Drop text:** type and press **Enter** (Shift+Enter = new line). Choose how long it stays (1 hour … 30 days; the room's default is 6 hours). Every item shows a ⏳ countdown; when it reaches zero the item is gone for everyone.
+- **Share files:** 📎 (files), 📁 (a whole folder), drag files or folders onto the page, or paste a screenshot. **Up to 100 MB each**, 1 GB per room. A folder is shared as one ZIP. Each file shows a size and **Download**; pictures show a thumbnail (click to enlarge) and text files have **Preview**. Files expire exactly like text and are then **erased from disk**.
+- **Anyone in the room can edit (✏️) or delete (🗑) any item.** Delete is immediate for everyone; the person who deleted gets **Undo** for 10 seconds. ⏱ changes when an item is deleted. 📋 copies the text.
+- **⚙ Room:** the owner can rename the room, change its default time, remove a device, **reset the key** (everyone else is removed and must join again with the new key) or delete the room and everything in it. Others can change their nickname or leave.
+- **Today it works only on this computer** (nothing leaves it): use two browsers (or a normal and a private window) to try it. To use it from other devices, a restricted entrance is the next big step (DR3) and needs your decision first (see the roadmap).
+- Keys are stored in the Vault (encrypted). **Keep `.env` backed up.** In the Vault tool's list they show as `drop_room_key · dr-…`: leave them; delete rooms from Drop Rooms.
+- Expired items cannot be opened by anyone immediately; the space is freed the next time someone opens a room (Toolbox has no timer yet).
+- Drop Rooms files are **not part of backups** (they are temporary) and a restore does not delete them.
+
+**Important change (DR0): Toolbox now answers only on this computer** (`TOOLBOX_BIND=127.0.0.1`). Before, any device on your Wi-Fi could open Toolbox — including the Vault page — because Toolbox has no login. To undo (not recommended): set `TOOLBOX_BIND=0.0.0.0` in `.env`, then `docker compose up -d`.
 
 ## Remove a tool you no longer want (roadmap P3)
 

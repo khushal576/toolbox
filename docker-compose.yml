@@ -63,7 +63,9 @@ services:
       target: gateway
     image: toolbox-gateway
     ports:
-      - "${TOOLBOX_HOST_PORT:-8000}:8080"   # host port; a second copy of the stack (restore test) uses another
+      # host port; a second copy of the stack (restore test) uses another. Bound to THIS computer only (roadmap DR0, 2026-11-22): Toolbox has no login,
+      # so it must not answer on the network. TOOLBOX_BIND=0.0.0.0 in .env undoes it (only if you also protect it some other way).
+      - "${TOOLBOX_BIND:-127.0.0.1}:${TOOLBOX_HOST_PORT:-8000}:8080"
     command: ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8080 --workers $${TOOLBOX_WEB_WORKERS:-4}"]
     environment:
       <<: *state-env

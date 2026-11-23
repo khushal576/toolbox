@@ -33,7 +33,7 @@ Work happens in numbered sessions ("Roadmap: do session `<ID>`"): do **only** th
 - Notebook runtime (`rt-notebook`) runs user code: it gets **no** Postgres/S3/Vault credentials. Keep it that way.
 - SharePoint Lists has **no delete path** (owner decision, `graph._check_write`). Edits are staged and written only after a reviewed approval.
 - The gateway's proxy client must **never keep cookies** (`core_plugins/proxy.py` `_no_cookie_jar`) — it once shared one visitor's session with the next.
-- There is no auth on any route (local single-owner tool). Do not expose the port beyond localhost without adding it.
+- There is no auth on any route (local single-owner tool). Do not expose the port beyond localhost without adding it. Since DR0 the gateway port is bound to `127.0.0.1` (`TOOLBOX_BIND`); a restricted entrance for Drop Rooms is roadmap DR3.
 
 **Build**
 - Every new Python dependency goes into `requirements.txt` **and** `requirements/<runtime>.txt`, then re-run `./download-wheels.sh` (offline builds).

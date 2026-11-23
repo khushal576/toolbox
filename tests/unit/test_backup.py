@@ -88,3 +88,19 @@ def test_import_refuses_unsafe_names(s3):
     s3({})
     with pytest.raises(ValueError, match="unsafe"):
         backup.objects_import(OneWay(buf.getvalue()))
+
+
+def test_temporary_drop_rooms_files_are_neither_backed_up_nor_deleted_by_a_restore(s3):
+    """Roadmap DR2: drop-rooms/ holds short-lived files (up to 20 GB). They stay out of the tar, and a restore leaves them alone."""
+    src = s3({"datadiff/a/a.bin": b"keep me", "drop-rooms/room1/item1": b"x" * 1000, "drop-rooms/room2/item2": b"y"})
+    buf = io.BytesIO()
+    assert backup.objects_export(buf) == 1                       # only datadiff/
+    import tarfile
+
+    with tarfile.open(fileobj=io.BytesIO(buf.getvalue())) as tar:
+        assert [m.name for m in tar.getmembers()] == ["datadiff/a/a.bin"]
+    dst = s3({"stale/x": b"old", "drop-rooms/live/file": b"still here"})
+    removed, imported = backup.objects_import(OneWay(buf.getvalue()))
+    assert (removed, imported) == (1, 1)                         # "stale/x" removed; the live Drop Rooms file was not counted or touched
+    assert dst.data == {"datadiff/a/a.bin": b"keep me", "drop-rooms/live/file": b"still here"}
+    del src

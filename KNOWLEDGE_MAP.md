@@ -45,6 +45,7 @@ map, because it actively misleads. If a file's job changes, update its row in th
 | Mini Sheet | `/tools/mini-sheet/` | [`mini-sheet/KNOWLEDGE_MAP.md`](mini-sheet/KNOWLEDGE_MAP.md) | [`mini-sheet/CLAUDE.md`](mini-sheet/CLAUDE.md) |
 | SQL Practice | `/tools/sql-practice/` | [`sql-practice/KNOWLEDGE_MAP.md`](sql-practice/KNOWLEDGE_MAP.md) | [`sql-practice/CLAUDE.md`](sql-practice/CLAUDE.md) |
 | Key Store | `/tools/key-store/` | [`key-store/KNOWLEDGE_MAP.md`](key-store/KNOWLEDGE_MAP.md) | [`key-store/CLAUDE.md`](key-store/CLAUDE.md) |
+| Drop Rooms | `/tools/drop-rooms/` | [`drop-rooms/KNOWLEDGE_MAP.md`](drop-rooms/KNOWLEDGE_MAP.md) | [`drop-rooms/CLAUDE.md`](drop-rooms/CLAUDE.md) |
 
 Not tools: `mcp_server/` (stdio MCP server for AI clients — [`mcp_server/KNOWLEDGE_MAP.md`](mcp_server/KNOWLEDGE_MAP.md), [`mcp_server/CLAUDE.md`](mcp_server/CLAUDE.md), design `docs/architecture/ADR-MCP.md`), `orchestrator/` (headless CLI — `orchestrator/CLAUDE.md`), `core/` (shared libraries — see the repo-wide section below and
 `docs/architecture/shared-connectors.md`), `core_plugins/` (manifest loader, gateway, supervisor, autoscaler, Status page).

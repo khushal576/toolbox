@@ -1,0 +1,20 @@
+# Plugin manifest — spec: docs/architecture/plugin-manifest.md
+# TEMPLATE (roadmap P2): not a tool. `python3 scripts/new_tool.py <name> "<Title>"` copies this folder to <repo>/<name>/ and fills the __TOOL_*__ placeholders.
+# (The placeholders are not valid values on purpose, so even a stray copy of this file can never be mounted as a tool.)
+schema_version: 1
+name: drop-rooms
+title: "Drop Rooms"
+description: "Private rooms with a key: drop text and files, every device in the room sees them. Auto-deletes after hours or days."
+icon: "📥"
+category: tool                    # `learn` cards stay hidden until the home page's "Show learning tools" toggle
+kind: python
+entry: drop_rooms.server:app
+runtime: data         # light = no heavy libraries; data = pandas / DuckDB / DB drivers (see requirements/<runtime>.txt)
+tier: 2
+state: [durable, session]                       # rooms, members and items live in Postgres; rate limits in Redis; never in process memory
+depends_on: []
+requires: []
+order: 26             # display order (built-in tools use 10–200)
+enabled_by_default: true
+vault: {read: [drop_room_key], write: [drop_room_key]}   # Vault scope (roadmap DR1): the room keys (so members can re-share the invite), nothing else
+# deliberately NO `ai:` section: the AI helper / MCP must never be able to call this tool

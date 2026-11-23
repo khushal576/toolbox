@@ -22,6 +22,14 @@ import time
 
 LAST_KEY = "toolbox:backup:last"
 
+# Temporary data that must NOT be in a backup (and must not be deleted by a restore): Drop Rooms' files are short-lived (hours to 30 days),
+# up to 20 GB, and their database rows restore without them anyway. (roadmap DR2)
+SKIP_PREFIXES = ("drop-rooms/",)
+
+
+def _skipped(key: str) -> bool:
+    return key.startswith(SKIP_PREFIXES)
+
 
 def objects_export(out) -> int:
     from core.state import objects
@@ -29,6 +37,8 @@ def objects_export(out) -> int:
     client, bucket, n = objects.client(), objects.ensure_bucket(), 0
     with tarfile.open(fileobj=out, mode="w|") as tar:
         for o in objects.list_objects(""):
+            if _skipped(o["key"]):
+                continue
             info = tarfile.TarInfo(o["key"])
             info.size = int(o["size"])
             info.mtime = int(o["last_modified"].timestamp())
@@ -59,7 +69,7 @@ def objects_import(inp) -> tuple[int, int]:
     from core.state import objects
 
     client, bucket = objects.client(), objects.ensure_bucket()
-    old = [o["key"] for o in objects.list_objects("")]
+    old = [o["key"] for o in objects.list_objects("") if not _skipped(o["key"])]   # a restore never touches temporary Drop Rooms files
     for i in range(0, len(old), 1000):
         client.delete_objects(Bucket=bucket, Delete={"Objects": [{"Key": k} for k in old[i:i + 1000]]})
     n = 0
@@ -69,6 +79,8 @@ def objects_import(inp) -> tuple[int, int]:
                 continue
             if member.name.startswith("/") or ".." in member.name.split("/"):
                 raise ValueError(f"unsafe name in backup: {member.name!r}")
+            if _skipped(member.name):
+                continue
             client.upload_fileobj(_Unseekable(tar.extractfile(member)), bucket, member.name)
             n += 1
     return len(old), n

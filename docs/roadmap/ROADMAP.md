@@ -116,6 +116,12 @@ Size: **S** = small session, **M** = medium session. No session should be large;
 | KS2 | Key Store: save / list / search / one-click copy in the Vault (own `kind`, tags, type, prod label, masked, trash) | M | KS1 | ☑ (2026-11-22) |
 | KS3 | Key Store: import from messy txt files (preview) + encrypted export / `.env` export | S | KS2 | ☐ |
 | KS4 | Key Store: extras (old values, clipboard auto-clear, copy-as, health check, expiry) — optional master lock decided here | S | KS3 | ☐ |
+| DR0 | Drop Rooms: decisions, design (`ADR-DROP-ROOMS.md`), lock Toolbox to this computer (`TOOLBOX_BIND=127.0.0.1`) | S | – | ☑ (2026-11-22) |
+| DR1 | Drop Rooms: rooms + keys + devices, text drops, retention (≤ 30 d), edit, delete + undo, live sync (polling) — this computer only | M | DR0 | ☑ (2026-11-22) |
+| DR2 | Drop Rooms: files (≤ 100 MB) and folders (ZIP), downloads, previews, quotas, real erasure | M | DR1 | ☑ (2026-11-22) |
+| DR3 | Drop Rooms: restricted entrance for other devices / people (only `/tools/drop-rooms/`), HTTPS, attempt limits — **blocked on the owner's "who joins rooms" answer** | M | DR2 | ☐ |
+| DR4 | Drop Rooms: unread dots, presence, reactions, pins, search, QR join link, phone "Share to Drop Rooms" | M | DR3 | ☐ |
+| DR5 | Drop Rooms: optional end-to-end encrypted rooms, room admin key, activity log, rename file | M | DR4 | ☐ |
 
 About 32 sessions. Phases 0–B are the most valuable. Re-measure after B9 before committing to C–F.
 
@@ -696,6 +702,18 @@ owner approval before H1).** All the ADR-MCP safety rules stay as they are; the 
 ---
 
 ## Handoff log
+
+- 2026-11-22 – **DR2 done (Drop Rooms: files and folders).** Files ≤ 100 MB (also pasted screenshots, drag-and-drop, 📎/📁 buttons); a folder is zipped IN THE BROWSER (`ui/zip.js`, store method) and uploaded as one ZIP item, re-validated by `store.check_zip`.
+  Upload = a raw `PUT rooms/{id}/files` streamed to a temp file (membership + free space checked BEFORE the body is read; bytes counted as they arrive), then to Toolbox's S3 storage under `drop-rooms/<room>/<item>`.
+  Downloads stream through the tool and re-check membership/expiry/deletion; always `attachment` + `octet-stream` + `nosniff` + CSP sandbox; only real PNG/JPEG/GIF/WebP (checked by first bytes) are shown inline; text files preview as plain text; no SVG/HTML/PDF inline.
+  Quotas 1 GB per room / 20 GB total (counted until erased). Files are erased from storage on expiry, delete (after the 10 s undo + 20 s), and room deletion. **Shared change:** `core/state/backup.py` skips the `drop-rooms/` prefix
+  (not backed up, not wiped by a restore) + test. Tests: 63 backend/zip/page, a two-browser end-to-end with files (3/3 green). **Nothing committed.** Next: DR3 stays blocked on the owner's "who joins rooms" answer.
+
+- 2026-11-22 – **DR0 + DR1 done (Drop Rooms).** DR0: found the gateway was published on `0.0.0.0:8000` with no login (no other device had used it in 72 h per the gateway log) → bound to `127.0.0.1`
+  via `TOOLBOX_BIND` (revert: `TOOLBOX_BIND=0.0.0.0` in `.env`; `test_runtimes` updated). DR1: new tool `drop-rooms/` (runtime data): rooms with a 125-bit key (hash for lookup + the key itself in the Vault, kind `drop_room_key`),
+  devices by HttpOnly cookie (token hashed), members/owner, text items with 5 s–30 d retention (default 6 h), edit with version conflict, delete for everyone with 10 s undo and erasure after 20 s, key reset kicks everyone else,
+  live sync by polling a room `rev`. Safety: `X-Drop-Rooms` header guard, Redis join limits (fail closed), uniform 404s, strict CSP, no `ai:`/`postMessage`, tests scan the page. Design + threat model: `docs/architecture/ADR-DROP-ROOMS.md`.
+  Tests: 33 backend/HTTP, 5 static page guards, and a **two-browser end-to-end test** (two devices in one room). **Nothing committed.** **Open question for the owner:** who joins rooms (own devices → Tailscale; other people → public tunnel) — decides DR3. Next: DR2 (files).
 
 - 2026-11-22 – **KS2 done (Key Store: save / search / copy).** Entries in the Vault, kind `key_store`, **names encrypted** (Vault name = `ks-…`); manifest `vault:` limited to that kind, runtime moved `light`→`data` (light has no `cryptography`).
   One shared change: `core.vault.ScopedVault.delete_secret` (kind must be in the plugin's `write` list; datasets refused) + tests in `test_vault.py`. No `ai:` section and no `postMessage` (tests); MCP scope unchanged and tested not to see `key_store`.

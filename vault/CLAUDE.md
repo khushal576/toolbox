@@ -350,3 +350,7 @@ server (`docs/architecture/ADR-MCP.md` D5). Code: `core/vault.py` (`environment_
 ## Kind `key_store` (Key Store, roadmap KS2)
 Key Store saves its entries here under `kind: key_store` with names `ks-<random>` (the real name is inside the encrypted data). They appear in this page's list as `key_store · ks-…`;
 do not "clean them up" by hand: use Key Store (its trash and "Delete forever"). `ScopedVault.delete_secret` (added in KS2) lets a plugin delete only kinds in its own `write` list. The MCP server never lists this kind.
+
+## Kind `drop_room_key` (Drop Rooms, roadmap DR1)
+Drop Rooms keeps each room's join key here as `drop_room_key · dr-<roomid>` so members can re-share the invite. Delete a room from Drop Rooms (it removes its key); do not delete these by hand, or the room can no longer show its invite.
+The MCP server never lists this kind.
