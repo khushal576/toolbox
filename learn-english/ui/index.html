@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speak English</title>
+<style>
+/* Same family as Learn AWS: white cards on a soft blue-grey desk, blue accent, light + night. Engine class names are unchanged. */
+:root{
+  --bg:#eef1f8; --card:#ffffff; --ink:#1f2433; --muted:#6b7385; --line:#e3e6ef; --edge:#d6dbe8;
+  --brand:#2f5fe0; --brand-ink:#ffffff; --brand-bg:#e8eeff;
+  --good:#15803d; --good-bg:#e9f7ee; --bad:#c0392b; --bad-bg:#fdeeec; --accent:#b45309; --accent-bg:#fff6e6;
+  --shadow:0 1px 3px rgba(20,30,60,.08), 0 8px 24px rgba(20,30,60,.06);
+  /* Toolbox's six canonical colours (theme-tokens.css) */
+  --surface:#ffffff; --border:#dde1ef; --text:#1c2035; --ok-text:#15803d; --err-text:#b91c1c;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0d1120; --card:#171c2c; --ink:#e6e9f2; --muted:#9aa3b8; --line:#283047; --edge:#2c3550;
+  --brand:#7ea6ff; --brand-ink:#0d1120; --brand-bg:#1f2a4a;
+  --good:#4ade80; --good-bg:#12261a; --bad:#f87171; --bad-bg:#2a1616; --accent:#f0b27a; --accent-bg:#2a2115;
+  --shadow:0 1px 3px rgba(0,0,0,.5), 0 8px 24px rgba(0,0,0,.3);
+}}
+:root[data-theme="dark"]{
+  --bg:#0d1120; --card:#171c2c; --ink:#e6e9f2; --muted:#9aa3b8; --line:#283047; --edge:#2c3550;
+  --brand:#7ea6ff; --brand-ink:#0d1120; --brand-bg:#1f2a4a;
+  --good:#4ade80; --good-bg:#12261a; --bad:#f87171; --bad-bg:#2a1616; --accent:#f0b27a; --accent-bg:#2a2115;
+  --shadow:0 1px 3px rgba(0,0,0,.5), 0 8px 24px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+html{scrollbar-color:var(--edge) transparent;scrollbar-width:thin}
+body{background:var(--bg);color:var(--ink);font:var(--fs,17px)/1.5 Inter,"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;-webkit-text-size-adjust:100%}
+h1,h2{font-family:Georgia,"Times New Roman",serif;font-weight:700;letter-spacing:-.2px}
+h1{font-size:1.7rem;line-height:1.2;margin:.2em 0 .4em}
+h2{font-size:1.35rem;line-height:1.25;margin:.2em 0 .5em}
+h3{font-size:1.02rem;margin:1em 0 .3em}
+p{margin:.55em 0}
+button{font:inherit}
+svg.i{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+
+/* ---------- top bar ---------- */
+.tb{position:sticky;top:0;z-index:5;height:54px;display:flex;align-items:center;gap:8px;padding:0 16px;background:var(--card);border-bottom:1px solid var(--edge);font-size:15px}
+.tb .brand{font-weight:700;font-size:1rem;display:flex;gap:8px;align-items:center;white-space:nowrap;cursor:pointer;background:none;border:0;color:var(--ink);padding:4px 6px}
+.tb .slot{flex:1;display:flex;align-items:center;min-width:0}
+.tb .slot .top{flex:1;margin:0 12px;max-width:760px;font-size:.8rem}
+.tb .slot .top .bar{height:5px}
+.tb .pill{display:flex;gap:4px;align-items:center;border:1px solid var(--edge);border-radius:12px;padding:4px 6px}
+.tb .tbb{font-size:.8rem;border:1px solid var(--edge);background:var(--card);color:var(--ink);border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap}
+.tb .tbb:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-bg)}
+.tb .warn{color:var(--bad);font-size:.8rem;font-weight:650;white-space:nowrap}
+
+/* ---------- layout ---------- */
+.shell{display:flex;align-items:flex-start}
+#side{width:290px;flex:none;position:sticky;top:54px;height:calc(100vh - 54px);overflow-y:auto;padding:14px 8px 40px;font-size:15px;background:var(--card);border-right:1px solid var(--edge);scrollbar-width:thin;scrollbar-color:var(--edge) transparent}
+#main{flex:1;min-width:0}
+#app{max-width:840px;margin:0 auto;padding:20px 20px 40px}
+#side .sh{display:flex;justify-content:space-between;align-items:center;padding:2px 8px 0;font-size:.86rem;font-weight:700}
+#side .badge{font-size:.7rem;font-weight:600;color:var(--muted);background:var(--bg);border:1px solid var(--edge);border-radius:10px;padding:1px 8px}
+#side h4{margin:18px 8px 4px;font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700}
+#side h4 .ph, #side .phs .ph{color:var(--brand)}
+#side .phs{margin-top:6px}
+#side .phs > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;padding:8px 8px 6px;border-radius:8px;font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700}
+#side .phs > summary::-webkit-details-marker{display:none}
+#side .phs > summary::before{content:"▸";font-size:.8rem;transition:transform .15s;color:var(--muted)}
+#side .phs[open] > summary::before{transform:rotate(90deg)}
+#side .phs > summary:hover{background:var(--bg)}
+#side .phs .pl{flex:1} #side .phs .pc{letter-spacing:0;font-weight:600}
+.sm{display:flex;align-items:center;gap:9px;padding:5px 8px;margin:1px 0;border-radius:8px;font-size:.84rem;line-height:1.35;border:1.5px solid transparent;color:var(--muted)}
+.sm .n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:700;border:1.5px solid var(--edge);flex:none;color:var(--muted)}
+.sm .t{flex:1;min-width:0}
+.sm.done{color:var(--ink)} .sm.done .n{background:var(--good);border-color:var(--good);color:#fff}
+.sm.now{color:var(--brand);font-weight:650} .sm.now .n{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+.sm.lock{opacity:.55}
+.sm.click{cursor:pointer} .sm.click:hover{background:var(--bg)}
+.sm.on{background:var(--brand-bg);border-color:var(--brand);color:var(--brand)}
+.sm .si{display:none;gap:1px} .sm:hover .si{display:flex}
+.sm .si button{border:0;background:none;cursor:pointer;color:var(--muted);padding:3px 4px;border-radius:6px;line-height:0} .sm .si button:hover{color:var(--brand);background:var(--card)}
+.sm.prac{color:var(--ink)} .sm.prac .n{border:0;background:var(--brand-bg);color:var(--brand)} .sm.prac small{color:var(--muted);font-weight:600;font-size:.75rem}
+.sm.prac.off{opacity:.45;cursor:default} .sm.prac.off:hover{background:none}
+
+/* ---------- cards, buttons ---------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 22px;margin-bottom:12px;box-shadow:var(--shadow)}
+.card h2{margin:.15em 0 .4em}
+.card p{margin:.45em 0}
+.tag{display:inline-block;font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--brand);font-weight:700}
+.btn{display:block;width:100%;background:var(--brand);color:var(--brand-ink);border:1.5px solid var(--brand);border-radius:10px;padding:12px 16px;font-weight:650;cursor:pointer;margin-top:12px;text-align:center;text-decoration:none}
+.btn:hover{filter:brightness(1.05)}
+#app > .btn:last-child, .card > .btn:last-child{position:sticky;bottom:14px;z-index:3;box-shadow:0 6px 20px rgba(20,30,60,.18)}
+.line,.bank,.fb,.opt{scroll-margin-bottom:90px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.ghost{background:var(--card);color:var(--brand);border-color:var(--edge)} .btn.ghost:hover{border-color:var(--brand);background:var(--brand-bg)}
+.btn.small{display:inline-block;width:auto;padding:7px 14px;font-size:.88rem;margin:6px 6px 0 0}
+.opt{display:block;width:100%;text-align:left;background:var(--card);color:var(--ink);border:1.5px solid var(--edge);border-radius:10px;padding:10px 14px;margin-top:8px;cursor:pointer}
+.opt:hover:not(:disabled){border-color:var(--brand);background:var(--brand-bg)}
+.opt.good{border-color:var(--good);background:var(--good-bg)}
+.opt.bad{border-color:var(--bad);background:var(--bad-bg)}
+.fb{border-radius:0 10px 10px 0;padding:9px 14px;margin-top:10px;font-size:.95rem;scroll-margin-bottom:90px}
+.fb.good{background:var(--good-bg);border-left:3px solid var(--good)}
+.fb.bad{background:var(--bad-bg);border-left:3px solid var(--bad)}
+.fb.note{background:var(--accent-bg);border-left:3px solid var(--accent)}
+.wrong,.right{border-radius:8px;padding:7px 12px;margin:6px 0}
+.wrong{background:var(--bad-bg)} .wrong::before{content:"✗  ";color:var(--bad);font-weight:700}
+.right{background:var(--good-bg)} .right::before{content:"✓  ";color:var(--good);font-weight:700}
+.frame{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}
+.frame span{border-radius:8px;padding:7px 12px;font-weight:650}
+.frame .who{background:#dbeafe;color:#17375e} .frame .glue{background:#fde68a;color:#5a3d00} .frame .rest{background:#dcfce7;color:#14532d}
+table{border-collapse:collapse;width:100%;margin:8px 0}
+td,th{border-bottom:1px solid var(--line);padding:5px 10px 5px 6px;text-align:left;vertical-align:top;line-height:1.4}
+th{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em}
+.bank,.line{display:flex;flex-wrap:wrap;gap:8px;min-height:50px;padding:10px;border-radius:10px}
+.line{border:2px dashed var(--edge);margin:10px 0}
+.bank{margin-bottom:6px}
+.w{background:var(--card);color:var(--ink);border:1.5px solid var(--edge);border-radius:8px;padding:7px 13px;cursor:pointer}
+.w:hover{border-color:var(--brand)}
+.w.used{opacity:.25;pointer-events:none}
+input[type=text],textarea{width:100%;font:inherit;color:var(--ink);background:var(--card);border:1.5px solid var(--edge);border-radius:10px;padding:12px;margin-top:10px}
+input[type=text]:focus,textarea:focus{outline:2px solid var(--brand);outline-offset:-1px}
+textarea{min-height:76px;resize:vertical}
+.score{font-size:2.6rem;font-weight:800;margin:.1em 0}
+.can li{margin:.5em 0}
+.q{font-size:1.1rem;font-weight:650;margin:.1em 0 .3em}
+.sub{color:var(--muted);font-size:.92rem}
+.hi{font-size:1.22rem;font-weight:600;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 10px 10px 0;padding:10px 14px;margin:8px 0 4px}
+.hear{background:none;border:0;cursor:pointer;font-size:1.05rem}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.chip{background:var(--card);color:var(--muted);border:1px solid var(--edge);border-radius:99px;padding:4px 11px;font-size:.8rem;cursor:pointer}
+.chip.on{background:var(--brand-bg);color:var(--brand);border-color:var(--brand)}
+.bighi{font-size:1.45rem;line-height:1.4;font-weight:650;margin:8px 0 2px}
+.chips.one{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-bottom:10px;padding-bottom:2px} .chips.one::-webkit-scrollbar{display:none} .chips.one .chip{flex:none}
+.pcard{padding:16px 20px}
+.pcard .fb{margin-top:8px;padding:8px 12px}
+.ph-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.hardbtn{font-size:.78rem;border:1px solid var(--edge);background:var(--card);color:var(--muted);border-radius:99px;padding:3px 10px;cursor:pointer;white-space:nowrap}
+.hardbtn:hover{border-color:var(--accent);color:var(--accent)} .hardbtn.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:650}
+.row.cmp .btn{padding:8px 12px;font-size:.92rem}
+.row{display:flex;gap:10px}.row .btn{margin-top:0}
+.trophy{text-align:center;border:1.5px solid var(--accent);background:var(--accent-bg);border-radius:12px;padding:16px;margin-bottom:14px}
+.cs h3{margin:1.1em 0 .3em}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:12px;font-size:.82rem;color:var(--muted)}
+.top .bar{flex:1;height:6px;background:var(--line);border-radius:99px;overflow:hidden}
+.top .bar i{display:block;height:100%;background:var(--brand);border-radius:99px;transition:width .3s}
+.top button{background:none;border:0;color:var(--muted);cursor:pointer;padding:4px} .top button:hover{color:var(--brand)}
+.mini{height:5px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:8px}
+.mini i{display:block;height:100%;background:var(--brand)}
+
+/* ---------- home ---------- */
+.hero{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 28px;margin-bottom:14px;box-shadow:var(--shadow);border-top:4px solid var(--brand)}
+.hero .k{font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--brand);font-weight:700}
+.hero h2{font-size:1.65rem;margin:.35em 0 .1em}
+.hero .hs{color:var(--muted);margin:0}
+.hero .btn{display:inline-block;width:auto;padding:11px 26px;margin-top:18px}
+.hero .hp{display:flex;align-items:center;gap:12px;margin-top:18px;font-size:.8rem;color:var(--muted)} .hero .hp .mini{flex:1;margin:0}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
+.stat b{display:block;font-size:1.5rem;line-height:1.2;font-family:Georgia,serif} .stat b small{font-size:.8rem;color:var(--muted);font-weight:600;font-family:Inter,"Segoe UI",system-ui,sans-serif} .stat span{color:var(--muted);font-size:.78rem}
+.plist{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.prow{display:flex;align-items:center;gap:14px;padding:14px 18px;border-top:1px solid var(--line)} .prow:first-child{border-top:0}
+.prow .pi{font-size:1.3rem;width:28px;text-align:center} .prow .pt{flex:1;min-width:0} .prow b{font-size:.95rem} .prow small{display:block;color:var(--muted);font-size:.8rem}
+.prow .pn{font-size:.8rem;color:var(--muted);white-space:nowrap} .prow.lock{opacity:.55} .prow.now b{color:var(--brand)}
+.sect{font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:22px 2px 8px;font-weight:700}
+.foot{text-align:center;color:var(--muted);font-size:.85rem;margin-top:22px}
+details.code{margin-top:10px;text-align:center} details.code summary{cursor:pointer;color:var(--muted);font-size:.82rem;list-style:none} details.code summary:hover{color:var(--brand)}
+details.code .card{text-align:left;margin-top:10px}
+
+@media (max-width:900px){
+  #side{display:none} #side.open{display:block;position:fixed;left:0;top:54px;bottom:0;height:auto;width:86%;max-width:330px;z-index:6;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+}
+@media (min-width:901px){ .narrow-only{display:none !important} }
+@media (max-width:560px){ .tb{gap:6px;padding:0 10px} .tb .brand .bt{display:none} .tb .pill{border:0;padding:0} #app{padding:18px 14px 70px} .card{padding:18px} .hero{padding:20px} .stats{gap:8px} .stat{padding:10px 12px} .stat b{font-size:1.2rem} }
+</style>
+<script src="modules/manifest.js"></script>
+</head>
+<body>
+<header class="tb">
+  <button class="brand" id="tbhome" title="Home">🗣️ <span class="bt">Speak English</span></button>
+  <div class="slot" id="tbslot"></div>
+  <span class="warn" id="tbwarn" hidden title="Your progress could not be saved to Toolbox. It is kept in this browser and sent again on your next step.">⚠ Not saved</span>
+  <div class="pill">
+    <button class="tbb narrow-only" id="tbcourse" title="Contents">☰ Contents</button>
+    <button class="tbb" id="tbsm" title="Smaller text" aria-label="Smaller text">A−</button>
+    <button class="tbb" id="tbbg" title="Bigger text" aria-label="Bigger text">A+</button>
+    <button class="tbb" id="tbth" title="Light / night" aria-label="Light or night">🌙</button>
+  </div>
+</header>
+<div class="shell">
+  <aside id="side" aria-label="Your course"></aside>
+  <main id="main"><div id="app"></div></main>
+</div>
+<script>
+"use strict";
+
+/* ============================================================
+   CONTENT — one object per module. New modules are appended here.
+   Step kinds: card, mcq, order, type, build, trap, boss, done
+   ============================================================ */
+
+/* ============================================================
+   STATE
+   ============================================================ */
+/* Progress lives in Toolbox (GET/PUT progress); this browser keeps a cache so a failed save is retried, never lost.
+   The server merges: passes and best scores are never removed, even by an old tab. */
+const KEY = "speakEnglish.v1";
+const fresh = () => ({passed:{}, scores:{}, pos:{}, last:0, tough:{}});
+let S = fresh();
+try{ Object.assign(S, JSON.parse(localStorage.getItem(KEY) || "{}")); }catch(e){}
+const HDR = {"X-Speak-English":"1"};
+let saveTimer = 0, CUR = 0;
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+  clearTimeout(saveTimer); saveTimer = setTimeout(push, 300);
+  side();
+}
+function push(keep){
+  saveTimer = 0;
+  return fetch("progress", {method:"PUT", headers:Object.assign({"Content-Type":"application/json"}, HDR), body:JSON.stringify({state:S}), keepalive:!!keep})
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(d => { absorb(d.state); saved(true); }, () => saved(false));
+}
+/* Take what the server knows that this tab does not (passes, better scores); never touch the lesson position. */
+function absorb(st){
+  if(!st) return false; let more = false;
+  Object.keys(st.passed||{}).forEach(k => { if(!S.passed[k]){ S.passed[k] = true; more = true; } });
+  Object.keys(st.scores||{}).forEach(k => { if((st.scores[k]||0) > (S.scores[k]||0)){ S.scores[k] = st.scores[k]; more = true; } });
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+  return more;
+}
+function saved(ok){ const w = document.getElementById("tbwarn"); if(w) w.hidden = ok; }
+addEventListener("pagehide", () => { if(saveTimer){ clearTimeout(saveTimer); push(true); } });
+/* Reading preferences (per browser): text size and light/dark. */
+const UIK = "speakEnglish.ui";
+let UI = {fs:17, theme:""};
+try{ Object.assign(UI, JSON.parse(localStorage.getItem(UIK) || "{}")); }catch(e){}
+function look(){
+  document.documentElement.style.setProperty("--fs", UI.fs + "px");
+  if(UI.theme) document.documentElement.setAttribute("data-theme", UI.theme); else document.documentElement.removeAttribute("data-theme");
+  try{ localStorage.setItem(UIK, JSON.stringify(UI)); }catch(e){}
+  if(typeof themeIcon === "function") themeIcon();
+}
+look();
+
+const app = document.getElementById("app");
+const DAY = 86400000;
+const norm = s => s.toLowerCase().replace(/[’]/g,"'").replace(/[.?!,]/g,"").replace(/\s+/g," ").trim();
+const shuffle = a => { const b=a.slice(); for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [b[i],b[j]]=[b[j],b[i]];} return b; };
+function speak(t){ try{ const u=new SpeechSynthesisUtterance(t.replace(/<[^>]+>/g,"")); u.lang="en-US"; u.rate=.9; speechSynthesis.cancel(); speechSynthesis.speak(u);}catch(e){} }
+function el(html){ const d=document.createElement("div"); d.innerHTML=html; return d; }
+function clear(){ app.innerHTML=""; window.scrollTo(0,0); const sd = document.getElementById("side"); if(sd) sd.classList.remove("open"); const sl = document.getElementById("tbslot"); if(sl) sl.replaceChildren(); }
+/* Module files load on demand: modules/m001.js, m002.js ... each calls registerModule({...}). */
+const REG = {};
+function registerModule(m){ REG[m.id] = m; }
+if(window.__pre) window.__pre.forEach(registerModule);   /* offline bundle */
+function loadModule(id){
+  if(REG[id]) return Promise.resolve(REG[id]);
+  return new Promise((res, rej) => {
+    const sc = document.createElement("script");
+    sc.src = "modules/m" + String(id).padStart(3,"0") + ".js";
+    sc.onload = () => REG[id] ? res(REG[id]) : rej(new Error("bad module file"));
+    sc.onerror = () => rej(new Error("missing module file"));
+    document.head.appendChild(sc);
+  });
+}
+/* Hindi practice sentences: practice/hNNN.js, one per module, each calls registerHindi(id, [...]). */
+const HREG = {};
+function registerHindi(id, items){ HREG[id] = items; }
+if(window.__hpre) window.__hpre.forEach(a => registerHindi(a[0], a[1]));   /* offline bundle */
+function loadHindi(id){
+  if(HREG[id]) return Promise.resolve();
+  return new Promise(res => {
+    const sc = document.createElement("script");
+    sc.src = "practice/h" + String(id).padStart(3,"0") + ".js";
+    sc.onload = sc.onerror = () => res();      /* a module may have no practice file: fine */
+    document.head.appendChild(sc);
+  });
+}
+/* Cheat sheets: cheat/cNNN.js, one per module, each calls registerCheat(id, html). */
+const CREG = {};
+function registerCheat(id, html){ CREG[id] = html; }
+if(window.__cpre) window.__cpre.forEach(a => registerCheat(a[0], a[1]));   /* offline bundle */
+function loadCheat(id){
+  if(CREG[id]) return Promise.resolve();
+  return new Promise(res => {
+    const sc = document.createElement("script");
+    sc.src = "cheat/c" + String(id).padStart(3,"0") + ".js";
+    sc.onload = sc.onerror = () => res();
+    document.head.appendChild(sc);
+  });
+}
+function cheatSheet(id){
+  clear();
+  const mf = MANIFEST.find(m => m.id === id);
+  app.innerHTML = '<p class="sub">Loading…</p>';
+  loadCheat(id).then(() => {
+    app.innerHTML = `<div class="top"><button id="hm">← Home</button><div class="bar"></div><span>M${id}</span></div>
+      <div class="card cs"><span class="tag">📄 Cheat sheet · Module ${id}</span><h2>${mf.title}</h2>
+        ${CREG[id] || '<p class="sub">No cheat sheet for this module yet.</p>'}</div>
+      <button class="btn ghost" id="hi">Practise this module's sentences</button>`;
+    document.getElementById("hm").onclick = () => home();
+    document.getElementById("hi").onclick = () => practise([id], "plain");
+  });
+}
+/* Phases: chapters of modules. Finishing the last module of a phase earns a trophy. */
+const phaseOf = id => (window.PHASES||[]).find(p => id >= p.from && id <= p.to);
+const phaseMods = p => MANIFEST.filter(m => m.id >= p.from && m.id <= p.to);
+const phaseDone = p => { const ms = phaseMods(p); return ms.length>0 && ms.every(m => S.passed[m.id]); };
+
+const TOPIC_ICON = {Food:"🍛",Travel:"✈️",Work:"💼",Family:"👪",Market:"🛒",Weather:"⛅",Health:"🩺",School:"🎒",Phone:"📱",Home:"🏠",Feelings:"🙂"};
+
+/* The one module you may do now: the first not yet passed (strict order). */
+function nextModule(){ return MANIFEST.find(m => !S.passed[m.id]); }
+
+/* Progress code: portable between any copy/device. Merge-only, never removes progress. */
+function progressCode(){ return "SE2." + btoa(JSON.stringify({p:S.passed, s:S.scores, t:Object.keys(S.tough)})); }
+function restoreCode(txt){
+  const m = String(txt).replace(/\s+/g,"").match(/SE[12]\.([A-Za-z0-9+/=]+)/);
+  if(!m) throw new Error("That doesn't look like a progress code.");
+  const d = JSON.parse(atob(m[1])), ids = new Set(MANIFEST.map(x=>x.id));
+  let added = 0;
+  Object.keys(d.p||{}).forEach(k => { if(ids.has(+k) && d.p[k]===true && !S.passed[k]){ S.passed[k]=true; added++; } });
+  Object.keys(d.s||{}).forEach(k => { const v=+d.s[k]; if(ids.has(+k) && v>=0 && v<=1) S.scores[k]=Math.max(S.scores[k]||0, v); });
+  Object.keys(S.passed).forEach(k => { S.pos[k] = 0; });
+  let tadded = 0;
+  (Array.isArray(d.t) ? d.t : []).forEach(k => { if(/^\d+:[a-z0-9]+$/.test(k) && ids.has(+k.split(":")[0]) && !S.tough[k]){ S.tough[k] = {s:0,n:1}; tadded++; } });
+  save(); return added + tadded;
+}
+
+/* ============================================================
+   HOME / WELCOME BACK
+   ============================================================ */
+function start(){
+  const gap = S.last ? Date.now() - S.last : 0;
+  S.last = Date.now(); save();
+  if(gap > 2*DAY && Object.keys(S.passed).length) return welcomeBack(gap);
+  home();
+}
+
+/* Small line icons (no emoji clutter in lists). */
+const ICON = {
+  doc:'<svg class="i" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
+  talk:'<svg class="i" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z"/></svg>',
+  again:'<svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>'
+};
+const passedIds = () => MANIFEST.filter(m => S.passed[m.id]).map(m => m.id);
+const QUICK = 20;
+const sideOpen = {};
+
+function home(msg){
+  clear(); CUR = 0;
+  const nxt = nextModule();
+  const passedN = Object.keys(S.passed).length;
+  const P = window.PHASES || [];
+  const cur = nxt ? phaseOf(nxt.id) : null;
+  const trophies = P.filter(phaseDone).length;
+  let h = msg ? `<div class="fb good" style="margin:0 0 14px">${msg}</div>` : "";
+  if(nxt){
+    const started = (S.pos[nxt.id]||0) > 0;
+    const cm = cur ? phaseMods(cur) : [], cn = cm.filter(m => S.passed[m.id]).length;
+    h += `<div class="hero"><div class="k">${cur ? "Phase "+cur.id+" · "+cur.name : "Next up"}</div>
+      <h2>Module ${nxt.id}: ${nxt.title}</h2>${nxt.sub?`<p class="hs">${nxt.sub}</p>`:""}
+      ${nxt.ready ? `<button class="btn" id="go">${started?"Continue":"Start"} Module ${nxt.id} →</button>`
+                  : `<div class="fb note">Module ${nxt.id} isn't built yet. Ask Claude to build it.</div>`}
+      ${cur?`<div class="hp"><span>${cn} of ${cm.length} in this phase</span><div class="mini"><i style="width:${Math.round(cn/cm.length*100)}%"></i></div></div>`:""}</div>`;
+  } else {
+    h += `<div class="hero"><div class="k">All done</div><h2>You finished every module built so far 🎉</h2><p class="hs">The next batch is coming. Keep your daily practice going until then.</p></div>`;
+  }
+  h += `<div class="stats"><div class="stat"><b>${passedN}<small> / ${MANIFEST.length}</small></b><span>modules passed</span></div>
+    <div class="stat"><b>${trophies}<small> / ${P.length}</small></b><span>phases complete</span></div>
+    <div class="stat"><b>${Object.keys(S.tough).length}</b><span>hard sentences</span></div></div>`;
+  /* No phase list here: the sidebar (☰ Contents on a phone) already shows phases and modules. */
+  if(passedN) h += `<p class="foot">Rest when a module is done. Stopping while you still have energy is what brings you back tomorrow.</p>`;
+  h += `<details class="code"><summary>Move progress in or out (progress code)</summary><div class="card">
+    <p class="sub" style="margin-top:0">Your progress is saved in Toolbox. To bring progress from the old app, copy its code there and restore it here. Restoring only adds progress.</p>
+    <button class="btn small ghost" id="cp">Copy my progress code</button>
+    <button class="btn small ghost" id="rs">Restore from a code</button><div id="rbox"></div></div></details>`;
+  app.innerHTML = h;
+  document.getElementById("cp").onclick = () => {
+    const c = progressCode();
+    (navigator.clipboard ? navigator.clipboard.writeText(c) : Promise.reject()).then(
+      () => { document.getElementById("rbox").innerHTML = '<div class="fb good">Copied. Paste it into the other copy under "Restore from a code".</div>'; },
+      () => { document.getElementById("rbox").innerHTML = '<div class="fb note">Copy this code:<textarea readonly onclick="this.select()">'+c+'</textarea></div>'; });
+  };
+  document.getElementById("rs").onclick = () => {
+    const box = document.getElementById("rbox");
+    box.innerHTML = '<textarea id="cin" placeholder="Paste your code here (starts with SE)"></textarea><button class="btn small" id="ri">Restore</button><div id="rerr"></div>';
+    document.getElementById("ri").onclick = () => {
+      try{ const n = restoreCode(document.getElementById("cin").value); home(n ? "Restored. "+n+" item"+(n>1?"s":"")+" added (modules and hard sentences)." : "Nothing new to add. You already have that progress."); }
+      catch(e){ document.getElementById("rerr").innerHTML = '<div class="fb bad">'+(e.message||"Could not read that code.")+'</div>'; }
+    };
+  };
+  const g = document.getElementById("go"); if(g) g.onclick = () => runModule(nxt.id);
+  side();
+}
+
+/* Sidebar = the one place to go anywhere: Continue, Practice (quick / hard / all), and the course.
+   Strict order stays: only passed modules and the next module open. */
+function side(){
+  const box = document.getElementById("side"); if(!box || !window.MANIFEST) return;
+  const nxt = nextModule(), done = passedIds(), P = window.PHASES || [], hard = Object.keys(S.tough).length;
+  let h = `<div class="sh"><span>Contents</span><span class="badge">${done.length} / ${MANIFEST.length}</span></div>`;
+  if(nxt && nxt.ready) h += `<h4>Continue</h4><div class="sm now click${CUR===nxt.id?" on":""}" data-run="${nxt.id}"><span class="n">${nxt.id}</span><span class="t">${nxt.title}</span></div>`;
+  h += `<h4>Practice</h4>
+    <div class="sm prac click${done.length?"":" off"}" data-prac="quick" title="${QUICK} random sentences from every module you passed"><span class="n">${ICON.talk}</span><span class="t">Quick mix</span><small>${QUICK}</small></div>
+    <div class="sm prac click${hard?"":" off"}" data-prac="hard" title="Only the sentences you marked hard"><span class="n">😬</span><span class="t">Hard ones</span><small>${hard}</small></div>
+    <div class="sm prac click${done.length?"":" off"}" data-prac="all" title="Every sentence from every module you passed"><span class="n">∞</span><span class="t">Everything</span><small>${done.length?"all":"—"}</small></div>`;
+  const row = m => {
+    const st = S.passed[m.id] ? "done" : (nxt && nxt.id===m.id && m.ready) ? "now" : "lock";
+    const tools = st==="done" ? `<span class="si"><button data-cheat="${m.id}" title="Cheat sheet" aria-label="Cheat sheet">${ICON.doc}</button><button data-hindi="${m.id}" title="Practise this module" aria-label="Practise this module">${ICON.talk}</button><button data-replay="${m.id}" title="Replay the lesson" aria-label="Replay the lesson">${ICON.again}</button></span>` : "";
+    return `<div class="sm ${st}${st!=="lock"?" click":""}${CUR===m.id?" on":""}" ${st==="now"?`data-run="${m.id}"`:st==="done"?`data-cheatrow="${m.id}"`:""} title="${st==="lock"?"Locked until you pass the module before it":st==="now"?"Start this module":"Open the cheat sheet"}">
+      <span class="n">${st==="done"?"✓":m.id}</span><span class="t">${m.title}</span>${tools}</div>`;
+  };
+  /* Phases fold like Learn AWS: only the phase you are in is open; your clicks are remembered while the page is open. */
+  const curPh = phaseOf(CUR || (nxt ? nxt.id : 0));
+  P.forEach(p => { const ms = phaseMods(p); if(!ms.length) return;
+    const n = ms.filter(m => S.passed[m.id]).length;
+    const open = sideOpen[p.id] !== undefined ? sideOpen[p.id] : !!(curPh && curPh.id === p.id);
+    h += `<details class="phs" data-phase="${p.id}"${open?" open":""}><summary><span class="pl">${phaseDone(p)?"🏆 ":""}<span class="ph">Phase ${p.id}</span> · ${p.name}</span><span class="pc">${n}/${ms.length}</span></summary>${ms.map(row).join("")}</details>`; });
+  const loose = MANIFEST.filter(m => !phaseOf(m.id)); if(loose.length) h += `<h4>More</h4>` + loose.map(row).join("");
+  box.innerHTML = h;
+  box.querySelectorAll("details.phs").forEach(d => d.addEventListener("toggle", () => { sideOpen[d.dataset.phase] = d.open; }));
+  const close = () => box.classList.remove("open");
+  box.querySelectorAll("[data-run]").forEach(b => b.onclick = () => { close(); runModule(+b.dataset.run); });
+  box.querySelectorAll("[data-cheatrow]").forEach(b => b.onclick = e => { if(e.target.closest("button")) return; close(); cheatSheet(+b.dataset.cheatrow); });
+  box.querySelectorAll("[data-cheat]").forEach(b => b.onclick = () => { close(); cheatSheet(+b.dataset.cheat); });
+  box.querySelectorAll("[data-hindi]").forEach(b => b.onclick = () => { close(); practise([+b.dataset.hindi], "plain"); });
+  box.querySelectorAll("[data-replay]").forEach(b => b.onclick = () => { close(); S.pos[b.dataset.replay]=0; save(); runModule(+b.dataset.replay, true); });
+  box.querySelectorAll("[data-prac]").forEach(b => b.onclick = () => { if(b.classList.contains("off")) return; close();
+    const k = b.dataset.prac; practise(null, k==="hard" ? "tough" : "plain", k==="quick" ? QUICK : 0); });
+}
+/* Practice starts straight away (no setup screen). mods = null → every passed module. */
+function practise(mods, mode, limit){
+  const ids = mods || passedIds();
+  if(!ids.length) return home("Pass a module to unlock practice.");
+  clear(); app.innerHTML = '<p class="sub">Loading…</p>';
+  Promise.all(ids.map(loadHindi)).then(() => {
+    if(mode === "tough" && !toughIn(ids)) return home("No hard sentences yet. While practising, press 😬 on any sentence you get wrong.");
+    hindiPractice(ids, mode, limit);
+  });
+}
+document.getElementById("tbhome").onclick = () => home();
+document.getElementById("tbcourse").onclick = () => document.getElementById("side").classList.toggle("open");
+document.getElementById("tbsm").onclick = () => { UI.fs = Math.max(14, UI.fs - 1); look(); };
+document.getElementById("tbbg").onclick = () => { UI.fs = Math.min(23, UI.fs + 1); look(); };
+document.getElementById("tbth").onclick = () => {
+  const dark = UI.theme ? UI.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  UI.theme = dark ? "light" : "dark"; look();
+};
+function themeIcon(){ const b = document.getElementById("tbth"); if(!b) return; const dark = UI.theme ? UI.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; b.textContent = dark ? "☀️" : "🌙"; }
+
+function welcomeBack(gap){
+  clear();
+  let qs = [];
+  /* load only up to 3 recent passed modules for the warm-up pool */
+  const ids = Object.keys(S.passed).map(Number).sort((a,b)=>b-a).slice(0,3);
+  Promise.all(ids.map(id => loadModule(id).catch(() => null))).then(ms => {
+    const pool = [];
+    ms.filter(Boolean).forEach(m => m.steps.forEach(s => { if(["mcq","order","type"].includes(s.k)) pool.push(s); }));
+    qs = shuffle(pool).slice(0,5);
+    if(!qs.length) home();
+  });
+  app.innerHTML = `<h1>Welcome back 👋</h1>
+    <div class="card"><p>Good to see you. Nothing was lost, and nobody is counting days. Let's wake your English up with a <b>5-question warm-up</b>. No score, no pressure.</p>
+    <button class="btn" id="wu">Warm up</button><button class="btn ghost" id="sk">Skip, take me to my module</button></div>`;
+  document.getElementById("sk").onclick = () => home();
+  document.getElementById("wu").onclick = () => {
+    if(!qs.length) return home();
+    let i = 0;
+    const next = () => {
+      if(i >= qs.length) return home("Warm-up done. Your English is awake. 🌱");
+      clear();
+      app.insertAdjacentHTML("beforeend", `<div class="top"><div class="bar"><i style="width:${i/qs.length*100}%"></i></div><span>${i+1}/${qs.length}</span></div>`);
+      const host = el(`<div class="card"></div>`).firstChild; app.appendChild(host);
+      const nb = el(`<button class="btn" style="display:none">Next</button>`).firstChild; app.appendChild(nb);
+      nb.onclick = () => { i++; next(); };
+      renderQ(qs[i], host, {}, () => { nb.style.display = "block"; });
+    };
+    next();
+  };
+}
+
+/* ============================================================
+   HINDI PRACTICE: think the English, then press the eye to check.
+   Only uses sentences from modules you have passed.
+   ============================================================ */
+let hTopic = "All", hSel = null, hMode = "plain";
+/* Stable sentence id: module + hash of the Hindi text. Survives re-ordering of the practice file. */
+function sid(m, x){ let h = 5381; for(let k=0;k<x.hi.length;k++) h = ((h<<5)+h+x.hi.charCodeAt(k))|0; return m+":"+(h>>>0).toString(36); }
+const toughIn = mods => { let n=0; mods.forEach(m => (HREG[m]||[]).forEach(x => { if(S.tough[sid(m,x)]) n++; })); return n; };
+
+/* The old setup screen is gone: practice starts straight away (see practise() and the sidebar's Practice section). */
+/* Kept for old call sites: practise one module (or everything) right away. */
+function hindiSetup(pre){ return practise(pre ? [pre] : null, "plain"); }
+
+/* Practice session: think the English, press the eye, then mark it. */
+function hindiPractice(mods, mode, limit){
+  hTopic = "All";
+  const pool = [];
+  mods.forEach(m => (HREG[m]||[]).forEach(x => pool.push({x, m, id: sid(m,x)})));
+  const live = () => mode==="tough" ? pool.filter(p => S.tough[p.id]) : pool;
+  if(!live().length) return home(mode==="tough" ? "No hard sentences left here. 🌟" : "Nothing to practise yet.");
+  const topics = ["All"].concat([...new Set(live().map(p => p.x.tag))]);
+  let deck = [], i = 0, shown = false;
+  const build = () => { deck = shuffle(live().filter(p => hTopic==="All" || p.x.tag===hTopic)); if(limit) deck = deck.slice(0, limit); i = 0; shown = false; };
+  build();
+  const next = () => { i++; shown = false; draw(); };
+  const draw = () => {
+    clear();
+    if(i >= deck.length){
+      const left = toughIn(mods);
+      app.innerHTML = `<div class="top"><button id="hm">← Home</button><div class="bar"><i style="width:100%"></i></div></div>
+        <div class="card"><h2>Round complete 🎉</h2><p>${deck.length?`You went through ${deck.length} sentence${deck.length>1?"s":""}.`:"Nothing left here."} ${left?`<b>${left}</b> still marked hard.`:"Nothing is marked hard. 🌟"}</p>
+        <button class="btn" id="again">Go again</button><button class="btn ghost" id="su">Back to home</button></div>`;
+      document.getElementById("hm").onclick = () => home();
+      document.getElementById("again").onclick = () => { build(); draw(); };
+      document.getElementById("su").onclick = () => home();
+      return;
+    }
+    const p = deck[i], x = p.x, t = S.tough[p.id];
+    let rate = "";
+    if(shown){
+      if(mode==="plain"){
+        rate = `
+          <div class="row cmp" style="margin-top:10px"><button class="btn ghost" id="knew">✅ Knew it</button>${t?"":`<button class="btn ghost" id="add">😬 Mark as hard</button>`}</div>`;
+      } else {
+        rate = `<div class="row cmp" style="margin-top:10px"><button class="btn ghost" id="got">✅ Got it (${t?t.s:0}/3)</button><button class="btn ghost" id="still">😬 Still hard</button></div>
+          ${t&&t.s>=3?`<div class="fb good" style="margin-top:10px">You got this one right 3 times in a row. Ready to take it off your hard list?</div><button class="btn" id="rm">Take it off the hard list</button>`:``}`;
+      }
+    }
+    const label = mode==="tough" ? "Hard ones" : limit ? "Quick mix" : mods.length===1 ? "Module "+mods[0] : "All sentences";
+    app.innerHTML = `<div class="top"><button id="hm">← Home</button><div class="bar"><i style="width:${Math.round(i/deck.length*100)}%"></i></div><span>${label} · ${i+1}/${deck.length}</span></div>
+      <div class="chips one">${topics.map(tp=>`<button class="chip ${tp===hTopic?"on":""}" data-t="${tp}">${TOPIC_ICON[tp]||""} ${tp}</button>`).join("")}</div>
+      <div class="card pcard"><div class="ph-head"><span class="tag">${TOPIC_ICON[x.tag]||""} ${x.tag} · M${p.m}</span>
+          <button class="hardbtn ${t?"on":""}" id="tg" title="${t?"Marked hard — click to undo":"Mark as hard"}">😬 ${t?"Hard":"Mark hard"}</button></div>
+        <div class="bighi" lang="hi">${x.hi}</div>
+        ${shown?"":`<p class="sub" style="margin:2px 0 0">Say it in English first, then check.</p>`}
+        <button class="btn small ghost eye" id="eye" style="margin-top:10px">${shown?"🙈 Hide answer":"👁 Show answer"}</button>
+        <div id="ans" style="${shown?"":"display:none"}">
+          <div class="fb good"><b>${x.en}</b> <button class="hear" id="hr" title="Hear it">🔊</button>
+          ${x.alt&&x.alt.length?`<br><span class="sub">Also fine: ${x.alt.join(" / ")}</span>`:""}</div>
+          ${x.note?`<div class="fb note">${x.note}</div>`:""}
+          ${x.w&&x.w.length?`<p class="sub" style="margin:6px 0 0">Words: ${x.w.map(w=>`<b>${w[0]}</b> = ${w[1]}`).join(" · ")}</p>`:""}
+          ${rate}
+        </div></div>
+      <div class="row cmp"><button class="btn ghost" id="pv" ${i===0?"disabled":""}>← Back</button><button class="btn ghost" id="lt">↻ Again later</button><button class="btn" id="nx">Next →</button></div>`;
+    const $ = id => document.getElementById(id);
+    $("hm").onclick = () => home();
+    $("eye").onclick = () => { shown = !shown; draw(); };
+    if($("hr")) $("hr").onclick = () => speak(x.en);
+    /* moving to another sentence hides the answer automatically */
+    $("nx").onclick = next;
+    $("pv").onclick = () => { i--; shown = false; draw(); };
+    $("lt").onclick = () => { deck.push(deck.splice(i,1)[0]); shown = false; draw(); };
+    if($("knew")) $("knew").onclick = next;
+    if($("add")) $("add").onclick = () => { S.tough[p.id] = {s:0, n:(t?t.n:0)+1}; save(); next(); };
+    if($("got")) $("got").onclick = () => { const r = S.tough[p.id] || (S.tough[p.id] = {s:0,n:1}); r.s++; save(); next(); };
+    if($("still")) $("still").onclick = () => { const r = S.tough[p.id] || (S.tough[p.id] = {s:0,n:0}); r.s = 0; r.n++; save(); next(); };
+    $("tg").onclick = () => {
+      if(t){ delete S.tough[p.id]; save(); if(mode==="tough"){ deck.splice(i,1); shown = false; } }
+      else { S.tough[p.id] = {s:0, n:1}; save(); }
+      draw();
+    };
+    if($("rm")) $("rm").onclick = () => { delete S.tough[p.id]; save(); if(mode==="tough"){ deck.splice(i,1); shown = false; draw(); } else draw(); };
+    app.querySelectorAll(".chip").forEach(b => b.onclick = () => { hTopic = b.dataset.t; build(); draw(); });
+  };
+  draw();
+}
+
+/* ============================================================
+   MODULE RUNNER
+   ============================================================ */
+function runModule(id){
+  const nx = nextModule();
+  if(!S.passed[id] && !(nx && nx.id===id)) return home();   /* strict order: no skipping ahead */
+  app.innerHTML = '<p class="sub">Loading…</p>';
+  loadModule(id).then(m => play(m), () => home("Could not load that module file."));
+}
+function play(m){
+  const id = m.id;
+  CUR = id; side();
+  let pos = S.pos[id] || 0;
+  if(pos >= m.steps.length) pos = 0;
+  const go = p => { pos = p; S.pos[id] = pos; S.last = Date.now(); save(); show(); };
+
+  function top(){
+    const pct = Math.round(pos / (m.steps.length-1) * 100);
+    return `<div class="top"><button id="hm">← Home</button><div class="bar"><i style="width:${pct}%"></i></div><span>M${m.id}</span></div>`;
+  }
+  function show(){
+    clear();
+    const s = m.steps[pos];
+    app.insertAdjacentHTML("beforeend", top());
+    document.getElementById("hm").onclick = () => home();
+    const card = el(`<div class="card"></div>`).firstChild; app.appendChild(card);
+    const nxt = () => go(pos+1);
+    const mkNext = (label) => { const b = el(`<button class="btn">${label||"Next"}</button>`).firstChild; app.appendChild(b); b.onclick = nxt; return b; };
+
+    if(s.k==="card"){
+      card.innerHTML = (s.tag?`<span class="tag">${s.tag}</span>`:"") + `<h2>${s.title}</h2>${s.html}`;
+      mkNext("Got it");
+    }
+    else if(["mcq","order","type"].includes(s.k)){
+      const b = mkNext(); b.style.display="none";
+      renderQ(s, card, {}, () => { b.style.display="block"; const f = card.querySelectorAll(".fb"); (f.length ? f[f.length-1] : b).scrollIntoView({block:"nearest", behavior:"smooth"}); });
+    }
+    else if(s.k==="build") renderBuild(s, card, nxt);
+    else if(s.k==="trap"){
+      card.innerHTML = `<span class="tag">Mistake trap</span><h2>${s.title}</h2>` +
+        s.items.map(t=>`<div class="wrong">${t.bad}</div><div class="right">${t.good}</div><p class="sub" style="margin-top:2px">${t.fix}</p>`).join("");
+      mkNext("Ready for the boss");
+    }
+    else if(s.k==="boss") renderBoss(m, s, card, go, pos);
+    else if(s.k==="done"){
+      card.innerHTML = `<span class="tag">Module ${m.id} complete 🎉</span><h2>${s.title}</h2>
+        <ul class="can">${s.can.map(c=>`<li>${c}</li>`).join("")}</ul>
+        <div class="fb note">${s.teaser}</div>`;
+      const ph = phaseOf(m.id);
+      if(ph && m.id===ph.to && phaseDone(ph)) card.insertAdjacentHTML("afterbegin", `<div class="trophy">🏆<br><b>Phase ${ph.id} complete: ${ph.name}</b><br>${ph.win}</div>`);
+      const cb = el(`<button class="btn ghost">Open the cheat sheet</button>`).firstChild; app.appendChild(cb);
+      cb.onclick = () => cheatSheet(m.id);
+      const hb = el(`<button class="btn ghost">Practise this module's sentences</button>`).firstChild; app.appendChild(hb);
+      hb.onclick = () => practise([m.id], "plain");
+      const b = el(`<button class="btn">Finish and rest</button>`).firstChild; app.appendChild(b);
+      b.onclick = () => { S.pos[id]=0; save(); home("Module "+m.id+" done. Rest now. Come back when you feel fresh."); };
+    }
+  }
+  show();
+}
+
+/* ============================================================
+   QUESTION RENDERERS (shared by practice, boss, warm-up)
+   opts.boss = true → mark only, no explanations
+   onDone(correct)
+   ============================================================ */
+/* Question heading. If q.hi is set, it is a Hindi to English translation question. */
+function qhead(q){
+  return `<div class="q">${q.q}</div>` + (q.hi ? `<div class="hi" lang="hi">${q.hi}</div>` : "");
+}
+function renderQ(q, host, opts, onDone){
+  opts = opts || {};
+  const done = ok => {
+    if(onDone) onDone(ok);
+  };
+  const feedback = (ok, why, extra) => {
+    if(opts.boss){ return; }
+    host.appendChild(el(`<div class="fb ${ok?"good":"bad"}">${ok?"✓ ":"✗ "}${why}${extra||""}</div>`));
+  };
+
+  if(q.k==="mcq"){
+    host.innerHTML = qhead(q);
+    q.o.forEach((o,i)=>{
+      const b = el(`<button class="opt">${o}</button>`).firstChild; host.appendChild(b);
+      b.onclick = () => {
+        host.querySelectorAll(".opt").forEach(x=>x.disabled=true);
+        const ok = i===q.a;
+        b.classList.add(ok?"good":"bad");
+        if(!ok) host.querySelectorAll(".opt")[q.a].classList.add("good");
+        feedback(ok, q.w[i], ok?"":`<br><b>Right answer:</b> ${q.w[q.a]}`);
+        done(ok);
+      };
+    });
+  }
+  else if(q.k==="type"){
+    host.innerHTML = `${qhead(q)}<input type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type your answer"><button class="btn">Check</button>`;
+    const inp = host.querySelector("input"), btn = host.querySelector(".btn");
+    const check = () => {
+      if(!inp.value.trim() || btn.disabled) return;
+      btn.disabled = true; inp.disabled = true;
+      const ok = q.a.map(norm).includes(norm(inp.value));
+      inp.style.borderColor = ok ? "var(--good)" : "var(--bad)";
+      feedback(ok, q.w, ok?"":`<br><b>Answer:</b> ${q.a[0]}`);
+      done(ok);
+    };
+    btn.onclick = check; inp.onkeydown = e => { if(e.key==="Enter") check(); };
+  }
+  else if(q.k==="order"){
+    host.innerHTML = `${qhead(q)}<div class="line"></div><div class="bank"></div><button class="btn" disabled>Check</button>`;
+    const line = host.querySelector(".line"), bank = host.querySelector(".bank"), btn = host.querySelector(".btn");
+    let chosen = [], locked = false;
+    let words = shuffle(q.words);
+    if(q.words.length>1) for(let t=0;t<5 && words.join(" ")===q.words.join(" ");t++) words = shuffle(q.words);
+    const drawLine = () => {
+      line.innerHTML = "";
+      chosen.forEach((idx,pos)=>{
+        const b = el(`<button class="w">${words[idx]}</button>`).firstChild; line.appendChild(b);
+        b.onclick = () => { if(locked) return; chosen.splice(pos,1); refresh(); };
+      });
+      btn.disabled = chosen.length !== words.length;
+    };
+    const refresh = () => {
+      bank.querySelectorAll(".w").forEach((b,i)=> b.classList.toggle("used", chosen.includes(i)));
+      drawLine();
+    };
+    words.forEach((w,i)=>{
+      const b = el(`<button class="w">${w}</button>`).firstChild; bank.appendChild(b);
+      b.onclick = () => { if(locked) return; chosen.push(i); refresh(); };
+    });
+    btn.onclick = () => {
+      locked = true; btn.disabled = true;
+      const got = chosen.map(i=>words[i]).join(" ");
+      const accepted = [q.a].concat(q.alt || []).map(norm);
+      const ok = accepted.includes(norm(got));
+      line.style.borderColor = ok ? "var(--good)" : "var(--bad)";
+      const hear = `<br><button class="hear" title="Hear it">🔊</button> <b>${q.a}</b>`;
+      const alts = (q.alt && q.alt.length) ? `<br><span class="sub">Also fine: ${q.alt.join(" / ")}</span>` : "";
+      feedback(ok, q.w, (ok ? hear : `<br><b>Correct:</b> ${q.a}` + hear) + alts);
+      const h = host.querySelector(".hear"); if(h) h.onclick = () => speak(q.a);
+      if(ok && !opts.boss) speak(q.a);
+      done(ok);
+    };
+  }
+}
+
+/* ============================================================
+   BUILD YOUR OWN
+   ============================================================ */
+function renderBuild(s, host, finish){
+  host.innerHTML = `<span class="tag">Build your own</span><h2>Now it's about you</h2><p>${s.intro}</p><div id="bi"></div>`;
+  const wrap = host.querySelector("#bi");
+  let i = 0;
+  const one = () => {
+    const it = s.items[i];
+    wrap.innerHTML = `<div class="sub">Sentence ${i+1} of ${s.items.length}</div>
+      <h3>${it.p}</h3>
+      <div class="sub">Pattern: <b>${it.frame}</b></div>
+      <textarea placeholder="Type your sentence here"></textarea>
+      <div id="r"></div>
+      <label style="display:block;margin-top:12px"><input type="checkbox" id="said"> I said it out loud</label>
+      <button class="btn small ghost" id="ex">Show an example</button>
+      <button class="btn" id="nx" disabled>${i<s.items.length-1?"Next sentence":"Done"}</button>`;
+    const ta = wrap.querySelector("textarea"), r = wrap.querySelector("#r"), said = wrap.querySelector("#said"), nx = wrap.querySelector("#nx");
+    const upd = () => {
+      const v = ta.value.trim();
+      if(!v){ r.innerHTML=""; nx.disabled=true; return; }
+      const ok = it.must.test(v);
+      r.innerHTML = `<div class="fb ${ok?"good":"note"}">${ok?"✓ "+it.ok:"Hint: "+it.tip}</div>`;
+      nx.disabled = !said.checked;
+    };
+    ta.oninput = upd; said.onchange = upd;
+    wrap.querySelector("#ex").onclick = () => {
+      r.insertAdjacentHTML("beforeend", `<div class="fb note">Example: <b>${it.ex}</b> <button class="hear" id="hx">🔊</button></div>`);
+      document.getElementById("hx").onclick = () => speak(it.ex);
+    };
+    nx.onclick = () => { if(++i < s.items.length) one(); else finish(); };
+  };
+  one();
+}
+
+/* ============================================================
+   BOSS
+   ============================================================ */
+function renderBoss(m, s, host, go, pos){
+  const idxFirst = ref => m.steps.findIndex(x => x.k==="card" && x.ref===ref);
+  const intro = () => {
+    host.innerHTML = `<span class="tag">Boss challenge</span><h2>${s.title}</h2><p>${s.intro}</p>`;
+    const b = el(`<button class="btn">I'm ready</button>`).firstChild; host.appendChild(b);
+    b.onclick = () => play();
+  };
+  const play = () => {
+    let i = 0, right = 0; const missed = [];
+    const ask = () => {
+      if(i >= s.qs.length) return result();
+      const q = s.qs[i];
+      host.innerHTML = `<span class="tag">Question ${i+1} of ${s.qs.length}</span>`;
+      const box = el(`<div></div>`).firstChild; host.appendChild(box);
+      const nb = el(`<button class="btn" style="display:none">${i<s.qs.length-1?"Next":"See my result"}</button>`).firstChild; host.appendChild(nb);
+      nb.onclick = () => { i++; ask(); };
+      renderQ(q, box, {boss:true}, ok => {
+        if(ok) right++; else missed.push(q);
+        box.appendChild(el(`<div class="fb ${ok?"good":"bad"}">${ok?"✓ Correct":"✗ Not this time. I'll show you why at the end."}</div>`));
+        nb.style.display = "block";
+      });
+    };
+    const result = () => {
+      const pct = right / s.qs.length, pass = pct >= s.pass;
+      S.scores[m.id] = Math.max(S.scores[m.id]||0, pct);
+      if(pass){ S.passed[m.id] = true; S.pos[m.id] = pos + 1; }
+      save();
+      let h = `<span class="tag">${pass?"Boss defeated":"Almost"}</span><div class="score">${right}/${s.qs.length}</div>`;
+      h += pass ? `<p><b>You passed.</b> ${missed.length?"Here's what to glance at:":"A perfect run."}</p>`
+                : `<p>You need ${Math.ceil(s.pass*s.qs.length)} to pass. That's fine. Here's exactly what to revisit:</p>`;
+      const refs = [...new Set(missed.map(q=>q.ref))];
+      missed.forEach(q => { h += `<div class="fb bad"><b>${q.q.replace(/<[^>]+>/g,"")}</b><br>${Array.isArray(q.w)?q.w[q.a]:q.w}</div>`; });
+      if(!pass && refs.length){ h += `<h3>Revisit these parts</h3>` + refs.map(r=>{ const k = idxFirst(r); return k>=0 ? `<button class="btn small ghost" data-rev="${k}">${r}</button>` : ""; }).join(""); }
+      host.innerHTML = h;
+      const row = el(`<div></div>`).firstChild; host.appendChild(row);
+      const act = el(`<button class="btn">${pass?"Continue":"Try again"}</button>`).firstChild; host.appendChild(act);
+      act.onclick = () => pass ? go(pos+1) : play();
+      host.querySelectorAll("[data-rev]").forEach(b => b.onclick = () => reviewCard(m, +b.dataset.rev, () => { go(pos); }));
+    };
+    ask();
+  };
+  intro();
+}
+
+function reviewCard(m, idx, back){
+  clear();
+  const s = m.steps[idx];
+  app.innerHTML = `<div class="card"><span class="tag">Quick review</span><h2>${s.title}</h2>${s.html}</div>`;
+  const b = el(`<button class="btn">Back to the boss</button>`).firstChild; app.appendChild(b);
+  b.onclick = back;
+}
+
+/* The lesson progress row (← Home · bar · step) lives in the top bar, like Learn AWS: every screen still renders its
+   `.top` row into #app as before, and this moves it up into the header (so lessons need less height). */
+new MutationObserver(() => {
+  const top = app.querySelector(":scope > .top");
+  if(top) document.getElementById("tbslot").replaceChildren(top);
+}).observe(app, {childList:true});
+/* Boot: progress from Toolbox first. Anything this browser still holds that the server lacks (an earlier failed save) is merged and sent. */
+fetch("progress", {headers:HDR}).then(r => r.ok ? r.json() : Promise.reject(r.status)).then(d => {
+  const local = S; S = Object.assign(fresh(), d.state || {});
+  let more = false;
+  Object.keys(local.passed||{}).forEach(k => { if(local.passed[k] === true && !S.passed[k]){ S.passed[k] = true; more = true; } });
+  Object.keys(local.scores||{}).forEach(k => { if((local.scores[k]||0) > (S.scores[k]||0)){ S.scores[k] = local.scores[k]; more = true; } });
+  Object.keys(local.tough||{}).forEach(k => { if(!S.tough[k] && !d.updated_at){ S.tough[k] = local.tough[k]; more = true; } });
+  saved(true);
+  if(more) push();
+  start();
+}, () => { saved(false); start(); });
+</script>
+</body>
+</html>

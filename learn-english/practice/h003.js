@@ -1,0 +1,22 @@
+registerHindi(3, [
+  {"tag": "Weather", "hi": "बारिश हो रही है।", "en": "It is raining.", "alt": ["It's raining."], "w": [["rain", "बारिश होना"]]},
+  {"tag": "Phone", "hi": "मैं अभी फ़ोन पर बात कर रहा हूँ।", "en": "I am talking on the phone right now.", "alt": ["I'm talking on the phone right now.", "I am on the phone right now."], "w": [["talk on the phone", "फ़ोन पर बात करना"]]},
+  {"tag": "Family", "hi": "बच्चे बाग़ में खेल रहे हैं।", "en": "The children are playing in the garden.", "alt": ["The kids are playing in the garden."], "w": [["garden", "बाग़"]]},
+  {"tag": "Work", "hi": "वह इस हफ़्ते घर से काम कर रही है।", "en": "She is working from home this week.", "alt": ["He is working from home this week."], "w": [["from home", "घर से"]], "note": "Temporary this week → -ing."},
+  {"tag": "Food", "hi": "तुम क्या पका रहे हो? बहुत अच्छी ख़ुशबू आ रही है।", "en": "What are you cooking? It smells really good.", "alt": ["What are you cooking? It smells very good.", "What are you cooking? It smells so good."], "w": [["smell", "ख़ुशबू आना"]], "note": "Smell is a state verb, so no -ing: it smells."},
+  {"tag": "Travel", "hi": "हम स्टेशन पर बस का इंतज़ार कर रहे हैं।", "en": "We are waiting for the bus at the station.", "alt": ["We're waiting for the bus at the station."], "w": [["wait for", "इंतज़ार करना"], ["station", "स्टेशन"]]},
+  {"tag": "Home", "hi": "मेरी माँ रसोई में चाय बना रही हैं।", "en": "My mother is making tea in the kitchen.", "alt": ["Mom is making tea in the kitchen.", "Mum is making tea in the kitchen."], "w": [["make tea", "चाय बनाना"]]},
+  {"tag": "Family", "hi": "मेरे पिताजी अख़बार पढ़ रहे हैं।", "en": "My father is reading the newspaper.", "alt": ["My dad is reading the newspaper."], "w": [["newspaper", "अख़बार"]]},
+  {"tag": "School", "hi": "बच्चे परीक्षा की तैयारी कर रहे हैं।", "en": "The children are preparing for the exam.", "alt": ["The kids are preparing for the exam.", "The children are studying for the exam."], "w": [["prepare for", "तैयारी करना"], ["exam", "परीक्षा"]]},
+  {"tag": "Weather", "hi": "आज बहुत तेज़ हवा चल रही है।", "en": "A strong wind is blowing today.", "alt": ["The wind is blowing hard today.", "It is very windy today."], "w": [["wind", "हवा"], ["blow", "चलना"]]},
+  {"tag": "Travel", "hi": "हम अभी बाज़ार जा रहे हैं।", "en": "We are going to the market now.", "alt": ["We're going to the market now.", "We are going to the market right now."], "w": [["now", "अभी"]]},
+  {"tag": "Phone", "hi": "तुम मेरा फ़ोन क्यों नहीं उठा रहे हो?", "en": "Why aren't you answering my call?", "alt": ["Why are you not answering my call?", "Why aren't you picking up my call?"], "w": [["pick up / answer", "फ़ोन उठाना"]]},
+  {"tag": "Work", "hi": "वह अभी ईमेल लिख रही है।", "en": "She is writing an email right now.", "alt": ["He is writing an email right now.", "She's writing an email right now."], "w": [["email", "ईमेल"]]},
+  {"tag": "Health", "hi": "मेरे सिर में दर्द हो रहा है।", "en": "My head is hurting.", "alt": ["My head hurts.", "I have a headache."], "w": [["hurt", "दर्द होना"], ["head", "सिर"]], "note": "Hurt can be simple or -ing. Both are used."},
+  {"tag": "Food", "hi": "वे रेस्तराँ में खाना खा रहे हैं।", "en": "They are eating at a restaurant.", "alt": ["They are having food at a restaurant.", "They're eating at a restaurant."], "w": [["restaurant", "रेस्तराँ"]]},
+  {"tag": "Market", "hi": "हम सब्ज़ी वाले से मोलभाव कर रहे हैं।", "en": "We are bargaining with the vegetable seller.", "alt": ["We are bargaining with the vegetable vendor."], "w": [["bargain", "मोलभाव करना"], ["seller", "बेचने वाला"]]},
+  {"tag": "Feelings", "hi": "मैं इन दिनों बहुत थका हुआ महसूस कर रहा हूँ।", "en": "I am feeling very tired these days.", "alt": ["I'm feeling very tired these days.", "I feel very tired these days."], "w": [["these days", "इन दिनों"], ["feel", "महसूस करना"]]},
+  {"tag": "Home", "hi": "बच्चा सो रहा है।", "en": "The baby is sleeping.", "alt": ["The baby's sleeping."], "w": [["baby", "बच्चा/शिशु"], ["sleep", "सोना"]]},
+  {"tag": "Travel", "hi": "टैक्सी बाहर इंतज़ार कर रही है।", "en": "The taxi is waiting outside.", "w": [["outside", "बाहर"], ["taxi", "टैक्सी"]]},
+  {"tag": "Work", "hi": "हम इस महीने एक नए प्रोजेक्ट पर काम कर रहे हैं।", "en": "We are working on a new project this month.", "alt": ["We're working on a new project this month."], "w": [["project", "प्रोजेक्ट"], ["this month", "इस महीने"]]}
+]);

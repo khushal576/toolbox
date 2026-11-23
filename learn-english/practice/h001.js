@@ -1,0 +1,22 @@
+registerHindi(1, [
+  {"tag": "Feelings", "hi": "मैं आज बहुत थका हुआ हूँ।", "en": "I am very tired today.", "alt": ["I'm very tired today."], "w": [["tired", "थका हुआ"]]},
+  {"tag": "Home", "hi": "हमारा घर बाज़ार के पास है।", "en": "Our house is near the market.", "w": [["near", "पास"]]},
+  {"tag": "Food", "hi": "ये आम बहुत मीठे हैं।", "en": "These mangoes are very sweet.", "alt": ["These mangoes are really sweet."], "w": [["sweet", "मीठा"], ["mango", "आम"]]},
+  {"tag": "Family", "hi": "आपके पिताजी कहाँ हैं?", "en": "Where is your father?", "alt": ["Where's your father?"], "w": [["father", "पिताजी"]]},
+  {"tag": "Work", "hi": "वह आज दफ़्तर में नहीं है।", "en": "He is not in the office today.", "alt": ["He isn't in the office today.", "She is not in the office today.", "She isn't in the office today."], "w": [["office", "दफ़्तर"]], "note": "वह can mean he or she."},
+  {"tag": "Weather", "hi": "आज मौसम बहुत सुहावना है।", "en": "The weather is very pleasant today.", "alt": ["The weather is really nice today."], "w": [["pleasant", "सुहावना"], ["weather", "मौसम"]]},
+  {"tag": "Family", "hi": "मेरे माता-पिता अभी घर पर हैं।", "en": "My parents are at home now.", "alt": ["My parents are home now."], "w": [["parents", "माता-पिता"]], "note": "Parents = more than one → are."},
+  {"tag": "School", "hi": "मैं कक्षा में नहीं हूँ, मैं पुस्तकालय में हूँ।", "en": "I am not in the classroom. I am in the library.", "alt": ["I'm not in the classroom. I'm in the library."], "w": [["classroom", "कक्षा"], ["library", "पुस्तकालय"]]},
+  {"tag": "Feelings", "hi": "क्या तुम ख़ुश हो?", "en": "Are you happy?", "w": [["happy", "ख़ुश"]]},
+  {"tag": "Food", "hi": "यह सूप बहुत गरम है।", "en": "This soup is very hot.", "alt": ["This soup is really hot."], "w": [["soup", "सूप"], ["hot", "गरम"]]},
+  {"tag": "Market", "hi": "ये सेब ताज़े नहीं हैं।", "en": "These apples are not fresh.", "alt": ["These apples aren't fresh."], "w": [["fresh", "ताज़ा"], ["apple", "सेब"]]},
+  {"tag": "Travel", "hi": "हम स्टेशन पर हैं और ट्रेन देर से है।", "en": "We are at the station and the train is late.", "alt": ["We're at the station and the train is late."], "w": [["late", "देर से"]]},
+  {"tag": "Family", "hi": "मेरा भाई बहुत लंबा है।", "en": "My brother is very tall.", "alt": ["My brother is really tall."], "w": [["tall", "लंबा"]]},
+  {"tag": "Health", "hi": "मैं अब ठीक हूँ।", "en": "I am fine now.", "alt": ["I'm fine now.", "I am okay now.", "I'm okay now."], "w": [["fine", "ठीक"]]},
+  {"tag": "Phone", "hi": "मेरा फ़ोन मेज़ पर है।", "en": "My phone is on the table.", "w": [["table", "मेज़"]]},
+  {"tag": "Home", "hi": "रसोई ख़ाली है।", "en": "The kitchen is empty.", "w": [["kitchen", "रसोई"], ["empty", "ख़ाली"]]},
+  {"tag": "Work", "hi": "हम दोनों इंजीनियर हैं।", "en": "We are both engineers.", "alt": ["We're both engineers."], "w": [["engineer", "इंजीनियर"]]},
+  {"tag": "Weather", "hi": "आज बहुत ठंड है।", "en": "It is very cold today.", "alt": ["It's very cold today."], "w": [["cold", "ठंडा"]]},
+  {"tag": "Feelings", "hi": "वह आज बहुत घबराया हुआ है।", "en": "He is very nervous today.", "alt": ["She is very nervous today.", "He's very nervous today."], "w": [["nervous", "घबराया हुआ"]]},
+  {"tag": "Market", "hi": "दुकान अभी बंद है।", "en": "The shop is closed now.", "alt": ["The shop is closed right now."], "w": [["shop", "दुकान"], ["closed", "बंद"]]}
+]);
