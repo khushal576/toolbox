@@ -1,0 +1,1089 @@
+{
+ "questions": [
+  {
+   "id": "kms-001",
+   "skill": "4.3.2",
+   "source": "1-basics-key-types-and-access-control.md",
+   "q": "A compliance rule says the company must control the encryption key's policy, audit who uses it, and be able to disable or delete it to make data unreadable. Which type of key meets this?",
+   "options": [
+    {
+     "t": "AWS owned key",
+     "why": "Wrong: it is shared across accounts, invisible to you, and its use is not logged in your CloudTrail."
+    },
+    {
+     "t": "AWS managed key (for example `aws/s3`)",
+     "why": "Wrong: you cannot edit its policy, and you cannot disable or delete it."
+    },
+    {
+     "t": "Customer managed key",
+     "why": "Right: you control the key policy, rotation, grants, disabling and deletion."
+    },
+    {
+     "t": "SSE-S3 default encryption",
+     "why": "Wrong: it gives no key control or per-use audit trail."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Customer managed keys cost $1 per month plus requests, and give full control.",
+   "remember": "Need control over policy, audit, disabling or deleting, sharing, rotation → customer managed key. AWS managed: policy fixed, cannot share, rotates yearly. AWS owned: invisible.",
+   "variants": [
+    "Cross-account sharing → customer managed key only.",
+    "No control needed and free → SSE-S3 or an AWS owned key.",
+    "Dedicated single-tenant HSM → CloudHSM custom key store."
+   ]
+  },
+  {
+   "id": "kms-002",
+   "skill": "4.3.3",
+   "source": "1-basics-key-types-and-access-control.md",
+   "q": "Account B must decrypt S3 objects that account A encrypted with SSE-KMS using the AWS managed key `aws/s3`. What must change?",
+   "options": [
+    {
+     "t": "Add account B to the `aws/s3` key policy.",
+     "why": "Wrong: you cannot edit the policy of an AWS managed key."
+    },
+    {
+     "t": "Encrypt with a customer managed key in account A, whose key policy allows account B, and let B's IAM policy allow `kms:Decrypt` on that key.",
+     "why": "Right: cross-account use needs a customer managed key, with permission on both sides."
+    },
+    {
+     "t": "Share the `aws/s3` key by creating a grant for account B.",
+     "why": "Wrong: AWS managed keys cannot be shared across accounts."
+    },
+    {
+     "t": "Give account B the account A root credentials.",
+     "why": "Wrong: it breaks account separation and is a security risk."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Cross-account KMS access needs the key policy in the key's account and an IAM allow in the caller's account.",
+   "remember": "Cross-account KMS = key policy allows the other account AND the other account's IAM policy allows the KMS actions on the key ARN. It needs a customer managed key.",
+   "variants": [
+    "Sharing an encrypted EBS or RDS snapshot → same: customer managed key plus shared key access.",
+    "A service needs to use the key → add the service principal to the key policy.",
+    "Everything in one account → key policy (with the root statement) or IAM is enough."
+   ]
+  },
+  {
+   "id": "kms-003",
+   "skill": "4.2.1",
+   "source": "1-basics-key-types-and-access-control.md",
+   "q": "A role's IAM policy allows `kms:Decrypt` on a customer managed key, but calls still fail with AccessDenied. The key policy lists only two specific admin roles and has no statement for the account root. What is the cause?",
+   "options": [
+    {
+     "t": "IAM policies only take effect for a KMS key if the key policy allows it, and this key policy does not.",
+     "why": "Right: the default root statement is what enables IAM policies to control the key."
+    },
+    {
+     "t": "KMS keys ignore explicit Allow statements in IAM.",
+     "why": "Wrong: IAM allows work once the key policy enables them."
+    },
+    {
+     "t": "The key must be rotated before it can be used.",
+     "why": "Wrong: rotation is unrelated to authorization."
+    },
+    {
+     "t": "`kms:Decrypt` can only be given through grants.",
+     "why": "Wrong: key policies, IAM policies (when enabled) and grants can all give access."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "KMS authorizes through the key policy first. The root statement 'enables IAM policies'.",
+   "remember": "IAM policies only work on a KMS key if the key policy enables them (the account root statement). The key policy is checked first.",
+   "variants": [
+    "The default console key policy has the root statement → IAM policies work.",
+    "Everyone is locked out of the key → contact AWS Support.",
+    "Grants are another way to give access, used mainly by AWS services."
+   ]
+  },
+  {
+   "id": "kms-004",
+   "skill": "4.2.1",
+   "source": "1-basics-key-types-and-access-control.md",
+   "q": "A key policy must ensure the customer managed key can be used only through Amazon S3 and only for requests from the company's account. Which conditions achieve this?",
+   "options": [
+    {
+     "t": "`kms:ViaService` for the S3 endpoint and `kms:CallerAccount` set to the account ID",
+     "why": "Right: the key then works only when S3 calls it on behalf of principals in that account."
+    },
+    {
+     "t": "`aws:SourceIp` and `aws:SecureTransport`",
+     "why": "Wrong: they restrict network location and TLS, not which service uses the key."
+    },
+    {
+     "t": "`kms:KeyUsage` and `kms:KeySpec`",
+     "why": "Wrong: they describe the key's type. They do not limit who or what uses it."
+    },
+    {
+     "t": "`kms:RotationPeriodInDays` and `kms:KeyOrigin`",
+     "why": "Wrong: these control rotation and origin, not who may use the key."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "`kms:ViaService` plus `kms:CallerAccount` is the standard way to scope a key to one service.",
+   "remember": "Limit a key to one service and one account → `kms:ViaService` plus `kms:CallerAccount`.",
+   "variants": [
+    "Bind use to a context → `kms:EncryptionContext:<key>`.",
+    "Limit to your organization → `aws:PrincipalOrgID` (and an RCP for KMS).",
+    "Services that use grants → `kms:GrantIsForAWSResource`."
+   ]
+  },
+  {
+   "id": "kms-005",
+   "skill": "4.3.2",
+   "source": "1-basics-key-types-and-access-control.md",
+   "q": "An administrator scheduled deletion of a customer managed key yesterday, and then a team reports that data encrypted with it can no longer be read. What should you do?",
+   "options": [
+    {
+     "t": "Call `CancelKeyDeletion` during the waiting period, then enable the key.",
+     "why": "Right: the key is only deleted after the 7-30 day waiting period. Cancelling returns it to Disabled, then you enable it."
+    },
+    {
+     "t": "Create a new key with the same key ID.",
+     "why": "Wrong: key IDs cannot be chosen, and a new key has new material."
+    },
+    {
+     "t": "Open an AWS Support case to restore a deleted key.",
+     "why": "Wrong: deletion is irreversible once the waiting period ends. Cancel it before then."
+    },
+    {
+     "t": "Wait 30 days for the key to return automatically.",
+     "why": "Wrong: when the waiting period ends the key is deleted permanently."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Prefer disabling a key first, watch CloudTrail for failed uses, and only then schedule deletion.",
+   "remember": "Scheduled deletion has a 7–30 day wait (default 30). `CancelKeyDeletion` returns the key to Disabled, then enable it. After the wait it is gone for good.",
+   "variants": [
+    "Safe way before deleting → disable first and watch CloudTrail for failed uses.",
+    "Imported key material → `DeleteImportedKeyMaterial` is immediate. Re-import the same material to restore.",
+    "A multi-Region primary key → delete its replicas first."
+   ]
+  },
+  {
+   "id": "kms-006",
+   "skill": "4.3.2",
+   "source": "2-envelope-encryption-operations-rotation-and-multi-region.md",
+   "q": "An application must encrypt a 5 GB file using AWS KMS. Which approach is correct?",
+   "options": [
+    {
+     "t": "Call `kms:Encrypt` on the whole file.",
+     "why": "Wrong: `Encrypt` accepts at most 4,096 bytes."
+    },
+    {
+     "t": "Call `GenerateDataKey`, encrypt the file locally with the plaintext data key, discard that key, and store the encrypted data key with the file.",
+     "why": "Right: this is envelope encryption. KMS protects only the small data key."
+    },
+    {
+     "t": "Send the file in 4 KB pieces to `kms:Encrypt`.",
+     "why": "Wrong: millions of calls would be slow, expensive and would hit the shared request quota."
+    },
+    {
+     "t": "Create an asymmetric key and encrypt the file with the public key.",
+     "why": "Wrong: asymmetric encryption also has small size limits."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Data keys encrypt the data. The KMS key encrypts the data key.",
+   "remember": "Data larger than 4,096 bytes → envelope encryption: `GenerateDataKey`, encrypt locally, discard the plaintext key, store the encrypted data key.",
+   "variants": [
+    "Need only an encrypted copy of a data key for later → `GenerateDataKeyWithoutPlaintext`.",
+    "Change the protecting key without exposing plaintext → `ReEncrypt`.",
+    "Fewer KMS calls in your own code → data key caching (AWS Encryption SDK)."
+   ]
+  },
+  {
+   "id": "kms-007",
+   "skill": "4.3.2",
+   "source": "2-envelope-encryption-operations-rotation-and-multi-region.md",
+   "q": "A team must change which KMS key protects stored ciphertext, without the plaintext ever leaving AWS KMS. Which operation should they use?",
+   "options": [
+    {
+     "t": "`ReEncrypt`",
+     "why": "Right: it decrypts and re-encrypts under another key inside KMS."
+    },
+    {
+     "t": "`Decrypt` followed by `Encrypt` in the application",
+     "why": "Wrong: the plaintext would be exposed to the application."
+    },
+    {
+     "t": "`GenerateDataKeyWithoutPlaintext`",
+     "why": "Wrong: it creates a new data key. It does not change the key protecting existing ciphertext."
+    },
+    {
+     "t": "Enable automatic rotation",
+     "why": "Wrong: rotation creates new key material but does not re-encrypt existing data."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "`ReEncrypt` keeps plaintext inside KMS.",
+   "remember": "`ReEncrypt` = decrypt and re-encrypt inside KMS, so plaintext never leaves.",
+   "variants": [
+    "Rotation does not re-encrypt existing data.",
+    "Apply a new key to existing S3 objects → copy them (S3 Batch Operations Copy)."
+   ]
+  },
+  {
+   "id": "kms-008",
+   "skill": "4.3.2",
+   "source": "2-envelope-encryption-operations-rotation-and-multi-region.md",
+   "q": "Compliance requires yearly rotation of a symmetric customer managed key without application changes. After you enable automatic rotation, which statement is true?",
+   "options": [
+    {
+     "t": "KMS keeps the older key material, so data encrypted before the rotation still decrypts, and the key ID and ARN stay the same.",
+     "why": "Right: new encryptions use the new material, and old ciphertext still decrypts."
+    },
+    {
+     "t": "All existing data is re-encrypted with the new material automatically.",
+     "why": "Wrong: rotation does not re-encrypt existing data."
+    },
+    {
+     "t": "The key ID changes, so applications must be redeployed.",
+     "why": "Wrong: the key ID, ARN and policies stay the same."
+    },
+    {
+     "t": "All data keys created earlier are rotated as well.",
+     "why": "Wrong: rotation does not rotate data keys."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Rotation creates new key material for future encryption and keeps old material to decrypt old data.",
+   "remember": "Automatic rotation = new key material, SAME key ID, ARN and policy. Old material is kept. It does not re-encrypt data or rotate data keys. Default 365 days, symmetric AWS_KMS origin only.",
+   "variants": [
+    "An AWS managed key → rotates yearly automatically and you cannot change it.",
+    "Imported (EXTERNAL) material → no automatic rotation. On-demand is possible.",
+    "On-demand rotation → at most 25 times per key."
+   ]
+  },
+  {
+   "id": "kms-009",
+   "skill": "4.3.2",
+   "source": "2-envelope-encryption-operations-rotation-and-multi-region.md",
+   "q": "A company must rotate an asymmetric RSA signing key every year. What is the correct approach?",
+   "options": [
+    {
+     "t": "Enable automatic rotation on the asymmetric key.",
+     "why": "Wrong: automatic rotation is for symmetric keys with AWS_KMS origin."
+    },
+    {
+     "t": "Create a new key, repoint the application's alias to it, and keep the old key enabled to verify old signatures.",
+     "why": "Right: this is manual rotation, and aliases avoid code changes."
+    },
+    {
+     "t": "Call `ReEncrypt` on the signatures.",
+     "why": "Wrong: `ReEncrypt` applies to encrypted data, not to signatures."
+    },
+    {
+     "t": "Delete the key and let KMS create another one with the same ID.",
+     "why": "Wrong: deletion is irreversible and the new key would have a new ID."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Use aliases in applications so manual rotation is a repoint, not a redeploy.",
+   "remember": "Asymmetric, HMAC and custom key store keys → manual rotation: new key, repoint the alias, keep the old key to verify or decrypt old data.",
+   "variants": [
+    "A symmetric customer managed key → automatic rotation.",
+    "Applications hard-code key IDs → switch them to aliases first."
+   ]
+  },
+  {
+   "id": "kms-010",
+   "skill": "4.3.3",
+   "source": "2-envelope-encryption-operations-rotation-and-multi-region.md",
+   "q": "A DynamoDB global table is replicated across two Regions and encrypted with a customer managed key. Each Region's replica must decrypt data without calling KMS in another Region. Which key design is correct?",
+   "options": [
+    {
+     "t": "A multi-Region key with a replica key in the second Region",
+     "why": "Right: replicas share the same key material, so ciphertext from one Region can be decrypted in the other."
+    },
+    {
+     "t": "A single-Region key and an alias with the same name in the other Region",
+     "why": "Wrong: an alias with the same name points to a different key with different material."
+    },
+    {
+     "t": "Export the key material and import it into a second unrelated key",
+     "why": "Wrong: KMS does not allow exporting key material from an AWS_KMS key."
+    },
+    {
+     "t": "Use the AWS managed key `aws/dynamodb` in both Regions",
+     "why": "Wrong: each Region has its own AWS managed key with different material, and it cannot be shared."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Multi-Region keys share key material, but each key has its own policy, grants and billing.",
+   "remember": "Same ciphertext readable in several Regions without cross-Region calls → multi-Region key (same material, `mrk-` prefix). Policies, grants and aliases are NOT shared.",
+   "variants": [
+    "No need for cross-Region interoperability → separate single-Region keys are simpler.",
+    "Delete the primary key → remove its replicas first.",
+    "Fail over to a replica → `UpdatePrimaryRegion`."
+   ]
+  },
+  {
+   "id": "kms-011",
+   "skill": "2.1.1",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "A bucket uses SSE-KMS with a customer managed key and serves very high request rates. KMS costs are high and requests sometimes get throttled. What is the best fix?",
+   "options": [
+    {
+     "t": "Enable S3 Bucket Keys.",
+     "why": "Right: S3 derives object data keys from a bucket-level key, which sharply cuts requests to KMS."
+    },
+    {
+     "t": "Switch to a larger KMS key size.",
+     "why": "Wrong: symmetric keys have a fixed size, and a bigger key does not reduce requests."
+    },
+    {
+     "t": "Create one KMS key per object prefix.",
+     "why": "Wrong: more keys means more monthly fees and does not reduce request volume."
+    },
+    {
+     "t": "Use an asymmetric key.",
+     "why": "Wrong: asymmetric requests cost more and have lower quotas."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Bucket Keys lower both KMS request cost and throttling for SSE-KMS at scale.",
+   "remember": "SSE-KMS cost or throttling at scale → S3 Bucket Keys (far fewer KMS requests).",
+   "variants": [
+    "Throttling from several services → the quota is shared per account and Region. Cache data keys, reduce calls, request an increase.",
+    "Bucket Keys are not supported with SSE-C."
+   ]
+  },
+  {
+   "id": "kms-012",
+   "skill": "2.1.1",
+   "source": "2-envelope-encryption-operations-rotation-and-multi-region.md",
+   "q": "Kinesis producers, Lambda functions and S3 in one account and Region start getting `ThrottlingException` from KMS, even though each workload uses a different key. Why?",
+   "options": [
+    {
+     "t": "Each key has its own separate quota of 100 requests per second.",
+     "why": "Wrong: the quota is not per key."
+    },
+    {
+     "t": "The cryptographic request quota is shared across all keys in the account and Region.",
+     "why": "Right: one busy workload can throttle the others, so reduce calls, cache data keys, or request an increase."
+    },
+    {
+     "t": "Throttling occurs only for asymmetric keys.",
+     "why": "Wrong: symmetric keys are throttled too."
+    },
+    {
+     "t": "KMS charges extra after 20,000 requests, which blocks further calls.",
+     "why": "Wrong: free requests affect billing, not availability."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Use Bucket Keys and data key caching, and request a quota increase if needed.",
+   "remember": "The KMS cryptographic request quota is shared by ALL keys in the account and Region. Over it → `ThrottlingException`.",
+   "variants": [
+    "Fixes: Bucket Keys, data key caching, fewer calls, a quota increase, or spreading across Regions.",
+    "Control-plane APIs (such as `CreateKey`) have separate, lower limits."
+   ]
+  },
+  {
+   "id": "kms-013",
+   "skill": "4.3.2",
+   "source": "1-basics-key-types-and-access-control.md",
+   "q": "After you switch the S3 bucket that receives CloudTrail logs to SSE-KMS with a customer managed key, log delivery fails. What should you fix?",
+   "options": [
+    {
+     "t": "Add `cloudtrail.amazonaws.com` to the key policy, with `aws:SourceArn` and encryption-context conditions.",
+     "why": "Right: the CloudTrail service must be allowed to use the key, such as `GenerateDataKey`."
+    },
+    {
+     "t": "Enable S3 versioning on the bucket.",
+     "why": "Wrong: versioning does not affect key permissions."
+    },
+    {
+     "t": "Switch the key to asymmetric RSA.",
+     "why": "Wrong: services need symmetric keys for this."
+    },
+    {
+     "t": "Delete the key and use SSE-C.",
+     "why": "Wrong: it does not give CloudTrail the permission it needs, and deleting the key makes existing logs unreadable."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Log-delivery services act through their service principal, which must be in the key policy.",
+   "remember": "Log-delivery services (CloudTrail, CloudWatch Logs, Config, SNS, SQS, Firehose) need their service principal in the key policy, with `aws:SourceArn` or encryption-context conditions.",
+   "variants": [
+    "CloudWatch Logs → `logs.<region>.amazonaws.com` with `kms:EncryptionContext:aws:logs:arn`.",
+    "S3 events or SNS to an encrypted SQS queue → the service principals must be allowed too."
+   ]
+  },
+  {
+   "id": "kms-014",
+   "skill": "4.3.2",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "An existing unencrypted Amazon RDS instance must now be encrypted with a customer managed key. What is the correct approach?",
+   "options": [
+    {
+     "t": "Modify the instance and turn on encryption.",
+     "why": "Wrong: encryption of an existing unencrypted instance cannot be switched on in place."
+    },
+    {
+     "t": "Take a snapshot, copy it with encryption using the key, and restore a new instance from the encrypted copy.",
+     "why": "Right: RDS encryption is chosen at creation, so you restore from an encrypted snapshot copy."
+    },
+    {
+     "t": "Create an encrypted read replica of the unencrypted instance.",
+     "why": "Wrong: a replica inherits the source's encryption state, so it stays unencrypted."
+    },
+    {
+     "t": "Enable default EBS encryption in the Region.",
+     "why": "Wrong: it applies to new EBS volumes and does not change an existing RDS instance."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Encrypting an existing database means going through an encrypted snapshot copy.",
+   "remember": "RDS and Aurora encryption is set at creation. To encrypt an existing database: snapshot → encrypted copy → restore.",
+   "variants": [
+    "EBS volumes → re-encrypt by snapshot copy.",
+    "Redshift → can be enabled by modifying the cluster.",
+    "EFS → must be encrypted at creation.",
+    "DynamoDB → always encrypted, and you can switch the key type."
+   ]
+  },
+  {
+   "id": "kms-015",
+   "skill": "4.3.3",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "A company must share an encrypted RDS snapshot with a partner account. The snapshot is encrypted with the AWS managed key `aws/rds`. What should they do?",
+   "options": [
+    {
+     "t": "Share the snapshot as is. The partner can use `aws/rds` automatically.",
+     "why": "Wrong: AWS managed keys cannot be shared across accounts."
+    },
+    {
+     "t": "Copy the snapshot re-encrypting it with a customer managed key, allow the partner account in the key policy, then share the snapshot.",
+     "why": "Right: only customer managed keys can be shared, and the other account must be allowed to use the key."
+    },
+    {
+     "t": "Add the partner account to the `aws/rds` key policy.",
+     "why": "Wrong: you cannot edit an AWS managed key's policy."
+    },
+    {
+     "t": "Make the snapshot public.",
+     "why": "Wrong: it exposes the snapshot to everyone. You share with one account instead."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Cross-account sharing of encrypted resources needs a shareable customer managed key.",
+   "remember": "AWS managed keys cannot be shared. To share an encrypted snapshot across accounts: re-encrypt with a customer managed key and share access to that key.",
+   "variants": [
+    "The same applies to encrypted EBS snapshots.",
+    "Copying to another Region → you also need a key in the destination Region."
+   ]
+  },
+  {
+   "id": "kms-016",
+   "skill": "4.3.3",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "An encrypted Amazon Redshift cluster's snapshots must be copied automatically to another Region. What is needed?",
+   "options": [
+    {
+     "t": "A snapshot copy grant that lets Redshift use a KMS key in the destination Region.",
+     "why": "Right: keys are Regional, so the destination Region needs its own key and a snapshot copy grant."
+    },
+    {
+     "t": "Use the same key ID in both Regions.",
+     "why": "Wrong: a single-Region key cannot be used from another Region."
+    },
+    {
+     "t": "Disable encryption before copying.",
+     "why": "Wrong: this weakens security and is not required."
+    },
+    {
+     "t": "Create an alias with the same name in both Regions.",
+     "why": "Wrong: aliases do not carry key material between Regions."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Cross-Region copies are re-encrypted with a key in the destination Region.",
+   "remember": "KMS keys are Regional. Cross-Region copies need a key in the destination Region (Redshift: a snapshot copy grant).",
+   "variants": [
+    "An RDS snapshot copied to another Region → destination Region key.",
+    "S3 cross-Region replication with SSE-KMS → specify the destination key.",
+    "DynamoDB global tables → a key per Region (multi-Region key optional)."
+   ]
+  },
+  {
+   "id": "kms-017",
+   "skill": "4.3.2",
+   "source": "2-envelope-encryption-operations-rotation-and-multi-region.md",
+   "q": "A regulator requires that key material must never enter AWS, while the team still wants to use AWS services with KMS keys. Which option fits?",
+   "options": [
+    {
+     "t": "Import their own key material (EXTERNAL origin)",
+     "why": "Wrong: the imported material is stored in KMS, so it does enter AWS."
+    },
+    {
+     "t": "A KMS custom key store backed by AWS CloudHSM",
+     "why": "Wrong: the material lives in a CloudHSM cluster that runs inside AWS."
+    },
+    {
+     "t": "An external key store (XKS) backed by an external key manager",
+     "why": "Right: key material stays outside AWS, and KMS proxies cryptographic operations to it."
+    },
+    {
+     "t": "An AWS managed key",
+     "why": "Wrong: AWS creates and holds the key material."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "XKS trades latency and availability risk for the highest control.",
+   "remember": "Where key material lives: AWS_KMS origin (KMS HSMs), EXTERNAL import (your material enters KMS), CloudHSM custom key store (your HSM, inside AWS), XKS (external key manager, outside AWS).",
+   "variants": [
+    "Single-tenant HSM that you control → CloudHSM key store.",
+    "Bring your own key and it may live in KMS → EXTERNAL import (no automatic rotation).",
+    "The XKS proxy is down → the data is unavailable."
+   ]
+  },
+  {
+   "id": "kms-018",
+   "skill": "4.3.1",
+   "source": "2-envelope-encryption-operations-rotation-and-multi-region.md",
+   "q": "A pipeline must replace customer emails with consistent, irreversible tokens, so the same email always gives the same token and joins still work, without storing the raw value. Which KMS feature fits?",
+   "options": [
+    {
+     "t": "An HMAC KMS key with `GenerateMac`",
+     "why": "Right: the same input gives the same MAC, and the key never leaves KMS."
+    },
+    {
+     "t": "A symmetric KMS key with `Encrypt`",
+     "why": "Wrong: encryption is reversible by anyone with Decrypt access and is not designed for stable tokens."
+    },
+    {
+     "t": "An asymmetric RSA key with `GetPublicKey`",
+     "why": "Wrong: that gives a public key for encryption or verification, not stable tokens."
+    },
+    {
+     "t": "Amazon Macie",
+     "why": "Wrong: Macie discovers sensitive data in S3. It does not tokenize values."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "HMAC tokens give consistent pseudonyms for joins.",
+   "remember": "Consistent, irreversible tokens (pseudonyms) → HMAC KMS key with `GenerateMac`. Same input, same MAC.",
+   "variants": [
+    "Discover PII → Macie or Glue Detect PII.",
+    "Hide values from limited users → masking (Redshift dynamic data masking, Lake Formation filters).",
+    "Need to reverse the protection later → use encryption."
+   ]
+  },
+  {
+   "id": "kms-019",
+   "skill": "4.3.1",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "Sensitive columns must be hidden from most analysts, but the data must also be encrypted at rest. Which statement is correct?",
+   "options": [
+    {
+     "t": "KMS encryption at rest alone hides the columns from analysts.",
+     "why": "Wrong: authorized users who can read the data see plaintext, because the service decrypts it for them."
+    },
+    {
+     "t": "Use encryption at rest with KMS, plus masking such as Redshift dynamic data masking or Lake Formation data filters.",
+     "why": "Right: encryption protects stored data, and masking controls what authorized users see."
+    },
+    {
+     "t": "Use masking only, because masking also encrypts the data.",
+     "why": "Wrong: masking changes what is displayed and does not encrypt stored data."
+    },
+    {
+     "t": "Delete the key for the analysts' queries.",
+     "why": "Wrong: that makes the data unreadable for everyone."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Encryption and masking solve different problems.",
+   "remember": "Encryption is not masking. Encryption protects stored data from unauthorized reading. Masking hides values from authorized but limited users.",
+   "variants": [
+    "Column-level control in BI → QuickSight column-level security.",
+    "Row, column or cell filtering in a data lake → Lake Formation data filters.",
+    "Redshift → dynamic data masking policies."
+   ]
+  },
+  {
+   "id": "kms-020",
+   "skill": "4.3.2",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "A Glue job must write S3 output, CloudWatch logs and job bookmarks, all encrypted with a customer managed key. How should you configure it?",
+   "options": [
+    {
+     "t": "Create a Glue security configuration with SSE-KMS for S3, CloudWatch Logs and job bookmark encryption, and attach it to the job. The job role needs key permissions.",
+     "why": "Right: the security configuration controls each destination."
+    },
+    {
+     "t": "Turn on default encryption on the output bucket only.",
+     "why": "Wrong: it covers S3 output but not CloudWatch logs or bookmarks."
+    },
+    {
+     "t": "Use SSE-C on the S3 output.",
+     "why": "Wrong: SSE-C does not cover logs or bookmarks and needs a key supplied on every request."
+    },
+    {
+     "t": "Attach the `AmazonS3FullAccess` policy to the job role.",
+     "why": "Wrong: it grants S3 access but does not turn on encryption."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "The Glue job role also needs permissions on the key.",
+   "remember": "Glue encryption = a security configuration (S3, CloudWatch Logs, job bookmarks) plus Data Catalog encryption. The job role needs KMS permissions.",
+   "variants": [
+    "EMR → an EMR security configuration for EBS and S3 encryption.",
+    "Athena query results → workgroup setting (SSE-S3, SSE-KMS or CSE-KMS).",
+    "Catalog connection passwords → Data Catalog encryption."
+   ]
+  },
+  {
+   "id": "kms-021",
+   "skill": "4.3.4",
+   "source": "2-envelope-encryption-operations-rotation-and-multi-region.md",
+   "q": "An application must encrypt sensitive fields before sending them to AWS, so AWS services never see the plaintext. Which approach fits?",
+   "options": [
+    {
+     "t": "Client-side encryption with the AWS Encryption SDK using a KMS key",
+     "why": "Right: the application encrypts before the data leaves, and AWS only stores ciphertext."
+    },
+    {
+     "t": "S3 SSE-KMS",
+     "why": "Wrong: server-side encryption happens after S3 receives the plaintext."
+    },
+    {
+     "t": "Default EBS encryption",
+     "why": "Wrong: it encrypts the volume at rest and does not protect data before it reaches AWS."
+    },
+    {
+     "t": "TLS on the endpoint only",
+     "why": "Wrong: TLS protects data in transit, but the service still receives the plaintext."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Client-side encryption gives the most control but needs key handling and limits server-side querying.",
+   "remember": "Encrypt BEFORE the data reaches AWS = client-side encryption (AWS Encryption SDK, DynamoDB Encryption Client, S3 Encryption Client). Server-side encryption happens after the service receives the data.",
+   "variants": [
+    "Protect data in transit → TLS, enforced with `aws:SecureTransport`.",
+    "Trade-off of client-side encryption → you handle keys and lose server-side querying and indexing."
+   ]
+  },
+  {
+   "id": "kms-022",
+   "skill": "4.3.2",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "Which TWO statements about AWS managed KMS keys such as `aws/s3` are correct? (Choose two.)",
+   "options": [
+    {
+     "t": "They have no monthly key fee, but requests are billed after the free tier.",
+     "why": "Right: AWS managed keys are free to hold and charge only for requests."
+    },
+    {
+     "t": "Their key policy can be edited to share them with other accounts.",
+     "why": "Wrong: their policy is fixed and they cannot be shared cross-account."
+    },
+    {
+     "t": "They rotate automatically every year, and you cannot change that.",
+     "why": "Right: AWS manages rotation for them."
+    },
+    {
+     "t": "They can be scheduled for deletion to crypto-shred data.",
+     "why": "Wrong: you cannot delete AWS managed keys."
+    },
+    {
+     "t": "They can be used by any AWS service in the account.",
+     "why": "Wrong: each can be used only through its own service."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Use a customer managed key when you need control, sharing or deletion.",
+   "remember": "AWS managed key: no monthly fee, automatic yearly rotation (fixed), fixed policy, usable only through its service, cannot be shared or deleted.",
+   "variants": [
+    "Customer managed key → $1 per month, full control, shareable, deletable.",
+    "AWS owned key → free and invisible to you."
+   ]
+  },
+  {
+   "id": "kms-023",
+   "skill": "4.3.3",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "S3 cross-Region replication copies objects encrypted with SSE-KMS to a bucket in another Region. Replication fails for those objects. What must be configured?",
+   "options": [
+    {
+     "t": "Enable replication of KMS-encrypted objects, specify a KMS key in the destination Region, and let the replication role use the source key to decrypt and the destination key to encrypt.",
+     "why": "Right: keys are Regional, so the destination needs its own key and the role needs both permissions."
+    },
+    {
+     "t": "Nothing. Replication automatically copies the key to the destination Region.",
+     "why": "Wrong: KMS keys are not copied between Regions by S3 replication."
+    },
+    {
+     "t": "Switch the source bucket to SSE-C.",
+     "why": "Wrong: it changes the design and does not fix the key permissions."
+    },
+    {
+     "t": "Turn off Block Public Access.",
+     "why": "Wrong: it is unrelated to KMS permissions on replication."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Cross-Region encryption needs a key in each Region, or a multi-Region key.",
+   "remember": "S3 CRR with SSE-KMS → enable replication of KMS-encrypted objects, set the destination key, and give the replication role decrypt on the source key and encrypt/GenerateDataKey on the destination key.",
+   "variants": [
+    "The same ciphertext must be readable in both Regions → multi-Region key.",
+    "SSE-S3 → no key setup is needed."
+   ]
+  },
+  {
+   "id": "kms-024",
+   "skill": "4.3.2",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "An Athena query role has `s3:GetObject` on a bucket whose objects use SSE-KMS with a customer managed key. Queries fail with AccessDenied. What is missing?",
+   "options": [
+    {
+     "t": "`kms:Decrypt` on the key for the query role (and a key policy that allows it).",
+     "why": "Right: reading SSE-KMS objects needs S3 permission and KMS permission."
+    },
+    {
+     "t": "`s3:PutObject` on the data bucket.",
+     "why": "Wrong: reading does not need write permission."
+    },
+    {
+     "t": "Public access on the bucket.",
+     "why": "Wrong: the problem is key permissions, not public access."
+    },
+    {
+     "t": "A larger Athena workgroup limit.",
+     "why": "Wrong: limits are unrelated to AccessDenied."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "S3 read of SSE-KMS data needs `s3:GetObject` AND `kms:Decrypt`.",
+   "remember": "Reading SSE-KMS objects = `s3:GetObject` + `kms:Decrypt`. Writing = `s3:PutObject` + `kms:GenerateDataKey` (plus `kms:Decrypt` for multipart upload).",
+   "variants": [
+    "Glue, EMR or Redshift Spectrum read fails → their role needs `kms:Decrypt` too.",
+    "Data in another account → the key policy must allow that account (customer managed key).",
+    "The data is under a Lake Formation location → the location role needs key access."
+   ]
+  },
+  {
+   "id": "kms-025",
+   "skill": "4.3.2",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "A company wants to guarantee that every object uploaded to a bucket is encrypted with SSE-KMS. What is the best enforcement?",
+   "options": [
+    {
+     "t": "A bucket policy that denies `s3:PutObject` unless `s3:x-amz-server-side-encryption` equals `aws:kms`.",
+     "why": "Right: uploads that do not request SSE-KMS are rejected."
+    },
+    {
+     "t": "Tell developers to remember the encryption setting.",
+     "why": "Wrong: not enforced."
+    },
+    {
+     "t": "Enable S3 versioning.",
+     "why": "Wrong: versioning does not control encryption."
+    },
+    {
+     "t": "Turn on S3 Block Public Access.",
+     "why": "Wrong: it controls public access, not encryption."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Enforce encryption with a Deny in the bucket policy.",
+   "remember": "Enforce SSE-KMS with a Deny on `PutObject` unless the encryption header is `aws:kms` (optionally also a specific key). Use SCPs or Config rules for organization-wide enforcement.",
+   "variants": [
+    "Enforce HTTPS → Deny when `aws:SecureTransport` is false.",
+    "Detect unencrypted buckets → AWS Config rule.",
+    "Default encryption alone → applies a default, but does not reject requests that choose another method."
+   ]
+  },
+  {
+   "id": "kms-026",
+   "skill": "4.3.2",
+   "source": "1-basics-key-types-and-access-control.md",
+   "q": "An application decrypts ciphertext with the correct KMS key but gets `InvalidCiphertextException`. The data was encrypted with an encryption context of `{app: billing}`. What is the most likely cause?",
+   "options": [
+    {
+     "t": "Decrypt was called without the same encryption context.",
+     "why": "Right: the context is bound to the ciphertext, so decrypt must supply exactly the same context."
+    },
+    {
+     "t": "The key was rotated, so old data cannot be decrypted.",
+     "why": "Wrong: rotation keeps older key material so old data still decrypts."
+    },
+    {
+     "t": "Encryption contexts are secret and must be encrypted.",
+     "why": "Wrong: the context is not secret and appears in CloudTrail."
+    },
+    {
+     "t": "The key must be multi-Region.",
+     "why": "Wrong: that is unrelated to a context mismatch."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Encryption context = non-secret key-value pairs bound to the ciphertext. Decrypt needs the same ones.",
+   "remember": "Wrong or missing encryption context → `InvalidCiphertextException`. The context is also logged in CloudTrail and can be used in policy conditions.",
+   "variants": [
+    "Ciphertext from a single-Region key used in another Region → also `InvalidCiphertextException`.",
+    "Corrupted ciphertext or wrong key → same error.",
+    "Limit use of a key to a given context → `kms:EncryptionContext:<key>` condition."
+   ]
+  },
+  {
+   "id": "kms-027",
+   "skill": "4.3.2",
+   "source": "1-basics-key-types-and-access-control.md",
+   "q": "How do AWS services such as EBS or RDS typically get temporary permission to use your KMS key on your behalf, without a permanent entry in the key policy?",
+   "options": [
+    {
+     "t": "Through KMS grants created for the service, which can be retired or revoked.",
+     "why": "Right: grants are temporary, programmatic permissions that services use heavily."
+    },
+    {
+     "t": "By copying the key material into the service.",
+     "why": "Wrong: key material never leaves KMS in plaintext."
+    },
+    {
+     "t": "By using the account root credentials.",
+     "why": "Wrong: services do not use the root user."
+    },
+    {
+     "t": "By making the key public.",
+     "why": "Wrong: KMS keys cannot be made public."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Grants = delegated, revocable permissions. Key policy statements for services often allow `CreateGrant`.",
+   "remember": "Three ways to authorize key use: key policy (required), IAM policies (only if the key policy enables them), and grants (temporary, programmatic, revocable).",
+   "variants": [
+    "A key policy statement lets services create grants only for AWS resources → `kms:GrantIsForAWSResource = true`.",
+    "Revoke a service's access quickly → retire or revoke the grant, or disable the key.",
+    "Key can have up to 50,000 grants."
+   ]
+  },
+  {
+   "id": "kms-028",
+   "skill": "4.3.2",
+   "source": "2-envelope-encryption-operations-rotation-and-multi-region.md",
+   "q": "An application signs documents, and partners outside AWS must verify the signatures without calling AWS. Which KMS key type fits?",
+   "options": [
+    {
+     "t": "An asymmetric RSA or ECC key used for sign and verify, sharing the downloaded public key",
+     "why": "Right: the private key never leaves KMS, and the public key can be shared."
+    },
+    {
+     "t": "A symmetric encryption key",
+     "why": "Wrong: symmetric keys cannot sign."
+    },
+    {
+     "t": "An HMAC key",
+     "why": "Wrong: verifying an HMAC needs the shared secret or a KMS call, so outside partners cannot verify it independently."
+    },
+    {
+     "t": "An AWS owned key",
+     "why": "Wrong: it is not visible or usable by you."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Sign/verify → asymmetric key. Tokens or webhook signatures with a shared secret → HMAC.",
+   "remember": "Key usage is fixed at creation. Symmetric = encrypt/decrypt/data keys. Asymmetric = encrypt or sign/verify (public key downloadable). HMAC = GenerateMac/VerifyMac.",
+   "variants": [
+    "Consistent tokens for PII → HMAC key.",
+    "Encrypting an S3 bucket → symmetric key. Most AWS services need symmetric keys.",
+    "Asymmetric keys do not rotate automatically → manual rotation with an alias."
+   ]
+  },
+  {
+   "id": "kms-029",
+   "skill": "4.3.2",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "A data lake uses one customer managed key per data domain (raw, curated, sensitive). A security incident requires cutting off access to the sensitive domain immediately and reversibly. What is the fastest action?",
+   "options": [
+    {
+     "t": "Disable the sensitive domain's KMS key.",
+     "why": "Right: all reads fail and new writes cannot generate data keys, and you can re-enable the key later."
+    },
+    {
+     "t": "Schedule deletion of the key.",
+     "why": "Wrong: it is irreversible after the 7-30 day waiting period, and unnecessary when you want a reversible cut-off."
+    },
+    {
+     "t": "Delete the S3 bucket.",
+     "why": "Wrong: destroys the data."
+    },
+    {
+     "t": "Rotate the key.",
+     "why": "Wrong: rotation does not block access to older data."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Disabling a key is the reversible cut-off. Deleting is irreversible.",
+   "remember": "One key per data domain lets you revoke a whole domain by disabling its key. Disable first; schedule deletion only when you are sure.",
+   "variants": [
+    "Make data permanently unreadable (crypto-shred) → delete the key after the waiting period.",
+    "Prevent accidental deletion → deny `kms:ScheduleKeyDeletion` and `kms:DisableKey` except for a break-glass role.",
+    "Too many keys cost $1 each per month → one key per data domain, not per bucket."
+   ]
+  },
+  {
+   "id": "kms-030",
+   "skill": "4.3.2",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "A DynamoDB table was created with the default encryption. Auditors now require a key the company controls and can audit in CloudTrail. What should you do?",
+   "options": [
+    {
+     "t": "Switch the table's encryption to a customer managed KMS key.",
+     "why": "Right: you can change a table between the AWS owned key, the AWS managed key and a customer managed key."
+    },
+    {
+     "t": "Recreate the table, because encryption cannot be changed.",
+     "why": "Wrong: DynamoDB lets you change the key type on an existing table."
+    },
+    {
+     "t": "Turn on DynamoDB encryption, since it is off by default.",
+     "why": "Wrong: DynamoDB tables are always encrypted at rest."
+    },
+    {
+     "t": "Switch the table to the AWS managed key `aws/dynamodb`.",
+     "why": "Wrong: you cannot edit an AWS managed key's policy, so it does not give the company the control it needs."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "DynamoDB is always encrypted. Choose AWS owned (free default), AWS managed or customer managed.",
+   "remember": "DynamoDB encryption options: AWS owned key (default, free, no CloudTrail), AWS managed `aws/dynamodb`, or a customer managed key. Global tables need a key in each replica Region.",
+   "variants": [
+    "Need a table in several Regions → key per Region (multi-Region key optional).",
+    "RDS needs encryption → chosen at creation.",
+    "Need key control and audit on any service → customer managed key."
+   ]
+  },
+  {
+   "id": "kms-031",
+   "skill": "4.3.2",
+   "source": "3-service-integrations-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "A company wants every new EBS volume in a Region to be encrypted automatically, even if someone forgets to ask for encryption. What should they do?",
+   "options": [
+    {
+     "t": "Enable default EBS encryption for the Region.",
+     "why": "Right: it can be turned on per Region so new volumes are encrypted."
+    },
+    {
+     "t": "Encrypt each new volume manually after creation.",
+     "why": "Wrong: you cannot encrypt an existing unencrypted volume in place, and this is error-prone."
+    },
+    {
+     "t": "Rotate the KMS key each month.",
+     "why": "Wrong: rotation is unrelated to whether volumes are encrypted."
+    },
+    {
+     "t": "Choose the AWS managed key `aws/ebs` for each new volume.",
+     "why": "Wrong: picking a key when creating a volume does not force every future volume to be encrypted."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Default EBS encryption is a per-Region setting.",
+   "remember": "EBS: enable default encryption per Region; to encrypt an existing volume, copy a snapshot with encryption. Sharing an encrypted snapshot needs a customer managed key.",
+   "variants": [
+    "Enforce it organization-wide → SCP or Config rule on encrypted volumes.",
+    "Existing unencrypted volume → snapshot, encrypted copy, new volume.",
+    "Share an encrypted snapshot with another account → customer managed key shared to that account."
+   ]
+  },
+  {
+   "id": "kms-032",
+   "skill": "4.2.1",
+   "source": "1-basics-key-types-and-access-control.md",
+   "q": "A security team wants key administrators to manage a customer managed key but not be able to decrypt the data, while the application role can use the key for encryption and decryption but cannot manage it. What is the right key policy design?",
+   "options": [
+    {
+     "t": "Separate statements: an administrator role with management actions only, and an application role with the cryptographic actions only.",
+     "why": "Right: admin and user permissions are separate, so neither role gets the other's rights."
+    },
+    {
+     "t": "Give both roles `kms:*`.",
+     "why": "Wrong: administrators could then decrypt data."
+    },
+    {
+     "t": "Allow only the account root.",
+     "why": "Wrong: it removes the separation and does not give the application a specific role."
+    },
+    {
+     "t": "Use an AWS managed key.",
+     "why": "Wrong: you cannot edit its policy."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Key administrators manage. Key users use. Keep them separate.",
+   "remember": "Key policy pattern: administrators (create, disable, put policy, schedule deletion; no crypto use) and users (Encrypt, Decrypt, ReEncrypt, GenerateDataKey, DescribeKey), plus a statement for service grants.",
+   "variants": [
+    "Only S3 in your account may use the key → add `kms:ViaService` and `kms:CallerAccount`.",
+    "Someone could delete the key → deny `kms:ScheduleKeyDeletion` except for a break-glass role.",
+    "Everyone locked out → contact AWS Support."
+   ]
+  }
+ ]
+}

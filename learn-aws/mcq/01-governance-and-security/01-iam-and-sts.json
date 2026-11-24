@@ -1,0 +1,1341 @@
+{
+ "questions": [
+  {
+   "id": "iam-001",
+   "skill": "4.2.1",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "A role in account A has an identity policy that allows `s3:GetObject` on a bucket in the same account. The bucket policy contains a Deny statement for all principals unless `aws:SourceVpce` equals the company's VPC endpoint. The request comes over the public internet. What is the result?",
+   "options": [
+    {
+     "t": "Allowed, because the identity policy has an explicit Allow.",
+     "why": "Wrong: an Allow never overrides an explicit Deny."
+    },
+    {
+     "t": "Denied, because an explicit Deny in any policy always wins.",
+     "why": "Right: explicit Deny is checked first and cannot be overridden by any Allow."
+    },
+    {
+     "t": "Allowed, because identity and resource policies are combined as a union in the same account.",
+     "why": "Wrong: the union applies only to Allows. A matching Deny still blocks the request."
+    },
+    {
+     "t": "Denied only if the role also has a permissions boundary.",
+     "why": "Wrong: the Deny in the bucket policy is enough. A boundary is not needed."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Evaluation starts with explicit Deny across all policy types. Only if none matches do the Allows count.",
+   "remember": "Check for an explicit Deny first. A Deny in ANY policy (identity, resource, boundary, SCP, RCP, session) beats every Allow.",
+   "variants": [
+    "The Deny is in an SCP instead of the bucket policy → still denied.",
+    "The request does come through the allowed VPC endpoint → the Deny condition does not match, so the Deny does not apply and the Allow works.",
+    "There is no Allow anywhere (only implicit deny) → adding an Allow fixes it. An explicit Deny cannot be fixed with an Allow."
+   ]
+  },
+  {
+   "id": "iam-002",
+   "skill": "4.2.6",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "A developer's role has the `AdministratorAccess` managed policy attached and a permissions boundary that allows only S3 and Glue actions. The developer calls `ec2:RunInstances`. What happens?",
+   "options": [
+    {
+     "t": "The call succeeds, because AdministratorAccess allows all actions.",
+     "why": "Wrong: a boundary limits what the identity policy can grant. The effective permission is the overlap of the two."
+    },
+    {
+     "t": "The call is denied, because the effective permissions are the intersection of the identity policy and the boundary.",
+     "why": "Right: EC2 is outside the boundary, so the Admin policy cannot grant it."
+    },
+    {
+     "t": "The call succeeds, because boundaries apply only to IAM groups.",
+     "why": "Wrong: boundaries apply to users and roles, not groups."
+    },
+    {
+     "t": "The call is denied only because boundaries add an implicit Deny for EC2.",
+     "why": "Wrong: a boundary does not name EC2. It just does not allow it, so the action is outside the cap."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "A permissions boundary never grants anything. It sets the maximum an identity policy can grant.",
+   "remember": "Boundary, SCP and session policy only set a maximum. Effective permissions = identity policy ∩ boundary (∩ SCP ∩ session). Nothing is granted by the limit itself.",
+   "variants": [
+    "The boundary allows EC2, but the identity policy has no EC2 Allow → still denied. Both must allow.",
+    "Someone proposes a boundary on an IAM group → not possible. Boundaries go on users and roles.",
+    "An SCP instead of a boundary → same capping effect, but for every principal in the member account."
+   ]
+  },
+  {
+   "id": "iam-003",
+   "skill": "4.2.1",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "A platform team wants developers to create their own IAM roles for Glue and EMR jobs, but none of those roles may ever exceed an approved maximum set of permissions. Which design meets this?",
+   "options": [
+    {
+     "t": "Give developers `iam:*` and rely on code review.",
+     "why": "Wrong: with `iam:*` a developer can create a role with AdministratorAccess."
+    },
+    {
+     "t": "Allow `iam:CreateRole` only when `iam:PermissionsBoundary` equals the approved boundary ARN, and deny removing the boundary.",
+     "why": "Right: every role a developer creates is forced under the cap, even if an admin policy is attached later."
+    },
+    {
+     "t": "Pass a session policy to each developer's login.",
+     "why": "Wrong: a session policy limits one session. It does not control the permissions of roles the developer creates."
+    },
+    {
+     "t": "Attach an SCP that allows `iam:CreateRole`.",
+     "why": "Wrong: SCPs never grant permissions, so they cannot enable self-service role creation."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "This is the standard permissions-boundary delegation pattern.",
+   "remember": "Safe self-service role creation = allow `iam:CreateRole` only with the condition `iam:PermissionsBoundary` = the approved boundary, and deny removing the boundary.",
+   "variants": [
+    "Cap permissions for a whole account or OU → SCP, not a boundary.",
+    "Cap one temporary session → session policy.",
+    "Wording like 'developers create their own roles' or 'delegate role creation' → the boundary pattern."
+   ]
+  },
+  {
+   "id": "iam-004",
+   "skill": "4.2.5",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "A company has 30 project teams. Each team must read and write only the S3 data and Glue tables tagged with its own project name. New teams join every month and the security team wants to avoid writing a new policy per team. What is the best approach?",
+   "options": [
+    {
+     "t": "Create one IAM role per team with a hand-written policy listing the team's resources.",
+     "why": "Wrong: this is role-based access control (RBAC). It needs a new policy for each team and each new resource."
+    },
+    {
+     "t": "Use attribute-based access control: one policy that allows access when `aws:PrincipalTag/project` equals `aws:ResourceTag/project`.",
+     "why": "Right: one policy scales to every team as long as principals and resources are tagged consistently."
+    },
+    {
+     "t": "Put every team in one IAM group with `AmazonS3FullAccess`.",
+     "why": "Wrong: this gives every team access to every project's data."
+    },
+    {
+     "t": "List each IAM user in a bucket policy.",
+     "why": "Wrong: it needs constant edits and hits policy size limits."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "ABAC compares principal tags with resource tags. It needs tag governance, such as limiting who can set tags.",
+   "remember": "Many teams or projects, tags on resources, and 'avoid a policy per team' → ABAC: allow when `aws:PrincipalTag/key` = `aws:ResourceTag/key`.",
+   "variants": [
+    "Fixed job functions (admin, analyst, auditor) → RBAC with roles or groups.",
+    "Tag-based access for data lake tables and columns → Lake Formation LF-Tags (the data-lake version of ABAC).",
+    "Stop people changing protected tags → `aws:RequestTag` and `aws:TagKeys` conditions."
+   ]
+  },
+  {
+   "id": "iam-005",
+   "skill": "4.2.1",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "A data-sharing bucket must be readable by every account in the company's AWS Organization, including accounts created in the future, without editing the policy. Which bucket policy condition does this?",
+   "options": [
+    {
+     "t": "List every account ID in the `Principal` element.",
+     "why": "Wrong: new accounts are not covered until someone edits the policy."
+    },
+    {
+     "t": "`aws:PrincipalOrgID` equal to the organization ID.",
+     "why": "Right: any principal from an account in the organization matches, including new accounts."
+    },
+    {
+     "t": "`aws:SourceIp` set to the corporate network range.",
+     "why": "Wrong: this limits network location, not organization membership."
+    },
+    {
+     "t": "An SCP that allows `s3:GetObject`.",
+     "why": "Wrong: SCPs never grant access. They only set a maximum for principals."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "`aws:PrincipalOrgID` is the easy way to say 'any account in my organization' in a resource policy.",
+   "remember": "'Every account in my organization, including future ones' → `aws:PrincipalOrgID` in the resource policy.",
+   "variants": [
+    "Only a few named accounts → list those accounts in the Principal.",
+    "Restrict by where the resource belongs → `aws:ResourceOrgID`.",
+    "A hard guardrail that works even if a bucket policy allows outsiders → RCP."
+   ]
+  },
+  {
+   "id": "iam-006",
+   "skill": "4.2.1",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "A role in account A must read objects from an S3 bucket owned by account B. Which TWO configurations are required? (Choose two.)",
+   "options": [
+    {
+     "t": "A bucket policy in account B that allows the role (or account A) to read the objects.",
+     "why": "Right: the resource side in account B must allow the caller."
+    },
+    {
+     "t": "A permissions boundary on the role in account A.",
+     "why": "Wrong: a boundary only limits. It is not needed to make cross-account access work."
+    },
+    {
+     "t": "An identity policy on the role in account A that allows `s3:GetObject` on the bucket.",
+     "why": "Right: for cross-account access the caller's own account must allow it too."
+    },
+    {
+     "t": "An IAM user in account B for the role to use.",
+     "why": "Wrong: no user is needed. The two policies are the requirement."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Cross-account access needs both sides to allow: the resource policy in the owner account and the identity policy in the caller's account.",
+   "remember": "Cross-account needs BOTH sides: the resource policy in the owner account AND an identity policy in the caller's account.",
+   "variants": [
+    "Same account → either policy can allow (union).",
+    "The objects are KMS-encrypted → the key policy and the caller's `kms:Decrypt` permission are needed as well.",
+    "The caller assumes a role in the other account → trust policy there plus `sts:AssumeRole` permission in the caller's account."
+   ]
+  },
+  {
+   "id": "iam-007",
+   "skill": "4.2.1",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "A bucket policy denies all requests unless `aws:SourceIp` is in the corporate range. Analysts on the corporate network run Athena queries on the bucket and get AccessDenied. What is the best fix?",
+   "options": [
+    {
+     "t": "Add the public IP ranges of Athena to the allow list.",
+     "why": "Wrong: service IP ranges are broad and change. Allowing them opens the bucket to other customers' queries."
+    },
+    {
+     "t": "Exempt calls made by AWS services on the caller's behalf, using a condition such as `aws:ViaAWSService`.",
+     "why": "Right: Athena calls S3 from AWS's own addresses, so `aws:SourceIp` does not see the analyst's IP."
+    },
+    {
+     "t": "Replace the condition with `aws:SecureTransport`.",
+     "why": "Wrong: that only requires HTTPS. It does not restrict who or where."
+    },
+    {
+     "t": "Remove the bucket policy.",
+     "why": "Wrong: it drops the control you wanted."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "`aws:SourceIp` is the IP of the direct caller, which for service-to-service calls is the service, not the user.",
+   "remember": "`aws:SourceIp` sees the direct caller. For service-to-service calls (Athena, Glue) it sees the service, not the user → use `aws:ViaAWSService`, `aws:CalledVia` or VPC conditions.",
+   "variants": [
+    "Calls come through a VPC endpoint → `aws:SourceIp` does not work. Use `aws:SourceVpc` or `aws:SourceVpce`.",
+    "The goal is to force HTTPS → `aws:SecureTransport`."
+   ]
+  },
+  {
+   "id": "iam-008",
+   "skill": "4.2.1",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "Which TWO policy types can grant permissions on their own? (Choose two.)",
+   "options": [
+    {
+     "t": "Permissions boundary",
+     "why": "Wrong: it only sets a maximum."
+    },
+    {
+     "t": "Identity-based policy",
+     "why": "Right: attached to a user, group or role, it grants permissions."
+    },
+    {
+     "t": "Service control policy (SCP)",
+     "why": "Wrong: it only sets a maximum for principals in member accounts."
+    },
+    {
+     "t": "Resource-based policy",
+     "why": "Right: it grants access to a resource, including across accounts."
+    },
+    {
+     "t": "Session policy",
+     "why": "Wrong: it only narrows one session."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Identity-based, resource-based policies (and legacy ACLs) grant. Boundaries, session policies, SCPs and RCPs only limit.",
+   "remember": "Only identity-based and resource-based policies (and legacy ACLs) GRANT. Boundary, session policy, SCP and RCP only LIMIT.",
+   "variants": [
+    "'Maximum permissions' for a user or role → boundary. For all principals in member accounts → SCP. For resources → RCP.",
+    "Limit one temporary session only → session policy."
+   ]
+  },
+  {
+   "id": "iam-009",
+   "skill": "4.1.4",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "A data engineer tries to create an AWS Glue job and gets: 'User is not authorized to perform iam:PassRole on resource arn:aws:iam::111122223333:role/GlueJobRole'. What should you do?",
+   "options": [
+    {
+     "t": "Allow `iam:PassRole` on that role ARN, with `iam:PassedToService` set to `glue.amazonaws.com`.",
+     "why": "Right: a caller needs PassRole to hand a role to a service. The condition keeps it scoped to Glue."
+    },
+    {
+     "t": "Allow `sts:AssumeRole` on the role for the engineer.",
+     "why": "Wrong: the Glue service assumes the role, not the engineer."
+    },
+    {
+     "t": "Attach `glue:*` to the engineer.",
+     "why": "Wrong: Glue permissions do not include PassRole on the role."
+    },
+    {
+     "t": "Add `iam:PassRole` on `Resource: *` with no condition.",
+     "why": "Wrong: it works but lets the engineer pass any role to any service, a privilege-escalation risk."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "PassRole is a permission check when you give a role to a service. It is not an API call.",
+   "remember": "'Not authorized to perform iam:PassRole' → grant `iam:PassRole` on that specific role ARN, scoped with `iam:PassedToService`.",
+   "variants": [
+    "The same error when creating EMR, Lambda or Step Functions resources → same fix, with that service's principal.",
+    "The error mentions `sts:AssumeRole` instead → a different problem: trust policy or the caller's permission to assume.",
+    "PassRole on `*` plus permission to create Lambda or Glue → privilege-escalation risk."
+   ]
+  },
+  {
+   "id": "iam-010",
+   "skill": "4.1.4",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "An Amazon ECS task runs code that reads items from DynamoDB. The ECS agent also needs to pull the image from ECR and write container logs. Where should the DynamoDB permissions go?",
+   "options": [
+    {
+     "t": "The task execution role",
+     "why": "Wrong: the execution role is for the ECS agent (ECR pull, logs, secrets), not for your application code."
+    },
+    {
+     "t": "The task role",
+     "why": "Right: the task role is the identity your application code uses."
+    },
+    {
+     "t": "A service-linked role for ECS",
+     "why": "Wrong: service-linked roles are predefined by the service and cannot be edited."
+    },
+    {
+     "t": "The IAM user that launched the task",
+     "why": "Wrong: tasks do not run as the user who started them."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "ECS has two roles: the task role for your code and the task execution role for the agent.",
+   "remember": "ECS: the task role is for your application code. The task execution role is for the ECS agent (ECR pull, logs, secrets).",
+   "variants": [
+    "The container cannot pull its image or write logs → fix the execution role.",
+    "A Lambda function → one execution role per function.",
+    "Code on EC2 → instance profile role."
+   ]
+  },
+  {
+   "id": "iam-011",
+   "skill": "4.1.2",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "A SaaS vendor needs read access to data in your account. You want to reduce the risk of the 'confused deputy' problem. What should you create?",
+   "options": [
+    {
+     "t": "An IAM user with access keys that you email to the vendor.",
+     "why": "Wrong: long-term keys are the weaker option and can leak."
+    },
+    {
+     "t": "A cross-account role that trusts the vendor's account and requires a unique `sts:ExternalId`.",
+     "why": "Right: the vendor must present your ExternalId, so another customer cannot trick the vendor into using your role."
+    },
+    {
+     "t": "A role that trusts any principal (`*`) with no conditions.",
+     "why": "Wrong: anyone could assume it."
+    },
+    {
+     "t": "Share the account root credentials with MFA enabled.",
+     "why": "Wrong: root has unlimited permissions and should not be shared."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "ExternalId protects third-party access. For AWS services, use `aws:SourceArn` and `aws:SourceAccount`.",
+   "remember": "Third-party access → cross-account role with a unique `ExternalId`. For AWS services acting as the deputy, use `aws:SourceArn` and `aws:SourceAccount`.",
+   "variants": [
+    "S3 events, SNS or CloudTrail writing to your resource → `aws:SourceArn` / `aws:SourceAccount` conditions.",
+    "A vendor asks for long-term access keys → refuse. Use a role."
+   ]
+  },
+  {
+   "id": "iam-012",
+   "skill": "4.1.3",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "A GitHub Actions pipeline must deploy to AWS without any long-term access keys stored in GitHub. Which solution fits best?",
+   "options": [
+    {
+     "t": "Create an IAM user and store its access keys as GitHub secrets.",
+     "why": "Wrong: these are long-term keys, which is what you want to avoid."
+    },
+    {
+     "t": "Create an IAM OIDC provider for GitHub and a role whose trust policy restricts the `sub` (repository and branch) and `aud` claims.",
+     "why": "Right: the workflow exchanges its OIDC token for temporary credentials through `AssumeRoleWithWebIdentity`."
+    },
+    {
+     "t": "Use IAM Roles Anywhere with a certificate on every GitHub runner.",
+     "why": "Wrong: Roles Anywhere is for servers outside AWS with X.509 certificates. OIDC is the direct fit for CI/CD."
+    },
+    {
+     "t": "Create an Identity Center permission set for the pipeline.",
+     "why": "Wrong: permission sets are for workforce users signing in, not CI/CD tokens."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Never trust `sub: *` for an OIDC provider. Pin it to the repo and branch.",
+   "remember": "CI/CD with no stored keys → OIDC provider plus a role whose trust policy checks `sub` (repo and branch) and `aud`. Never trust `sub: *`.",
+   "variants": [
+    "Servers outside AWS with certificates → IAM Roles Anywhere.",
+    "People on laptops → Identity Center CLI sign-in.",
+    "Mobile or web app users → Amazon Cognito.",
+    "Pods on EKS → IRSA or EKS Pod Identity."
+   ]
+  },
+  {
+   "id": "iam-013",
+   "skill": "4.1.3",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "On-premises servers need to call AWS APIs. The security team forbids long-term access keys on those servers and the servers already have certificates issued by the company CA. What should you use?",
+   "options": [
+    {
+     "t": "IAM Roles Anywhere with a trust anchor for the company CA",
+     "why": "Right: servers present their X.509 certificate and receive temporary credentials for a role."
+    },
+    {
+     "t": "One IAM user per server with rotated keys",
+     "why": "Wrong: still long-term keys on the servers."
+    },
+    {
+     "t": "An Amazon Cognito identity pool",
+     "why": "Wrong: Cognito identity pools are for mobile and web app users."
+    },
+    {
+     "t": "A custom broker that calls `GetFederationToken`",
+     "why": "Wrong: this is a legacy approach and needs the broker to hold IAM user credentials."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Roles Anywhere replaces static keys on servers outside AWS.",
+   "remember": "Servers outside AWS with certificates and no static keys → IAM Roles Anywhere (trust anchor, profile, role).",
+   "variants": [
+    "No certificates, but a CI/CD token → OIDC federation.",
+    "Roles Anywhere impossible → last resort: an IAM user with a narrow policy, rotation and IP conditions."
+   ]
+  },
+  {
+   "id": "iam-014",
+   "skill": "4.1.2",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "A three-hour ETL job runs on an EC2 instance whose role assumes a role in another account (role chaining) and requests a 6-hour session. The request fails. What is the cause and the right fix?",
+   "options": [
+    {
+     "t": "Role chaining limits the session to 1 hour. Request 1 hour or less and refresh the credentials in the job.",
+     "why": "Right: a chained session cannot exceed 1 hour, so the job must renew credentials."
+    },
+    {
+     "t": "The STS quota of 600 requests per second was exceeded. Request an increase.",
+     "why": "Wrong: that would cause throttling errors, not a duration error."
+    },
+    {
+     "t": "The target role is missing an ExternalId. Add one to the trust policy.",
+     "why": "Wrong: a missing ExternalId causes AccessDenied, not a duration limit."
+    },
+    {
+     "t": "Role sessions cannot exceed 15 minutes. Request 900 seconds.",
+     "why": "Wrong: 15 minutes is the minimum, not the maximum."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Role chaining caps the session at 1 hour and you cannot change it.",
+   "remember": "Role chaining (a role session assuming another role) → maximum 1 hour, and you cannot change it. Plan to refresh credentials.",
+   "variants": [
+    "A user assumes the role directly (no chaining) → up to the role's maximum session duration (1–12 hours).",
+    "A Glue or EMR job using its service role → the service refreshes credentials for you.",
+    "`GetSessionToken` → 15 minutes to 36 hours (root: 1 hour)."
+   ]
+  },
+  {
+   "id": "iam-015",
+   "skill": "4.1.2",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "Temporary credentials from an assumed role were leaked and are still valid for several hours. How do you cut them off immediately?",
+   "options": [
+    {
+     "t": "Delete the IAM user that assumed the role.",
+     "why": "Wrong: the existing role session stays valid after the user is gone."
+    },
+    {
+     "t": "Attach a policy to the role that denies all actions for sessions issued before now, using `aws:TokenIssueTime` (the console's 'Revoke active sessions').",
+     "why": "Right: existing sessions are denied, and new sessions get new credentials."
+    },
+    {
+     "t": "Delete the access keys of the role.",
+     "why": "Wrong: roles have no access keys. Temporary credentials cannot be deleted one by one."
+    },
+    {
+     "t": "Wait for the session to expire.",
+     "why": "Wrong: this leaves the attacker active until expiry."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Temporary credentials cannot be revoked directly. A Deny on `aws:TokenIssueTime` revokes the sessions issued earlier.",
+   "remember": "Temporary credentials cannot be revoked one by one → add a Deny on `aws:TokenIssueTime` (console: 'Revoke active sessions'), then rotate.",
+   "variants": [
+    "A long-term access key leaked → deactivate or delete the key, review CloudTrail, revoke sessions of roles it could assume.",
+    "Need to know what the credentials did → CloudTrail."
+   ]
+  },
+  {
+   "id": "iam-016",
+   "skill": "4.1.2",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "An engineer's command works in the AWS console but returns AccessDenied in the AWS CLI. What is the quickest first diagnostic step?",
+   "options": [
+    {
+     "t": "Run `aws sts get-caller-identity` to see which identity the CLI is actually using.",
+     "why": "Right: it needs no permissions and often exposes a wrong profile or a stale environment variable."
+    },
+    {
+     "t": "Increase the role's maximum session duration.",
+     "why": "Wrong: that does not explain an identity mismatch."
+    },
+    {
+     "t": "Run `aws iam get-account-summary`.",
+     "why": "Wrong: it shows IAM quotas and usage, not the calling identity."
+    },
+    {
+     "t": "Delete and recreate the IAM user.",
+     "why": "Wrong: drastic, and unrelated if the CLI is using the wrong credentials."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "A stale `AWS_ACCESS_KEY_ID` environment variable silently overrides profiles.",
+   "remember": "'Works in the console but not in the CLI' → check which credentials the CLI uses: `aws sts get-caller-identity` (needs no permissions).",
+   "variants": [
+    "Error `ExpiredToken` → temporary credentials expired or revoked.",
+    "Error `SignatureDoesNotMatch` → wrong secret key, wrong Region or clock skew over 5 minutes."
+   ]
+  },
+  {
+   "id": "iam-017",
+   "skill": "4.5.3",
+   "source": "3-identity-center-organizations-scps-rcps-and-access-analyzer.md",
+   "q": "No principal in any member account, including account administrators, may use services outside eu-west-1 and eu-central-1. What should you implement?",
+   "options": [
+    {
+     "t": "A service control policy that denies actions when `aws:RequestedRegion` is not an approved Region, exempting global services with `NotAction`.",
+     "why": "Right: an SCP caps even administrators, and the exemption keeps global services like IAM working."
+    },
+    {
+     "t": "An IAM policy in each account that denies other Regions.",
+     "why": "Wrong: an administrator in the account can edit or detach it."
+    },
+    {
+     "t": "A permissions boundary on every role.",
+     "why": "Wrong: it is not centrally enforced, and roles created without it escape the cap."
+    },
+    {
+     "t": "An AWS Config rule that flags resources created in other Regions.",
+     "why": "Wrong: Config rules detect and report. They do not prevent the action."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "SCPs are the org-wide guardrail on what principals in member accounts can do.",
+   "remember": "'Even administrators in member accounts' plus Region or service blocking → SCP Deny with `aws:RequestedRegion` (use `NotAction` to exempt global services).",
+   "variants": [
+    "Block leaving the organization or disabling CloudTrail/GuardDuty → SCP Deny.",
+    "The question wants the management account restricted → impossible. SCPs do not apply to it.",
+    "Deny-list strategy → keep `FullAWSAccess` and add Denies."
+   ]
+  },
+  {
+   "id": "iam-018",
+   "skill": "4.5.7",
+   "source": "3-identity-center-organizations-scps-rcps-and-access-analyzer.md",
+   "q": "A bucket policy mistake lets an external account read an S3 bucket. The security team wants an organization-wide hard stop that works even when a bucket policy allows outsiders. What should they use?",
+   "options": [
+    {
+     "t": "An SCP that denies `s3:*` unless the caller is in the organization",
+     "why": "Wrong: SCPs apply only to principals inside your member accounts. They do not affect outside principals."
+    },
+    {
+     "t": "A resource control policy (RCP) that denies `s3:*` unless `aws:PrincipalOrgID` matches (with exceptions for AWS service principals)",
+     "why": "Right: RCPs set the maximum permissions on resources, regardless of who calls."
+    },
+    {
+     "t": "A permissions boundary on the bucket owner's role",
+     "why": "Wrong: boundaries limit identities, not who can reach a bucket."
+    },
+    {
+     "t": "IAM Access Analyzer external access analyzer",
+     "why": "Wrong: it detects and reports sharing. It does not block it."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "SCP controls my principals. RCP controls access to my resources from anyone. Together they build a data perimeter.",
+   "remember": "SCP controls MY principals. RCP controls access to MY resources from ANYONE, including outsiders. Together they form a data perimeter.",
+   "variants": [
+    "Stop my own users doing too much → SCP.",
+    "Only detect external sharing → Access Analyzer external access.",
+    "RCPs do not cover the management account's resources, service-linked role calls or AWS managed KMS keys."
+   ]
+  },
+  {
+   "id": "iam-019",
+   "skill": "4.2.1",
+   "source": "3-identity-center-organizations-scps-rcps-and-access-analyzer.md",
+   "q": "An administrator detaches the `FullAWSAccess` SCP from an OU and attaches a deny-list SCP that blocks a few actions. Now every action in the OU's accounts fails. Why?",
+   "options": [
+    {
+     "t": "Deny-list SCPs always block everything outside the deny list.",
+     "why": "Wrong: a deny list only blocks what it names, as long as an Allow exists."
+    },
+    {
+     "t": "With `FullAWSAccess` removed there is no Allow in the SCP path, so everything is implicitly denied.",
+     "why": "Right: an action must be allowed by every level of SCPs from the root to the account."
+    },
+    {
+     "t": "SCPs take 24 hours to apply.",
+     "why": "Wrong: that is not how SCPs work. The failures come from missing Allows."
+    },
+    {
+     "t": "The management account overrides the OU.",
+     "why": "Wrong: the management account is not affected by SCPs and does not override them."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Keep `FullAWSAccess` for a deny-list strategy, or replace it with an explicit allow-list.",
+   "remember": "SCPs need an Allow at every level from the root to the account. Removing `FullAWSAccess` without an allow-list means everything is implicitly denied.",
+   "variants": [
+    "Deny-list strategy → keep `FullAWSAccess` and add Deny statements.",
+    "Error 'no service control policy allows' → an allow-list SCP is missing the action.",
+    "Error 'explicit deny in a service control policy' → a Deny statement matched."
+   ]
+  },
+  {
+   "id": "iam-020",
+   "skill": "4.5.7",
+   "source": "3-identity-center-organizations-scps-rcps-and-access-analyzer.md",
+   "q": "Which TWO are NOT restricted by service control policies? (Choose two.)",
+   "options": [
+    {
+     "t": "Principals in the organization's management account",
+     "why": "Right: SCPs never apply to the management account."
+    },
+    {
+     "t": "The root user of a member account",
+     "why": "Wrong: SCPs do restrict the root user of member accounts."
+    },
+    {
+     "t": "Service-linked roles",
+     "why": "Right: SCPs do not apply to service-linked roles."
+    },
+    {
+     "t": "IAM administrators in a member account",
+     "why": "Wrong: even AdministratorAccess cannot exceed an SCP."
+    },
+    {
+     "t": "Roles created by IAM Identity Center permission sets in a member account",
+     "why": "Wrong: they are ordinary roles in a member account, so SCPs apply."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Keep the management account empty of workloads because SCPs cannot control it.",
+   "remember": "SCPs do not apply to the management account or service-linked roles. They DO apply to the member-account root user and to administrators.",
+   "variants": [
+    "The management account needs controlling → keep it free of workloads. SCPs cannot restrict it.",
+    "RCPs also exempt the management account's resources and service-linked role calls."
+   ]
+  },
+  {
+   "id": "iam-021",
+   "skill": "4.1.2",
+   "source": "3-identity-center-organizations-scps-rcps-and-access-analyzer.md",
+   "q": "Forty developers need console and CLI access to 15 AWS accounts. The company uses Okta as its identity provider. What is the best solution?",
+   "options": [
+    {
+     "t": "IAM Identity Center with Okta as the external identity provider (SAML for sign-in, SCIM for provisioning), assigning groups to permission sets.",
+     "why": "Right: access is central, credentials are short-lived, and users and groups sync automatically."
+    },
+    {
+     "t": "An IAM user for each developer in each account.",
+     "why": "Wrong: 600 long-term identities to manage and rotate."
+    },
+    {
+     "t": "Share one IAM user with an access key among all developers.",
+     "why": "Wrong: no individual accountability, and long-term keys."
+    },
+    {
+     "t": "An Amazon Cognito user pool.",
+     "why": "Wrong: Cognito is for application end users, not workforce access to AWS accounts."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Prefer Identity Center groups and permission sets over IAM users for people.",
+   "remember": "Many accounts, workforce users and SSO → IAM Identity Center with groups and permission sets. External IdP: SAML for sign-in plus SCIM for user and group sync.",
+   "variants": [
+    "The directory is Active Directory → connect AWS Managed Microsoft AD or AD Connector (one directory at a time).",
+    "App end users (not staff) → Amazon Cognito.",
+    "Per-user data authorization in Athena, Redshift or Lake Formation → trusted identity propagation."
+   ]
+  },
+  {
+   "id": "iam-022",
+   "skill": "4.2.1",
+   "source": "3-identity-center-organizations-scps-rcps-and-access-analyzer.md",
+   "q": "An IAM Identity Center permission set attaches a customer managed policy. After assignment, users in one account cannot use the permissions and provisioning reports the policy was not found. What is the fix?",
+   "options": [
+    {
+     "t": "Create a policy with the same name in each target account.",
+     "why": "Right: the permission set references a customer managed policy by name, so it must already exist in every account."
+    },
+    {
+     "t": "Convert the policy to an AWS managed policy.",
+     "why": "Wrong: you cannot make your own policy an AWS managed policy."
+    },
+    {
+     "t": "Add the users to an IAM group in that account.",
+     "why": "Wrong: Identity Center users get access through the permission set's role, not IAM groups."
+    },
+    {
+     "t": "Increase the session duration to 12 hours.",
+     "why": "Wrong: it has nothing to do with a missing policy."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Customer managed policies in a permission set must exist by name in each target account.",
+   "remember": "A permission set that uses a customer managed policy needs a policy with that NAME in every target account. Permission set changes need re-provisioning.",
+   "variants": [
+    "Error 'no access to account' → the assignment is missing.",
+    "Error 'role missing' → the permission set was not provisioned.",
+    "You edited a permission set and nothing changed → re-provision it."
+   ]
+  },
+  {
+   "id": "iam-023",
+   "skill": "4.2.6",
+   "source": "3-identity-center-organizations-scps-rcps-and-access-analyzer.md",
+   "q": "After a data project ends, the security team wants to find roles, access keys and permissions nobody has used, and then build a tight policy from what a role actually did. Which combination fits?",
+   "options": [
+    {
+     "t": "IAM Access Analyzer unused access findings plus policy generation from CloudTrail activity",
+     "why": "Right: the first finds unused roles, keys and permissions. The second builds a least-privilege policy from logged use."
+    },
+    {
+     "t": "IAM Access Analyzer external access findings only",
+     "why": "Wrong: they show resources shared outside your zone of trust, not unused permissions."
+    },
+    {
+     "t": "The IAM policy simulator",
+     "why": "Wrong: it tests whether a policy allows an action. It does not find unused access."
+    },
+    {
+     "t": "A permissions boundary on every role",
+     "why": "Wrong: a boundary caps permissions but does not show what was used."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Policy generation needs a CloudTrail trail and an access role.",
+   "remember": "Unused access analyzer finds unused roles, keys, passwords and permissions. Policy generation builds a tight policy from CloudTrail activity.",
+   "variants": [
+    "Find resources shared outside the organization → external access analyzer.",
+    "Block new access before deployment in CI → custom policy checks (for example `CheckNoNewAccess`).",
+    "Only check policy grammar and best practices → policy validation."
+   ]
+  },
+  {
+   "id": "iam-024",
+   "skill": "4.5.7",
+   "source": "3-identity-center-organizations-scps-rcps-and-access-analyzer.md",
+   "q": "A security team created an IAM Access Analyzer for external access with the organization as the zone of trust, but only in us-east-1. An audit later finds a publicly accessible SQS queue in eu-west-1 that was never reported. Why?",
+   "options": [
+    {
+     "t": "External access analyzers are Regional, so one is needed in each Region where resources exist.",
+     "why": "Right: the analyzer only reports resources in its own Region."
+    },
+    {
+     "t": "SQS queues are not supported by Access Analyzer.",
+     "why": "Wrong: SQS queues are among the supported resource types."
+    },
+    {
+     "t": "Findings for public resources appear only after 90 days.",
+     "why": "Wrong: findings appear within about 30 minutes of a policy change, plus periodic rescans."
+    },
+    {
+     "t": "The zone of trust must be an account, not an organization.",
+     "why": "Wrong: the zone of trust can be an account or an organization."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Create the external access analyzer in every Region you use, and use archive rules for known-good sharing.",
+   "remember": "External access analyzers are Regional: create one in every Region you use. The zone of trust is an account or an organization.",
+   "variants": [
+    "The unused access analyzer is not Region-specific.",
+    "Known partner sharing keeps showing up → archive rules.",
+    "Send findings onward → Security Hub and EventBridge."
+   ]
+  },
+  {
+   "id": "iam-025",
+   "skill": "3.3.5",
+   "source": "4-monitoring-troubleshooting-cost-limits-and-scenarios.md",
+   "q": "Many engineers assume the same IAM role. Auditors need CloudTrail to show which person performed each action. What should you do?",
+   "options": [
+    {
+     "t": "Require `sts:SourceIdentity` (or a per-person `RoleSessionName`) when assuming the role, and keep an organization trail.",
+     "why": "Right: the source identity is set at the first assume-role, survives role chaining, and appears in CloudTrail."
+    },
+    {
+     "t": "Reduce the role's maximum session duration to 15 minutes.",
+     "why": "Wrong: shorter sessions do not tell you who is behind a session."
+    },
+    {
+     "t": "Check Access Advisor for the role.",
+     "why": "Wrong: it shows which services were last accessed, not which person did it."
+    },
+    {
+     "t": "Create a separate IAM group per engineer.",
+     "why": "Wrong: groups are not principals and do not change how role sessions appear in logs."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Without a meaningful session name or SourceIdentity, all sessions of a role look the same.",
+   "remember": "Shared role and 'who did it' → `sts:SourceIdentity` (immutable, survives role chaining) or a per-person `RoleSessionName`, plus an organization trail.",
+   "variants": [
+    "Query events with SQL → CloudTrail Lake.",
+    "Alert on root console login → EventBridge rule on `ConsoleLogin` by root."
+   ]
+  },
+  {
+   "id": "iam-026",
+   "skill": "4.4.1",
+   "source": "4-monitoring-troubleshooting-cost-limits-and-scenarios.md",
+   "q": "A CloudTrail event shows an AccessDenied error with a long, unreadable encoded authorization failure message. How can an administrator see which policy caused the denial?",
+   "options": [
+    {
+     "t": "Call `sts:DecodeAuthorizationMessage` on the encoded message (the caller needs permission to do so).",
+     "why": "Right: it expands the message into the policy decision details."
+    },
+    {
+     "t": "Run the IAM Credential Report.",
+     "why": "Wrong: it lists user credentials and their state, not policy decisions."
+    },
+    {
+     "t": "Open the Billing console.",
+     "why": "Wrong: billing data has no policy decision details."
+    },
+    {
+     "t": "Call `sts:GetCallerIdentity`.",
+     "why": "Wrong: it only tells you who the caller is."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Decoding the message tells you whether an identity policy, SCP, boundary or resource policy denied.",
+   "remember": "An encoded authorization failure message → `sts:DecodeAuthorizationMessage` (the caller needs permission to use it).",
+   "variants": [
+    "Read the error text. 'Explicit deny in a service control policy' → SCP. 'No identity-based policy allows' → add an Allow. 'Permissions boundary' → the boundary lacks the action.",
+    "Test a policy without running the action → IAM policy simulator."
+   ]
+  },
+  {
+   "id": "iam-027",
+   "skill": "4.2.6",
+   "source": "4-monitoring-troubleshooting-cost-limits-and-scenarios.md",
+   "q": "An analyst has IAM permissions for Athena, Glue read and S3, but cannot see the tables of a data lake in Athena. The account uses Lake Formation to manage the lake. What is the most likely cause?",
+   "options": [
+    {
+     "t": "Lake Formation has not granted the analyst access to those databases and tables.",
+     "why": "Right: Lake Formation is a second permission layer on top of IAM."
+    },
+    {
+     "t": "The IAM user needs the AdministratorAccess policy.",
+     "why": "Wrong: broad IAM permissions do not replace missing Lake Formation grants."
+    },
+    {
+     "t": "Athena does not support Glue tables.",
+     "why": "Wrong: Athena queries tables in the Glue Data Catalog."
+    },
+    {
+     "t": "S3 versioning is disabled.",
+     "why": "Wrong: versioning has no effect on table visibility."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Check both layers: IAM and Lake Formation.",
+   "remember": "IAM allows but the analyst sees nothing, or 'Insufficient Lake Formation permission' → Lake Formation grants are missing. There are two layers.",
+   "variants": [
+    "The S3 location is registered with Lake Formation → its location role needs access.",
+    "The data is KMS-encrypted → `kms:Decrypt` is needed as well."
+   ]
+  },
+  {
+   "id": "iam-028",
+   "skill": "4.2.1",
+   "source": "4-monitoring-troubleshooting-cost-limits-and-scenarios.md",
+   "q": "A company wants to require MFA before anyone can delete production data. What is the correct policy approach?",
+   "options": [
+    {
+     "t": "Add a Deny for the delete actions that applies unless `aws:MultiFactorAuthPresent` is true.",
+     "why": "Right: an explicit Deny with the MFA condition makes MFA mandatory for those actions."
+    },
+    {
+     "t": "Enable versioning on the bucket.",
+     "why": "Wrong: versioning does not require MFA."
+    },
+    {
+     "t": "Add the delete actions to a session policy without a condition.",
+     "why": "Wrong: a session policy cannot enforce MFA by itself."
+    },
+    {
+     "t": "Attach an SCP that allows deletes.",
+     "why": "Wrong: SCPs never grant permissions, and an Allow cannot enforce MFA."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Use the `aws:MultiFactorAuthPresent` and `aws:MultiFactorAuthAge` condition keys.",
+   "remember": "Enforce MFA for sensitive actions with a Deny unless `aws:MultiFactorAuthPresent` is true.",
+   "variants": [
+    "MFA required to assume a role → put the condition in the role's trust policy.",
+    "Require recent MFA → `aws:MultiFactorAuthAge`.",
+    "Protect the root user → MFA and no access keys."
+   ]
+  },
+  {
+   "id": "iam-029",
+   "skill": "4.1.3",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "An application on EC2 uses the instance profile role. A security review worries that a server-side request forgery (SSRF) bug could steal the role's credentials from the instance metadata service. What is the best control?",
+   "options": [
+    {
+     "t": "Require IMDSv2 on the instance (`HttpTokens=required`).",
+     "why": "Right: IMDSv2 needs a session token, which stops the simple SSRF theft of credentials."
+    },
+    {
+     "t": "Give the role long-term access keys instead.",
+     "why": "Wrong: long-term keys are worse and can be stolen too."
+    },
+    {
+     "t": "Reduce the role's maximum session duration to 15 minutes.",
+     "why": "Wrong: the stolen credentials would still be usable for that time."
+    },
+    {
+     "t": "Add the instance's IP to a bucket policy.",
+     "why": "Wrong: it does not prevent credential theft."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Require IMDSv2 and keep instance roles least-privilege.",
+   "remember": "SSRF stealing instance role credentials → require IMDSv2 (`HttpTokens=required`).",
+   "variants": [
+    "Enforce IMDSv2 across the organization → SCP that denies launching instances without it.",
+    "An EC2 app needs AWS access → instance profile role. Never embed keys."
+   ]
+  },
+  {
+   "id": "iam-030",
+   "skill": "4.1.2",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "A job in account A must copy objects from a bucket in account B into a bucket in account A with one copy call. Which cross-account pattern works best?",
+   "options": [
+    {
+     "t": "A resource-based policy on the bucket in account B that allows the job's role.",
+     "why": "Right: the role keeps its own account A permissions while using account B's bucket, so one call can touch both buckets."
+    },
+    {
+     "t": "Assume a role in account B and run the copy from that session.",
+     "why": "Wrong: while in the assumed-role session the job gives up its account A permissions, so it can no longer write to the account A bucket."
+    },
+    {
+     "t": "Create an IAM user in account B and use its access keys.",
+     "why": "Wrong: long-term keys, and the same loss of account A permissions."
+    },
+    {
+     "t": "An SCP in account B that allows the role.",
+     "why": "Wrong: SCPs never grant permissions."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "With a resource policy the caller keeps its identity. With assume-role it switches identity.",
+   "remember": "Operation needs resources in BOTH accounts at once → resource-based policy (caller keeps its identity). Assume-role means working only with the target account's permissions during the session.",
+   "variants": [
+    "The target service has no resource policy (for example many Describe APIs) → assume a role in that account.",
+    "S3 object ownership is involved → check which identity writes the object, because assume-role and resource-policy access behave differently here.",
+    "Org-wide read access → resource policy with `aws:PrincipalOrgID`."
+   ]
+  },
+  {
+   "id": "iam-031",
+   "skill": "4.1.2",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "Which TWO statements about service-linked roles are correct? (Choose two.)",
+   "options": [
+    {
+     "t": "Their permissions and trust policy are defined by the service and cannot be edited.",
+     "why": "Right: this is what makes them predictable and safe for the service to use."
+    },
+    {
+     "t": "You can edit them to follow least privilege.",
+     "why": "Wrong: you cannot edit a service-linked role's permissions or trust."
+    },
+    {
+     "t": "SCPs and RCPs do not restrict them.",
+     "why": "Right: service-linked roles are not affected by SCPs or RCPs."
+    },
+    {
+     "t": "They can be deleted at any time.",
+     "why": "Wrong: deletion requires that the service no longer uses the role, and it is done through the service."
+    },
+    {
+     "t": "They are the same as instance profiles.",
+     "why": "Wrong: an instance profile passes a role to an EC2 instance, which is different."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Service-linked roles are fixed by the service and sit outside SCP/RCP control.",
+   "remember": "Service-linked role = predefined by the service, not editable, not limited by SCP/RCP, deleted only via the service. A normal service role is one you create and can edit.",
+   "variants": [
+    "A service role (for example a Glue job role) → you create it and control its policies.",
+    "An SCP you wrote seems to block a service-linked role action → it does not. SCPs do not apply to them.",
+    "Need to remove a service-linked role → make sure the service is not using it, then delete via the service."
+   ]
+  },
+  {
+   "id": "iam-032",
+   "skill": "4.2.1",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "A policy has one statement: `Effect: Allow`, `NotAction: iam:*`, `Resource: *`. What does it do?",
+   "options": [
+    {
+     "t": "It allows every action except IAM actions, and does not deny IAM actions.",
+     "why": "Right: Allow with NotAction means 'allow everything except these'. IAM actions are simply not granted by this statement."
+    },
+    {
+     "t": "It denies all IAM actions.",
+     "why": "Wrong: an Allow statement never denies. A Deny would be needed."
+    },
+    {
+     "t": "It allows only IAM actions.",
+     "why": "Wrong: that would be `Action: iam:*`."
+    },
+    {
+     "t": "It denies everything, because NotAction is invalid with Allow.",
+     "why": "Wrong: `NotAction` is valid with Allow, and it is dangerous because it is so broad."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Allow + NotAction is a very broad grant. Deny + NotAction is a common guardrail.",
+   "remember": "Allow + NotAction = allow everything EXCEPT (dangerous). Deny + NotAction = deny everything except these (a common guardrail, for example exempting global services).",
+   "variants": [
+    "The goal is 'block everything outside two Regions but keep IAM working' → Deny with NotAction for global services plus an `aws:RequestedRegion` condition.",
+    "Allow with `Action` listing specific actions → the safe, least-privilege way.",
+    "`NotPrincipal` with Allow → avoid it."
+   ]
+  },
+  {
+   "id": "iam-033",
+   "skill": "4.2.1",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "A statement allows `s3:GetObject` with this condition: `StringEquals` on `aws:PrincipalTag/team` with values `data` and `analytics`, and `IpAddress` on `aws:SourceIp` with the office range. Who is allowed?",
+   "options": [
+    {
+     "t": "Principals tagged team=data OR team=analytics, AND calling from the office IP range.",
+     "why": "Right: several values for one key are OR. Different keys or operators are AND."
+    },
+    {
+     "t": "Principals tagged team=data AND team=analytics.",
+     "why": "Wrong: multiple values for the same key are OR, not AND."
+    },
+    {
+     "t": "Any principal calling from the office range, tag ignored.",
+     "why": "Wrong: all condition keys must match."
+    },
+    {
+     "t": "Principals tagged team=data or analytics from any IP.",
+     "why": "Wrong: the IP condition must match as well."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Same key, several values = OR. Several keys or operators = AND.",
+   "remember": "Condition logic: values within one key are OR; different keys/operators are AND. A missing key in the request makes the condition false unless you use an `IfExists` operator.",
+   "variants": [
+    "The tag is missing on the principal → the condition is false, so no access.",
+    "Require that a tag exists → use the `Null` operator.",
+    "Several values must all be true → use `ForAllValues` or separate keys, not one key's value list."
+   ]
+  },
+  {
+   "id": "iam-034",
+   "skill": "4.1.4",
+   "source": "2-roles-sts-and-federation.md",
+   "q": "An Amazon EMR cluster must be able to launch EC2 instances for you, and the code running on the nodes must read S3 and DynamoDB. Which roles are needed?",
+   "options": [
+    {
+     "t": "The EMR service role for provisioning and an EC2 instance profile role for the code on the nodes",
+     "why": "Right: two separate roles, with different trust principals (`elasticmapreduce.amazonaws.com` and `ec2.amazonaws.com`)."
+    },
+    {
+     "t": "One role used for both, trusted only by `lambda.amazonaws.com`",
+     "why": "Wrong: Lambda's principal is unrelated to EMR."
+    },
+    {
+     "t": "A single IAM user with access keys stored on the nodes",
+     "why": "Wrong: long-term keys on nodes are the pattern to avoid."
+    },
+    {
+     "t": "A permissions boundary only",
+     "why": "Wrong: a boundary caps permissions. It does not grant anything."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "EMR uses a service role, an EC2 instance profile, and optionally an Auto Scaling role.",
+   "remember": "EMR = service role (EMR creates resources) + EC2 instance profile (your code on nodes) + optional Auto Scaling role. EMR Serverless uses one job runtime role.",
+   "variants": [
+    "EMR Serverless → one job runtime role trusted by `emr-serverless.amazonaws.com`.",
+    "Per-user S3 access on EMR → EMRFS role mapping.",
+    "Glue job → one service role trusted by `glue.amazonaws.com`."
+   ]
+  },
+  {
+   "id": "iam-035",
+   "skill": "4.1.4",
+   "source": "4-monitoring-troubleshooting-cost-limits-and-scenarios.md",
+   "q": "A role has the right S3 read permissions, but a Redshift `COPY` command that uses the role's ARN fails with an access error. The role exists and its permissions are correct. What is the most likely cause?",
+   "options": [
+    {
+     "t": "The role is not associated with the Redshift cluster (or its trust policy does not name `redshift.amazonaws.com`).",
+     "why": "Right: Redshift can only use roles that are associated with the cluster and that trust the Redshift service."
+    },
+    {
+     "t": "`COPY` can only use IAM users.",
+     "why": "Wrong: Redshift COPY uses IAM roles."
+    },
+    {
+     "t": "The S3 bucket must be public.",
+     "why": "Wrong: private buckets work with a proper role."
+    },
+    {
+     "t": "Roles need a permissions boundary to be used by Redshift.",
+     "why": "Wrong: a boundary is optional and only limits."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "For Redshift, associate the role with the cluster. Cross-account access uses role chaining.",
+   "remember": "Redshift COPY/UNLOAD/Spectrum use a role that is ASSOCIATED with the cluster and trusts `redshift.amazonaws.com`. Cross-account: chain roles.",
+   "variants": [
+    "The bucket is in another account → chain to a role in that account (or use a bucket policy).",
+    "Spectrum reading the Glue catalog → the role also needs Glue and Lake Formation permissions.",
+    "Redshift Serverless → trust `redshift-serverless.amazonaws.com` as well."
+   ]
+  },
+  {
+   "id": "iam-036",
+   "skill": "4.2.5",
+   "source": "3-identity-center-organizations-scps-rcps-and-access-analyzer.md",
+   "q": "A company uses IAM Identity Center. It wants one set of policies so that each employee can access only resources tagged with their own department, using attributes from the directory. What should it use?",
+   "options": [
+    {
+     "t": "Attributes for access control in Identity Center, passing the department as a session tag, with policies that compare `aws:PrincipalTag/department` and `aws:ResourceTag/department`",
+     "why": "Right: attribute-based access control with session tags scales without a role per department."
+    },
+    {
+     "t": "One permission set per department with hard-coded resource ARNs",
+     "why": "Wrong: this is role-based access and needs constant changes."
+    },
+    {
+     "t": "An IAM user per employee with tags",
+     "why": "Wrong: Identity Center is the workforce solution, not IAM users."
+    },
+    {
+     "t": "A session policy created by each employee",
+     "why": "Wrong: users cannot be trusted to write their own limits."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Identity Center can pass user attributes as session tags for ABAC.",
+   "remember": "Identity Center ABAC = 'attributes for access control' → session tags → `aws:PrincipalTag` in policies. Tag governance is the prerequisite.",
+   "variants": [
+    "Fixed job functions with no tags → RBAC with permission sets and groups.",
+    "Data lake tables by tag → Lake Formation LF-Tags.",
+    "Stop users changing tags → `aws:RequestTag` and `aws:TagKeys` conditions."
+   ]
+  },
+  {
+   "id": "iam-037",
+   "skill": "4.1.2",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "An engineer tries to attach an 11th customer managed policy to a role and the call fails. What are the correct options?",
+   "options": [
+    {
+     "t": "Consolidate policies, or request a quota increase (up to 25 managed policies per role).",
+     "why": "Right: the default is 10 managed policies per role, and it can be raised to 25."
+    },
+    {
+     "t": "Convert the role into an IAM group.",
+     "why": "Wrong: roles and groups are different identities."
+    },
+    {
+     "t": "Attach the policy to the root user.",
+     "why": "Wrong: this does not give the role the permissions."
+    },
+    {
+     "t": "The limit cannot be changed or worked around.",
+     "why": "Wrong: it is a soft limit, and policies can also be merged."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Role managed-policy limit: 10 by default, 25 by request. Managed policy size: 6,144 characters.",
+   "remember": "Know the common IAM limits: managed policies per role 10 (up to 25), managed policy 6,144 characters, role session 1–12 hours, chained session 1 hour, 2 access keys per user.",
+   "variants": [
+    "A single policy is too large → split it into several managed policies or use wildcards and conditions.",
+    "Trust policy is too long → default 2,048 characters, up to 8,192.",
+    "Need inline permissions → inline policy size limits differ for users, groups and roles."
+   ]
+  },
+  {
+   "id": "iam-038",
+   "skill": "4.1.2",
+   "source": "4-monitoring-troubleshooting-cost-limits-and-scenarios.md",
+   "q": "Which TWO are recommended practices for the AWS account root user? (Choose two.)",
+   "options": [
+    {
+     "t": "Enable MFA, preferably phishing-resistant, on the root user.",
+     "why": "Right: root cannot be limited by IAM policies, so it must be protected strongly."
+    },
+    {
+     "t": "Create access keys for the root user so pipelines can deploy.",
+     "why": "Wrong: root should have no access keys. Use roles for pipelines."
+    },
+    {
+     "t": "Use the root user only for tasks that require it.",
+     "why": "Right: root is for the few root-only tasks, not daily work."
+    },
+    {
+     "t": "Share the root password with the cloud team.",
+     "why": "Wrong: sharing breaks accountability."
+    },
+    {
+     "t": "Attach an IAM permissions boundary to the root user.",
+     "why": "Wrong: IAM policies cannot limit root. Only SCPs can limit a member account's root."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Root: MFA, no access keys, only root-only tasks.",
+   "remember": "Root user best practice: MFA, no access keys, only for root-only tasks, set alternate contacts. IAM policies cannot limit it. SCPs can limit a member account's root but never the management account.",
+   "variants": [
+    "Daily admin work → IAM Identity Center or roles.",
+    "Limit root in member accounts → SCP that denies root actions.",
+    "Alert on root use → EventBridge rule on root `ConsoleLogin`."
+   ]
+  },
+  {
+   "id": "iam-039",
+   "skill": "4.2.6",
+   "source": "1-identities-policies-and-evaluation.md",
+   "q": "Security wants an account-wide report of every IAM user, showing the status and last use of their passwords and access keys, to find stale credentials. Which feature provides this?",
+   "options": [
+    {
+     "t": "The IAM credential report",
+     "why": "Right: an account-wide CSV listing users and the state and age of their credentials."
+    },
+    {
+     "t": "IAM Access Advisor",
+     "why": "Wrong: it shows which services a principal last accessed, not credential age for all users."
+    },
+    {
+     "t": "IAM Access Analyzer external access analyzer",
+     "why": "Wrong: it finds resources shared outside your zone of trust."
+    },
+    {
+     "t": "The Billing console",
+     "why": "Wrong: it shows cost data, not credential status."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Credential report = users' credentials. Access Advisor = last-accessed services.",
+   "remember": "Stale credentials → credential report. Unused permissions of a principal → Access Advisor. Unused roles/keys/permissions with findings → unused access analyzer.",
+   "variants": [
+    "Which services did this role actually use? → Access Advisor.",
+    "Find unused roles and keys across the organization → unused access analyzer.",
+    "Continuous compliance such as 'access keys rotated' → AWS Config managed rule."
+   ]
+  }
+ ]
+}

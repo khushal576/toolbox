@@ -17,6 +17,7 @@ API_CHECKS = [
     ("drop-rooms", "GET", "/health", None, "application/json"),   # scaffolded by scripts/new_tool.py (roadmap P2)
     ("key-store", "GET", "/health", None, "application/json"),   # scaffolded by scripts/new_tool.py (roadmap P2)
     ("sql-practice", "GET", "/health", None, "application/json"),   # scaffolded by scripts/new_tool.py (roadmap P2)
+    ("learn-aws", "GET", "/health", None, "application/json"),   # scaffolded by scripts/new_tool.py (roadmap P2)
     ("datadiff-pro", "POST", "/compare", SMALL_DIFF, "application/json"),
     ("df-studio", "GET", "/template/list", None, "application/json"),
     ("df-studio", "GET", "/formula/help", None, "application/json"),   # roadmap DF2: the formula bar's function list

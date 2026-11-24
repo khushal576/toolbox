@@ -1,0 +1,1260 @@
+{
+ "questions": [
+  {
+   "id": "s3-001",
+   "skill": "2.1.1",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "A data lake keeps 40 TB of Parquet files, each 200 MB or larger. Nobody knows which partitions analysts will read next month. The team does not want to manage lifecycle rules or pay retrieval fees. Which storage class fits?",
+   "options": [
+    {
+     "t": "Standard-IA",
+     "why": "Wrong: it charges a per-GB retrieval fee, so unpredictable reads can cost more than Standard."
+    },
+    {
+     "t": "Intelligent-Tiering",
+     "why": "Right: it moves objects between tiers by access, has no retrieval fee, and adds only a small per-object monitoring fee."
+    },
+    {
+     "t": "One Zone-IA",
+     "why": "Wrong: it also charges retrieval fees and keeps the data in one AZ, a poor fit for the main data lake."
+    },
+    {
+     "t": "Standard, plus a lifecycle rule to Glacier Flexible Retrieval after 30 days",
+     "why": "Wrong: lifecycle moves objects by age, not by access, and archived objects must be restored before Athena can read them."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Unknown or changing access, no operations work, no retrieval fees: Intelligent-Tiering.",
+   "remember": "Access pattern unknown or changing and no retrieval fees wanted → Intelligent-Tiering. Access that cools predictably by age → lifecycle rules.",
+   "variants": [
+    "Most objects are under 128 KB → Intelligent-Tiering does not monitor them, so there is no saving.",
+    "The data is always hot → Standard.",
+    "The data cools off by a known age → lifecycle transitions."
+   ]
+  },
+  {
+   "id": "s3-002",
+   "skill": "2.1.1",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "A company stores the only copy of customer contracts. They are read about once a month and must open in milliseconds. Which class is the cheapest that still fits?",
+   "options": [
+    {
+     "t": "One Zone-IA",
+     "why": "Wrong: it is cheaper, but the data lives in one AZ, so losing that AZ loses the only copy."
+    },
+    {
+     "t": "Glacier Flexible Retrieval",
+     "why": "Wrong: retrieval needs a restore that takes minutes to hours."
+    },
+    {
+     "t": "Standard-IA",
+     "why": "Right: millisecond retrieval, stored across 3 or more AZs, built for roughly monthly access."
+    },
+    {
+     "t": "Express One Zone",
+     "why": "Wrong: it is for hot, latency-critical data and is a single AZ, so it should not hold the only copy."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Monthly reads, millisecond access, only copy: Standard-IA.",
+   "remember": "About monthly access plus milliseconds plus important data → Standard-IA. The one-AZ classes are for data you can re-create.",
+   "variants": [
+    "The contracts can be re-created from another system → One Zone-IA.",
+    "They are read about once a quarter and still need milliseconds → Glacier Instant Retrieval.",
+    "They are read daily → Standard."
+   ]
+  },
+  {
+   "id": "s3-003",
+   "skill": "2.1.1",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "A team moves 50 million 10 KB log files into S3 Glacier Deep Archive with a lifecycle rule. The archive bill is much higher than the raw data size suggests. What is the best fix?",
+   "options": [
+    {
+     "t": "Switch the rule to Glacier Flexible Retrieval.",
+     "why": "Wrong: it adds the same roughly 40 KB of metadata overhead per object."
+    },
+    {
+     "t": "Bundle the small files into larger objects before archiving them.",
+     "why": "Right: each archived object carries about 40 KB of overhead, so tiny files cost far more than their size. Fewer, bigger objects fix it."
+    },
+    {
+     "t": "Move the files to Intelligent-Tiering.",
+     "why": "Wrong: objects under 128 KB are not monitored and stay in the frequent tier, so nothing is saved."
+    },
+    {
+     "t": "Move the files to One Zone-IA.",
+     "why": "Wrong: IA classes bill a 128 KB minimum per object, which is worse for 10 KB files."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Archive classes add about 40 KB per object, and the IA classes bill 128 KB minimum. Combine small files first.",
+   "remember": "Many tiny objects plus an IA or archive class = expensive. Combine them into larger files first.",
+   "variants": [
+    "The files are 5 MB each → archiving them directly is fine.",
+    "The files must stay readable in milliseconds → combine them, but use Glacier Instant Retrieval or Standard-IA instead of a restore-based archive.",
+    "A lifecycle rule skips the small files → by default objects under 128 KB are not transitioned; add an object size filter."
+   ]
+  },
+  {
+   "id": "s3-004",
+   "skill": "2.1.1",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "Compliance data is read about once a year. When auditors ask, the data must be available within 6 hours. Which is the cheapest class that meets this?",
+   "options": [
+    {
+     "t": "Glacier Deep Archive",
+     "why": "Wrong: a Standard restore takes up to about 12 hours and Bulk up to 48, so 6 hours is not guaranteed."
+    },
+    {
+     "t": "Glacier Instant Retrieval",
+     "why": "Wrong: it returns in milliseconds, but it costs more and is meant for roughly quarterly access."
+    },
+    {
+     "t": "Standard-IA",
+     "why": "Wrong: it is built for monthly access, so storage costs far more than an archive class for yearly data."
+    },
+    {
+     "t": "Glacier Flexible Retrieval",
+     "why": "Right: a Standard restore takes 3 to 5 hours, inside the 6-hour target, at archive prices."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Yearly access with a 6-hour deadline: Glacier Flexible Retrieval.",
+   "remember": "Read the deadline: minutes to hours → Glacier Flexible; up to about 12 hours → Deep Archive; milliseconds → an Instant or IA class.",
+   "variants": [
+    "Waiting up to 12 hours is fine → Glacier Deep Archive.",
+    "An urgent small restore must finish in minutes → Expedited retrieval from Glacier Flexible (objects under 250 MB).",
+    "It must open in milliseconds every quarter → Glacier Instant Retrieval."
+   ]
+  },
+  {
+   "id": "s3-005",
+   "skill": "2.1.2",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "A team plans to put ML training data in S3 Express One Zone directory buckets, in the same AZ as the compute. Which two statements about this plan are correct?",
+   "options": [
+    {
+     "t": "Request costs are lower than Standard, but the storage price per GB is higher.",
+     "why": "Right: requests are about 80% cheaper per the docs, while storage costs more."
+    },
+    {
+     "t": "The bucket lives in a single AZ, so it should not hold the only copy of important data.",
+     "why": "Right: losing that AZ would lose the data."
+    },
+    {
+     "t": "Block Public Access can be turned off for the bucket if needed.",
+     "why": "Wrong: Block Public Access is always on for directory buckets and cannot be changed."
+    },
+    {
+     "t": "SSE-C and DSSE-KMS can be used for encryption.",
+     "why": "Wrong: only SSE-S3 (the default) and SSE-KMS are supported."
+    },
+    {
+     "t": "Server access logging can be used to audit requests.",
+     "why": "Wrong: server access logs are not supported. CloudTrail data events are."
+    }
+   ],
+   "answer": [
+    0,
+    1
+   ],
+   "explain": "Express One Zone: single AZ, cheap requests, pricier storage, no SSE-C or DSSE-KMS, BPA always on.",
+   "remember": "Express One Zone = single-digit ms, one AZ you choose, cheaper requests, pricier storage. Never the only copy.",
+   "variants": [
+    "The data must survive the loss of an AZ → keep a copy in a multi-AZ class.",
+    "You need object-level audit → CloudTrail data events, not server access logs.",
+    "Access from a VPC → a gateway endpoint, at no extra charge."
+   ]
+  },
+  {
+   "id": "s3-006",
+   "skill": "2.1.1",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "A pipeline writes about 100 GB of temporary files, each 20 KB, and deletes them after 10 days. The team wants the lowest storage cost. Which choice is best?",
+   "options": [
+    {
+     "t": "Standard-IA",
+     "why": "Wrong: it has a 30-day minimum duration and a 128 KB minimum billed size, so you pay for far more than you store."
+    },
+    {
+     "t": "Glacier Instant Retrieval",
+     "why": "Wrong: it has a 90-day minimum duration and a 128 KB minimum billed size."
+    },
+    {
+     "t": "Standard",
+     "why": "Right: no minimum duration and no minimum billed size, so deleting after 10 days costs nothing extra."
+    },
+    {
+     "t": "One Zone-IA",
+     "why": "Wrong: it has the same 30-day and 128 KB minimums as Standard-IA."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Short-lived small objects belong in Standard because it has no minimum duration or size.",
+   "remember": "Cheap-per-GB classes punish short life and small size. Temporary or tiny objects → Standard.",
+   "variants": [
+    "The files live for 200 days and are rarely read → a lifecycle move to an IA or archive class can pay off.",
+    "Access is unknown and objects are over 128 KB → Intelligent-Tiering.",
+    "Moving or deleting early still charges the rest of the minimum duration."
+   ]
+  },
+  {
+   "id": "s3-007",
+   "skill": "2.3.2",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "A lifecycle rule created in 2026 should move objects to Standard-IA after 30 days. Large files move, but 60 KB thumbnails stay in Standard. What is the most likely cause and fix?",
+   "options": [
+    {
+     "t": "Lifecycle only works on versioned buckets, so enable versioning.",
+     "why": "Wrong: lifecycle works on unversioned buckets too."
+    },
+    {
+     "t": "By default objects under 128 KB are not transitioned. Add an object size filter to the rule.",
+     "why": "Right: since September 2024 small objects are skipped unless the rule has a size filter."
+    },
+    {
+     "t": "Standard-IA needs at least 90 days.",
+     "why": "Wrong: the Standard-IA minimum duration is 30 days. 90 days is Glacier Instant Retrieval."
+    },
+    {
+     "t": "Lifecycle needs S3 Inventory turned on first.",
+     "why": "Wrong: Inventory is not required for lifecycle."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Objects under 128 KB are not transitioned by default. A size filter allows it.",
+   "remember": "Lifecycle skips objects under 128 KB by default. Add ObjectSizeLessThan or ObjectSizeGreaterThan filters to change that.",
+   "variants": [
+    "The rule was created before September 2024 and never edited → it keeps the old behavior until edited.",
+    "Millions of tiny objects → each transition is a billed request and the 128 KB minimum applies, so it may cost more than it saves.",
+    "You want to move by access, not age → Intelligent-Tiering."
+   ]
+  },
+  {
+   "id": "s3-008",
+   "skill": "2.3.3",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "A versioned bucket's storage cost keeps growing because applications overwrite and delete objects often. Which two lifecycle actions reduce the cost?",
+   "options": [
+    {
+     "t": "Expiration of current objects",
+     "why": "Wrong: in a versioned bucket this only adds a delete marker and leaves the old versions in place."
+    },
+    {
+     "t": "AbortIncompleteMultipartUpload",
+     "why": "Wrong: it frees leftover upload parts, not old versions."
+    },
+    {
+     "t": "NoncurrentVersionExpiration (optionally keeping the newest N noncurrent versions)",
+     "why": "Right: old versions are full copies and are billed in full, so expiring them cuts the cost."
+    },
+    {
+     "t": "Transition current objects to Glacier Deep Archive",
+     "why": "Wrong: this does not touch the noncurrent versions that are causing the growth."
+    },
+    {
+     "t": "ExpiredObjectDeleteMarker cleanup",
+     "why": "Right: it removes delete markers that no longer have any versions behind them."
+    }
+   ],
+   "answer": [
+    2,
+    4
+   ],
+   "explain": "Pair versioning with noncurrent-version expiry and delete-marker cleanup.",
+   "remember": "Versioned bucket growing → expire noncurrent versions and clean up expired delete markers. Each version is billed in full.",
+   "variants": [
+    "Unfinished uploads are the waste → AbortIncompleteMultipartUpload.",
+    "Keep the last 3 old versions only → NoncurrentVersionExpiration with a count to keep.",
+    "To see which buckets waste money → S3 Storage Lens (noncurrent versions, incomplete uploads)."
+   ]
+  },
+  {
+   "id": "s3-009",
+   "skill": "2.3.2",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "Records in Glacier Deep Archive are now needed permanently in Standard for daily analysis. What is the correct way to move them?",
+   "options": [
+    {
+     "t": "Add a lifecycle rule that transitions Deep Archive objects to Standard.",
+     "why": "Wrong: lifecycle only moves objects downward. Deep Archive is a one-way street."
+    },
+    {
+     "t": "Restore the objects, then copy them over with the Standard storage class.",
+     "why": "Right: a restore gives a temporary copy. Copying it into the new class creates the permanent one."
+    },
+    {
+     "t": "Request an Expedited restore so they become Standard.",
+     "why": "Wrong: Deep Archive has no Expedited option, and a restore only creates a temporary copy while the archived object stays archived."
+    },
+    {
+     "t": "Wait for the 180-day minimum to pass; S3 then moves them back automatically.",
+     "why": "Wrong: the minimum duration is only a billing rule. Nothing moves objects back up."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "To go up a tier: restore, then copy into the new class.",
+   "remember": "Lifecycle only moves down. To move up: restore first, then copy the object into the new storage class.",
+   "variants": [
+    "Data is in Glacier Instant Retrieval → no restore needed, just copy it if the class must change.",
+    "Many millions of objects → use S3 Batch Operations for the restore and the copy, because the restore API rate is limited.",
+    "The goal is only to read the data once → restore it temporarily and read the temporary copy."
+   ]
+  },
+  {
+   "id": "s3-010",
+   "skill": "2.3.2",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "Application logs are read constantly for 30 days, then about once a quarter for a year, and must still open in milliseconds when queried. After the first year they are almost never read and a wait of up to 12 hours is fine. Auditors need them kept for 7 years at the lowest cost, then deleted. Which lifecycle design fits?",
+   "options": [
+    {
+     "t": "Transition to Glacier Flexible Retrieval at 30 days; expire at 7 years.",
+     "why": "Wrong: reads need a restore that takes minutes to hours, which breaks the millisecond requirement in year one."
+    },
+    {
+     "t": "Transition to Glacier Deep Archive at 30 days; expire at 7 years.",
+     "why": "Wrong: quarterly reads in year one would wait hours for a restore."
+    },
+    {
+     "t": "Keep in Standard-IA for 7 years; expire at 7 years.",
+     "why": "Wrong: Standard-IA is priced for monthly access and costs more than an archive class for data that is almost never read."
+    },
+    {
+     "t": "Standard for 30 days → Glacier Instant Retrieval → Deep Archive at 1 year → expire at 7 years.",
+     "why": "Right: Glacier IR serves quarterly reads in milliseconds, Deep Archive is the cheapest for the rare years, and Expiration deletes at 7 years."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Match each age to the class that meets its latency need, then expire.",
+   "remember": "Design lifecycle by age: hot → Standard; quarterly with ms → Glacier IR; almost never and hours OK → Deep Archive; then Expiration.",
+   "variants": [
+    "Reads in year one can wait hours → Standard → Glacier Flexible → Deep Archive.",
+    "Access is unpredictable → Intelligent-Tiering instead of age rules.",
+    "Early deletion → you still pay the rest of each class's minimum duration."
+   ]
+  },
+  {
+   "id": "s3-011",
+   "skill": "2.3.3",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "In an unversioned bucket, the S3 bill shows about 800 GB more storage than the total size of the listed objects. Large uploads often fail and are restarted. What is the most likely cause and fix?",
+   "options": [
+    {
+     "t": "Delete markers are piling up, so add ExpiredObjectDeleteMarker cleanup.",
+     "why": "Wrong: delete markers exist only in versioned buckets, and this bucket is unversioned."
+    },
+    {
+     "t": "Replication is copying every object twice into this bucket.",
+     "why": "Wrong: replication writes to a different bucket, not into the source."
+    },
+    {
+     "t": "Glacier metadata overhead is being billed on the objects.",
+     "why": "Wrong: this bucket's objects are not in an archive class."
+    },
+    {
+     "t": "Incomplete multipart uploads keep their parts. Add an AbortIncompleteMultipartUpload lifecycle rule.",
+     "why": "Right: parts of unfinished uploads are billed until aborted, and they do not show in a normal object list."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Unfinished multipart parts cost storage until a lifecycle rule aborts them.",
+   "remember": "Billed size larger than listed size, with failed big uploads → incomplete multipart uploads. Fix: AbortIncompleteMultipartUpload, for example after 7 days.",
+   "variants": [
+    "Storage Lens can show how many bytes sit in incomplete multipart uploads.",
+    "The bucket is versioned and the extra bytes are old copies → expire noncurrent versions.",
+    "Big uploads keep failing → use multipart upload, because only the failed parts are retried."
+   ]
+  },
+  {
+   "id": "s3-012",
+   "skill": "2.3.4",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "In a versioned bucket, a user deletes report.csv by mistake. GET now returns 404, and the team wants the file back with its history kept. What is the fastest correct action?",
+   "options": [
+    {
+     "t": "Suspend versioning on the bucket.",
+     "why": "Wrong: suspending does not bring the object back."
+    },
+    {
+     "t": "Delete the older version by its version ID.",
+     "why": "Wrong: that permanently deletes that version and makes things worse."
+    },
+    {
+     "t": "Delete the delete marker.",
+     "why": "Right: the older versions are still there. Removing the marker makes the latest real version current again."
+    },
+    {
+     "t": "Call RestoreObject on the file.",
+     "why": "Wrong: RestoreObject is for archived Glacier objects, not for deleted ones."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "A delete in a versioned bucket adds a delete marker. Remove the marker to undo it.",
+   "remember": "Delete without a version ID → delete marker, data still there. Undo by deleting the marker. Delete with a version ID is permanent.",
+   "variants": [
+    "An object was overwritten → copy an older version so it becomes the latest.",
+    "Someone must not be able to delete versions permanently → Object Lock or MFA Delete.",
+    "Costs grow with old versions → lifecycle noncurrent-version expiration."
+   ]
+  },
+  {
+   "id": "s3-013",
+   "skill": "2.3.5",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "Dataset A is regulated: no one, including the root user, may delete the data or shorten its retention for 6 years. Dataset B must also be write-protected, but administrators need a documented emergency override. Which Object Lock setup fits?",
+   "options": [
+    {
+     "t": "Governance mode for both datasets.",
+     "why": "Wrong: for A, anyone with s3:BypassGovernanceRetention can still remove protection."
+    },
+    {
+     "t": "Compliance mode for both datasets.",
+     "why": "Wrong: for B, nobody could ever override it, not even root."
+    },
+    {
+     "t": "A: compliance mode with 6-year retention. B: governance mode.",
+     "why": "Right: compliance has no bypass, and governance allows authorized users to bypass."
+    },
+    {
+     "t": "A: legal hold. B: compliance mode.",
+     "why": "Wrong: legal hold has no end date and can be removed by anyone with s3:PutObjectLegalHold, so it does not give A a guaranteed 6 years."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "No exceptions → compliance. Controlled override → governance. Open-ended hold → legal hold. All need versioning.",
+   "remember": "Compliance: nobody, even root, can delete or shorten. Governance: bypass permission allowed. Legal hold: no end date. Object Lock needs versioning.",
+   "variants": [
+    "Regulators want WORM with no exceptions → compliance mode.",
+    "Admins must be able to override in an emergency → governance mode.",
+    "Hold unknown duration for an audit → legal hold."
+   ]
+  },
+  {
+   "id": "s3-014",
+   "skill": "2.3.5",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "A legal team needs a set of objects frozen for an investigation of unknown length. An authorized person must be able to release them the moment the case closes. What should be used?",
+   "options": [
+    {
+     "t": "Compliance mode with 10-year retention.",
+     "why": "Wrong: nobody can shorten it, not even root, so the objects cannot be released when the case closes."
+    },
+    {
+     "t": "Governance mode with a retain-until date.",
+     "why": "Wrong: it needs a fixed date, which is unknown here."
+    },
+    {
+     "t": "MFA Delete.",
+     "why": "Wrong: it only requires MFA to permanently delete a version or change versioning. It does not freeze objects."
+    },
+    {
+     "t": "Object Lock legal hold.",
+     "why": "Right: a legal hold has no end date and stays until someone with s3:PutObjectLegalHold removes it. It is independent of retention."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Unknown duration and releasable on demand: legal hold.",
+   "remember": "Legal hold = no end date, removed by s3:PutObjectLegalHold, independent of any retention period.",
+   "variants": [
+    "A fixed 6-year rule with no exceptions → compliance mode.",
+    "Retention and legal hold can be combined on one object.",
+    "Object Lock only works on buckets with versioning."
+   ]
+  },
+  {
+   "id": "s3-015",
+   "skill": "2.3.4",
+   "source": "1-basics-and-storage-classes.md",
+   "q": "A bucket has versioning enabled, yet an administrator with s3:DeleteObjectVersion permanently deleted important versions. Which two measures make permanent deletion of a version much harder for someone who merely has delete permission?",
+   "options": [
+    {
+     "t": "Object Lock retention on the object versions.",
+     "why": "Right: a locked version cannot be permanently deleted until retention ends. A permanent delete returns 403."
+    },
+    {
+     "t": "Block Public Access.",
+     "why": "Wrong: it stops public exposure and has no effect on who can delete versions."
+    },
+    {
+     "t": "Replication to a second bucket.",
+     "why": "Wrong: it protects a copy, but the version in the source bucket can still be deleted."
+    },
+    {
+     "t": "MFA Delete.",
+     "why": "Right: it requires MFA to permanently delete a version. Only the root user can enable it, through the CLI or API."
+    },
+    {
+     "t": "A lifecycle rule with NoncurrentVersionExpiration.",
+     "why": "Wrong: that deletes old versions automatically, the opposite of protection."
+    }
+   ],
+   "answer": [
+    0,
+    3
+   ],
+   "explain": "Plain versioning allows version deletes. Add Object Lock or MFA Delete.",
+   "remember": "Versioning alone does not stop someone with permission from deleting versions. Add Object Lock or MFA Delete.",
+   "variants": [
+    "Nobody at all may delete, including root → Object Lock compliance mode.",
+    "Protect against account compromise → also replicate to another account with different keys.",
+    "Restrict s3:DeleteObjectVersion with policies and SCPs."
+   ]
+  },
+  {
+   "id": "s3-016",
+   "skill": "2.3.5",
+   "source": "2-replication-backup-and-recovery.md",
+   "q": "A customer exercises the right to erasure. Their files are in a versioned bucket that replicates to a DR bucket in another Region, and they also appear in S3 Inventory and derived Athena tables. Which action is complete?",
+   "options": [
+    {
+     "t": "Turn on Object Lock governance mode on their objects.",
+     "why": "Wrong: Object Lock blocks deletion, which is the opposite of the goal."
+    },
+    {
+     "t": "Delete the objects in the source bucket and let replication remove the rest.",
+     "why": "Wrong: a simple delete only adds a delete marker, and replication does not copy version deletes or, by default, delete markers."
+    },
+    {
+     "t": "Delete all versions in the source and the replica, plus backups and any derived data such as Inventory-based tables.",
+     "why": "Right: erasure means every version and every copy, including replicas, backups and derived data."
+    },
+    {
+     "t": "Add a lifecycle rule that expires current objects.",
+     "why": "Wrong: in a versioned bucket this adds delete markers and leaves the older versions."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Erasure = all versions and all copies, including replicas, backups and derived data.",
+   "remember": "Right to erasure: delete every version, every replica, every backup, and clean Inventory and derived tables.",
+   "variants": [
+    "Iceberg tables → DELETE, then expire snapshots and remove orphan files.",
+    "Retention rules instead of on-request deletion → lifecycle expiration plus noncurrent-version expiry.",
+    "Compliance-mode Object Lock blocks deletion until retention ends, even for root."
+   ]
+  },
+  {
+   "id": "s3-017",
+   "skill": "2.3.6",
+   "source": "2-replication-backup-and-recovery.md",
+   "q": "Cross-Region Replication was enabled last week on a bucket that already held 8 TB. New uploads appear in the DR bucket, but the old 8 TB does not. What should the team do?",
+   "options": [
+    {
+     "t": "Turn on replica modification sync.",
+     "why": "Wrong: it syncs metadata changes back from the replica. It does not copy old objects."
+    },
+    {
+     "t": "Turn on Replication Time Control.",
+     "why": "Wrong: RTC gives a 15-minute target for new objects only and does not copy existing ones."
+    },
+    {
+     "t": "Disable and re-enable the replication rule.",
+     "why": "Wrong: live replication only ever copies objects written after the rule exists."
+    },
+    {
+     "t": "Run S3 Batch Replication.",
+     "why": "Right: it is the on-demand job that copies objects that existed before the rule."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Live replication copies only new objects. Batch Replication handles existing ones.",
+   "remember": "Existing objects, failed replications, and replicas of replicas → S3 Batch Replication.",
+   "variants": [
+    "Replication status FAILED on some objects → fix the cause, then run Batch Replication to retry them.",
+    "A tag was added after upload → live tag-based rules miss it; use Batch Replication.",
+    "Replication is not a backup: a bad overwrite replicates too, so add versioning or Object Lock."
+   ]
+  },
+  {
+   "id": "s3-018",
+   "skill": "2.3.6",
+   "source": "2-replication-backup-and-recovery.md",
+   "q": "With a default (V2) replication rule, a user deletes an object in the source bucket, but the object still shows in the DR bucket. What explains this?",
+   "options": [
+    {
+     "t": "Replication is broken because destination versioning is off.",
+     "why": "Wrong: with versioning off, replication would fail with status FAILED. Here, new objects replicate fine."
+    },
+    {
+     "t": "Replication Time Control is not enabled, so deletes are delayed.",
+     "why": "Wrong: RTC is about speed. Delete markers are not replicated regardless of speed."
+    },
+    {
+     "t": "Delete markers are not replicated by default. This protects the destination copy. It can be turned on for rules that are not tag-based.",
+     "why": "Right: this is expected, and version-specific deletes are never replicated."
+    },
+    {
+     "t": "Deletes replicate only in Same-Region Replication, not Cross-Region.",
+     "why": "Wrong: there is no such rule."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "By default delete markers are not replicated. Enable delete marker replication if you want mirrored deletes.",
+   "remember": "Replication alone does not mirror deletes. Delete markers are off by default and version deletes are never replicated.",
+   "variants": [
+    "You need deletes mirrored → turn on delete marker replication (not available on tag-filtered rules).",
+    "A specific version was deleted in the source → the destination keeps it, on purpose.",
+    "DR copy must survive a malicious admin → keep defaults and add versioning and Object Lock."
+   ]
+  },
+  {
+   "id": "s3-019",
+   "skill": "2.3.6",
+   "source": "2-replication-backup-and-recovery.md",
+   "q": "Bucket A replicates to bucket B, and bucket B replicates to bucket C. New objects uploaded to A reach B, but C stays empty. What is the cause and the fix?",
+   "options": [
+    {
+     "t": "Objects that are themselves replicas are not replicated again. Add a rule from A to C or use Batch Replication.",
+     "why": "Right: replication does not chain."
+    },
+    {
+     "t": "Bucket C needs Object Lock enabled.",
+     "why": "Wrong: Object Lock on the destination is only required when the source uses it."
+    },
+    {
+     "t": "Replication Time Control must be enabled for the second hop.",
+     "why": "Wrong: RTC only changes speed and has nothing to do with chaining."
+    },
+    {
+     "t": "Bucket C must use a different storage class than B.",
+     "why": "Wrong: the storage class does not affect whether replication happens."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Replication does not chain. Replicate from the original source to each destination.",
+   "remember": "A→B and B→C does not copy A's data to C. Use a direct A→C rule or Batch Replication.",
+   "variants": [
+    "One source with several destinations → allowed, using multiple rules.",
+    "Objects in Glacier Flexible or Deep Archive → not replicated; restore and copy to another class first.",
+    "Old objects that need to reach C → Batch Replication."
+   ]
+  },
+  {
+   "id": "s3-020",
+   "skill": "2.3.6",
+   "source": "2-replication-backup-and-recovery.md",
+   "q": "CRR is configured for a bucket whose objects use SSE-KMS. Objects are not appearing in the destination Region. Which two changes are needed?",
+   "options": [
+    {
+     "t": "Use the same KMS key ARN in the destination, because KMS keys are global.",
+     "why": "Wrong: KMS keys are Regional, so the destination needs a key in its own Region."
+    },
+    {
+     "t": "Turn on replication of SSE-KMS objects in the rule and name a KMS key in the destination Region.",
+     "why": "Right: SSE-KMS objects only replicate when this is enabled."
+    },
+    {
+     "t": "Enable S3 Bucket Keys on the destination bucket.",
+     "why": "Wrong: Bucket Keys reduce KMS calls. They do not enable replication."
+    },
+    {
+     "t": "Give the replication role kms:Decrypt on the source key and kms:Encrypt (with data key generation) on the destination key.",
+     "why": "Right: the role must read with the source key and write with the destination key."
+    },
+    {
+     "t": "Turn off versioning on the destination bucket.",
+     "why": "Wrong: replication requires versioning on both buckets."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "SSE-KMS replication needs the rule option, a destination-Region key, and role permissions on both keys.",
+   "remember": "SSE-KMS objects replicate only if enabled in the rule, with a destination-Region key and KMS permissions for the role on both keys.",
+   "variants": [
+    "SSE-S3 objects → replicate with no special setup.",
+    "Replication shows FAILED → check destination versioning, IAM role, bucket policy, KMS permission and Object Lock on the destination.",
+    "Cross-account replication → the destination bucket owner must also allow it with a bucket policy."
+   ]
+  },
+  {
+   "id": "s3-021",
+   "skill": "2.3.6",
+   "source": "2-replication-backup-and-recovery.md",
+   "q": "A compliance team requires new objects to be replicated to another Region within 15 minutes, backed by an SLA. The bucket also holds 3 TB that must be copied once. Which two actions meet both needs?",
+   "options": [
+    {
+     "t": "Enable Replication Time Control on the live replication rule.",
+     "why": "Right: RTC replicates 99.99% of new objects within 15 minutes, with an SLA."
+    },
+    {
+     "t": "Use Same-Region Replication.",
+     "why": "Wrong: the requirement is another Region."
+    },
+    {
+     "t": "Use Batch Replication with RTC for the existing objects.",
+     "why": "Wrong: RTC is not available for Batch Replication."
+    },
+    {
+     "t": "Enable replica modification sync.",
+     "why": "Wrong: it syncs metadata changes back to the source. It gives no time guarantee."
+    },
+    {
+     "t": "Run S3 Batch Replication once for the existing objects.",
+     "why": "Right: live replication copies only new objects, so existing data needs the on-demand job."
+    }
+   ],
+   "answer": [
+    0,
+    4
+   ],
+   "explain": "RTC for new objects, Batch Replication for existing ones.",
+   "remember": "15-minute SLA → RTC (extra cost, new objects only). Existing objects → Batch Replication, which does not support RTC.",
+   "variants": [
+    "Data may not leave a country → Same-Region Replication plus an SCP that denies other Regions.",
+    "Active-active with failover → two-way replication and a Multi-Region Access Point.",
+    "Without RTC, replication usually takes seconds to minutes but can take hours, with no SLA."
+   ]
+  },
+  {
+   "id": "s3-022",
+   "skill": "4.3.3",
+   "source": "3-security-and-access.md",
+   "q": "Account B's role has s3:GetObject permission, and the bucket policy in account A allows account B. GetObject still returns AccessDenied. The objects use SSE-KMS with the AWS managed key aws/s3. What is the correct fix?",
+   "options": [
+    {
+     "t": "Re-encrypt the objects with a customer managed key and allow account B kms:Decrypt in the key policy.",
+     "why": "Right: the aws/s3 key policy cannot be edited and the key cannot be shared across accounts."
+    },
+    {
+     "t": "Add kms:Decrypt to the bucket policy.",
+     "why": "Wrong: KMS permissions come from the key policy or grants, not the bucket policy."
+    },
+    {
+     "t": "Enable S3 Bucket Keys on the bucket.",
+     "why": "Wrong: Bucket Keys reduce KMS calls and do not grant access."
+    },
+    {
+     "t": "Turn off Block Public Access.",
+     "why": "Wrong: it is unrelated and would not grant account B access."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Cross-account SSE-KMS needs S3 permission and KMS permission, and aws/s3 cannot be shared.",
+   "remember": "AccessDenied with S3 permissions in place → check KMS. Cross-account needs a customer managed key whose policy allows the reader.",
+   "variants": [
+    "The bucket uses SSE-S3 → no KMS permission needed.",
+    "The key must be in the same Region as the bucket.",
+    "Deleting or disabling the KMS key makes the data unreadable."
+   ]
+  },
+  {
+   "id": "s3-023",
+   "skill": "4.3.2",
+   "source": "3-security-and-access.md",
+   "q": "Athena and Glue jobs read millions of SSE-KMS objects. They hit KMS request limits and the KMS bill is high. Which two actions reduce KMS calls for both new and existing data?",
+   "options": [
+    {
+     "t": "Enable S3 Bucket Keys on the bucket.",
+     "why": "Right: S3 asks KMS for a short-lived bucket-level key, cutting KMS requests and cost by up to 99%."
+    },
+    {
+     "t": "Switch the bucket default encryption to SSE-C.",
+     "why": "Wrong: default encryption cannot be SSE-C, and SSE-C is disabled by default on new buckets."
+    },
+    {
+     "t": "Copy the existing objects onto themselves with CopyObject.",
+     "why": "Right: Bucket Keys apply only to objects written after they are enabled, so old objects need a copy."
+    },
+    {
+     "t": "Switch to DSSE-KMS.",
+     "why": "Wrong: Bucket Keys are not supported with DSSE-KMS."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Enable Bucket Keys for new objects and CopyObject for old ones.",
+   "remember": "SSE-KMS throttling or cost → S3 Bucket Keys (new objects only). Existing objects need CopyObject. Bucket Keys are not supported with DSSE-KMS.",
+   "variants": [
+    "Policies used the object ARN as encryption context → with Bucket Keys the context is the bucket ARN, so update them.",
+    "You must force all uploads to use KMS → deny s3:PutObject unless x-amz-server-side-encryption is aws:kms.",
+    "Changing the default encryption does not re-encrypt existing objects."
+   ]
+  },
+  {
+   "id": "s3-024",
+   "skill": "4.1.5",
+   "source": "3-security-and-access.md",
+   "q": "Glue jobs in a private subnet read and write about 30 TB per month in S3 in the same Region. The subnets have no internet route. What is the cheapest private path?",
+   "options": [
+    {
+     "t": "A NAT gateway.",
+     "why": "Wrong: it works but charges per GB processed, which is expensive at 30 TB."
+    },
+    {
+     "t": "An S3 gateway VPC endpoint.",
+     "why": "Right: it is free, uses a route-table entry and keeps traffic on the AWS network."
+    },
+    {
+     "t": "An S3 interface endpoint (PrivateLink).",
+     "why": "Wrong: it works but costs money, and it is not needed from inside the VPC."
+    },
+    {
+     "t": "Public IPs on the worker nodes.",
+     "why": "Wrong: that exposes the workers to the internet and goes against the private design."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Private subnet to S3, lowest cost: gateway VPC endpoint.",
+   "remember": "VPC to S3 on a budget → gateway endpoint (free). On-premises over Direct Connect or VPN → interface endpoint.",
+   "variants": [
+    "On-premises must reach S3 privately → interface endpoint over Direct Connect or VPN.",
+    "Only your VPC may read the bucket → bucket policy that denies unless aws:SourceVpce matches (it also blocks the console and your own admins, so test it).",
+    "A VPC endpoint policy can limit which buckets and actions go through the endpoint."
+   ]
+  },
+  {
+   "id": "s3-025",
+   "skill": "4.1.5",
+   "source": "3-security-and-access.md",
+   "q": "A data lake has 500 teams and thousands of employees from the corporate directory. Each must read or write only its own prefixes, and auditors must see the real user in CloudTrail data events. One bucket policy would exceed its size limit. Which approach fits best?",
+   "options": [
+    {
+     "t": "One bucket policy with a statement per team.",
+     "why": "Wrong: a bucket policy is limited to 20 KB."
+    },
+    {
+     "t": "A pre-signed URL for every file.",
+     "why": "Wrong: pre-signed URLs are temporary links, not access control, and anyone with the URL can use it."
+    },
+    {
+     "t": "S3 Access Grants with IAM Identity Center (trusted identity propagation).",
+     "why": "Right: it maps directory users and groups to prefixes and CloudTrail records the real user."
+    },
+    {
+     "t": "One access point per team.",
+     "why": "Wrong: it fixes the policy size, but it does not map directory users to prefixes or record the real user in CloudTrail."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Directory users, per-prefix access and per-user audit: S3 Access Grants.",
+   "remember": "Many teams sharing one bucket → Access Points. Directory users and real-user audit → Access Grants with IAM Identity Center.",
+   "variants": [
+    "Per-team policies and network control (for example VPC-only) → Access Points.",
+    "An access point can be limited to one VPC, and then it counts as non-public.",
+    "Auditors need to know who read which object → CloudTrail data events, which are off by default."
+   ]
+  },
+  {
+   "id": "s3-026",
+   "skill": "4.1.5",
+   "source": "3-security-and-access.md",
+   "q": "Partner accounts upload files to a company's bucket. The company's own roles get AccessDenied on those objects because the partners own them. What is the recommended permanent fix?",
+   "options": [
+    {
+     "t": "Set Object Ownership to bucket owner enforced.",
+     "why": "Right: ACLs are disabled and the bucket owner owns every object, so access is controlled by policies only."
+    },
+    {
+     "t": "Ask partners to grant READ ACLs on every object.",
+     "why": "Wrong: it is manual, per object and fragile."
+    },
+    {
+     "t": "Set Object Ownership to object writer.",
+     "why": "Wrong: that makes the uploader the owner, which is the cause of the problem."
+    },
+    {
+     "t": "Turn off Block Public Access.",
+     "why": "Wrong: it is unrelated to object ownership."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Bucket owner enforced makes the bucket owner own every object and turns ACLs off.",
+   "remember": "Cross-account uploads the owner cannot read → Object Ownership bucket owner enforced (the default for new buckets).",
+   "variants": [
+    "With ACLs disabled, PUTs that set other ACLs fail with 400 AccessControlListNotSupported.",
+    "bucket-owner-full-control or no ACL at all still works.",
+    "Replicas are owned by the destination bucket owner when ownership is enforced."
+   ]
+  },
+  {
+   "id": "s3-027",
+   "skill": "4.5.3",
+   "source": "2-replication-backup-and-recovery.md",
+   "q": "Regulations say customer data may not leave one country's Region, but the company wants a second copy owned by a separate security account. Which design meets this?",
+   "options": [
+    {
+     "t": "Cross-Region Replication to a bucket in another Region.",
+     "why": "Wrong: the copy could cross borders."
+    },
+    {
+     "t": "Same-Region Replication to a bucket in the security account, plus an SCP that denies other Regions.",
+     "why": "Right: the copy stays in the Region, is owned by a separate account, and the SCP blocks copies elsewhere."
+    },
+    {
+     "t": "Daily backups to Glacier in another Region.",
+     "why": "Wrong: this moves data out of the allowed Region."
+    },
+    {
+     "t": "A Multi-Region Access Point over two Regions.",
+     "why": "Wrong: it routes across Regions, which is the opposite of the requirement."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Same-Region Replication into another account, plus an SCP that blocks other Regions.",
+   "remember": "Data must stay in one Region or country → Same-Region Replication and an SCP denying other Regions.",
+   "variants": [
+    "A DR copy in another Region is allowed → Cross-Region Replication.",
+    "Ransomware protection → versioning, Object Lock and replication to another account with different keys.",
+    "Logs from many accounts into one bucket → Same-Region Replication (no transfer fee)."
+   ]
+  },
+  {
+   "id": "s3-028",
+   "skill": "1.1.6",
+   "source": "4-performance-events-cost-and-operations.md",
+   "q": "Each file landing under raw/ must start three independent consumers, and one of them filters by key pattern and object size. The team also wants to replay events after a consumer bug. Which design fits?",
+   "options": [
+    {
+     "t": "S3 Event Notification to one Lambda that calls the other two.",
+     "why": "Wrong: it couples the consumers and offers no replay."
+    },
+    {
+     "t": "S3 to an SNS topic with three subscribers.",
+     "why": "Wrong: it fans out, but there is no event archive or replay, and S3's own filters only cover prefix and suffix."
+    },
+    {
+     "t": "S3 to EventBridge with one rule per consumer and an event archive.",
+     "why": "Right: rules can filter by key pattern and object size, each rule has its own targets, and archive and replay are supported."
+    },
+    {
+     "t": "A scheduled job that lists the bucket every minute.",
+     "why": "Wrong: LIST is slow and costly on large buckets, and it is not event-driven."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Fan-out, rich filtering and replay: S3 to EventBridge.",
+   "remember": "Several consumers, content filtering or replay on an S3 upload → route through EventBridge, not a direct notification.",
+   "variants": [
+    "Only one target and no filtering → a direct S3 event notification is enough.",
+    "The target is an SQS FIFO queue → go through EventBridge, because direct FIFO is not supported.",
+    "Delivery is at least once, so make consumers idempotent."
+   ]
+  },
+  {
+   "id": "s3-029",
+   "skill": "1.1.6",
+   "source": "4-performance-events-cost-and-operations.md",
+   "q": "A Lambda function triggered by object-created events on bucket data/ writes its output back to the same bucket and prefix. Invocations and costs explode. What is the fix?",
+   "options": [
+    {
+     "t": "Increase the Lambda concurrency limit.",
+     "why": "Wrong: it only lets the runaway loop run faster."
+    },
+    {
+     "t": "Enable versioning on the bucket.",
+     "why": "Wrong: it does not stop the function from triggering itself."
+    },
+    {
+     "t": "Change the destination to an SQS FIFO queue.",
+     "why": "Wrong: FIFO queues are not supported as direct destinations, and it would not stop the loop."
+    },
+    {
+     "t": "Write the output to a different prefix or bucket than the one that triggers the function.",
+     "why": "Right: the function then no longer fires on its own output."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "A function that writes into its own trigger prefix loops. Use a different prefix or bucket.",
+   "remember": "S3 trigger that keeps re-running → the Lambda writes into the triggering bucket and prefix. Separate them.",
+   "variants": [
+    "Classic notification config allows no overlapping prefix and suffix filters for the same event type to different destinations.",
+    "A notification does not fire → check the destination resource policy, the filter, overlaps and KMS on an encrypted queue.",
+    "Filters support prefix and suffix only, no regex."
+   ]
+  },
+  {
+   "id": "s3-030",
+   "skill": "2.4.5",
+   "source": "4-performance-events-cost-and-operations.md",
+   "q": "Athena queries over 5 million 40 KB JSON files are slow and expensive. Analysts always filter by event date. What should the data engineer do?",
+   "options": [
+    {
+     "t": "Partition the data by user ID.",
+     "why": "Wrong: high-cardinality partitions create millions of tiny partitions and make things worse."
+    },
+    {
+     "t": "Add a random hash at the start of every key.",
+     "why": "Wrong: it is not needed for performance and does nothing for small files or scanned bytes."
+    },
+    {
+     "t": "Convert to compressed Parquet in files of roughly 128 MB to 1 GB, partitioned by date in Hive style.",
+     "why": "Right: columnar plus compression plus partition pruning cuts both scan cost and request overhead."
+    },
+    {
+     "t": "Move the data to Express One Zone.",
+     "why": "Wrong: it lowers latency, but it does not reduce scanned data and costs more per GB."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Parquet, big files, partitions on the filter column.",
+   "remember": "Athena bill and speed → columnar format, compression, 128 MB to 1 GB files, partitions on low-to-medium cardinality filter columns such as date.",
+   "variants": [
+    "Streaming keeps creating small files → compact with Glue, Spark or Athena CTAS, bigger Firehose buffers, or Iceberg and S3 Tables compaction.",
+    "Redshift COPY → many equal-size compressed files.",
+    "Do not create millions of partitions."
+   ]
+  },
+  {
+   "id": "s3-031",
+   "skill": "2.4.5",
+   "source": "4-performance-events-cost-and-operations.md",
+   "q": "A job writes at a sharply rising rate to a single prefix and receives HTTP 503 Slow Down responses. Which two actions help?",
+   "options": [
+    {
+     "t": "Move the objects to Standard-IA.",
+     "why": "Wrong: the storage class does not change request rate limits."
+    },
+    {
+     "t": "Wait, because S3 is eventually consistent.",
+     "why": "Wrong: S3 is strongly consistent, and 503 Slow Down is a rate signal."
+    },
+    {
+     "t": "Retry with exponential backoff and jitter.",
+     "why": "Right: S3 scales gradually, so retries with backoff let the request rate settle."
+    },
+    {
+     "t": "Spread the keys across more prefixes.",
+     "why": "Right: limits are per prefix, about 3,500 writes and 5,500 reads per second, and prefixes are unlimited."
+    }
+   ],
+   "answer": [
+    2,
+    3
+   ],
+   "explain": "503 Slow Down: back off with jitter and spread load across prefixes.",
+   "remember": "Rate limits are per prefix and scale gradually. Use exponential backoff with jitter, and use more prefixes. Date-partitioned layouts already spread load.",
+   "variants": [
+    "Large objects → multipart upload and parallel byte-range GETs.",
+    "One versioned key with millions of versions → clean up versions, because it can cause 503 on that key.",
+    "Repeated public downloads → CloudFront."
+   ]
+  },
+  {
+   "id": "s3-032",
+   "skill": "1.2.4",
+   "source": "4-performance-events-cost-and-operations.md",
+   "q": "A nightly script runs LIST across a bucket with billions of objects to report size, storage class and encryption status. It is slow, and LIST charges are a large part of the bill. What should replace it?",
+   "options": [
+    {
+     "t": "More parallel LIST calls.",
+     "why": "Wrong: each call is still billed, and a LIST returns at most 1,000 keys per request."
+    },
+    {
+     "t": "Server access logs.",
+     "why": "Wrong: they record requests, not an object inventory."
+    },
+    {
+     "t": "S3 Inventory, queried with Athena.",
+     "why": "Right: it delivers a scheduled report with size, class, encryption and more, at much lower cost than LIST."
+    },
+    {
+     "t": "CloudWatch daily storage metrics.",
+     "why": "Wrong: they give totals by class but no per-object fields."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Billions of objects and a report: S3 Inventory with Athena.",
+   "remember": "LIST at scale is slow and billed. Use S3 Inventory for reports and as the manifest for Batch Operations.",
+   "variants": [
+    "Run one action on 2 billion objects → Inventory plus Batch Operations.",
+    "Find buckets that waste money → S3 Storage Lens.",
+    "Cut cost of reading often-requested public files → CloudFront cache."
+   ]
+  },
+  {
+   "id": "s3-033",
+   "skill": "2.1.7",
+   "source": "5-s3-tables-and-iceberg.md",
+   "q": "A data lake stores user events as Iceberg tables. A privacy request requires deleting one user's rows and proving the old data files are gone. After running DELETE, which two steps are still needed?",
+   "options": [
+    {
+     "t": "Run compaction only.",
+     "why": "Wrong: compaction rewrites small files, but old snapshots still reference the old data files."
+    },
+    {
+     "t": "Expire the old snapshots.",
+     "why": "Right: until snapshots that point at the old files are expired, the data is still reachable."
+    },
+    {
+     "t": "Add an S3 lifecycle rule on the table prefix.",
+     "why": "Wrong: lifecycle knows nothing about Iceberg snapshots and metadata."
+    },
+    {
+     "t": "Rely on time travel to hide it.",
+     "why": "Wrong: time travel keeps old data readable, which is the opposite of the goal."
+    },
+    {
+     "t": "Remove orphan files.",
+     "why": "Right: files no longer referenced by any snapshot must be removed so they really disappear."
+    }
+   ],
+   "answer": [
+    1,
+    4
+   ],
+   "explain": "DELETE, then expire snapshots, then remove orphan files (Athena VACUUM does both).",
+   "remember": "Proving deletion in Iceberg: DELETE, expire snapshots, remove orphan files. In Athena, VACUUM expires snapshots and removes orphans.",
+   "variants": [
+    "S3 Tables → maintenance does snapshot expiry and unreferenced file removal for you.",
+    "Want to see data as of last Tuesday → time travel by timestamp.",
+    "A bad write corrupted the table → roll back to an earlier snapshot."
+   ]
+  },
+  {
+   "id": "s3-034",
+   "skill": "2.1.7",
+   "source": "5-s3-tables-and-iceberg.md",
+   "q": "A streaming pipeline writes many small files into Iceberg tables on AWS, and queries keep slowing down. The team wants the least operational work. What is the best choice?",
+   "options": [
+    {
+     "t": "S3 Tables (table buckets).",
+     "why": "Right: AWS runs compaction, snapshot management and unreferenced file removal automatically."
+    },
+    {
+     "t": "Plain Parquet with more partitions.",
+     "why": "Wrong: more partitions create even more small files."
+    },
+    {
+     "t": "Hudi on EMR.",
+     "why": "Wrong: it is a good fit for heavy record-level upserts but adds more operations work."
+    },
+    {
+     "t": "Self-managed Iceberg on a general purpose bucket with a nightly Athena OPTIMIZE job.",
+     "why": "Wrong: it works, but the team must schedule and own all maintenance."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Least ops Iceberg on AWS: S3 Tables.",
+   "remember": "Low-ops Iceberg → S3 Tables (automatic compaction and cleanup). Custom catalogs or cross-cloud portability → Iceberg on a general purpose bucket.",
+   "variants": [
+    "You need a custom catalog such as Hive metastore, REST or Nessie → Iceberg on a general purpose bucket.",
+    "Compaction cost is high → binpack instead of sort or z-order, and a larger target file size.",
+    "Queries filter on 2 or 3 columns together → z-order compaction (needs a sort order)."
+   ]
+  },
+  {
+   "id": "s3-035",
+   "skill": "2.1.7",
+   "source": "5-s3-tables-and-iceberg.md",
+   "q": "A table in an S3 table bucket can be used in Spark, but Athena cannot see it and returns \"Unsupported Federation Resource - Invalid table or column names\". What is the likely cause?",
+   "options": [
+    {
+     "t": "Block Public Access is on for the table bucket.",
+     "why": "Wrong: it is always on for table buckets and is not the cause."
+    },
+    {
+     "t": "The table or column names contain uppercase letters.",
+     "why": "Right: names must be lowercase to work with the Glue Data Catalog and Lake Formation."
+    },
+    {
+     "t": "Versioning is disabled on the table bucket.",
+     "why": "Wrong: versioning is not what makes a table visible."
+    },
+    {
+     "t": "ACLs are disabled on the table bucket.",
+     "why": "Wrong: ACLs are not part of table access."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Uppercase names make S3 tables invisible to Athena. Use lowercase.",
+   "remember": "S3 table invisible in Athena → check for uppercase letters in table or column names, then the Glue and Lake Formation integration and permissions.",
+   "variants": [
+    "Snapshots never expire → check for user tags, branches or Iceberg retention properties that block snapshot management.",
+    "Column-level access to S3 tables → integrate with Lake Formation and grant column permissions.",
+    "S3 Tables permissions use the s3tables action namespace, not s3."
+   ]
+  },
+  {
+   "id": "s3-036",
+   "skill": "2.1.7",
+   "source": "5-s3-tables-and-iceberg.md",
+   "q": "A team needs MERGE for CDC upserts, time travel, and reads from Athena, Redshift and Spark through the Glue Data Catalog. Updates are moderate in volume. Which table format fits best?",
+   "options": [
+    {
+     "t": "Parquet files with Hive-style partitions.",
+     "why": "Wrong: plain files cannot do row-level UPDATE, DELETE or MERGE safely."
+    },
+    {
+     "t": "Apache Iceberg.",
+     "why": "Right: it supports MERGE and time travel and has the broadest engine support on AWS."
+    },
+    {
+     "t": "Delta Lake.",
+     "why": "Wrong: it fits when the team and tools are already Delta-centric, which is not stated here."
+    },
+    {
+     "t": "Apache Hudi.",
+     "why": "Wrong: it is strongest for heavy record-level upsert streaming, and the updates here are moderate."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Row-level changes plus multi-engine on AWS: Iceberg.",
+   "remember": "Need UPDATE, DELETE, MERGE, time travel and many engines → Iceberg through the Glue Data Catalog.",
+   "variants": [
+    "Append-only logs that rarely change → Parquet with partitions is enough.",
+    "Heavy streaming upserts with record-level indexing → Hudi.",
+    "The team already runs Delta → Delta."
+   ]
+  }
+ ]
+}
