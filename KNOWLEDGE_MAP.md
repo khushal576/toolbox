@@ -47,6 +47,7 @@ map, because it actively misleads. If a file's job changes, update its row in th
 | Key Store | `/tools/key-store/` | [`key-store/KNOWLEDGE_MAP.md`](key-store/KNOWLEDGE_MAP.md) | [`key-store/CLAUDE.md`](key-store/CLAUDE.md) |
 | Drop Rooms | `/tools/drop-rooms/` | [`drop-rooms/KNOWLEDGE_MAP.md`](drop-rooms/KNOWLEDGE_MAP.md) | [`drop-rooms/CLAUDE.md`](drop-rooms/CLAUDE.md) |
 | Learn AWS | `/tools/learn-aws/` | [`learn-aws/KNOWLEDGE_MAP.md`](learn-aws/KNOWLEDGE_MAP.md) | [`learn-aws/CLAUDE.md`](learn-aws/CLAUDE.md) |
+| Speak English | `/tools/learn-english/` | [`learn-english/KNOWLEDGE_MAP.md`](learn-english/KNOWLEDGE_MAP.md) | [`learn-english/CLAUDE.md`](learn-english/CLAUDE.md) |
 
 Not tools: `mcp_server/` (stdio MCP server for AI clients — [`mcp_server/KNOWLEDGE_MAP.md`](mcp_server/KNOWLEDGE_MAP.md), [`mcp_server/CLAUDE.md`](mcp_server/CLAUDE.md), design `docs/architecture/ADR-MCP.md`), `orchestrator/` (headless CLI — `orchestrator/CLAUDE.md`), `core/` (shared libraries — see the repo-wide section below and
 `docs/architecture/shared-connectors.md`), `core_plugins/` (manifest loader, gateway, supervisor, autoscaler, Status page).

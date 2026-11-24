@@ -326,3 +326,11 @@ Just switching a tool **off** in Settings is reversible and enough in most cases
 4. Then `docker compose up -d --build` so the image no longer contains it. Mentions of the tool in other docs are listed for you to tidy up; they are not rewritten.
 The core tools (Vault, DataDiff) can't be removed with the script.
 
+
+## Speak English: your progress
+- Open **Speak English** from the Toolbox home page (tick "Show learning tools" if you don't see it).
+- Your progress (passed modules, scores, your Tough list) is saved **in Toolbox**, not in the browser — clearing the browser does not lose it, and
+  it is included in Toolbox backups (Postgres).
+- **Moving from the old app (first time):** open the old Speak English app → "Copy my progress code" → in Toolbox's Speak English → "Restore from a code" → paste.
+  Restoring only ever adds progress.
+- "⚠ Not saved" in the top bar means Toolbox could not be reached; the browser keeps the change and sends it again on your next step.
