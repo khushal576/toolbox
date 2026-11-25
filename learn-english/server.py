@@ -36,7 +36,8 @@ app = FastAPI(title="Speak English")
 
 HERE = Path(__file__).resolve().parent
 UI_PATH = HERE / "ui" / "index.html"
-CONTENT = {"modules": re.compile(r"^(m\d{3}|manifest)\.js$"), "practice": re.compile(r"^h\d{3}\.js$"), "cheat": re.compile(r"^c\d{3}\.js$")}
+CONTENT = {"modules": re.compile(r"^(m\d{3}|manifest)\.js$"), "practice": re.compile(r"^h\d{3}\.js$"), "cheat": re.compile(r"^c\d{3}\.js$"),
+           "daily": re.compile(r"^(d\d{3}|manifest)\.js$")}
 HEADER = "x-speak-english"
 MAX_BODY = 512 * 1024
 TOUGH_ID = re.compile(r"^\d{1,4}:[a-z0-9]{1,13}$")

@@ -231,6 +231,7 @@ COPY learn-english/ui/ ./learn_english/ui/
 COPY learn-english/modules/ ./learn_english/modules/
 COPY learn-english/practice/ ./learn_english/practice/
 COPY learn-english/cheat/ ./learn_english/cheat/
+COPY learn-english/daily/ ./learn_english/daily/
 
 # >>> scripts/new_tool.py adds new tools' COPY lines ABOVE this marker (roadmap P2); scripts/remove_tool.py (P3) removes them again. Keep it.
 # Plugin model + discovery (roadmap A1/A2). main.py imports it at startup and

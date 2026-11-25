@@ -58,6 +58,9 @@ svg.i{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke
 #side{width:290px;flex:none;position:sticky;top:54px;height:calc(100vh - 54px);overflow-y:auto;padding:14px 8px 40px;font-size:15px;background:var(--card);border-right:1px solid var(--edge);scrollbar-width:thin;scrollbar-color:var(--edge) transparent}
 #main{flex:1;min-width:0}
 #app{max-width:840px;margin:0 auto;padding:20px 20px 40px}
+.modes{display:flex;gap:4px;margin:0 4px;padding:4px;background:var(--bg);border:1px solid var(--edge);border-radius:11px}
+.modes button{flex:1;border:0;background:none;color:var(--muted);font-size:.86rem;font-weight:650;padding:6px 8px;border-radius:8px;cursor:pointer}
+.modes button[aria-selected="true"]{background:var(--card);color:var(--brand);box-shadow:0 1px 3px rgba(20,30,60,.14)}
 #side .sh{display:flex;justify-content:space-between;align-items:center;padding:2px 8px 0;font-size:.86rem;font-weight:700}
 #side .badge{font-size:.7rem;font-weight:600;color:var(--muted);background:var(--bg);border:1px solid var(--edge);border-radius:10px;padding:1px 8px}
 #side h4{margin:18px 8px 4px;font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700}
@@ -133,6 +136,7 @@ textarea{min-height:76px;resize:vertical}
 .chips.one{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-bottom:10px;padding-bottom:2px} .chips.one::-webkit-scrollbar{display:none} .chips.one .chip{flex:none}
 .pcard{padding:16px 20px}
 .pcard .fb{margin-top:8px;padding:8px 12px}
+.ways > div{display:flex;align-items:center;gap:8px;padding:1px 0} .ways .who{flex:none;width:92px;font-size:.76rem;color:var(--muted)} .ways .hear{font-size:.9rem;padding:0 4px}
 .ph-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .hardbtn{font-size:.78rem;border:1px solid var(--edge);background:var(--card);color:var(--muted);border-radius:99px;padding:3px 10px;cursor:pointer;white-space:nowrap}
 .hardbtn:hover{border-color:var(--accent);color:var(--accent)} .hardbtn.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:650}
@@ -173,6 +177,7 @@ details.code .card{text-align:left;margin-top:10px}
 @media (max-width:560px){ .top .stp .lbl,.tb .slot .top .bar,.tb .pill #tbsm,.tb .pill #tbbg,.tb .cl{display:none} .tb .slot .top{margin:0;gap:6px;justify-content:space-between} .tb{gap:6px;padding:0 10px} .tb .brand .bt{display:none} .tb .pill{border:0;padding:0} #app{padding:18px 14px 70px} .card{padding:18px} .hero{padding:20px} .stats{gap:8px} .stat{padding:10px 12px} .stat b{font-size:1.2rem} }
 </style>
 <script src="modules/manifest.js"></script>
+<script src="daily/manifest.js"></script>
 </head>
 <body>
 <header class="tb">
@@ -232,7 +237,7 @@ function saved(ok){ const w = document.getElementById("tbwarn"); if(w) w.hidden 
 addEventListener("pagehide", () => { if(saveTimer){ clearTimeout(saveTimer); push(true); } });
 /* Reading preferences (per browser): text size and light/dark. */
 const UIK = "speakEnglish.ui";
-let UI = {fs:17, theme:""};
+let UI = {fs:17, theme:"", mode:"grammar"};
 try{ Object.assign(UI, JSON.parse(localStorage.getItem(UIK) || "{}")); }catch(e){}
 function look(){
   document.documentElement.style.setProperty("--fs", UI.fs + "px");
@@ -267,11 +272,19 @@ function loadModule(id){
 const HREG = {};
 function registerHindi(id, items){ HREG[id] = items; }
 if(window.__hpre) window.__hpre.forEach(a => registerHindi(a[0], a[1]));   /* offline bundle */
+/* Daily use: daily/dNNN.js, a stage = 50 fixed sentences. It runs on the same practice screen: stage n is practice set 9000+n. */
+const DAY0 = 9000, isDaily = m => m > DAY0, DAILY = window.DAILY || [], dailyIds = () => DAILY.map(d => DAY0 + d.id);
+function registerDaily(id, items){ HREG[DAY0 + id] = items; }
+/* Two separate parts, switched by the tabs at the top of the sidebar: grammar (the course) and daily (Daily use). Hard marks are counted per part. */
+const inDaily = () => UI.mode === "daily" && DAILY.length > 0;
+const hardCount = daily => Object.keys(S.tough).filter(k => isDaily(+k.split(":")[0]) === daily).length;
+const WHO = {f:"👋 Friends", a:"🙂 Anyone", p:"👔 Polite"};   /* who a daily-use way fits */
+const setName = m => isDaily(m) ? "Stage "+(m-DAY0) : "M"+m;
 function loadHindi(id){
   if(HREG[id]) return Promise.resolve();
   return new Promise(res => {
     const sc = document.createElement("script");
-    sc.src = "practice/h" + String(id).padStart(3,"0") + ".js";
+    sc.src = isDaily(id) ? "daily/d" + String(id-DAY0).padStart(3,"0") + ".js" : "practice/h" + String(id).padStart(3,"0") + ".js";
     sc.onload = sc.onerror = () => res();      /* a module may have no practice file: fine */
     document.head.appendChild(sc);
   });
@@ -323,7 +336,7 @@ function restoreCode(txt){
   Object.keys(d.s||{}).forEach(k => { const v=+d.s[k]; if(ids.has(+k) && v>=0 && v<=1) S.scores[k]=Math.max(S.scores[k]||0, v); });
   Object.keys(S.passed).forEach(k => { S.pos[k] = 0; });
   let tadded = 0;
-  (Array.isArray(d.t) ? d.t : []).forEach(k => { if(/^\d+:[a-z0-9]+$/.test(k) && ids.has(+k.split(":")[0]) && !S.tough[k]){ S.tough[k] = {s:0,n:1}; tadded++; } });
+  (Array.isArray(d.t) ? d.t : []).forEach(k => { if(/^\d+:[a-z0-9]+$/.test(k) && (ids.has(+k.split(":")[0]) || dailyIds().includes(+k.split(":")[0])) && !S.tough[k]){ S.tough[k] = {s:0,n:1}; tadded++; } });
   save(); return added + tadded;
 }
 
@@ -349,6 +362,7 @@ const sideOpen = {};
 
 function home(msg){
   clear(); CUR = 0;
+  if(inDaily()) return dailyHome(msg);
   const nxt = nextModule();
   const passedN = Object.keys(S.passed).length;
   const P = window.PHASES || [];
@@ -368,7 +382,7 @@ function home(msg){
   }
   h += `<div class="stats"><div class="stat"><b>${passedN}<small> / ${MANIFEST.length}</small></b><span>modules passed</span></div>
     <div class="stat"><b>${trophies}<small> / ${P.length}</small></b><span>phases complete</span></div>
-    <div class="stat"><b>${Object.keys(S.tough).length}</b><span>hard sentences</span></div></div>`;
+    <div class="stat"><b>${hardCount(false)}</b><span>hard sentences</span></div></div>`;
   /* No phase list here: the sidebar (☰ Contents on a phone) already shows phases and modules. */
   if(passedN) h += `<p class="foot">Rest when a module is done. Stopping while you still have energy is what brings you back tomorrow.</p>`;
   h += `<details class="code"><summary>Move progress in or out (progress code)</summary><div class="card">
@@ -394,17 +408,30 @@ function home(msg){
   side();
 }
 
+function dailyHome(msg){
+  const tot = DAILY.reduce((a,d) => a+d.n, 0);
+  app.innerHTML = (msg ? `<div class="fb good" style="margin:0 0 14px">${msg}</div>` : "") + `<div class="hero"><div class="k">Daily use</div>
+      <h2>Sentences people really say</h2><p class="hs">Nothing to work out: read the Hindi, say the English, check, and remember the whole sentence.</p>
+      <button class="btn" id="dgo">Quick mix · ${Math.min(QUICK, tot)} →</button></div>
+    <div class="stats"><div class="stat"><b>${DAILY.length}</b><span>${DAILY.length===1?"stage":"stages"}</span></div>
+      <div class="stat"><b>${tot}</b><span>sentences</span></div><div class="stat"><b>${hardCount(true)}</b><span>hard sentences</span></div></div>`;
+  document.getElementById("dgo").onclick = () => practise(null, "plain", QUICK);
+  side();
+}
+
 /* Sidebar = the one place to go anywhere: Continue, Practice (quick / hard / all), and the course.
    Strict order stays: only passed modules and the next module open. */
 function side(){
   const box = document.getElementById("side"); if(!box || !window.MANIFEST) return;
-  const nxt = nextModule(), done = passedIds(), P = window.PHASES || [], hard = Object.keys(S.tough).length;
-  let h = `<div class="sh"><span>Contents</span><span class="badge">${done.length} / ${MANIFEST.length}</span></div>`;
-  if(nxt && nxt.ready) h += `<h4>Continue</h4><div class="sm now click${CUR===nxt.id?" on":""}" data-run="${nxt.id}"><span class="n">${nxt.id}</span><span class="t">${nxt.title}</span></div>`;
+  const nxt = nextModule(), done = passedIds(), P = window.PHASES || [], daily = inDaily(), hard = hardCount(daily);
+  const can = daily || done.length > 0;
+  let h = `<div class="modes" role="tablist"><button role="tab" data-mode="grammar" aria-selected="${!daily}">Grammar</button><button role="tab" data-mode="daily" aria-selected="${daily}">Daily use</button></div>`;
+  if(!daily && nxt && nxt.ready) h += `<h4>Continue</h4><div class="sm now click${CUR===nxt.id?" on":""}" data-run="${nxt.id}"><span class="n">${nxt.id}</span><span class="t">${nxt.title}</span></div>`;
   h += `<h4>Practice</h4>
-    <div class="sm prac click${done.length?"":" off"}" data-prac="quick" title="${QUICK} random sentences from every module you passed"><span class="n">${ICON.talk}</span><span class="t">Quick mix</span><small>${QUICK}</small></div>
+    <div class="sm prac click${can?"":" off"}" data-prac="quick" title="${QUICK} random sentences"><span class="n">${ICON.talk}</span><span class="t">Quick mix</span><small>${QUICK}</small></div>
     <div class="sm prac click${hard?"":" off"}" data-prac="hard" title="Only the sentences you marked hard"><span class="n">😬</span><span class="t">Hard ones</span><small>${hard}</small></div>
-    <div class="sm prac click${done.length?"":" off"}" data-prac="all" title="Every sentence from every module you passed"><span class="n">∞</span><span class="t">Everything</span><small>${done.length?"all":"—"}</small></div>`;
+    <div class="sm prac click${can?"":" off"}" data-prac="all" title="${daily?"Every daily sentence":"Every sentence from every module you passed"}"><span class="n">∞</span><span class="t">Everything</span><small>${can?"all":"—"}</small></div>`;
+  if(daily) h += `<h4>Stages</h4>` + DAILY.map(d => `<div class="sm prac click${CUR===DAY0+d.id?" on":""}" data-day="${d.id}" title="Everyday sentences to remember"><span class="n">${d.id}</span><span class="t">${d.title}</span><small>${d.n}</small></div>`).join("");
   const row = m => {
     const st = S.passed[m.id] ? "done" : (nxt && nxt.id===m.id && m.ready) ? "now" : "lock";
     const tools = st==="done" ? `<span class="si"><button data-cheat="${m.id}" title="Cheat sheet" aria-label="Cheat sheet">${ICON.doc}</button><button data-hindi="${m.id}" title="Practise this module" aria-label="Practise this module">${ICON.talk}</button><button data-replay="${m.id}" title="Replay the lesson" aria-label="Replay the lesson">${ICON.again}</button></span>` : "";
@@ -412,31 +439,34 @@ function side(){
       <span class="n">${st==="done"?"✓":m.id}</span><span class="t">${m.title}</span>${tools}</div>`;
   };
   /* Phases fold like Learn AWS: only the phase you are in is open; your clicks are remembered while the page is open. */
-  const curPh = phaseOf(CUR || (nxt ? nxt.id : 0));
-  P.forEach(p => { const ms = phaseMods(p); if(!ms.length) return;
+  const curPh = phaseOf((CUR && !isDaily(CUR)) ? CUR : (nxt ? nxt.id : 0));
+  if(!daily) P.forEach(p => { const ms = phaseMods(p); if(!ms.length) return;
     const n = ms.filter(m => S.passed[m.id]).length;
     const open = sideOpen[p.id] !== undefined ? sideOpen[p.id] : !!(curPh && curPh.id === p.id);
     h += `<details class="phs" data-phase="${p.id}"${open?" open":""}><summary><span class="pl">${phaseDone(p)?"🏆 ":""}<span class="ph">Phase ${p.id}</span> · ${p.name}</span><span class="pc">${n}/${ms.length}</span></summary>${ms.map(row).join("")}</details>`; });
-  const loose = MANIFEST.filter(m => !phaseOf(m.id)); if(loose.length) h += `<h4>More</h4>` + loose.map(row).join("");
+  const loose = MANIFEST.filter(m => !phaseOf(m.id)); if(!daily && loose.length) h += `<h4>More</h4>` + loose.map(row).join("");
   box.innerHTML = h;
   box.querySelectorAll("details.phs").forEach(d => d.addEventListener("toggle", () => { sideOpen[d.dataset.phase] = d.open; }));
   const close = () => box.classList.remove("open");
+  box.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { if((b.dataset.mode === "daily") === daily) return; UI.mode = b.dataset.mode; look(); home(); });
   box.querySelectorAll("[data-run]").forEach(b => b.onclick = () => { close(); runModule(+b.dataset.run); });
   box.querySelectorAll("[data-cheatrow]").forEach(b => b.onclick = e => { if(e.target.closest("button")) return; close(); cheatSheet(+b.dataset.cheatrow); });
   box.querySelectorAll("[data-cheat]").forEach(b => b.onclick = () => { close(); cheatSheet(+b.dataset.cheat); });
   box.querySelectorAll("[data-hindi]").forEach(b => b.onclick = () => { close(); practise([+b.dataset.hindi], "plain"); });
   box.querySelectorAll("[data-replay]").forEach(b => b.onclick = () => { close(); S.pos[b.dataset.replay]=0; save(); runModule(+b.dataset.replay, true); });
+  box.querySelectorAll("[data-day]").forEach(b => b.onclick = () => { close(); practise([DAY0 + +b.dataset.day], "plain"); });
   box.querySelectorAll("[data-prac]").forEach(b => b.onclick = () => { if(b.classList.contains("off")) return; close();
     const k = b.dataset.prac; practise(null, k==="hard" ? "tough" : "plain", k==="quick" ? QUICK : 0); });
 }
 /* Practice starts straight away (no setup screen). mods = null → every passed module. */
 function practise(mods, mode, limit){
-  const ids = mods || passedIds();
+  const ids = mods || (inDaily() ? dailyIds() : passedIds());
+  CUR = mods && mods.length === 1 && isDaily(mods[0]) ? mods[0] : 0; side();
   if(!ids.length) return home("Pass a module to unlock practice.");
   clear(); app.innerHTML = '<p class="sub">Loading…</p>';
   Promise.all(ids.map(loadHindi)).then(() => {
     if(mode === "tough" && !toughIn(ids)) return home("No hard sentences yet. While practising, press 😬 on any sentence you get wrong.");
-    hindiPractice(ids, mode, limit);
+    hindiPractice(ids, mode, limit, !!mods);
   });
 }
 document.getElementById("tbhome").onclick = () => home();
@@ -494,7 +524,7 @@ const toughIn = mods => { let n=0; mods.forEach(m => (HREG[m]||[]).forEach(x => 
 function hindiSetup(pre){ return practise(pre ? [pre] : null, "plain"); }
 
 /* Practice session: think the English, press the eye, then mark it. */
-function hindiPractice(mods, mode, limit){
+function hindiPractice(mods, mode, limit, one){
   hTopic = "All";
   const pool = [];
   mods.forEach(m => (HREG[m]||[]).forEach(x => pool.push({x, m, id: sid(m,x)})));
@@ -528,18 +558,22 @@ function hindiPractice(mods, mode, limit){
           ${t&&t.s>=3?`<div class="fb good" style="margin-top:10px">You got this one right 3 times in a row. Ready to take it off your hard list?</div><button class="btn" id="rm">Take it off the hard list</button>`:``}`;
       }
     }
-    const label = mode==="tough" ? "Hard ones" : limit ? "Quick mix" : mods.length===1 ? "Module "+mods[0] : "All sentences";
+    const label = mode==="tough" ? "Hard ones" : limit ? "Quick mix" : one ? (isDaily(mods[0]) ? setName(mods[0])+" · "+(DAILY.find(d => DAY0+d.id===mods[0])||{}).title : "Module "+mods[0]) : "All sentences";
     app.innerHTML = `<div class="top"><button id="hm">← Home</button><div class="bar"><i style="width:${Math.round(i/deck.length*100)}%"></i></div><span>${label} · ${i+1}/${deck.length}</span></div>
       <div class="chips one">${topics.map(tp=>`<button class="chip ${tp===hTopic?"on":""}" data-t="${tp}">${TOPIC_ICON[tp]||""} ${tp}</button>`).join("")}</div>
-      <div class="card pcard"><div class="ph-head"><span class="tag">${TOPIC_ICON[x.tag]||""} ${x.tag} · M${p.m}</span>
+      <div class="card pcard"><div class="ph-head"><span class="tag">${TOPIC_ICON[x.tag]||""} ${x.tag} · ${setName(p.m)}</span>
           <button class="hardbtn ${t?"on":""}" id="tg" title="${t?"Marked hard — click to undo":"Mark as hard"}">😬 ${t?"Hard":"Mark hard"}</button></div>
         <div class="bighi" lang="hi">${x.hi}</div>
         ${shown?"":`<p class="sub" style="margin:2px 0 0">Say it in English first, then check.</p>`}
         <button class="btn small ghost eye" id="eye" style="margin-top:10px">${shown?"🙈 Hide answer":"👁 Show answer"}</button>
         <div id="ans" style="${shown?"":"display:none"}">
-          <div class="fb good"><b>${x.en}</b> <button class="hear" id="hr" title="Hear it">🔊</button>
-          ${x.alt&&x.alt.length?`<br><span class="sub">Also fine: ${x.alt.join(" / ")}</span>`:""}</div>
+          ${x.ways ? `<div class="fb good ways">${x.ways.map((w,k) => `<div><span class="who">${WHO[w[0]]}</span><span>${k?w[1]:`<b>${w[1]}</b>`}</span> <button class="hear" data-say="${k}" title="Hear it">🔊</button></div>`).join("")}</div>` : `<div class="fb good"><b>${x.en}</b> <button class="hear" id="hr" title="Hear it">🔊</button>
+          ${x.alt&&x.alt.length?`<br><span class="sub">Also fine: ${x.alt.join(" / ")}</span>`:""}</div>`}
           ${x.note?`<div class="fb note">${x.note}</div>`:""}
+          ${x.mean?`<div class="fb note"><b>What it means:</b> <span lang="hi">${x.mean}</span></div>`:""}
+          ${x.sit?`<p class="sub" style="margin:8px 0 0"><b>When to say it:</b> ${x.sit}</p>`:""}
+          ${x.bad?`<div class="wrong" style="margin:8px 0 0">${x.bad}</div>`:""}
+          ${x.talk?`<p class="sub" style="margin:8px 0 0"><b>Talk:</b> “${x.talk[0]}” → “${x.talk[1]}”</p>`:""}
           ${x.w&&x.w.length?`<p class="sub" style="margin:6px 0 0">Words: ${x.w.map(w=>`<b>${w[0]}</b> = ${w[1]}`).join(" · ")}</p>`:""}
           ${rate}
         </div></div>
@@ -548,6 +582,7 @@ function hindiPractice(mods, mode, limit){
     $("hm").onclick = () => home();
     $("eye").onclick = () => { shown = !shown; draw(); };
     if($("hr")) $("hr").onclick = () => speak(x.en);
+    app.querySelectorAll("[data-say]").forEach(b => b.onclick = () => speak(x.ways[+b.dataset.say][1]));
     /* moving to another sentence hides the answer automatically */
     $("nx").onclick = next;
     $("pv").onclick = () => { i--; shown = false; draw(); };
