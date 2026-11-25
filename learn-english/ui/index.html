@@ -44,6 +44,10 @@ svg.i{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke
 .tb .slot{flex:1;display:flex;align-items:center;min-width:0}
 .tb .slot .top{flex:1;margin:0 12px;max-width:760px;font-size:.8rem}
 .tb .slot .top .bar{height:5px}
+.top .stp{white-space:nowrap;border:1px solid var(--edge);border-radius:8px;padding:4px 10px;color:var(--ink);background:var(--card)}
+.top .stp:hover:not(:disabled){border-color:var(--brand);color:var(--brand);background:var(--brand-bg)}
+.top .stp:disabled{opacity:.35;cursor:default}
+.top span{white-space:nowrap}
 .tb .pill{display:flex;gap:4px;align-items:center;border:1px solid var(--edge);border-radius:12px;padding:4px 6px}
 .tb .tbb{font-size:.8rem;border:1px solid var(--edge);background:var(--card);color:var(--ink);border-radius:8px;padding:4px 10px;cursor:pointer;white-space:nowrap}
 .tb .tbb:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-bg)}
@@ -166,7 +170,7 @@ details.code .card{text-align:left;margin-top:10px}
   #side{display:none} #side.open{display:block;position:fixed;left:0;top:54px;bottom:0;height:auto;width:86%;max-width:330px;z-index:6;box-shadow:0 10px 40px rgba(0,0,0,.25)}
 }
 @media (min-width:901px){ .narrow-only{display:none !important} }
-@media (max-width:560px){ .tb{gap:6px;padding:0 10px} .tb .brand .bt{display:none} .tb .pill{border:0;padding:0} #app{padding:18px 14px 70px} .card{padding:18px} .hero{padding:20px} .stats{gap:8px} .stat{padding:10px 12px} .stat b{font-size:1.2rem} }
+@media (max-width:560px){ .top .stp .lbl,.tb .slot .top .bar,.tb .pill #tbsm,.tb .pill #tbbg,.tb .cl{display:none} .tb .slot .top{margin:0;gap:6px;justify-content:space-between} .tb{gap:6px;padding:0 10px} .tb .brand .bt{display:none} .tb .pill{border:0;padding:0} #app{padding:18px 14px 70px} .card{padding:18px} .hero{padding:20px} .stats{gap:8px} .stat{padding:10px 12px} .stat b{font-size:1.2rem} }
 </style>
 <script src="modules/manifest.js"></script>
 </head>
@@ -176,7 +180,7 @@ details.code .card{text-align:left;margin-top:10px}
   <div class="slot" id="tbslot"></div>
   <span class="warn" id="tbwarn" hidden title="Your progress could not be saved to Toolbox. It is kept in this browser and sent again on your next step.">⚠ Not saved</span>
   <div class="pill">
-    <button class="tbb narrow-only" id="tbcourse" title="Contents">☰ Contents</button>
+    <button class="tbb narrow-only" id="tbcourse" title="Contents">☰<span class="cl"> Contents</span></button>
     <button class="tbb" id="tbsm" title="Smaller text" aria-label="Smaller text">A−</button>
     <button class="tbb" id="tbbg" title="Bigger text" aria-label="Bigger text">A+</button>
     <button class="tbb" id="tbth" title="Light / night" aria-label="Light or night">🌙</button>
@@ -577,19 +581,26 @@ function play(m){
   CUR = id; side();
   let pos = S.pos[id] || 0;
   if(pos >= m.steps.length) pos = 0;
-  const go = p => { pos = p; S.pos[id] = pos; S.last = Date.now(); save(); show(); };
+  /* pos = the furthest step reached (saved); at = the step on screen. Looking back never moves pos, and nobody can look past it. */
+  let at = pos;
+  const go = p => { at = p; if(p > pos){ pos = p; S.pos[id] = pos; } S.last = Date.now(); save(); show(); };
+  const peek = p => { if(p >= 0 && p <= pos){ at = p; show(); } };
 
   function top(){
-    const pct = Math.round(pos / (m.steps.length-1) * 100);
-    return `<div class="top"><button id="hm">← Home</button><div class="bar"><i style="width:${pct}%"></i></div><span>M${m.id}</span></div>`;
+    const pct = Math.round(at / (m.steps.length-1) * 100);
+    return `<div class="top"><button id="hm">← Home</button><button class="stp" id="pvs" title="Previous step" aria-label="Previous step" ${at===0?"disabled":""}>‹ <span class="lbl">Previous</span></button>
+      <div class="bar"><i style="width:${pct}%"></i></div><span>M${m.id} · ${at+1}/${m.steps.length}</span>
+      <button class="stp" id="nxs" title="Next step (only steps you have already reached)" aria-label="Next step" ${at>=pos?"disabled":""}><span class="lbl">Next</span> ›</button></div>`;
   }
   function show(){
     clear();
-    const s = m.steps[pos];
+    const s = m.steps[at];
     app.insertAdjacentHTML("beforeend", top());
     document.getElementById("hm").onclick = () => home();
+    document.getElementById("pvs").onclick = () => peek(at-1);
+    document.getElementById("nxs").onclick = () => peek(at+1);
     const card = el(`<div class="card"></div>`).firstChild; app.appendChild(card);
-    const nxt = () => go(pos+1);
+    const nxt = () => go(at+1);
     const mkNext = (label) => { const b = el(`<button class="btn">${label||"Next"}</button>`).firstChild; app.appendChild(b); b.onclick = nxt; return b; };
 
     if(s.k==="card"){
@@ -606,7 +617,7 @@ function play(m){
         s.items.map(t=>`<div class="wrong">${t.bad}</div><div class="right">${t.good}</div><p class="sub" style="margin-top:2px">${t.fix}</p>`).join("");
       mkNext("Ready for the boss");
     }
-    else if(s.k==="boss") renderBoss(m, s, card, go, pos);
+    else if(s.k==="boss") renderBoss(m, s, card, go, at);
     else if(s.k==="done"){
       card.innerHTML = `<span class="tag">Module ${m.id} complete 🎉</span><h2>${s.title}</h2>
         <ul class="can">${s.can.map(c=>`<li>${c}</li>`).join("")}</ul>
@@ -753,7 +764,9 @@ function renderBoss(m, s, host, go, pos){
     const b = el(`<button class="btn">I'm ready</button>`).firstChild; host.appendChild(b);
     b.onclick = () => play();
   };
+  const steps = on => ["pvs","nxs"].forEach(k => { const b = document.getElementById(k); if(b) b.style.visibility = on ? "" : "hidden"; });
   const play = () => {
+    steps(false);
     let i = 0, right = 0; const missed = [];
     const ask = () => {
       if(i >= s.qs.length) return result();
@@ -769,6 +782,7 @@ function renderBoss(m, s, host, go, pos){
       });
     };
     const result = () => {
+      steps(true);
       const pct = right / s.qs.length, pass = pct >= s.pass;
       S.scores[m.id] = Math.max(S.scores[m.id]||0, pct);
       if(pass){ S.passed[m.id] = true; S.pos[m.id] = pos + 1; }

@@ -67,6 +67,7 @@ curl -s -H 'X-Speak-English: 1' http://localhost:8000/tools/learn-english/progre
 - **Layout rules (owner, 2026-11-24):** Learn AWS look (white cards, blue-grey desk, blue accent, light/night). One place to go anywhere: the sidebar
   (Continue · Practice: Quick mix 20 / Hard ones / Everything — each starts at once, no setup screen · phases as fold-out sections, only the current one open).
   Per-module actions are small line icons shown on hover (cheat sheet, practise, replay). The lesson progress row (← Home · bar · step) lives in the top bar.
+  Lessons have ‹ Previous / Next › in the top bar: `pos` = furthest step (saved), `at` = step on screen; looking back never moves `pos`, nobody can go past it, and the buttons hide during a boss attempt.
   Home = next module + three numbers only (no phase list; the sidebar has it). Lesson screens must fit a ~1355×790 screen without scrolling where the content allows; the last button of a screen is pinned to the bottom when a card is long.
 - **Voice:** a smart, warm, slightly funny friend. Simple words, never childish. **Win early. No guilt** (welcome back + 5-question warm-up, no streak shaming).
   Hide earlier modules inside new examples (spaced repetition). Every few modules a bigger review.
