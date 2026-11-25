@@ -36,7 +36,7 @@ Goal: the owner reads one service months later and can answer any exam (DEA-C01,
 - **Plan first** (topics/skills and the count from the tier table in `MCQ-GUIDE.md`), wait for approval, then write. Core services 30–40, important 18–25, supporting 8–12.
 - DEA-C01 style: short scenario, one decision, plausible wrong options, a `why` for every option, plus `remember` and `variants`.
 - Every fact from the notes; nothing marked "(verify)" may be a correct answer. Ids are permanent (browser progress is keyed by id) — never renumber.
-- Done so far: IAM and STS (39), KMS (32), S3 (36).
+- Done so far: 37 services, 532 questions (see `mcq/`). Not yet written: the tier A core services (Glue, Lambda, Athena, Redshift, DynamoDB, Lake Formation, EventBridge, SQS and SNS, Kinesis Data Streams, Firehose, Managed Flink, MSK), CloudWatch, CloudTrail, DMS, Elastic Load Balancing, and the tier D services. CI/CD has no question from note 4 (CodeCommit, mostly "(verify)").
 
 ## Gotchas
 - `tests/unit/test_learn_aws.py` checks question shape, unique ids, valid answers and that every `source` note exists — it is the only validator now.

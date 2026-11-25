@@ -1,0 +1,344 @@
+{
+ "questions": [
+  {
+   "id": "qs-001",
+   "skill": "3.2.1",
+   "source": "1-concepts-sources-datasets-and-spice.md",
+   "q": "Quick Sight dashboards read an Athena table over S3. They are slow and the Athena scan bill is high because many readers open them all day. What should the team do?",
+   "options": [
+    {
+     "t": "Create a larger Athena workgroup",
+     "why": "Wrong: it does not stop repeated scans, so the cost stays."
+    },
+    {
+     "t": "Switch the dataset to direct query",
+     "why": "Wrong: direct query runs Athena on every visual load, which is the cause of the problem."
+    },
+    {
+     "t": "Add more Quick Sight Author seats",
+     "why": "Wrong: authors do not change how often the source is queried."
+    },
+    {
+     "t": "Import the dataset into SPICE on a schedule",
+     "why": "Right: SPICE serves repeated queries from its in-memory copy, so Athena scans only at refresh."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "SPICE removes repeated Athena scans and speeds up visuals.",
+   "remember": "Athena source with slow dashboards or a high scan bill \u2192 SPICE with a refresh schedule, not a bigger workgroup.",
+   "variants": [
+    "Users must see the last few minutes of data \u2192 direct query.",
+    "Many concurrent readers on any source \u2192 SPICE.",
+    "Source must not be copied for compliance \u2192 direct query."
+   ]
+  },
+  {
+   "id": "qs-002",
+   "skill": "3.2.1",
+   "source": "1-concepts-sources-datasets-and-spice.md",
+   "q": "A dashboard on a fast Redshift cluster must show data that is at most a few minutes old. The data may not be copied for compliance reasons. Which dataset mode fits?",
+   "options": [
+    {
+     "t": "Direct query",
+     "why": "Right: it queries the source live (short cache), so nothing is copied and data is current."
+    },
+    {
+     "t": "SPICE with a daily full refresh",
+     "why": "Wrong: it copies data and is only as fresh as the last refresh."
+    },
+    {
+     "t": "SPICE with a monthly schedule",
+     "why": "Wrong: far too stale and still a copy."
+    },
+    {
+     "t": "File upload of a daily export",
+     "why": "Wrong: uploaded files are always imported into SPICE and are stale."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Near real time or no-copy requirements point to direct query.",
+   "remember": "Near-real-time or cannot-copy data on a fast source \u2192 direct query. Otherwise SPICE.",
+   "variants": [
+    "Fastest SPICE option is a 15-minute incremental refresh (Enterprise).",
+    "Direct query visuals stop waiting after 2 minutes.",
+    "Source is slow or huge \u2192 SPICE if it fits."
+   ]
+  },
+  {
+   "id": "qs-003",
+   "skill": "3.2.1",
+   "source": "1-concepts-sources-datasets-and-spice.md",
+   "q": "A Glue job loads a fact table at unpredictable times each night. Dashboards must update right after the load finishes. What is the best design?",
+   "options": [
+    {
+     "t": "An hourly SPICE schedule",
+     "why": "Wrong: it may run before or long after the load finishes."
+    },
+    {
+     "t": "Daily schedule at the latest possible time",
+     "why": "Wrong: it can miss a late load and delays every other night."
+    },
+    {
+     "t": "EventBridge on job completion triggers a Lambda that calls `CreateIngestion`",
+     "why": "Right: the API refresh runs as soon as the data lands."
+    },
+    {
+     "t": "Switch to direct query on the raw files",
+     "why": "Wrong: the S3 connector cannot query directly, S3 data is always imported into SPICE."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Event-driven refresh through the CreateIngestion API.",
+   "remember": "ETL finishes at random times \u2192 EventBridge/Step Functions \u2192 Lambda \u2192 `CreateIngestion`.",
+   "variants": [
+    "Fixed ETL time \u2192 a normal daily SPICE schedule.",
+    "Check refresh status \u2192 `DescribeIngestion`.",
+    "Stop a running refresh \u2192 `CancelIngestion`."
+   ]
+  },
+  {
+   "id": "qs-004",
+   "skill": "3.2.1",
+   "source": "1-concepts-sources-datasets-and-spice.md",
+   "q": "A company's PostgreSQL database sits in a private subnet with no public endpoint. Quick Sight must build datasets from it. What is required?",
+   "options": [
+    {
+     "t": "Allow the Quick Sight public IP range in the DB security group",
+     "why": "Wrong: that works only for databases with a public endpoint."
+    },
+    {
+     "t": "A VPC connection, which creates ENIs in your subnets, plus security group rules",
+     "why": "Right: Quick reaches private IPs through its network interfaces in the VPC."
+    },
+    {
+     "t": "Upload a CSV export every day",
+     "why": "Wrong: it works but is manual and not a connection to the database."
+    },
+    {
+     "t": "An Athena data source on the database",
+     "why": "Wrong: Athena does not read a private PostgreSQL database directly."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Private sources need a VPC connection.",
+   "remember": "Private database \u2192 VPC connection (ENIs, security groups, Enterprise). Public endpoint \u2192 allow the Quick IP range for that Region.",
+   "variants": [
+    "Public endpoint, timeouts \u2192 check you used the IP range of the right Region.",
+    "Private hostname will not resolve \u2192 add Route 53 Resolver endpoints or use the IP.",
+    "On-premises DB \u2192 VPC connection plus Direct Connect or VPN."
+   ]
+  },
+  {
+   "id": "qs-005",
+   "skill": "3.2.2",
+   "source": "1-concepts-sources-datasets-and-spice.md",
+   "q": "A SPICE dataset on an Enterprise account uses incremental refresh with a 3-day look-back window. Users report that edits to rows from last month never appear. What is the cause and fix?",
+   "options": [
+    {
+     "t": "SPICE capacity is full; buy more capacity",
+     "why": "Wrong: a full pool makes ingestion fail, it does not skip old rows."
+    },
+    {
+     "t": "The schedule is exclusive; add a daily schedule",
+     "why": "Wrong: exclusive schedules affect which schedules you can add, not which rows change."
+    },
+    {
+     "t": "Incremental refresh is not supported on SQL sources",
+     "why": "Wrong: it is supported on SQL sources such as Redshift and Athena."
+    },
+    {
+     "t": "Changes older than the window are not picked up; widen the window or run a periodic full refresh",
+     "why": "Right: only rows inside the look-back window are deleted and re-inserted."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Incremental refresh replaces only rows inside the look-back window.",
+   "remember": "Old-row updates missing after incremental refresh \u2192 widen the look-back window or run a full refresh.",
+   "variants": [
+    "Late-arriving updates from yesterday \u2192 a look-back window that covers them.",
+    "Deleting the incremental config triggers a full refresh.",
+    "S3 or file datasets \u2192 full refresh only."
+   ]
+  },
+  {
+   "id": "qs-006",
+   "skill": "3.2.1",
+   "source": "3-security-administration-cost-limits-and-scenarios.md",
+   "q": "Regional managers must see only the rows for their own region in one shared dataset. One VP must see every region. How is this done in Quick Sight?",
+   "options": [
+    {
+     "t": "Column-level security on the region column",
+     "why": "Wrong: CLS hides columns, not rows."
+    },
+    {
+     "t": "Create a separate dashboard per region",
+     "why": "Wrong: it multiplies maintenance and does not enforce row access on the dataset."
+    },
+    {
+     "t": "A row-level security rules dataset mapping user or group to region, with a NULL region row for the VP",
+     "why": "Right: users see matching rows only, and a NULL value means all values."
+    },
+    {
+     "t": "Dataset-level filter on the region field",
+     "why": "Wrong: a dataset filter applies to everyone equally."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "RLS rules dataset with a NULL rule row for full access.",
+   "remember": "Different rows per user or group \u2192 RLS rules dataset (Enterprise); NULL in a rule field = all values. Hiding fields \u2192 CLS.",
+   "variants": [
+    "Hide a salary column from analysts \u2192 column-level security.",
+    "RLS works only on text fields; cast numbers or dates to string.",
+    "Dataset owners always see all data."
+   ]
+  },
+  {
+   "id": "qs-007",
+   "skill": "3.2.1",
+   "source": "2-analyses-visuals-ml-q-topics-reports-and-embedding.md",
+   "q": "A SaaS company embeds a dashboard in its web app for 200 customers. Customers have no AWS or Quick identity and each must see only its own data. Which design fits?",
+   "options": [
+    {
+     "t": "Anonymous embedding with session tags and tag-based RLS",
+     "why": "Right: tags passed at embed time filter rows per session, with no user accounts."
+    },
+    {
+     "t": "Registered-user embedding with one Quick user per customer user",
+     "why": "Wrong: needs accounts for every customer user, which is heavy for this case."
+    },
+    {
+     "t": "Public (1-click) embedding",
+     "why": "Wrong: it exposes all the data to everyone, with no per-viewer RLS."
+    },
+    {
+     "t": "One AWS account per customer",
+     "why": "Wrong: strongest isolation but far too much overhead for 200 tenants."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Anonymous embedding plus tag-based RLS scales to many tenants.",
+   "remember": "No identities and per-tenant data \u2192 anonymous embedding + session tags + tag-based RLS. Internal staff with SSO \u2192 registered-user embedding.",
+   "variants": [
+    "Tenants need their own logins and separated assets \u2192 namespaces.",
+    "Public non-sensitive stats \u2192 public embedding.",
+    "Embed URL fails on refresh \u2192 URLs are single-use, generate a new one."
+   ]
+  },
+  {
+   "id": "qs-008",
+   "skill": "3.2.1",
+   "source": "3-security-administration-cost-limits-and-scenarios.md",
+   "q": "A company serves 2,000 external customers who each open a dashboard about once a month. They are not registered Quick users. Which pricing choice is cheapest and supported?",
+   "options": [
+    {
+     "t": "Per-user Reader roles for all 2,000 customers",
+     "why": "Wrong: about $6,000 a month versus about $1,000 with session pricing."
+    },
+    {
+     "t": "Reader session capacity (anonymous embedding)",
+     "why": "Right: $250 for 500 sessions plus $0.50 per extra, about $1,000, and anonymous embedding needs session capacity."
+    },
+    {
+     "t": "Author Pro seats for every customer",
+     "why": "Wrong: the most expensive role, and not meant for readers."
+    },
+    {
+     "t": "Buy extra SPICE capacity",
+     "why": "Wrong: SPICE is storage and does not change how readers are billed."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Many occasional external readers \u2192 reader sessions.",
+   "remember": "Many occasional or external readers \u2192 session pricing. A reader above about 6 sessions a month is cheaper as a per-user Reader ($3). Anonymous embedding always needs sessions.",
+   "variants": [
+    "100 staff using it daily \u2192 per-user Reader.",
+    "`UnsupportedPricingPlanException` \u2192 buy session capacity.",
+    "Only two executives need AI summaries \u2192 Reader Pro for them."
+   ]
+  },
+  {
+   "id": "qs-009",
+   "skill": "3.2.1",
+   "source": "1-concepts-sources-datasets-and-spice.md",
+   "q": "An Athena dataset in Quick Sight fails with an insufficient Lake Formation permissions error. The S3 buckets are already ticked in the Quick security settings. What is missing?",
+   "options": [
+    {
+     "t": "A larger SPICE capacity",
+     "why": "Wrong: capacity errors are a different message."
+    },
+    {
+     "t": "A VPC connection",
+     "why": "Wrong: Athena is reached through the service, not a VPC connection."
+    },
+    {
+     "t": "A new Athena workgroup",
+     "why": "Wrong: a workgroup does not grant Lake Formation access."
+    },
+    {
+     "t": "A Lake Formation SELECT grant to the principal Quick uses",
+     "why": "Right: S3 access alone is not enough for Lake Formation governed tables."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Lake Formation needs its own grant for the Quick principal.",
+   "remember": "Athena error on Lake Formation tables \u2192 grant LF SELECT to the Quick principal. S3 access denied \u2192 tick the data and results buckets. Encrypted bucket \u2192 allow `kms:Decrypt` for the Quick role.",
+   "variants": [
+    "Access denied on S3 \u2192 check Security & permissions for data and results buckets.",
+    "Encrypted bucket fails \u2192 add the Quick role to the KMS key policy.",
+    "Cross-account S3 \u2192 bucket policy for the Quick role (and KMS policy)."
+   ]
+  },
+  {
+   "id": "qs-010",
+   "skill": "3.2.2",
+   "source": "2-analyses-visuals-ml-q-topics-reports-and-embedding.md",
+   "q": "An analyst finds that anomaly detection is unavailable on one dataset but works on others. What is the most likely cause?",
+   "options": [
+    {
+     "t": "The dataset is in direct query mode",
+     "why": "Wrong: this is not what blocks anomaly detection."
+    },
+    {
+     "t": "The dataset has too few columns",
+     "why": "Wrong: column count is not the limit."
+    },
+    {
+     "t": "The dataset uses row-level security",
+     "why": "Right: anomaly detection is not supported on datasets that use RLS."
+    },
+    {
+     "t": "The account is in the wrong Region",
+     "why": "Wrong: Region does not disable it for one dataset."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Anomaly detection is not supported on RLS datasets.",
+   "remember": "Anomaly detection greyed out \u2192 check for RLS on the dataset.",
+   "variants": [
+    "Email when a KPI crosses a number \u2192 threshold alert on a KPI or gauge visual.",
+    "Many dimensions in anomaly detection \u2192 many metrics, higher cost.",
+    "Alerts cannot fire faster than SPICE refreshes."
+   ]
+  }
+ ]
+}

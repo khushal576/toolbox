@@ -1,0 +1,684 @@
+{
+ "questions": [
+  {
+   "id": "mwaa-001",
+   "skill": "1.3.1",
+   "source": "1-basics-environments-and-airflow-concepts.md",
+   "q": "A company runs 300 self-managed Apache Airflow DAGs on EC2 that call Glue, EMR, Redshift and dbt, and needs backfill. It wants to stop patching and operating the cluster with minimal DAG changes. Which service fits?",
+   "options": [
+    {
+     "t": "AWS Step Functions",
+     "why": "Wrong: DAGs would have to be rewritten as ASL, and Step Functions has no backfill or catch-up concept."
+    },
+    {
+     "t": "Glue workflows",
+     "why": "Wrong: They only orchestrate Glue jobs, crawlers and triggers, not EMR, Redshift or dbt."
+    },
+    {
+     "t": "Amazon MWAA",
+     "why": "Right: It runs Airflow for you (scheduler, workers, web server, metadata DB, patching), so the existing Python DAGs run with little change and keep backfill."
+    },
+    {
+     "t": "EventBridge Scheduler with Lambda",
+     "why": "Wrong: It only fires schedules; it has no dependency graph, UI or backfill."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Existing Airflow DAGs plus backfill and many tools point to MWAA.",
+   "remember": "Existing Airflow, Python DAGs, backfill or many third-party operators \u2192 MWAA. Serverless, AWS-only and least ops \u2192 Step Functions.",
+   "variants": [
+    "A few AWS service calls triggered by events, no idle cost \u2192 Step Functions.",
+    "Only chaining Glue jobs and crawlers \u2192 Glue workflows.",
+    "Just a cron trigger for one Lambda \u2192 EventBridge Scheduler."
+   ]
+  },
+  {
+   "id": "mwaa-002",
+   "skill": "1.3.1",
+   "source": "1-basics-environments-and-airflow-concepts.md",
+   "q": "A small team has an event-driven workflow of five AWS service calls that runs a few times a week. They want the lowest cost and least operational overhead. Which choice is best?",
+   "options": [
+    {
+     "t": "Step Functions",
+     "why": "Right: It is serverless and billed per transition or request, with no idle cost and no environment to manage."
+    },
+    {
+     "t": "MWAA mw1.small environment",
+     "why": "Wrong: An MWAA environment is always on and billed hourly even when no DAG runs, which is wasteful for sparse workloads."
+    },
+    {
+     "t": "MWAA mw1.micro environment",
+     "why": "Wrong: Still always on and billed hourly, and it has no autoscaling."
+    },
+    {
+     "t": "Self-managed Airflow on EC2",
+     "why": "Wrong: Adds patching and operations and costs more for such a small workflow."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Sparse AWS-only workflows suit pay-per-use Step Functions.",
+   "remember": "MWAA bills hourly while the environment exists. Small, sparse, AWS-only workflows \u2192 Step Functions (or Scheduler).",
+   "variants": [
+    "The team already has Airflow DAGs and needs backfill \u2192 MWAA.",
+    "Only Glue jobs to chain, no extra cost \u2192 Glue workflows.",
+    "Want Airflow but pay per task with no idle cost \u2192 MWAA Serverless (verify availability; answer from provisioned MWAA unless told)."
+   ]
+  },
+  {
+   "id": "mwaa-003",
+   "skill": "3.1.1",
+   "source": "2-integrations-deployment-scaling-and-tuning.md",
+   "q": "A developer changes a DAG file and needs it live quickly in an MWAA environment. What is the correct action?",
+   "options": [
+    {
+     "t": "Update the environment and select a new S3 object version of the DAG",
+     "why": "Wrong: Version IDs are selected only for plugins.zip, requirements.txt and the startup script, not for DAGs."
+    },
+    {
+     "t": "Upload the .py file to the dags/ folder in the environment's S3 bucket",
+     "why": "Right: MWAA syncs dags/ continuously and the scheduler rescans it, so no environment update is needed."
+    },
+    {
+     "t": "Restart the scheduler from the console",
+     "why": "Wrong: MWAA does not expose scheduler restarts and none is needed for a DAG change."
+    },
+    {
+     "t": "Recreate the environment",
+     "why": "Wrong: Needless and slow; DAG changes never need a rebuild."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "DAGs sync from S3 automatically; the other artifacts need an environment update.",
+   "remember": "DAG file change \u2192 just upload to dags/. requirements.txt, plugins.zip, startup script, Airflow config or class change \u2192 environment update with the S3 version ID.",
+   "variants": [
+    "Change to requirements.txt \u2192 upload, then update the environment selecting the new version ID.",
+    "Change to an Airflow config option \u2192 environment update.",
+    "Custom operator in plugins.zip \u2192 new zip version plus environment update."
+   ]
+  },
+  {
+   "id": "mwaa-004",
+   "skill": "3.1.1",
+   "source": "2-integrations-deployment-scaling-and-tuning.md",
+   "q": "A team uploaded a new requirements.txt to S3 but the new package is still missing in MWAA. The bucket has versioning on. What is the most likely cause?",
+   "options": [
+    {
+     "t": "The scheduler has not rescanned the dags/ folder yet",
+     "why": "Wrong: DAGs are rescanned, but requirements.txt is not read from there; it needs an environment update."
+    },
+    {
+     "t": "MWAA needs the bucket to have Object Lock enabled",
+     "why": "Wrong: Object Lock is optional and unrelated to package installs."
+    },
+    {
+     "t": "Packages can only be installed through plugins.zip",
+     "why": "Wrong: requirements.txt is the normal way to install PyPI packages."
+    },
+    {
+     "t": "The environment was not updated to select the new S3 object version of requirements.txt",
+     "why": "Right: MWAA installs only the version ID you select; a new file with an old version ID changes nothing."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "requirements.txt takes effect only after an environment update with the new version ID.",
+   "remember": "plugins.zip, requirements.txt and startup script are pinned by S3 version ID; update the environment to pick up a new version.",
+   "variants": [
+    "A new DAG file not showing \u2192 check dags/ path and import errors, not versions.",
+    "Update rolled back \u2192 read the requirements_install_ip log stream.",
+    "Startup script change \u2192 also needs a new version ID selected."
+   ]
+  },
+  {
+   "id": "mwaa-005",
+   "skill": "3.1.2",
+   "source": "2-integrations-deployment-scaling-and-tuning.md",
+   "q": "After editing requirements.txt, an MWAA environment update rolled back. Where should the engineer look first?",
+   "options": [
+    {
+     "t": "The requirements_install_ip log stream in the scheduler log group",
+     "why": "Right: pip failures such as constraint conflicts or a timeout past 10 minutes are logged there and cause the rollback."
+    },
+    {
+     "t": "The task log group for the failing DAG",
+     "why": "Wrong: No DAG task ran; the failure happened during the component install."
+    },
+    {
+     "t": "CloudTrail CreateWebLoginToken events",
+     "why": "Wrong: Those record UI logins, not package installs."
+    },
+    {
+     "t": "The SQS airflow-celery queue metrics",
+     "why": "Wrong: The queue carries tasks and is unrelated to pip installs."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Requirements install problems are in requirements_install_ip.",
+   "remember": "Update rolls back after a requirements change \u2192 conflict with the constraints file, or install over 10 min; read requirements_install_ip. Startup script problems \u2192 startup_script_execution_ip.",
+   "variants": [
+    "Update rolled back after a startup script change \u2192 startup_script_execution_ip stream.",
+    "DAG missing from the UI \u2192 DAG processing logs and ImportErrors.",
+    "Private web server cannot install a package \u2192 ship wheels in plugins.zip."
+   ]
+  },
+  {
+   "id": "mwaa-006",
+   "skill": "3.1.1",
+   "source": "2-integrations-deployment-scaling-and-tuning.md",
+   "q": "An MWAA environment has no internet access (private routing). A package must be installed on the web server, but pip cannot reach PyPI. What should be done?",
+   "options": [
+    {
+     "t": "Add a public IP to the web server",
+     "why": "Wrong: MWAA containers are managed; you cannot attach public IPs and it breaks the private design."
+    },
+    {
+     "t": "Enable SSE-KMS on the S3 bucket",
+     "why": "Wrong: Encryption has no effect on package reachability."
+    },
+    {
+     "t": "Include the wheel files in plugins.zip or use a private package repository reachable inside the VPC",
+     "why": "Right: The web server cannot reach PyPI, so packages must come from wheels or a private repo within the network."
+    },
+    {
+     "t": "Increase the environment class",
+     "why": "Wrong: Capacity is not the problem; network reachability is."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "No internet means wheels in plugins.zip or a private repo.",
+   "remember": "Private routing and no PyPI access \u2192 wheels in plugins.zip or a private PEP-503 repo in the VPC (CodeArtifact works too).",
+   "variants": [
+    "Public routing with NAT \u2192 PyPI works directly.",
+    "Need a Linux package such as a DB client \u2192 startup script with yum install.",
+    "Need private repo credentials \u2192 startup script sets environment variables."
+   ]
+  },
+  {
+   "id": "mwaa-007",
+   "skill": "3.1.1",
+   "source": "2-integrations-deployment-scaling-and-tuning.md",
+   "q": "A DAG must call a Linux shared library that is not in the MWAA image (a database client). Which MWAA feature installs it on every component before Airflow starts?",
+   "options": [
+    {
+     "t": "requirements.txt with the system package name",
+     "why": "Wrong: requirements.txt installs Python packages with pip, not Linux packages."
+    },
+    {
+     "t": "A startup script (startup.sh) using yum install",
+     "why": "Right: The startup script runs on scheduler, workers and web server before the requirements install and before Airflow starts."
+    },
+    {
+     "t": "A DAG task that runs yum install on one worker",
+     "why": "Wrong: It affects only one worker, and only while that task ran."
+    },
+    {
+     "t": "An Airflow connection with extras",
+     "why": "Wrong: Connections store credentials, not packages."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Linux-level dependencies go in the startup script.",
+   "remember": "Linux packages or environment variables on all components \u2192 startup script. Python packages \u2192 requirements.txt. Custom operators or wheels \u2192 plugins.zip.",
+   "variants": [
+    "Python package from PyPI \u2192 requirements.txt with a constraint line.",
+    "Custom operator code \u2192 plugins.zip.",
+    "Never override reserved variables such as AIRFLOW_HOME; MWAA resets them."
+   ]
+  },
+  {
+   "id": "mwaa-008",
+   "skill": "3.3.4",
+   "source": "2-integrations-deployment-scaling-and-tuning.md",
+   "q": "An MWAA DAG waits up to 6 hours for a file in S3. The sensor in poke mode keeps filling worker slots, and tasks queue. How can the team fix this with the least change?",
+   "options": [
+    {
+     "t": "Raise the environment class only",
+     "why": "Wrong: More slots would still be consumed by waiting sensors; it treats the symptom."
+    },
+    {
+     "t": "Add a second S3 bucket",
+     "why": "Wrong: Does not change how the sensor holds a worker slot."
+    },
+    {
+     "t": "Lower min workers to 1",
+     "why": "Wrong: Reduces capacity and makes queuing worse."
+    },
+    {
+     "t": "Use S3KeySensor with deferrable=True or mode=\"reschedule\"",
+     "why": "Right: Both free the worker slot while waiting; deferrable waits on the triggerer."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "poke mode holds a slot; reschedule or deferrable releases it.",
+   "remember": "Long waits wasting worker slots \u2192 deferrable operators or reschedule-mode sensors. Also set a sensor timeout.",
+   "variants": [
+    "A 3-hour Glue job \u2192 GlueJobOperator(deferrable=True).",
+    "Sensor never finishes \u2192 set timeout and use reschedule.",
+    "Need to limit concurrent DB-heavy tasks \u2192 pools."
+   ]
+  },
+  {
+   "id": "mwaa-009",
+   "skill": "3.3.4",
+   "source": "2-integrations-deployment-scaling-and-tuning.md",
+   "q": "Memory-heavy tasks in MWAA keep failing with 'Task exited with return code -9' while the environment is not at max workers. What should be done?",
+   "options": [
+    {
+     "t": "Lower celery.worker_autoscale (max tasks per worker) or move to a larger environment class",
+     "why": "Right: Each worker accepts up to max tasks regardless of memory, so memory-heavy tasks hit OOM; fewer tasks per worker or bigger workers fixes it."
+    },
+    {
+     "t": "Raise celery.worker_autoscale",
+     "why": "Wrong: More tasks per worker makes the out-of-memory problem worse."
+    },
+    {
+     "t": "Add more schedulers",
+     "why": "Wrong: Schedulers parse DAGs and queue tasks; they do not affect worker memory."
+    },
+    {
+     "t": "Increase max workers to 25",
+     "why": "Wrong: More workers do not stop each worker from taking too many heavy tasks."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "-9 and zombies point to worker OOM; reduce tasks per worker.",
+   "remember": "Return code -9 or zombie tasks \u2192 worker out of memory \u2192 lower worker_autoscale or bigger class. Light I/O tasks \u2192 raise worker_autoscale.",
+   "variants": [
+    "Tasks queued while workers are idle \u2192 check pools and worker_autoscale limits.",
+    "Slow scheduling with many DAG files \u2192 more schedulers, bigger class, lighter top-level code.",
+    "Light API-trigger tasks \u2192 raise worker_autoscale."
+   ]
+  },
+  {
+   "id": "mwaa-010",
+   "skill": "3.3.4",
+   "source": "2-integrations-deployment-scaling-and-tuning.md",
+   "q": "A DAG file is skipped from the MWAA UI, and CloudWatch shows ImportErrors and ProcessorTimeouts. The file does heavy imports and a database call at the top level. What is the best fix?",
+   "options": [
+    {
+     "t": "Increase the number of minimum workers",
+     "why": "Wrong: Workers run tasks; parsing happens in the scheduler."
+    },
+    {
+     "t": "Switch the web server to private mode",
+     "why": "Wrong: Access mode does not affect DAG parsing."
+    },
+    {
+     "t": "Move network, DB and Variable.get() calls inside tasks and keep top-level DAG code light",
+     "why": "Right: The scheduler imports the file repeatedly; heavy top-level work slows parsing and causes timeouts."
+    },
+    {
+     "t": "Enable DEBUG log level for all components",
+     "why": "Wrong: Adds log volume and cost but does not make the file parse faster."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Keep top-level code fast; raise timeouts only as a secondary measure.",
+   "remember": "Slow DAG parsing \u2192 light top-level code, fewer or smaller files, longer dagbag_import_timeout, more schedulers or bigger class.",
+   "variants": [
+    "Scheduler CPU high with many files \u2192 raise min_file_process_interval and dag_dir_list_interval.",
+    "Large dynamic DAG timing out \u2192 raise dagbag_import_timeout (must stay below the processor timeout).",
+    "Old start_date floods scheduler \u2192 catchup=False."
+   ]
+  },
+  {
+   "id": "mwaa-011",
+   "skill": "1.1.5",
+   "source": "2-integrations-deployment-scaling-and-tuning.md",
+   "q": "A new DAG with a start_date 18 months ago and a daily schedule is deployed, and hundreds of runs are created at once, overloading the scheduler. Which setting avoids this?",
+   "options": [
+    {
+     "t": "Set max workers to 1",
+     "why": "Wrong: Limits task throughput but the missed runs would still be created."
+    },
+    {
+     "t": "catchup=False on the DAG",
+     "why": "Right: Airflow otherwise creates a run for every missed interval; disabling catchup creates only the latest."
+    },
+    {
+     "t": "Use a private web server",
+     "why": "Wrong: Unrelated to run creation."
+    },
+    {
+     "t": "Delete the metadata database",
+     "why": "Wrong: Not possible; it is managed by AWS in its own account."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Catch-up creates all missed runs, so turn it off unless backfill is wanted.",
+   "remember": "Old start_date plus catchup=True floods the scheduler. Set catchup=False unless backfill is intended; use max_active_runs to stop pile-ups.",
+   "variants": [
+    "Need to rerun last month's missed runs on purpose \u2192 catch-up or backfill on MWAA.",
+    "Step Functions has no backfill concept.",
+    "Limit concurrent runs of one DAG \u2192 max_active_runs."
+   ]
+  },
+  {
+   "id": "mwaa-012",
+   "skill": "4.1.4",
+   "source": "3-security-networking-cost-monitoring-limits-and-scenarios.md",
+   "q": "DAG tasks in MWAA fail with AccessDenied when starting a Glue job. What should the engineer do?",
+   "options": [
+    {
+     "t": "Add them to the user's IAM role used for the console",
+     "why": "Wrong: Tasks run with the execution role, not the user's role."
+    },
+    {
+     "t": "Wait for MWAA to detect and add the permissions",
+     "why": "Wrong: MWAA never adds permissions for services your DAGs call."
+    },
+    {
+     "t": "Recreate the environment with the AmazonMWAAFullApiAccess policy",
+     "why": "Wrong: That managed policy is for management APIs, not for task permissions."
+    },
+    {
+     "t": "Add the needed Glue permissions to the environment's execution role",
+     "why": "Right: MWAA only grants its own minimum permissions; permissions for Glue, EMR, Athena and similar are added by you, and take effect immediately."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Tasks use the execution role through aws_default.",
+   "remember": "Task AccessDenied \u2192 fix the execution role (trust: airflow.amazonaws.com and airflow-env.amazonaws.com). UI or API access \u2192 the user's IAM policy.",
+   "variants": [
+    "Different AWS permissions per team \u2192 separate environments or assumed roles via connections.",
+    "Cross-account access \u2192 the execution role assumes a role in the other account.",
+    "Role needs a swap \u2192 can change the execution role on an existing environment."
+   ]
+  },
+  {
+   "id": "mwaa-013",
+   "skill": "4.1.4",
+   "source": "3-security-networking-cost-monitoring-limits-and-scenarios.md",
+   "q": "A developer should open the Airflow UI as a read-only user but must not manage environments. Which IAM setup is correct?",
+   "options": [
+    {
+     "t": "A policy allowing airflow:CreateWebLoginToken on the role ARN arn:aws:airflow:<region>:<acct>:role/<env>/Viewer",
+     "why": "Right: The Airflow RBAC role in the resource ARN controls UI power, and the web-login token action is separate from environment management."
+    },
+    {
+     "t": "AmazonMWAAFullConsoleAccess",
+     "why": "Wrong: It lets the user create and manage environments, which is not wanted."
+    },
+    {
+     "t": "AmazonMWAAFullApiAccess",
+     "why": "Wrong: It grants all management APIs but no Airflow UI access."
+    },
+    {
+     "t": "A policy with the environment ARN as the resource for CreateWebLoginToken",
+     "why": "Wrong: The environment ARN is not supported in that resource field; the role ARN is required."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Management, UI login and task permissions are three separate layers.",
+   "remember": "UI login \u2192 CreateWebLoginToken on the role ARN (Admin, Op, User, Viewer, Public). REST API \u2192 InvokeRestApi. CLI \u2192 CreateCliToken. Management \u2192 airflow:* actions.",
+   "variants": [
+    "Can open UI but cannot edit connections \u2192 grant a lower or higher Airflow role in the resource ARN.",
+    "Trigger DAGs via API \u2192 AmazonMWAARestAPIAccess.",
+    "Auditor asks who opened the UI \u2192 CloudTrail CreateWebLoginToken."
+   ]
+  },
+  {
+   "id": "mwaa-014",
+   "skill": "4.1.1",
+   "source": "3-security-networking-cost-monitoring-limits-and-scenarios.md",
+   "q": "A security team asks what the security group of an MWAA environment must contain. Which is correct?",
+   "options": [
+    {
+     "t": "Inbound from 0.0.0.0/0 on port 8080",
+     "why": "Wrong: The web server is not reached this way; opening it to the world is unnecessary."
+    },
+    {
+     "t": "Only an inbound rule from the corporate CIDR",
+     "why": "Wrong: Without self-referencing, the components cannot communicate."
+    },
+    {
+     "t": "A self-referencing inbound rule and an outbound allow rule",
+     "why": "Right: The environment components must talk to each other, so the group needs inbound from itself and outbound access."
+    },
+    {
+     "t": "No security group; MWAA uses the default of the VPC",
+     "why": "Wrong: You must supply 1 to 5 security groups."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Self-referencing inbound plus outbound; 1 to 5 groups.",
+   "remember": "MWAA security groups: self-referencing inbound (can narrow to TCP 443 and 5432), outbound allow, 1 to 5 groups. Network needs two private subnets in two AZs.",
+   "variants": [
+    "Private routing VPC \u2192 add VPC endpoints for each AWS service.",
+    "Public routing \u2192 NAT gateway and internet gateway with two public and two private subnets.",
+    "NACLs \u2192 allow all in and out is recommended."
+   ]
+  },
+  {
+   "id": "mwaa-015",
+   "skill": "4.1.4",
+   "source": "3-security-networking-cost-monitoring-limits-and-scenarios.md",
+   "q": "An MWAA environment is in a VPC with no NAT gateway or internet gateway (private routing). DAG tasks time out when calling Athena and Secrets Manager. What is the fix?",
+   "options": [
+    {
+     "t": "Add an inbound rule for port 443 to the security group",
+     "why": "Wrong: The timeout is a routing problem, not an inbound rule."
+    },
+    {
+     "t": "Create VPC interface endpoints for Athena and Secrets Manager (with private DNS) in the private subnets",
+     "why": "Right: Without NAT, every AWS service the workers call needs a VPC endpoint; the S3 gateway endpoint is also needed."
+    },
+    {
+     "t": "Increase worker_autoscale",
+     "why": "Wrong: Does not create a network path to the service."
+    },
+    {
+     "t": "Switch the execution role to a customer managed KMS key",
+     "why": "Wrong: Encryption keys do not provide connectivity."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Private routing means VPC endpoints (or a NAT) for every service called.",
+   "remember": "Task timeout calling an AWS service in a VPC without internet \u2192 add the VPC endpoint or NAT. Also needed for private routing: S3 gateway, SQS, CloudWatch Logs, CloudWatch Monitoring, ECR, KMS (if CMK).",
+   "variants": [
+    "AccessDenied instead of timeout \u2192 execution role missing permissions.",
+    "Endpoint policy blocking \u2192 S3 gateway endpoint policy must allow the DAG bucket.",
+    "Reduce NAT charges \u2192 use VPC endpoints (the S3 gateway endpoint is free)."
+   ]
+  },
+  {
+   "id": "mwaa-016",
+   "skill": "4.3.2",
+   "source": "3-security-networking-cost-monitoring-limits-and-scenarios.md",
+   "q": "A compliance team requires customer-controlled encryption for an MWAA environment. When and how must this be decided?",
+   "options": [
+    {
+     "t": "After creation, by editing the environment encryption setting",
+     "why": "Wrong: The encryption choice cannot be changed after creation."
+    },
+    {
+     "t": "At creation, with a multi-Region key referenced by alias",
+     "why": "Wrong: Aliases and multi-Region keys are not supported."
+    },
+    {
+     "t": "Never; MWAA always uses a customer managed key",
+     "why": "Wrong: Default is an AWS owned key; a CMK is optional."
+    },
+    {
+     "t": "At creation, with a symmetric single-Region customer managed KMS key referenced by key ID or ARN",
+     "why": "Right: The encryption choice cannot be changed later, and aliases and multi-Region keys are not supported."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "CMK is a create-time decision: single-Region, ID or ARN.",
+   "remember": "MWAA encryption: default AWS owned key; option for a customer managed KMS key at creation only. An S3 bucket using your own KMS key must use the same key.",
+   "variants": [
+    "With a CMK the key policy must allow CloudWatch Logs (logs.<region>.amazonaws.com).",
+    "The execution role needs kms:Decrypt, DescribeKey, GenerateDataKey*, Encrypt via SQS and S3.",
+    "Logs missing in task view \u2192 check the KMS key policy for CloudWatch Logs."
+   ]
+  },
+  {
+   "id": "mwaa-017",
+   "skill": "4.2.2",
+   "source": "2-integrations-deployment-scaling-and-tuning.md",
+   "q": "A team wants Airflow connections and variables kept out of the metadata database, with credentials protected by IAM and KMS. Which setup do they use?",
+   "options": [
+    {
+     "t": "Configure the Secrets Manager secrets backend with prefixes such as airflow/connections and airflow/variables",
+     "why": "Right: The backend reads secrets from Secrets Manager; the execution role needs secretsmanager:GetSecretValue (and kms:Decrypt for a CMK)."
+    },
+    {
+     "t": "Hard-code the credentials in the DAG file",
+     "why": "Wrong: Hard-coded secrets in DAGs or requirements.txt are an anti-pattern."
+    },
+    {
+     "t": "Store them in plain Airflow Variables through the UI",
+     "why": "Wrong: They would live in the metadata database, not in Secrets Manager."
+    },
+    {
+     "t": "Put them in the startup script as plain text",
+     "why": "Wrong: Exposes credentials in S3 and logs."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Use the Secrets Manager (or Parameter Store) backend; lookup patterns cut calls.",
+   "remember": "Credentials outside the Airflow DB \u2192 Secrets Manager backend (Parameter Store also works). Lookup order: backend, then environment variables, then metadata DB. Use lookup patterns to reduce API calls.",
+   "variants": [
+    "Secrets Manager costs rising from frequent lookups \u2192 connections_lookup_pattern and variables_lookup_pattern.",
+    "Variable.get() at top level \u2192 repeated calls on every parse.",
+    "Secrets Manager error \u2192 check GetSecretValue, prefix, no quotes in connection secret."
+   ]
+  },
+  {
+   "id": "mwaa-018",
+   "skill": "3.1.2",
+   "source": "3-security-networking-cost-monitoring-limits-and-scenarios.md",
+   "q": "Which alarm set best detects scheduler and DAG parsing problems in MWAA?",
+   "options": [
+    {
+     "t": "Only the AWS/S3 BucketSizeBytes metric",
+     "why": "Wrong: Bucket size says nothing about scheduler health."
+    },
+    {
+     "t": "SchedulerHeartbeat missing and ImportErrors greater than 0 (plus rising TotalParseTime)",
+     "why": "Right: These metrics show a stalled scheduler and DAG files that fail to parse."
+    },
+    {
+     "t": "Only CloudTrail CreateWebLoginToken counts",
+     "why": "Wrong: That tracks UI logins, not scheduler health."
+    },
+    {
+     "t": "Only RunningTasks",
+     "why": "Wrong: It shows capacity use but not scheduler heartbeat or parsing failures."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Heartbeat, ImportErrors and parse time cover scheduler and DAG health.",
+   "remember": "Baseline MWAA alarms: SchedulerHeartbeat missing, ImportErrors > 0, QueuedTasks high for long, TaskInstanceFailures spike, TotalParseTime rising. Metrics are in the AmazonMWAA namespace.",
+   "variants": [
+    "Tasks queued for long \u2192 watch QueuedTasks and RunningTasks (needed workers = (running + queued) / tasks per worker).",
+    "Too many metrics and cost \u2192 metrics_allow_list or metrics_block_list (allow list wins).",
+    "Alert from a failing task \u2192 on_failure_callback to SNS or EventBridge."
+   ]
+  },
+  {
+   "id": "mwaa-019",
+   "skill": "3.3.7",
+   "source": "3-security-networking-cost-monitoring-limits-and-scenarios.md",
+   "q": "An MWAA team sees CloudWatch Logs cost growing steadily. Which action reduces it without losing recent logs?",
+   "options": [
+    {
+     "t": "Delete the S3 DAG bucket",
+     "why": "Wrong: That breaks the environment and does not affect logs."
+    },
+    {
+     "t": "Raise the log level to DEBUG for all five types",
+     "why": "Wrong: It increases volume and cost."
+    },
+    {
+     "t": "Set a CloudWatch Logs retention policy on the airflow-<env> log groups and avoid DEBUG level",
+     "why": "Right: Default retention is never expire, and DEBUG can multiply log volume."
+    },
+    {
+     "t": "Disable the metadata database",
+     "why": "Wrong: Not possible; it is managed by AWS."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Log groups default to never expire, so set retention and sensible levels.",
+   "remember": "MWAA writes five log types to CloudWatch (DAG processing, scheduler, task, web server, worker). Control cost with retention and log levels; search with Logs Insights.",
+   "variants": [
+    "Need to search errors across tasks \u2192 CloudWatch Logs Insights.",
+    "Task logs missing \u2192 check logging enabled, execution role logs permission and KMS key policy.",
+    "Other cost levers \u2192 smaller class, lower min workers, deferrable operators, delete idle non-prod environments."
+   ]
+  },
+  {
+   "id": "mwaa-020",
+   "skill": "1.3.1",
+   "source": "3-security-networking-cost-monitoring-limits-and-scenarios.md",
+   "q": "A non-production MWAA environment is idle every night and weekend, and the bill is high for the few DAGs it runs. Which approach cuts cost the most while keeping the setup repeatable?",
+   "options": [
+    {
+     "t": "Stop the scheduler container",
+     "why": "Wrong: There is no way to pause an environment; billing continues while it exists."
+    },
+    {
+     "t": "Raise min workers so tasks finish faster",
+     "why": "Wrong: More always-on workers increase cost."
+    },
+    {
+     "t": "Move to mw1.2xlarge",
+     "why": "Wrong: The biggest class costs the most."
+    },
+    {
+     "t": "Define it with infrastructure as code and delete it outside working hours (exporting metadata first)",
+     "why": "Right: MWAA bills hourly while the environment exists, so deleting it stops the charge; IaC rebuilds it."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Environment cost is per hour of existence; delete idle non-prod environments.",
+   "remember": "High MWAA cost with little use \u2192 smallest fitting class, lower min workers, deferrable operators, delete or recreate non-prod, or move light flows to Step Functions or MWAA Serverless.",
+   "variants": [
+    "Heavy compute inside workers \u2192 offload to Glue, EMR or Batch, billed only while running.",
+    "NAT charges high \u2192 VPC endpoints.",
+    "Environment cannot be deleted because production \u2192 right-size and lower min workers."
+   ]
+  }
+ ]
+}

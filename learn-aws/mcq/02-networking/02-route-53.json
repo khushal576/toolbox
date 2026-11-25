@@ -1,0 +1,349 @@
+{
+ "questions": [
+  {
+   "id": "r53-001",
+   "skill": "4.1.5",
+   "source": "1-hosted-zones-records-and-routing-policies.md",
+   "q": "A team must point the zone apex `example.com` at an Application Load Balancer. Which record should they create?",
+   "options": [
+    {
+     "t": "A CNAME record to the ALB DNS name",
+     "why": "Wrong: a CNAME cannot be created at the zone apex."
+    },
+    {
+     "t": "An alias A record to the ALB",
+     "why": "Right: alias records work at the apex, point to AWS resources, and alias queries to AWS resources are free."
+    },
+    {
+     "t": "An NS record to the ALB",
+     "why": "Wrong: NS records delegate zones, they do not map a name to a load balancer."
+    },
+    {
+     "t": "A TXT record holding the ALB name",
+     "why": "Wrong: TXT records are not followed by resolvers to reach a target."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Apex plus AWS resource means an alias record.",
+   "remember": "Zone apex or a free-query pointer to an AWS resource (ALB, CloudFront, API Gateway, S3 website) \u2192 alias A/AAAA, never CNAME.",
+   "variants": [
+    "Name is a subdomain pointing to a Redshift or RDS endpoint \u2192 CNAME (alias does not target them).",
+    "Target is another record in the same hosted zone \u2192 alias also works.",
+    "Cost matters for queries \u2192 alias queries to AWS resources are free, CNAME queries are billed."
+   ]
+  },
+  {
+   "id": "r53-002",
+   "skill": "2.3.6",
+   "source": "1-hosted-zones-records-and-routing-policies.md",
+   "q": "An application must switch automatically to a static S3 maintenance site when its primary Region stops responding. Which Route 53 setup meets this?",
+   "options": [
+    {
+     "t": "Weighted records with weights 100 and 0",
+     "why": "Wrong: weights do not react to failure; a health check must also be involved and weight 0 sends no traffic."
+    },
+    {
+     "t": "Failover records with a health check on the primary",
+     "why": "Right: Route 53 returns the secondary only when the primary health check fails; the secondary may be an S3 static page."
+    },
+    {
+     "t": "Latency-based records to one Region",
+     "why": "Wrong: latency routing picks the lowest latency Region, not a passive standby."
+    },
+    {
+     "t": "Simple record with two values",
+     "why": "Wrong: simple routing has no per-value health and returns values in random order."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Active-passive DR uses failover routing with a health check on the primary.",
+   "remember": "Active-passive with automatic cutover \u2192 failover routing; a health check on the primary is required.",
+   "variants": [
+    "Both Regions serve users at once \u2192 latency-based routing with health checks.",
+    "Gradual migration old to new \u2192 weighted routing with low TTL.",
+    "Operators must control failover safely \u2192 Application Recovery Controller routing controls."
+   ]
+  },
+  {
+   "id": "r53-003",
+   "skill": "2.3.6",
+   "source": "1-hosted-zones-records-and-routing-policies.md",
+   "q": "Users worldwide should reach the AWS Region with the best network performance, and an unhealthy Region must be skipped. Which policy fits?",
+   "options": [
+    {
+     "t": "Geolocation routing",
+     "why": "Wrong: it routes by the user's country or continent, not by measured latency."
+    },
+    {
+     "t": "Latency-based routing with health checks",
+     "why": "Right: it picks the Region with the lowest latency to the user's network and skips unhealthy records."
+    },
+    {
+     "t": "Multivalue answer routing",
+     "why": "Wrong: it returns up to 8 healthy records without choosing the fastest."
+    },
+    {
+     "t": "Weighted routing",
+     "why": "Wrong: weights are fixed percentages and ignore latency."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Lowest latency Region means latency-based routing.",
+   "remember": "Fastest Region for the user \u2192 latency-based; where the user is (rules, compliance) \u2192 geolocation.",
+   "variants": [
+    "EU users must only get EU endpoints \u2192 geolocation with a default record.",
+    "Shift load between Regions by distance with a bias \u2192 geoproximity.",
+    "Route known corporate CIDRs to a specific endpoint \u2192 IP-based routing with a CIDR collection."
+   ]
+  },
+  {
+   "id": "r53-004",
+   "skill": "2.3.6",
+   "source": "1-hosted-zones-records-and-routing-policies.md",
+   "q": "A health check must monitor an ALB that sits in private subnets and is not reachable from the internet. How should failover be driven?",
+   "options": [
+    {
+     "t": "An HTTPS endpoint health check against the private IP",
+     "why": "Wrong: Route 53 health checkers are on the public internet and cannot reach private IPs."
+    },
+    {
+     "t": "A calculated health check with no children",
+     "why": "Wrong: a calculated check only combines other checks."
+    },
+    {
+     "t": "A CloudWatch alarm health check on a metric of the resource",
+     "why": "Right: its status follows the alarm, so private resources can be monitored through metrics."
+    },
+    {
+     "t": "A TCP health check from a VPC security group",
+     "why": "Wrong: security groups do not run Route 53 health checks."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Private resources need CloudWatch alarm based health checks (or a public health endpoint).",
+   "remember": "Private endpoint needing a Route 53 health check \u2192 CloudWatch alarm health check or a public health endpoint.",
+   "variants": [
+    "Public ALB or CloudFront alias \u2192 use Evaluate Target Health instead of a separate check.",
+    "Combine several checks with AND/OR \u2192 calculated health check (up to 255 children).",
+    "Endpoint check must allow the health checker IP ranges in firewalls."
+   ]
+  },
+  {
+   "id": "r53-005",
+   "skill": "4.1.5",
+   "source": "2-resolver-dnssec-profiles-and-hybrid-dns.md",
+   "q": "On-premises ETL servers must resolve the private DNS name of an interface VPC endpoint and a private hosted zone over a VPN. Which design is required?",
+   "options": [
+    {
+     "t": "A Resolver outbound endpoint with a forwarding rule",
+     "why": "Wrong: outbound sends VPC queries out to on-prem DNS, the opposite direction."
+    },
+    {
+     "t": "A Resolver inbound endpoint plus a conditional forwarder on the corporate DNS",
+     "why": "Right: on-prem DNS forwards queries into the VPC resolver, which can see private zones and endpoint names."
+    },
+    {
+     "t": "A public hosted zone with the private IPs",
+     "why": "Wrong: exposes private data to the internet and still is not the supported hybrid pattern."
+    },
+    {
+     "t": "DNS Firewall rule group",
+     "why": "Wrong: it filters outbound VPC queries and does not resolve names for on-prem."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "On-prem to AWS names needs an inbound endpoint.",
+   "remember": "On-prem resolving AWS private names \u2192 Resolver inbound endpoint; AWS resolving on-prem names \u2192 outbound endpoint with a forwarding rule.",
+   "variants": [
+    "VPC workloads must resolve corp.example.com \u2192 outbound endpoint plus forwarding rule shared with RAM.",
+    "Endpoints need at least 2 IPs in 2 AZs and security groups allowing TCP/UDP 53.",
+    "Do not forward the same domain in both directions (loops)."
+   ]
+  },
+  {
+   "id": "r53-006",
+   "skill": "4.1.5",
+   "source": "2-resolver-dnssec-profiles-and-hybrid-dns.md",
+   "q": "A company has 800 VPCs across many accounts that must all resolve the same private hosted zones and Resolver rules. A single private hosted zone can be associated with only 300 VPCs. What is the best fix?",
+   "options": [
+    {
+     "t": "Create 3 copies of each zone and associate manually",
+     "why": "Wrong: duplicates records and adds operational burden."
+    },
+    {
+     "t": "Route 53 Profiles shared with AWS RAM",
+     "why": "Right: Profiles bundle PHZ associations and Resolver rules and apply them to many VPCs and accounts."
+    },
+    {
+     "t": "Request a Resolver inbound endpoint per VPC",
+     "why": "Wrong: endpoints are limited to 4 per Region and do not solve association limits."
+    },
+    {
+     "t": "A public hosted zone",
+     "why": "Wrong: loses private resolution."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Profiles solve the 300-VPC association limit and centralize DNS governance.",
+   "remember": "Many VPCs/accounts needing the same PHZs and rules \u2192 Route 53 Profiles shared via RAM.",
+   "variants": [
+    "Cross-account association of a few VPCs \u2192 authorization then association.",
+    "Share forwarding rules only \u2192 RAM share the Resolver rule.",
+    "Profiles also bundle DNS Firewall rule groups and query logging configs."
+   ]
+  },
+  {
+   "id": "r53-007",
+   "skill": "4.1.5",
+   "source": "2-resolver-dnssec-profiles-and-hybrid-dns.md",
+   "q": "A security team must block VPC workloads from resolving known malware and botnet command-and-control domains and keep a record of blocked lookups. Which services combine to do this?",
+   "options": [
+    {
+     "t": "Security groups with deny rules",
+     "why": "Wrong: security groups only allow and do not filter DNS names."
+    },
+    {
+     "t": "Route 53 Resolver DNS Firewall with managed domain lists, plus Resolver query logging",
+     "why": "Right: DNS Firewall blocks outbound DNS queries by domain list and query logs record the activity."
+    },
+    {
+     "t": "DNSSEC signing",
+     "why": "Wrong: it validates authenticity of responses and does not block domains."
+    },
+    {
+     "t": "A private hosted zone only",
+     "why": "Wrong: does not filter malicious domains."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "DNS Firewall filters outbound DNS; query logs give the audit trail.",
+   "remember": "Block or alert on domains queried from a VPC \u2192 Resolver DNS Firewall; audit trail \u2192 Resolver query logging.",
+   "variants": [
+    "Authenticity of public zone answers \u2192 DNSSEC.",
+    "Rule might block valid domains \u2192 start with ALERT before BLOCK.",
+    "Manage firewall policy across accounts \u2192 Firewall Manager."
+   ]
+  },
+  {
+   "id": "r53-008",
+   "skill": "4.1.5",
+   "source": "3-cost-security-monitoring-and-scenarios.md",
+   "q": "A data platform team sees instances inside a VPC resolve `data.example.com` to a different address than the internet does, with the same zone name existing publicly and privately. What explains this and what is it called?",
+   "options": [
+    {
+     "t": "Latency routing; multi-Region",
+     "why": "Wrong: latency policy is not tied to VPC association."
+    },
+    {
+     "t": "A private hosted zone with the same name associated with the VPC; split-horizon DNS",
+     "why": "Right: inside associated VPCs the private zone answers (even NXDOMAIN for missing names)."
+    },
+    {
+     "t": "DNSSEC validation; chain of trust",
+     "why": "Wrong: DNSSEC does not change answers by location."
+    },
+    {
+     "t": "Geoproximity bias; traffic flow",
+     "why": "Wrong: that shifts traffic by geography, not by VPC."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Same-name public and private zones give split-horizon DNS.",
+   "remember": "Different answers inside the VPC than outside \u2192 private hosted zone with the same name (split-horizon).",
+   "variants": [
+    "PHZ requires enableDnsSupport and enableDnsHostnames on the VPC.",
+    "Name missing from the PHZ resolves NXDOMAIN inside the VPC.",
+    "Reach a SaaS endpoint privately by name \u2192 PHZ record to your interface endpoint."
+   ]
+  },
+  {
+   "id": "r53-009",
+   "skill": "2.3.6",
+   "source": "2-resolver-dnssec-profiles-and-hybrid-dns.md",
+   "q": "Spark executors on EMR make thousands of DNS lookups per second from one node and some lookups fail intermittently. What is the likely cause and fix?",
+   "options": [
+    {
+     "t": "The 1,024 packets per second per network interface limit to the VPC resolver; cache DNS and reduce lookups",
+     "why": "Right: the limit is fixed and not adjustable, so reduce and cache lookups or spread across interfaces."
+    },
+    {
+     "t": "Hosted zone quota of 500; request an increase",
+     "why": "Wrong: unrelated to per-lookup throttling."
+    },
+    {
+     "t": "Health check quota of 200",
+     "why": "Wrong: health checks do not affect resolver lookups."
+    },
+    {
+     "t": "DNSSEC key rotation",
+     "why": "Wrong: would cause validation failures, not intermittent throttling."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "The VPC resolver is limited to 1,024 pps per ENI and cannot be raised.",
+   "remember": "Intermittent DNS failures under heavy load from one instance \u2192 1,024 pps per ENI resolver limit; cache and reduce lookups.",
+   "variants": [
+    "Resolver endpoint IP nearing capacity \u2192 add ENIs when above 50% of about 10,000 QPS.",
+    "API change throttling \u2192 batch ChangeResourceRecordSets and back off.",
+    "Stale answers after change \u2192 lower TTL before cutover."
+   ]
+  },
+  {
+   "id": "r53-010",
+   "skill": "2.3.6",
+   "source": "3-cost-security-monitoring-and-scenarios.md",
+   "q": "A company is migrating traffic from an old stack to a new one and wants to shift 10% first, then increase it, while limiting how long clients cache old answers. Which choices apply? Choose 2.",
+   "options": [
+    {
+     "t": "Weighted records with set identifiers",
+     "why": "Right: weights control the percentage of traffic to each stack."
+    },
+    {
+     "t": "A low TTL before and during the cutover",
+     "why": "Right: resolvers cache until TTL expires, so a low TTL lets weight changes take effect quickly."
+    },
+    {
+     "t": "Failover records with no health check",
+     "why": "Wrong: failover needs a health check on the primary and switches only on failure."
+    },
+    {
+     "t": "Simple routing with two values",
+     "why": "Wrong: returns values in random order with no control of percentages."
+    },
+    {
+     "t": "A CNAME at the zone apex",
+     "why": "Wrong: not allowed at the apex."
+    }
+   ],
+   "answer": [
+    0,
+    1
+   ],
+   "explain": "Weighted routing plus a low TTL gives a gradual, fast-reacting cutover.",
+   "remember": "Gradual blue/green or canary shift \u2192 weighted routing with low TTL; lower TTL ahead of time, raise afterwards.",
+   "variants": [
+    "Automatic switch only on failure \u2192 failover routing.",
+    "Weight 0 means no traffic unless every record has weight 0.",
+    "Routing-policy records need a set identifier."
+   ]
+  }
+ ]
+}

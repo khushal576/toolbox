@@ -1,0 +1,704 @@
+{
+  "questions": [
+    {
+      "id": "emr-001",
+      "skill": "1.2.5",
+      "source": "1-basics-deployment-options-and-architecture.md",
+      "q": "A company runs about 200 small Spark jobs a day at random times. The team has no cluster-operations skills and wants to pay only while jobs run. Which option fits best?",
+      "options": [
+        {
+          "t": "EMR on EC2 with a long-running cluster",
+          "why": "Wrong: it bills while idle and needs cluster operations."
+        },
+        {
+          "t": "EMR on EKS",
+          "why": "Wrong: it needs an existing EKS cluster and Kubernetes skills."
+        },
+        {
+          "t": "EMR Serverless",
+          "why": "Right: you manage only applications and jobs; workers scale per job and bill per second."
+        },
+        {
+          "t": "EMR on EC2 with three On-Demand primary nodes",
+          "why": "Wrong: HA primaries add cost and do nothing for idle time."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Spiky Spark/Hive with no cluster ops points to EMR Serverless.",
+      "remember": "No ops and bursty Spark or Hive jobs → EMR Serverless. Already on Kubernetes → EMR on EKS. Maximum control or non-Spark frameworks → EMR on EC2.",
+      "variants": [
+        "Platform team already runs EKS and wants many Spark versions on it → EMR on EKS.",
+        "Needs HBase or Presto on a long-lived cluster → EMR on EC2.",
+        "Simple visual ETL with crawlers and no framework control → AWS Glue."
+      ]
+    },
+    {
+      "id": "emr-002",
+      "skill": "1.2.5",
+      "source": "1-basics-deployment-options-and-architecture.md",
+      "q": "A platform team already runs an Amazon EKS cluster for microservices. They want to run Spark jobs on the same nodes and keep several Spark versions side by side. What should they use?",
+      "options": [
+        {
+          "t": "EMR Serverless with one application",
+          "why": "Wrong: it does not share your EKS nodes."
+        },
+        {
+          "t": "AWS Glue Spark jobs",
+          "why": "Wrong: Glue is serverless and does not use your EKS capacity."
+        },
+        {
+          "t": "EMR on EC2 with instance fleets",
+          "why": "Wrong: it creates separate clusters instead of sharing EKS."
+        },
+        {
+          "t": "EMR on EKS with virtual clusters",
+          "why": "Right: a virtual cluster maps to an EKS namespace and jobs share the cluster's capacity, with a release label per job."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "EMR on EKS lets Spark share an existing Kubernetes platform.",
+      "remember": "Kubernetes-first platform or shared EKS capacity → EMR on EKS. One virtual cluster maps to one namespace.",
+      "variants": [
+        "Team has no Kubernetes → EMR Serverless or EMR on EC2.",
+        "Different Spark versions without EKS → multiple EMR Serverless applications, each with its own release label."
+      ]
+    },
+    {
+      "id": "emr-003",
+      "skill": "1.2.5",
+      "source": "1-basics-deployment-options-and-architecture.md",
+      "q": "A data engineer needs HBase and Presto on a long-lived cluster, with SSH access to the nodes and custom node setup. Which EMR option supports this?",
+      "options": [
+        {
+          "t": "EMR Serverless",
+          "why": "Wrong: it covers Spark and Hive only and has no SSH to workers."
+        },
+        {
+          "t": "EMR on EC2",
+          "why": "Right: full control of frameworks, nodes and SSH; HBase and Presto run only here."
+        },
+        {
+          "t": "EMR on EKS",
+          "why": "Wrong: it runs Spark jobs on EKS, not HBase or Presto clusters."
+        },
+        {
+          "t": "AWS Glue",
+          "why": "Wrong: Glue does not run HBase or Presto."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Non-Spark frameworks need EMR on EC2.",
+      "remember": "HBase, Presto, Flink, Hadoop, SSH or custom node setup → EMR on EC2 (the other two options run Spark/Hive jobs).",
+      "variants": [
+        "Serverless Flink stream processing → Managed Flink.",
+        "Ad-hoc SQL on S3 with no cluster → Athena."
+      ]
+    },
+    {
+      "id": "emr-004",
+      "skill": "3.1.4",
+      "source": "1-basics-deployment-options-and-architecture.md",
+      "q": "Which data must a team keep on S3 instead of HDFS if it has to survive cluster termination?",
+      "options": [
+        {
+          "t": "Shuffle and temporary data",
+          "why": "Wrong: this is what HDFS and local disks are good for."
+        },
+        {
+          "t": "Intermediate data between steps on one running cluster",
+          "why": "Wrong: HDFS is fine for this; it is lost on termination but not needed afterwards."
+        },
+        {
+          "t": "Spark executor scratch space",
+          "why": "Wrong: scratch space is ephemeral by design."
+        },
+        {
+          "t": "The system of record, such as curated Parquet tables",
+          "why": "Right: HDFS lives on core node disks and is lost when the cluster terminates; S3 via EMRFS is durable and decouples storage from compute."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "HDFS is ephemeral; S3 holds durable data.",
+      "remember": "S3 (EMRFS) is the system of record on EMR; HDFS is for shuffle and temp data and disappears with the cluster.",
+      "variants": [
+        "Metastore must outlive the cluster → Glue Data Catalog or an external RDS/Aurora metastore.",
+        "Transient cluster that auto-terminates → data must already be on S3."
+      ]
+    },
+    {
+      "id": "emr-005",
+      "skill": "1.4.10",
+      "source": "2-emr-on-ec2-clusters-scaling-and-performance.md",
+      "q": "A fault-tolerant Spark batch job on EMR on EC2 must be as cheap as possible. Which node layout is best?",
+      "options": [
+        {
+          "t": "Primary and core on Spot, task on On-Demand",
+          "why": "Wrong: this is backwards: Spot interruptions would lose HDFS blocks."
+        },
+        {
+          "t": "All nodes on Spot",
+          "why": "Wrong: losing the primary or core nodes can fail the cluster or lose HDFS data."
+        },
+        {
+          "t": "Primary, core and task all On-Demand",
+          "why": "Wrong: reliable but misses the Spot saving."
+        },
+        {
+          "t": "Primary and core On-Demand, task nodes on Spot",
+          "why": "Right: task nodes have no HDFS and can be added or removed safely, so Spot interruptions only cost compute."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Only task nodes should run on Spot.",
+      "remember": "Primary and core On-Demand, task on Spot, durable data on S3. Spot gives a 2-minute interruption warning.",
+      "variants": [
+        "Core nodes keep failing at scale-in → use task nodes for elasticity.",
+        "Spot interruptions still hurt → instance fleets with many types and price-capacity-optimized allocation."
+      ]
+    },
+    {
+      "id": "emr-006",
+      "skill": "1.2.7",
+      "source": "2-emr-on-ec2-clusters-scaling-and-performance.md",
+      "q": "EMR managed scaling is enabled on a cluster, but the cluster never scales. The VPC has an API Gateway interface endpoint with private DNS enabled. What is the most likely cause?",
+      "options": [
+        {
+          "t": "The primary node cannot be scaled",
+          "why": "Wrong: true but unrelated: managed scaling targets core and task nodes."
+        },
+        {
+          "t": "The metrics collector cannot reach the public managed scaling API endpoint because of the private DNS endpoint",
+          "why": "Right: remove the endpoint or disable private DNS (or use a private subnet) so the collector can reach the service."
+        },
+        {
+          "t": "Managed scaling needs the EMR_AutoScaling_DefaultRole",
+          "why": "Wrong: that role is only for custom auto scaling policies."
+        },
+        {
+          "t": "Managed scaling only works with instance groups",
+          "why": "Wrong: it works with both instance groups and fleets."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "A private-DNS API Gateway endpoint breaks the managed scaling metrics path.",
+      "remember": "Managed scaling not scaling → check CloudWatch metrics, API Gateway VPC endpoint private DNS, non-YARN app (Presto/HBase), and Spark dynamic allocation turned off.",
+      "variants": [
+        "Cluster runs Presto → managed scaling does not apply; resize manually.",
+        "Cluster scales to maximum for small jobs → Spark dynamic allocation was disabled.",
+        "Custom CloudWatch rules wanted → instance groups with EMR_AutoScaling_DefaultRole."
+      ]
+    },
+    {
+      "id": "emr-007",
+      "skill": "1.2.5",
+      "source": "2-emr-on-ec2-clusters-scaling-and-performance.md",
+      "q": "A cluster uses instance fleets. The team wants rule-based CloudWatch auto scaling policies on `ContainerPendingRatio`. What is the right answer?",
+      "options": [
+        {
+          "t": "Attach the policies to the fleets with EMR_AutoScaling_DefaultRole",
+          "why": "Wrong: custom auto scaling policies are not supported with instance fleets."
+        },
+        {
+          "t": "Use managed scaling, or switch to uniform instance groups for custom policies",
+          "why": "Right: fleets support managed scaling; custom CloudWatch scaling rules are an instance-group feature."
+        },
+        {
+          "t": "Use manual resize only",
+          "why": "Wrong: managed scaling is available and recommended."
+        },
+        {
+          "t": "Use spot block duration",
+          "why": "Wrong: it is an older purchasing option and does not scale anything."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Custom scaling policies work with instance groups, not fleets.",
+      "remember": "Fleets → managed scaling only. Instance groups → custom policies or managed scaling. Managed scaling is the recommended default (5.30.0+).",
+      "variants": [
+        "Cluster must use many instance types for Spot availability → instance fleets (up to 5 types).",
+        "Simple fixed cluster with custom rules → uniform instance groups."
+      ]
+    },
+    {
+      "id": "emr-008",
+      "skill": "1.2.7",
+      "source": "2-emr-on-ec2-clusters-scaling-and-performance.md",
+      "q": "A production EMR cluster must survive the loss of one primary node, and the team also asks whether it survives an AZ outage. Which statement is correct?",
+      "options": [
+        {
+          "t": "Three primary nodes (On-Demand) survive one primary failure, but the cluster is still single-AZ",
+          "why": "Right: 2 of 3 primaries form the quorum; all EMR clusters run in one AZ, so recover from an AZ outage by recreating the cluster with data in S3."
+        },
+        {
+          "t": "Three primary nodes spread across three AZs survive an AZ outage",
+          "why": "Wrong: EMR clusters, including HA ones, run in a single AZ."
+        },
+        {
+          "t": "Two primary nodes are enough for quorum",
+          "why": "Wrong: HA uses three primaries and needs 2 of 3 healthy."
+        },
+        {
+          "t": "Spot primary nodes reduce cost in HA mode",
+          "why": "Wrong: primary nodes must be On-Demand."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "HA protects against primary failure, not AZ failure.",
+      "remember": "HA = 3 On-Demand primaries, quorum 2 of 3, single AZ. AZ resilience = data in S3 plus automated cluster recreation in another AZ or Region.",
+      "variants": [
+        "Only one primary fails → EMR replaces it automatically (spare subnet IPs needed).",
+        "Two primaries fail → quorum lost and the cluster fails."
+      ]
+    },
+    {
+      "id": "emr-009",
+      "skill": "1.2.7",
+      "source": "2-emr-on-ec2-clusters-scaling-and-performance.md",
+      "q": "Production HDFS runs on three core nodes with replication set to 1. A single node failure would lose blocks. What should the team do?",
+      "options": [
+        {
+          "t": "Move the system of record to the primary node",
+          "why": "Wrong: the primary does not store HDFS data."
+        },
+        {
+          "t": "Add task nodes",
+          "why": "Wrong: task nodes have no HDFS and do not add durability."
+        },
+        {
+          "t": "Set `dfs.replication` to 2 or more, or run at least 4 core nodes",
+          "why": "Right: replication protects blocks from a single node loss, and EMR will not scale core below `dfs.replication`."
+        },
+        {
+          "t": "Use Spot for the core nodes",
+          "why": "Wrong: Spot interruptions would increase the risk of losing HDFS data."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Raise replication or use more core nodes.",
+      "remember": "Production HDFS: at least 4 core nodes; with 3 or fewer set `dfs.replication` to 2+. Core nodes hold HDFS; task nodes do not.",
+      "variants": [
+        "Durable data is needed beyond the cluster life → S3, not HDFS.",
+        "HDFS utilization alarms → watch `HDFSUtilization` and add core nodes."
+      ]
+    },
+    {
+      "id": "emr-010",
+      "skill": "3.1.4",
+      "source": "3-emr-serverless-and-emr-on-eks.md",
+      "q": "An EMR Serverless application must start jobs within seconds for interactive analysis, but the team is also cost-sensitive. What is the best setting?",
+      "options": [
+        {
+          "t": "A small pre-initialized capacity with auto stop left on",
+          "why": "Right: warm drivers and workers avoid cold start; they are billed while idle, so auto stop (default 15 minutes idle) releases them."
+        },
+        {
+          "t": "Large pre-initialized capacity with auto stop disabled",
+          "why": "Wrong: you would pay for idle workers continuously."
+        },
+        {
+          "t": "No pre-initialized capacity and a very high maximum capacity",
+          "why": "Wrong: maximum capacity is a cap, not a way to start faster."
+        },
+        {
+          "t": "Switch to EMR on EC2 with a long-running cluster",
+          "why": "Wrong: it adds cluster operations and idle cost."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Pre-initialized capacity trades idle cost for fast starts.",
+      "remember": "Pre-initialized capacity = warm pool, fast start, billed while idle. Maximum capacity = cost cap. Keep auto stop on.",
+      "variants": [
+        "Cost spikes from a runaway job → set application maximum capacity and `maxExecutors`.",
+        "Job waits in PENDING → account vCPU quota (16 default) or application maximum reached."
+      ]
+    },
+    {
+      "id": "emr-011",
+      "skill": "1.2.7",
+      "source": "3-emr-serverless-and-emr-on-eks.md",
+      "q": "An EMR Serverless job fails with executor memory errors. The engineer set `spark.executor.memory` inside the PySpark script, but workers were not resized. Why?",
+      "options": [
+        {
+          "t": "The script runs too late for worker sizing; set it in `StartJobRun`",
+          "why": "Right: use `sparkSubmitParameters --conf` or `configurationOverrides`; the script runs after workers are sized."
+        },
+        {
+          "t": "Serverless ignores executor memory settings entirely",
+          "why": "Wrong: it honors them when set through StartJobRun."
+        },
+        {
+          "t": "The runtime role lacks S3 access",
+          "why": "Wrong: that gives access denied errors, not worker sizing issues."
+        },
+        {
+          "t": "Pre-initialized capacity must be enabled first",
+          "why": "Wrong: it is optional and unrelated to this setting."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Worker sizing must be set at job submission.",
+      "remember": "On EMR Serverless set driver/executor cores and memory in `StartJobRun` (sparkSubmitParameters or configurationOverrides), never in the script.",
+      "variants": [
+        "Container killed for exceeding memory on EC2 → raise `memoryOverhead` and executor memory.",
+        "Pre-init workers not used → worker size must exceed executor memory plus about 10% overhead."
+      ]
+    },
+    {
+      "id": "emr-012",
+      "skill": "4.1.4",
+      "source": "3-emr-serverless-and-emr-on-eks.md",
+      "q": "An EMR Serverless job must read from a private RDS instance inside a VPC. Which change is required?",
+      "options": [
+        {
+          "t": "Attach the application to your VPC with subnets and security groups",
+          "why": "Right: the default AWS-managed network reaches only public AWS endpoints; use VPC endpoints or NAT for outbound AWS access and large multi-AZ subnets because each worker needs an IP."
+        },
+        {
+          "t": "Give the job runtime role administrator permissions",
+          "why": "Wrong: IAM permissions do not create network reachability."
+        },
+        {
+          "t": "Enable SSH to the workers",
+          "why": "Wrong: there is no SSH to Serverless workers."
+        },
+        {
+          "t": "Turn on pre-initialized capacity",
+          "why": "Wrong: it speeds starts and has nothing to do with networking."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Private resources need a VPC-attached application.",
+      "remember": "Serverless default network is AWS-managed. Private RDS/Redshift → attach the application to your VPC; add S3, Glue, STS and CloudWatch Logs endpoints or NAT.",
+      "variants": [
+        "Job in a VPC app cannot reach S3 or Glue → add VPC endpoints or NAT.",
+        "Different jobs need different permissions → a runtime role per job."
+      ]
+    },
+    {
+      "id": "emr-013",
+      "skill": "3.3.6",
+      "source": "3-emr-serverless-and-emr-on-eks.md",
+      "q": "An EMR on EKS job fails because its pods cannot assume the execution role. What is the likely fix?",
+      "options": [
+        {
+          "t": "Add a bigger EC2 node group",
+          "why": "Wrong: capacity does not affect role assumption."
+        },
+        {
+          "t": "Create a second virtual cluster in the default namespace",
+          "why": "Wrong: a virtual cluster maps to one namespace and does not fix trust."
+        },
+        {
+          "t": "Run `aws emr-containers update-role-trust-policy` for the namespace's service account",
+          "why": "Right: the execution role is assumed via IRSA or Pod Identity, so the role trust policy must trust the namespace's service account."
+        },
+        {
+          "t": "Attach the EMR_EC2_DefaultRole",
+          "why": "Wrong: that is the EC2 instance profile for EMR on EC2."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "The role trust policy was not updated for the service account.",
+      "remember": "EMR on EKS execution roles use IRSA or EKS Pod Identity; update the trust policy for the namespace. Pods stuck pending → nodes, IPs, taints or quota.",
+      "variants": [
+        "Job pods remain pending → check Karpenter or Cluster Autoscaler, subnets IPs, requests and limits.",
+        "Executors on Spot, driver on On-Demand → node selectors."
+      ]
+    },
+    {
+      "id": "emr-014",
+      "skill": "4.1.4",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "Several analysts share one EMR on EC2 cluster, and each must get different S3 access. With the default setup everyone has the same rights. What fixes this?",
+      "options": [
+        {
+          "t": "Give each analyst a different EC2 key pair",
+          "why": "Wrong: keys control SSH, not S3 access."
+        },
+        {
+          "t": "Enable runtime roles so each step or job uses its own IAM role",
+          "why": "Right: runtime roles (or EMRFS role mapping, Kerberos) make the cluster multi-tenant and block user code from the instance profile."
+        },
+        {
+          "t": "Attach a broader policy to EMR_EC2_DefaultRole",
+          "why": "Wrong: this gives everyone the same, larger rights."
+        },
+        {
+          "t": "Use the EMR service role EMR_DefaultRole for the jobs",
+          "why": "Wrong: that role lets the EMR service launch resources, not scope job data access."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "The instance profile is shared; runtime roles isolate jobs.",
+      "remember": "Default EMR cluster is single-tenant (instance profile = identity). Multi-tenant → runtime roles, IAM Identity Center, Kerberos or LDAP.",
+      "variants": [
+        "Row and column security on lake tables → Lake Formation with runtime roles and the Glue Catalog.",
+        "Different S3 prefix access per user on Kerberos → EMRFS role mapping."
+      ]
+    },
+    {
+      "id": "emr-015",
+      "skill": "4.1.4",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A company has an existing set of on-premises Apache Ranger policies and Kerberos on Hadoop, and it moves to EMR on EC2. Which is the best fit to reuse the policies?",
+      "options": [
+        {
+          "t": "Native Apache Ranger integration on the cluster, with Kerberos",
+          "why": "Right: plugins on the cluster enforce the existing policies; it needs an external Ranger admin server and is heavier to operate."
+        },
+        {
+          "t": "Lake Formation only, copying the policies manually",
+          "why": "Wrong: Lake Formation is the AWS-native choice for new lakes, but it does not reuse Ranger policies."
+        },
+        {
+          "t": "S3 bucket policies only",
+          "why": "Wrong: they cannot express Hive table or column rules."
+        },
+        {
+          "t": "EMR block public access",
+          "why": "Wrong: it blocks public inbound rules on security groups, not data authorization."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Ranger fits teams reusing Hadoop-style policies.",
+      "remember": "Existing Ranger policies → EMR native Ranger integration (Kerberos, external admin server). New lake across Athena, Redshift and EMR → Lake Formation.",
+      "variants": [
+        "Central policy across Athena, Redshift, EMR and Glue → Lake Formation.",
+        "Audit trail: Lake Formation → CloudTrail; Ranger → Solr/OpenSearch/CloudWatch."
+      ]
+    },
+    {
+      "id": "emr-016",
+      "skill": "4.4.5",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "Security requires that all data on an EMR cluster is encrypted at rest including local disks, and in transit. Which two settings are part of the answer? Choose two.",
+      "options": [
+        {
+          "t": "An EMR security configuration with S3 encryption (for example SSE-KMS) and TLS certificates",
+          "why": "Right: the security configuration covers EMRFS S3 encryption and in-transit TLS."
+        },
+        {
+          "t": "Only S3 default encryption on the bucket",
+          "why": "Wrong: it does not cover HDFS, local disks or in-transit traffic."
+        },
+        {
+          "t": "LUKS local disk encryption and EBS encryption in the same security configuration",
+          "why": "Right: these cover instance-store and EBS volumes on the nodes."
+        },
+        {
+          "t": "An S3 lifecycle rule",
+          "why": "Wrong: lifecycle rules manage storage classes, not encryption."
+        },
+        {
+          "t": "EMR block public access",
+          "why": "Wrong: it limits network exposure, not encryption."
+        }
+      ],
+      "answer": [
+        0,
+        2
+      ],
+      "explain": "A security configuration covers each storage layer.",
+      "remember": "Security configuration = reusable JSON for at-rest (S3 SSE/CSE, LUKS local disk, EBS, HDFS transparent) and in-transit (TLS) encryption, plus Kerberos and Lake Formation settings.",
+      "variants": [
+        "Keep cluster logs private → encrypt the S3 log URI bucket.",
+        "Cross-account S3 with KMS → key policy must allow the EMR EC2 role."
+      ]
+    },
+    {
+      "id": "emr-017",
+      "skill": "4.4.5",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A team wants an alert whenever an EMR step fails, with automatic retry through a Lambda function. Which design is best?",
+      "options": [
+        {
+          "t": "Poll `ListSteps` from a cron job",
+          "why": "Wrong: polling is slower and needs more operations."
+        },
+        {
+          "t": "A CloudWatch alarm on `HDFSUtilization`",
+          "why": "Wrong: that metric tracks HDFS usage, not step results."
+        },
+        {
+          "t": "EventBridge rule on `EMR Step Status Change` events that targets Lambda",
+          "why": "Right: EMR emits step and cluster state change events to EventBridge for event-driven automation."
+        },
+        {
+          "t": "CloudTrail data events to SNS",
+          "why": "Wrong: CloudTrail records API calls and is not the step-state signal."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Use EMR state-change events in EventBridge.",
+      "remember": "EMR emits `EMR Step Status Change`, `EMR Cluster State Change` and `EMR Auto Scaling Policy State Change` to EventBridge. Logs for terminated clusters exist only if a log URI is set.",
+      "variants": [
+        "Idle cluster should terminate → alarm on `IsIdle` or use an idle auto-termination policy.",
+        "Step failure reason → read stderr, controller and syslog in `s3://<log-uri>/<cluster-id>/steps/<step-id>/`."
+      ]
+    },
+    {
+      "id": "emr-018",
+      "skill": "1.2.7",
+      "source": "5-spark-hive-trino-tuning-lakehouse-studio-governance-and-migration.md",
+      "q": "A Spark job on EMR has a few tasks that run far longer than the rest because of a skewed join key. What should the engineer try first?",
+      "options": [
+        {
+          "t": "Disable adaptive query execution",
+          "why": "Wrong: that turns off skew-join handling and coalescing."
+        },
+        {
+          "t": "Set `spark.sql.shuffle.partitions` explicitly to a larger value",
+          "why": "Wrong: setting it yourself turns off auto-coalescing and does not fix skew."
+        },
+        {
+          "t": "Move the data to HDFS",
+          "why": "Wrong: locality does not fix key skew."
+        },
+        {
+          "t": "Rely on AQE skew-join handling, or apply salting or repartition on a better key",
+          "why": "Right: skewed keys create stragglers; AQE skew join and salting spread the load."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Skew calls for AQE skew join or salting.",
+      "remember": "Long-tail tasks → skew. OOM → memory/overhead/partition size. Many tiny tasks → small files. Setting `spark.sql.shuffle.partitions` explicitly disables auto-coalescing.",
+      "variants": [
+        "Join with a small dimension is slow → broadcast hint or AQE join conversion (default threshold 10 MiB).",
+        "Thousands of tiny output files → coalesce or repartition before write, or Iceberg compaction."
+      ]
+    },
+    {
+      "id": "emr-019",
+      "skill": "1.2.7",
+      "source": "5-spark-hive-trino-tuning-lakehouse-studio-governance-and-migration.md",
+      "q": "Spark writes to S3 on EMR are slow and not atomic because of rename-based commits. What should be used?",
+      "options": [
+        {
+          "t": "A longer `spark.network.timeout`",
+          "why": "Wrong: it does not change how output is committed."
+        },
+        {
+          "t": "The EMRFS S3-optimized committer",
+          "why": "Right: it avoids renames and gives job-level atomic commit for Parquet writes."
+        },
+        {
+          "t": "More HDFS replication",
+          "why": "Wrong: replication is unrelated to S3 commit behavior."
+        },
+        {
+          "t": "A rename-based Hadoop committer with more parallelism",
+          "why": "Wrong: rename-based committers are slow and not atomic on S3."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "The S3-optimized committer avoids renames.",
+      "remember": "Slow or non-atomic S3 output → EMRFS S3-optimized committer. Never rely on rename-based committers on S3.",
+      "variants": [
+        "Many small files slow listing → compact (`S3DistCp --groupBy`, Iceberg `rewrite_data_files`).",
+        "S3 `SlowDown` (503) errors → spread prefixes, back off and reduce small files."
+      ]
+    },
+    {
+      "id": "emr-020",
+      "skill": "2.1.7",
+      "source": "5-spark-hive-trino-tuning-lakehouse-studio-governance-and-migration.md",
+      "q": "A team needs ACID upserts, time travel and schema evolution on S3 tables that are queried by Athena, Redshift and EMR. Which table format and catalog should they use on EMR?",
+      "options": [
+        {
+          "t": "Parquet files in place, with the Hive metastore on the primary node",
+          "why": "Wrong: no ACID, and the local metastore is lost with the cluster."
+        },
+        {
+          "t": "Delta Lake with a local metastore",
+          "why": "Wrong: Delta is mainly for Databricks-centric ecosystems and the local metastore is not shared."
+        },
+        {
+          "t": "Apache Hudi only, without a catalog",
+          "why": "Wrong: Hudi suits heavy upserts and CDC, but Iceberg has broader engine support."
+        },
+        {
+          "t": "Apache Iceberg with the Glue Data Catalog",
+          "why": "Right: Iceberg has the broadest engine support and ACID, snapshots and time travel; Glue is the shared catalog."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Iceberg plus Glue is the default lakehouse choice.",
+      "remember": "ACID and time travel on S3 across several engines → Iceberg with the Glue Data Catalog. Heavy CDC upserts and incremental pulls → Hudi. Maintain Iceberg with `expire_snapshots`, `remove_orphan_files` and `rewrite_data_files`.",
+      "variants": [
+        "Record-level upserts with incremental consumption → Hudi (MOR).",
+        "Tables need compaction without running jobs → Glue Data Catalog automatic table optimization."
+      ]
+    },
+    {
+      "id": "emr-021",
+      "skill": "1.1.2",
+      "source": "5-spark-hive-trino-tuning-lakehouse-studio-governance-and-migration.md",
+      "q": "A company moves petabytes of HDFS data to S3 with limited WAN bandwidth, and later needs to sync the changes before cutover. What is the best approach?",
+      "options": [
+        {
+          "t": "S3DistCp over the internet only",
+          "why": "Wrong: it works for copies, but limited bandwidth makes petabytes too slow."
+        },
+        {
+          "t": "Snow Family for the bulk, then DataSync or DistCp for incremental changes",
+          "why": "Right: shipping is faster than the WAN for tens of PB; incremental sync until cutover handles the delta."
+        },
+        {
+          "t": "Recreate the data from Spark jobs",
+          "why": "Wrong: it does not move source data that is not reproducible."
+        },
+        {
+          "t": "Keep the data on HDFS on core nodes",
+          "why": "Wrong: HDFS is lost when the cluster ends; the goal is S3 as the lake."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Bulk by Snow Family, deltas by DataSync.",
+      "remember": "Large Hadoop migrations: HDFS → S3 with S3DistCp/DistCp/DataSync, Snow Family for tens of PB, Hive metastore → Glue Data Catalog, Oozie → MWAA or Step Functions.",
+      "variants": [
+        "Oozie workflows → MWAA or Step Functions.",
+        "Hive metastore → Glue Data Catalog (or external RDS metastore for compatibility)."
+      ]
+    }
+  ]
+}

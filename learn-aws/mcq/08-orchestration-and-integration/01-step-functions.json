@@ -1,0 +1,762 @@
+{
+ "questions": [
+  {
+   "id": "sfn-001",
+   "skill": "1.3.3",
+   "source": "1-basics-workflow-types-and-states.md",
+   "q": "A pipeline starts an EMR cluster, runs steps, and may wait days for a human approval. A failed run must never start a second cluster by accident. Which workflow type fits?",
+   "options": [
+    {
+     "t": "Express asynchronous workflow",
+     "why": "Wrong: at-least-once, 5-minute maximum and no callback pattern."
+    },
+    {
+     "t": "Express synchronous workflow",
+     "why": "Wrong: at-most-once and capped at 5 minutes."
+    },
+    {
+     "t": "Standard workflow",
+     "why": "Right: exactly-once execution, state persisted after every transition, runs up to 1 year, supports callbacks."
+    },
+    {
+     "t": "A Lambda function that sleeps until approval",
+     "why": "Wrong: Lambda stops at 15 minutes and you pay while it waits."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Long, durable and non-idempotent work belongs in Standard.",
+   "remember": "Long-running, human wait or non-idempotent step (start EMR, charge a card) → Standard. Short, high-volume, idempotent → Express.",
+   "variants": [
+    "100,000 short idempotent events per second → Express.",
+    "A synchronous API backend under 5 minutes → Express synchronous behind API Gateway.",
+    "A flow that must be audited for 90 days in the console → Standard."
+   ]
+  },
+  {
+   "id": "sfn-002",
+   "skill": "1.3.1",
+   "source": "2-integrations-and-data-flow.md",
+   "q": "A nightly job must run a Glue job and move to the next step only after the job finishes. If the job fails, the state must fail. How should the Task be built with the least code?",
+   "options": [
+    {
+     "t": "`arn:aws:states:::glue:startJobRun.sync`",
+     "why": "Right: the Run a Job pattern waits for the job and fails the state if the job fails."
+    },
+    {
+     "t": "`glue:startJobRun` with no suffix",
+     "why": "Wrong: request-response returns as soon as the run starts, so the next step runs too early."
+    },
+    {
+     "t": "A Lambda that polls `GetJobRun` in a loop",
+     "why": "Wrong: works, but adds code, Lambda cost and a 15-minute ceiling."
+    },
+    {
+     "t": "An Express workflow with `.sync`",
+     "why": "Wrong: Express does not support `.sync`."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "`.sync` waits for the integrated job to finish.",
+   "remember": "Need to wait for a Glue, Athena, Batch, EMR or ECS job → `.sync` in a Standard workflow. No suffix does not wait.",
+   "variants": [
+    "The service has no `.sync` (Glue crawler, Redshift Data API) → SDK call plus Wait/status/Choice loop.",
+    "The waiter is a person or outside system → `.waitForTaskToken`.",
+    "Only need to fire and forget → plain request-response."
+   ]
+  },
+  {
+   "id": "sfn-003",
+   "skill": "1.3.1",
+   "source": "2-integrations-and-data-flow.md",
+   "q": "A team must start a Glue crawler from a state machine and continue only when it is READY. Which design works?",
+   "options": [
+    {
+     "t": "`aws-sdk:glue:startCrawler.sync`",
+     "why": "Wrong: `.sync` is not available for SDK integrations."
+    },
+    {
+     "t": "SDK integration `startCrawler`, then Wait, `getCrawler`, and a Choice on `State == READY` looping back, with an attempt counter",
+     "why": "Right: the crawler call has no `.sync`, so poll it, and cap attempts to stay below the history limit."
+    },
+    {
+     "t": "A callback Task with `.waitForTaskToken` and no timeout",
+     "why": "Wrong: nothing returns the token when the crawler ends, and an untimed callback can hang for a year."
+    },
+    {
+     "t": "A Parallel state with one branch",
+     "why": "Wrong: Parallel waits for branches, not for the crawler to finish."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "SDK integrations support request-response and callback only; poll when there is no `.sync`.",
+   "remember": "No `.sync` available → Wait + status call + Choice loop, with a max-attempt counter (25,000 event cap).",
+   "variants": [
+    "Glue job instead of crawler → `glue:startJobRun.sync`.",
+    "Athena query → `athena:startQueryExecution.sync`.",
+    "Redshift Data API statement → `executeStatement` then poll `describeStatement`."
+   ]
+  },
+  {
+   "id": "sfn-004",
+   "skill": "1.3.3",
+   "source": "3-error-handling-scale-and-operations.md",
+   "q": "A workflow must process 10 million CSV rows stored in S3 in parallel. Each row group is small, and results must not flow back through the parent payload. What should be used?",
+   "options": [
+    {
+     "t": "Inline Map over the file contents",
+     "why": "Wrong: Inline Map is limited to 256 KiB input and 40 concurrent iterations."
+    },
+    {
+     "t": "Parallel state with 10 branches",
+     "why": "Wrong: branches are fixed at design time and do not read S3 datasets."
+    },
+    {
+     "t": "Express workflow with a Wait state",
+     "why": "Wrong: Wait does nothing for parallelism."
+    },
+    {
+     "t": "Distributed Map with an S3 `ItemReader` and a `ResultWriter` to S3",
+     "why": "Right: reads S3 directly, runs up to 10,000 child executions and writes results to S3."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Distributed Map is the large-scale S3 fan-out.",
+   "remember": "Dataset over 256 KiB, more than 40 concurrent items, or history over 25,000 events → Distributed Map (parent must be Standard).",
+   "variants": [
+    "A small array of a few hundred items → Inline Map.",
+    "Different steps at the same time on the same input → Parallel.",
+    "Too many tiny children → add `ItemBatcher`."
+   ]
+  },
+  {
+   "id": "sfn-005",
+   "skill": "3.1.2",
+   "source": "3-error-handling-scale-and-operations.md",
+   "q": "A Distributed Map processed 2 million files. 300 children failed because of one bad input file that has now been fixed. The definition is unchanged. What is the cheapest way to finish?",
+   "options": [
+    {
+     "t": "Start a new execution over all 2 million files",
+     "why": "Wrong: reprocesses everything and pays again."
+    },
+    {
+     "t": "Increase `MaxConcurrency` and rerun",
+     "why": "Wrong: concurrency is not the cause and does not rerun failed items."
+    },
+    {
+     "t": "Redrive the Map Run so only the failed children rerun",
+     "why": "Right: redrive reruns failed, aborted or timed-out children and keeps successful ones."
+    },
+    {
+     "t": "Use `States.ALL` Catch on the Map",
+     "why": "Wrong: Catch handles errors during the run, it does not rerun finished failures."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Redrive reruns only unsuccessful child executions.",
+   "remember": "Fixed the input or IAM, same definition → redrive (Standard, within 14 days). Changed the definition → start a new execution.",
+   "variants": [
+    "Express workflow failed → no redrive, start again.",
+    "Failed more than 14 days ago → redrive not offered.",
+    "You fixed the state machine definition → new execution."
+   ]
+  },
+  {
+   "id": "sfn-006",
+   "skill": "3.1.2",
+   "source": "3-error-handling-scale-and-operations.md",
+   "q": "A Task retries on `States.ALL` but an execution still fails with a payload error. The error is `States.DataLimitExceeded`. What explains this and what is the fix?",
+   "options": [
+    {
+     "t": "`States.ALL` does not match `States.DataLimitExceeded`; name it explicitly and pass S3 keys instead of big payloads",
+     "why": "Right: that error and `States.Runtime` are not caught by `States.ALL`, and the real fix is to move data to S3."
+    },
+    {
+     "t": "`States.ALL` only matches Lambda errors",
+     "why": "Wrong: it matches all known errors except the two named exceptions."
+    },
+    {
+     "t": "Retry counters were reset by the Catch",
+     "why": "Wrong: counters are per retrier and unrelated to this failure."
+    },
+    {
+     "t": "Express workflows ignore Retry",
+     "why": "Wrong: Retry works on both workflow types."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "The 256 KiB payload cap raises an error that `States.ALL` does not cover.",
+   "remember": "Payload over 256 KiB → `States.DataLimitExceeded`; store data in S3 and pass the key. `States.ALL` skips this and `States.Runtime`.",
+   "variants": [
+    "Bad JSON path or null input → `States.Runtime`, never retried or caught.",
+    "Choice with no match and no Default → `States.NoChoiceMatched`.",
+    "Many items fail in a Distributed Map → `States.ExceedToleratedFailureThreshold`."
+   ]
+  },
+  {
+   "id": "sfn-007",
+   "skill": "1.3.3",
+   "source": "3-error-handling-scale-and-operations.md",
+   "q": "A Lambda task is sometimes throttled when a Map state runs 500 iterations. Which retry setup is best?",
+   "options": [
+    {
+     "t": "Retry with `BackoffRate` 1 and no jitter",
+     "why": "Wrong: all failed iterations retry together and cause a second wave."
+    },
+    {
+     "t": "Retry `Lambda.TooManyRequestsException` with backoff and `JitterStrategy: FULL`, and lower the Map `MaxConcurrency`",
+     "why": "Right: jitter spreads retries and a lower concurrency avoids the burst."
+    },
+    {
+     "t": "Set `MaxAttempts: 0`",
+     "why": "Wrong: this disables retries for that error."
+    },
+    {
+     "t": "Catch the error and end with Succeed",
+     "why": "Wrong: silently drops the throttled work."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Throttling is transient: retry with jitter and limit concurrency.",
+   "remember": "Transient throttling in Map/Parallel → Retry with backoff plus `JitterStrategy: FULL`, and set `MaxConcurrency` to what downstream accepts.",
+   "variants": [
+    "Bad data errors → do not retry, Catch and route to a dead-letter step.",
+    "Need to retry everything except timeouts → first retrier `States.Timeout` with `MaxAttempts: 0`, then `States.ALL`.",
+    "Default jitter is NONE."
+   ]
+  },
+  {
+   "id": "sfn-008",
+   "skill": "1.3.3",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "A Standard workflow's bill is dominated by a segment that processes huge numbers of short, idempotent items. How can cost be cut without redesigning the whole flow?",
+   "options": [
+    {
+     "t": "Add Pass states between steps",
+     "why": "Wrong: every extra state is another billed transition."
+    },
+    {
+     "t": "Raise retry `MaxAttempts`",
+     "why": "Wrong: retries count as transitions and cost more."
+    },
+    {
+     "t": "Nest an Express workflow for that segment",
+     "why": "Right: Express is priced per request and duration, not per state transition."
+    },
+    {
+     "t": "Turn on logging level ALL",
+     "why": "Wrong: adds CloudWatch Logs ingestion cost."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Standard bills per transition; Express bills per request plus duration and memory.",
+   "remember": "Few long many-step flows → Standard is cheaper. Huge numbers of short idempotent runs → Express, often nested inside Standard.",
+   "variants": [
+    "Polling loops dominate cost → switch to `.sync` or callbacks.",
+    "Pass states only reshape data → use JSONata `Output`.",
+    "Lambda wrappers that only call AWS APIs → SDK integrations."
+   ]
+  },
+  {
+   "id": "sfn-009",
+   "skill": "3.1.1",
+   "source": "1-basics-workflow-types-and-states.md",
+   "q": "A team needs Python DAGs, backfills of past dates and a large operator ecosystem for existing Airflow code. Which orchestrator?",
+   "options": [
+    {
+     "t": "Amazon MWAA",
+     "why": "Right: managed Airflow supports Python DAGs, catch-up and backfills."
+    },
+    {
+     "t": "AWS Step Functions",
+     "why": "Wrong: JSON state machines have no backfill or catch-up concept."
+    },
+    {
+     "t": "Glue workflows",
+     "why": "Wrong: they only chain Glue jobs, crawlers and triggers."
+    },
+    {
+     "t": "EventBridge Scheduler",
+     "why": "Wrong: it starts targets on a schedule but does not orchestrate steps."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Airflow code and backfills point to MWAA.",
+   "remember": "Python DAGs, backfill, Airflow plugins → MWAA. Serverless, AWS-service orchestration, pay per use → Step Functions. Glue-only chain → Glue workflows.",
+   "variants": [
+    "Only Glue jobs and crawlers chained, free orchestration → Glue workflows.",
+    "Callbacks, retries and long waits across many AWS services → Step Functions.",
+    "Just a cron start → EventBridge Scheduler."
+   ]
+  },
+  {
+   "id": "sfn-010",
+   "skill": "3.3.2",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "An Express workflow runs, but the team cannot see its execution history in the console. What is the cause and the fix?",
+   "options": [
+    {
+     "t": "Express history expires after 90 days",
+     "why": "Wrong: there is none in Step Functions to expire; the 90-day figure is for Standard."
+    },
+    {
+     "t": "Express keeps no history in Step Functions; enable CloudWatch Logs on the state machine",
+     "why": "Right: Express history exists only in CloudWatch Logs."
+    },
+    {
+     "t": "The execution role lacks `states:StartExecution`",
+     "why": "Wrong: that would stop the run, not hide its history."
+    },
+    {
+     "t": "X-Ray must be disabled",
+     "why": "Wrong: tracing is separate from history."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Express history lives only in CloudWatch Logs.",
+   "remember": "No Express history → turn on logging (and check log permissions and ASCII names). Standard keeps 90 days and 25,000 events in the service.",
+   "variants": [
+    "Need guaranteed history → Standard.",
+    "Logs too costly → level ERROR or FATAL, includeExecutionData off.",
+    "Log group naming → prefix `/aws/vendedlogs/states/`."
+   ]
+  },
+  {
+   "id": "sfn-011",
+   "skill": "4.1.4",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "A state machine in account A must call Glue in account B. What is the least-privilege approach?",
+   "options": [
+    {
+     "t": "Share an access key of account B in the state input",
+     "why": "Wrong: secrets in input appear in history and logs."
+    },
+    {
+     "t": "Put an administrator policy on the execution role in A",
+     "why": "Wrong: not least privilege and does not grant B access."
+    },
+    {
+     "t": "Use a task token from account B",
+     "why": "Wrong: tokens only work from principals in the same account."
+    },
+    {
+     "t": "Set `Credentials.RoleArn` on the Task to a role in account B that trusts A's execution role",
+     "why": "Right: the task then runs with account B's role."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Use a cross-account role through the Task's `Credentials` field.",
+   "remember": "Cross-account service call from a state machine → `Credentials.RoleArn` plus a trust policy; cross-account task tokens fail.",
+   "variants": [
+    "Confused-deputy protection on the execution role trust → `aws:SourceArn` and `aws:SourceAccount`.",
+    "`.sync` across accounts uses polling only.",
+    "Creating a state machine with a role needs `iam:PassRole`."
+   ]
+  },
+  {
+   "id": "sfn-012",
+   "skill": "4.3.2",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "Compliance requires a customer managed KMS key for workflow data and history. Later the key is accidentally disabled. What happens?",
+   "options": [
+    {
+     "t": "Running executions fail and new ones cannot start until the key is re-enabled",
+     "why": "Right: Step Functions can no longer decrypt its data keys."
+    },
+    {
+     "t": "Executions continue using the AWS owned key automatically",
+     "why": "Wrong: the customer key is not bypassed when disabled."
+    },
+    {
+     "t": "Only logging stops",
+     "why": "Wrong: execution itself is blocked."
+    },
+    {
+     "t": "Data is re-encrypted with a new key",
+     "why": "Wrong: nothing re-encrypts it; data under a deleted key is unrecoverable."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "A disabled or deleted CMK breaks the workflows that use it.",
+   "remember": "CMK on a state machine adds a second layer on top of always-on AWS owned encryption. Disabled key → failures; re-enable it.",
+   "variants": [
+    "Cut KMS call cost → raise `KmsDataKeyReusePeriodSeconds` (60–900 s, default 300).",
+    "Execution role needs `kms:Decrypt` and `kms:GenerateDataKey`.",
+    "With a CMK, EventBridge status events omit input and output."
+   ]
+  },
+  {
+   "id": "sfn-013",
+   "skill": "4.1.5",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "Workloads in a private VPC with no internet path must start Step Functions executions, including Express synchronous ones. What should be set up?",
+   "options": [
+    {
+     "t": "A gateway endpoint for Step Functions",
+     "why": "Wrong: gateway endpoints exist only for S3 and DynamoDB."
+    },
+    {
+     "t": "Place the state machine inside the VPC",
+     "why": "Wrong: Step Functions is not deployed into a VPC."
+    },
+    {
+     "t": "Interface VPC endpoints for `states` and `sync-states`",
+     "why": "Right: PrivateLink keeps traffic on the AWS network; `sync-states` covers Express synchronous."
+    },
+    {
+     "t": "Open the security group to 0.0.0.0/0",
+     "why": "Wrong: does not create a private path."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Use interface endpoints to reach the Step Functions API privately.",
+   "remember": "Private API access → interface endpoint `states` (and `sync-states` for StartSyncExecution) with an endpoint policy.",
+   "variants": [
+    "Reach private RDS from a workflow → Lambda in a VPC or ECS/Batch in a VPC.",
+    "S3 private access → gateway endpoint.",
+    "Interface endpoints add data transfer charges."
+   ]
+  },
+  {
+   "id": "sfn-014",
+   "skill": "3.1.1",
+   "source": "2-integrations-and-data-flow.md",
+   "q": "A workflow must pause for a human approval that could take days. Which design is correct?",
+   "options": [
+    {
+     "t": "Express workflow with `.waitForTaskToken`",
+     "why": "Wrong: Express does not support the callback pattern."
+    },
+    {
+     "t": "Standard Task with `sqs:sendMessage.waitForTaskToken`, a `TimeoutSeconds`, and later `SendTaskSuccess` from the approver's system in the same account",
+     "why": "Right: the token resumes the exact task, and a timeout prevents a year-long hang."
+    },
+    {
+     "t": "A Wait state of 7 days",
+     "why": "Wrong: a fixed delay is not an approval."
+    },
+    {
+     "t": "A Lambda that loops until approved",
+     "why": "Wrong: Lambda ends at 15 minutes and you pay while waiting."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Callbacks pause a Standard workflow until someone returns the token.",
+   "remember": "Human or external wait → `.waitForTaskToken` in Standard, with timeout/heartbeat. Token from another account fails. Do not log tokens.",
+   "variants": [
+    "Late `SendTaskSuccess` after timeout fails with `TaskTimedOut`.",
+    "Detect a dead worker → `HeartbeatSeconds` smaller than `TimeoutSeconds`.",
+    "Waiting itself is free in Standard."
+   ]
+  },
+  {
+   "id": "sfn-015",
+   "skill": "3.3.5",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "The security team wants to know which identity changed a state machine definition last week. Which source answers it?",
+   "options": [
+    {
+     "t": "CloudWatch metric `ExecutionsFailed`",
+     "why": "Wrong: counts runs, not who changed definitions."
+    },
+    {
+     "t": "The execution history of a Standard run",
+     "why": "Wrong: shows state events of one run, not definition changes."
+    },
+    {
+     "t": "X-Ray service map",
+     "why": "Wrong: shows latency, not administrative changes."
+    },
+    {
+     "t": "CloudTrail `UpdateStateMachine` events",
+     "why": "Right: CloudTrail records management API calls with the caller identity."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Who changed it is a CloudTrail question.",
+   "remember": "Management calls (Create/UpdateStateMachine, StartExecution) → CloudTrail. State-level detail → execution history or logs.",
+   "variants": [
+    "Per-step latency → X-Ray and `ServiceIntegrationRunTime`.",
+    "Alert on failed runs → EventBridge rule on status change.",
+    "Release record → versions and aliases."
+   ]
+  },
+  {
+   "id": "sfn-016",
+   "skill": "3.1.2",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "A team must be alerted when any top-level Standard execution ends FAILED, TIMED_OUT or ABORTED. Catch cannot do it. What works?",
+   "options": [
+    {
+     "t": "An EventBridge rule on `Step Functions Execution Status Change` sending to SNS",
+     "why": "Right: status-change events fire for every execution, including failures nobody caught."
+    },
+    {
+     "t": "A `Catch` on the Fail state",
+     "why": "Wrong: Catch exists only on Task, Map and Parallel."
+    },
+    {
+     "t": "A Choice state at the end",
+     "why": "Wrong: a failed run never reaches it."
+    },
+    {
+     "t": "A CloudWatch alarm on `ExecutionsStarted`",
+     "why": "Wrong: this counts starts, not failures."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Top-level failure has no Catch; use status-change events.",
+   "remember": "Alert on any failed run → EventBridge status-change rule → SNS, or a CloudWatch alarm on `ExecutionsFailed > 0`.",
+   "variants": [
+    "Failure inside a step → Catch and route to an SNS Task.",
+    "Count failures per version → `ExecutionsFailed` with the Version dimension.",
+    "Express status events only if configured."
+   ]
+  },
+  {
+   "id": "sfn-017",
+   "skill": "1.3.2",
+   "source": "1-basics-workflow-types-and-states.md",
+   "q": "A long polling loop in a Standard workflow keeps failing after about 25,000 events. Which fix is best?",
+   "options": [
+    {
+     "t": "Switch the workflow to Express",
+     "why": "Wrong: Express cannot use `.sync` and caps runtime at 5 minutes."
+    },
+    {
+     "t": "Raise the history quota in the console",
+     "why": "Wrong: the 25,000 event limit is a hard cap."
+    },
+    {
+     "t": "Replace the polling with `.sync` or a callback, and put any remaining loop body in a nested workflow or continue in a new execution",
+     "why": "Right: the history cap is hard and these remove or reset event growth."
+    },
+    {
+     "t": "Increase `BackoffRate`",
+     "why": "Wrong: slower retries do not reduce events."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "The 25,000 event cap is hard; reduce events or split executions.",
+   "remember": "History cap → `.sync`/callback, nested child workflows, continue-as-new or Distributed Map (each item has its own history).",
+   "variants": [
+    "Big dataset in parallel → Distributed Map.",
+    "Fewer events per loop → JSONata instead of extra Pass states.",
+    "Always add a max-attempt counter to polling."
+   ]
+  },
+  {
+   "id": "sfn-018",
+   "skill": "3.1.3",
+   "source": "2-integrations-and-data-flow.md",
+   "q": "A workflow needs to call an AWS API that has no optimized Step Functions integration. The team wants no Lambda. What should they use?",
+   "options": [
+    {
+     "t": "The legacy Lambda ARN",
+     "why": "Wrong: that requires writing and running a function."
+    },
+    {
+     "t": "An AWS SDK integration such as `arn:aws:states:::aws-sdk:<service>:<apiAction>`",
+     "why": "Right: SDK integrations reach any API of 200+ services directly."
+    },
+    {
+     "t": "An Activity",
+     "why": "Wrong: it needs your own worker polling for tasks."
+    },
+    {
+     "t": "An Express synchronous run",
+     "why": "Wrong: workflow type is unrelated to which API can be called."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "SDK integrations cover APIs without optimized support.",
+   "remember": "API not optimized → `aws-sdk:service:apiAction` (parameters in PascalCase). Third-party HTTPS API → HTTP Task with an EventBridge connection.",
+   "variants": [
+    "Call a SaaS REST API → `http:invoke` with a connection.",
+    "SDK integration has no `.sync` → poll or callback.",
+    "SDK errors are named `Service.ExceptionName`."
+   ]
+  },
+  {
+   "id": "sfn-019",
+   "skill": "1.3.3",
+   "source": "1-basics-workflow-types-and-states.md",
+   "q": "A REST API needs a multi-step backend that returns its result to the caller in one call, finishing within 2 minutes. Which setup?",
+   "options": [
+    {
+     "t": "A Standard workflow started with `StartExecution`",
+     "why": "Wrong: returns only an execution ARN, not the result."
+    },
+    {
+     "t": "An Express workflow with `.waitForTaskToken`",
+     "why": "Wrong: Express has no callback pattern."
+    },
+    {
+     "t": "An Activity worker",
+     "why": "Wrong: Activities are Standard only and add polling infrastructure."
+    },
+    {
+     "t": "An Express synchronous workflow called through API Gateway",
+     "why": "Right: `StartSyncExecution` waits and returns the result, up to 5 minutes."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Synchronous request-response workflows are Express.",
+   "remember": "Caller needs the result now and runtime under 5 minutes → Express sync. Steps must be idempotent. Console test of sync stops at 60 s.",
+   "variants": [
+    "Run longer than 5 minutes → Standard.",
+    "Express async → read results from CloudWatch Logs.",
+    "Sync Express at-most-once; async at-least-once."
+   ]
+  },
+  {
+   "id": "sfn-020",
+   "skill": "1.3.1",
+   "source": "1-basics-workflow-types-and-states.md",
+   "q": "A new version of a state machine must be rolled out safely, sending 10% of executions to it and being easy to roll back. What should be used?",
+   "options": [
+    {
+     "t": "Publish a version and shift alias weights, for example 90/10",
+     "why": "Right: an alias routes by weight across two versions and rollback is one alias update."
+    },
+    {
+     "t": "Update the state machine in place with `UpdateStateMachine`",
+     "why": "Wrong: all new executions get the new definition at once."
+    },
+    {
+     "t": "Create a second account",
+     "why": "Wrong: unnecessary and no traffic split."
+    },
+    {
+     "t": "Point an alias at another alias",
+     "why": "Wrong: an alias can point only to versions."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Versions plus weighted aliases give canary deployment.",
+   "remember": "Gradual rollout → publish version, alias with two weighted versions (sum 100). Rollback → repoint alias. Running executions keep their version.",
+   "variants": [
+    "Compare canary and stable → metrics have Version and Alias dimensions.",
+    "Plain state machine ARN → runs the latest revision.",
+    "Lint before creating → `ValidateStateMachineDefinition`."
+   ]
+  },
+  {
+   "id": "sfn-021",
+   "skill": "1.3.3",
+   "source": "1-basics-workflow-types-and-states.md",
+   "q": "Which TWO features are NOT available in Express workflows? (Choose 2)",
+   "options": [
+    {
+     "t": "Request-response Task calls to Lambda",
+     "why": "Wrong: fully supported in Express."
+    },
+    {
+     "t": "`.waitForTaskToken` callbacks",
+     "why": "Right: Express supports only request-response."
+    },
+    {
+     "t": "Choice and Parallel states",
+     "why": "Wrong: all basic state types are supported."
+    },
+    {
+     "t": "Redrive of a failed execution",
+     "why": "Right: redrive is Standard only."
+    },
+    {
+     "t": "Execution logging to CloudWatch Logs",
+     "why": "Wrong: this is the only way to see Express history."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Express has no `.sync`, callbacks, Activities, Distributed Map parent or redrive.",
+   "remember": "Express = request-response only, no history in the service, no redrive. Anything needing wait-for-job, callback or redrive → Standard.",
+   "variants": [
+    "Also unavailable in Express: `.sync` and Activities.",
+    "Distributed Map children can be Express but the parent must be Standard.",
+    "Express max duration is 5 minutes."
+   ]
+  },
+  {
+   "id": "sfn-022",
+   "skill": "3.1.2",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "A Standard `.sync` task hangs and the execution has been Running for hours. Which TWO settings should be added to prevent this? (Choose 2)",
+   "options": [
+    {
+     "t": "`TimeoutSeconds` on the Task",
+     "why": "Right: `.sync` has no default timeout and can wait up to a year."
+    },
+    {
+     "t": "A higher `BackoffRate`",
+     "why": "Wrong: affects retry delays, not waiting."
+    },
+    {
+     "t": "`HeartbeatSeconds` smaller than `TimeoutSeconds`",
+     "why": "Right: detects a dead worker with `States.HeartbeatTimeout`."
+    },
+    {
+     "t": "`ResultPath: null`",
+     "why": "Wrong: changes data flow, not timing."
+    },
+    {
+     "t": "`JitterStrategy: FULL`",
+     "why": "Wrong: randomizes retry delays only."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "`.sync`, callbacks and Activities need explicit timeouts.",
+   "remember": "Always set `TimeoutSeconds` (and heartbeats for callbacks/activities); defaults for these patterns are effectively 1 year.",
+   "variants": [
+    "Request-response tasks get a default timeout.",
+    "Top-level `TimeoutSeconds` caps the whole execution.",
+    "Missing heartbeat → `States.HeartbeatTimeout`."
+   ]
+  }
+ ]
+}

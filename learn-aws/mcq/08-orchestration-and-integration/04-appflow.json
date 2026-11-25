@@ -1,0 +1,268 @@
+{
+ "questions": [
+  {
+   "id": "appflow-001",
+   "skill": "1.1.2",
+   "source": "1-basics-flows-sources-and-destinations.md",
+   "q": "A team wants Salesforce opportunities copied into S3 every hour, with no code to write or maintain. Only changed records should move. Which design fits?",
+   "options": [
+    {
+     "t": "A Glue Spark job that calls the Salesforce API with custom paging code",
+     "why": "Wrong: it works but needs code for auth refresh, paging and retries."
+    },
+    {
+     "t": "AWS DMS with CDC from Salesforce",
+     "why": "Wrong: DMS is for databases, not SaaS objects."
+    },
+    {
+     "t": "A scheduled AppFlow flow with incremental transfer to S3",
+     "why": "Right: no code, a timestamp cursor moves only new or changed records since the last successful run."
+    },
+    {
+     "t": "A full-transfer AppFlow flow on a schedule",
+     "why": "Wrong: full transfer copies a snapshot of all records every run, so it is not changes only."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "SaaS to S3 on a schedule with no code: AppFlow incremental.",
+   "remember": "SaaS source, no code, batch \u2192 AppFlow. Only changes \u2192 incremental transfer on a timestamp field; full transfer re-copies everything.",
+   "variants": [
+    "The source is an Oracle or PostgreSQL database needing CDC \u2192 DMS.",
+    "Heavy joins or transforms are needed \u2192 land the data in S3, then use Glue, Athena or Redshift."
+   ]
+  },
+  {
+   "id": "appflow-002",
+   "skill": "1.1.5",
+   "source": "1-basics-flows-sources-and-destinations.md",
+   "q": "A scheduled incremental AppFlow flow is first activated, but the analysts need two years of Salesforce history. What is the correct approach?",
+   "options": [
+    {
+     "t": "Run the flow on demand with a date filter first, then edit it to a schedule",
+     "why": "Right: the first incremental run only pulls the last 30 days, so a filtered on-demand run does the backfill."
+    },
+    {
+     "t": "Set the incremental offset to 10 hours",
+     "why": "Wrong: the offset is under 10 hours and only catches late-stamped records, not years of history."
+    },
+    {
+     "t": "Activate the schedule and wait",
+     "why": "Wrong: the first incremental run pulls only 30 days and later runs only add new changes."
+    },
+    {
+     "t": "Switch the trigger to run on event",
+     "why": "Wrong: event triggers react to change events and do not load history."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Backfill with an on-demand filtered run, then schedule.",
+   "remember": "First incremental run = last 30 days only. For older history run on demand with a date filter, then switch to the schedule.",
+   "variants": [
+    "Records stamped late are missed \u2192 add an offset (under 10 hours).",
+    "Backfill larger than 100 GB \u2192 split into several flows by date range."
+   ]
+  },
+  {
+   "id": "appflow-003",
+   "skill": "1.1.5",
+   "source": "1-basics-flows-sources-and-destinations.md",
+   "q": "A company must react within seconds when a Salesforce record changes, and route the change to Lambda or Step Functions. Which AppFlow setup fits best?",
+   "options": [
+    {
+     "t": "A scheduled flow every minute with incremental transfer",
+     "why": "Wrong: still batch, and many sources have schedule minimums."
+    },
+    {
+     "t": "An on-demand flow started by a cron job",
+     "why": "Wrong: manual or API starts are not driven by source changes."
+    },
+    {
+     "t": "A full-transfer flow to S3 with an S3 event notification",
+     "why": "Wrong: adds batch delay and re-copies all records."
+    },
+    {
+     "t": "An event-triggered flow on Salesforce change events, or sending events to an EventBridge partner event bus",
+     "why": "Right: Salesforce Change Data Capture and platform events can start a flow, and EventBridge rules route to Lambda or Step Functions."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Event trigger or EventBridge partner bus for near-real-time Salesforce changes.",
+   "remember": "Near-real-time reaction to SaaS change \u2192 run-on-event trigger (mainly Salesforce CDC/platform events) or EventBridge partner bus. Schedules are batch.",
+   "variants": [
+    "A routine hourly load is enough \u2192 scheduled incremental flow.",
+    "Sub-minute streaming of your own events \u2192 Kinesis or MSK."
+   ]
+  },
+  {
+   "id": "appflow-004",
+   "skill": "4.1.5",
+   "source": "2-security-private-connectivity-cost-limits-and-scenarios.md",
+   "q": "A flow writing to an S3 bucket fails with AccessDenied. The bucket is encrypted with a customer managed KMS key. What should be fixed?",
+   "options": [
+    {
+     "t": "Add an IP allow-list for the AppFlow IP ranges to the bucket policy",
+     "why": "Wrong: AppFlow reaches S3 through a VPC endpoint, so IP allow-listing does not work."
+    },
+    {
+     "t": "Add a bucket policy allowing the AppFlow service principal, and give it access to the KMS key",
+     "why": "Right: AppFlow writes with its own service access, so the bucket and key policies must allow `appflow.amazonaws.com`."
+    },
+    {
+     "t": "Attach AmazonAppFlowFullAccess to the SaaS admin",
+     "why": "Wrong: that managed policy governs who manages flows, not AppFlow's writes to S3."
+    },
+    {
+     "t": "Enable S3 Transfer Acceleration",
+     "why": "Wrong: this is a transfer speed feature and has no effect on authorization."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "AppFlow needs bucket policy and KMS key access for its service principal.",
+   "remember": "AccessDenied writing to S3 \u2192 bucket policy for the AppFlow service principal plus KMS key access. IP allow-listing does not work.",
+   "variants": [
+    "Glue table not created \u2192 grant AppFlow Glue permissions.",
+    "Redshift COPY fails \u2192 attach the IAM role to the cluster."
+   ]
+  },
+  {
+   "id": "appflow-005",
+   "skill": "4.2.2",
+   "source": "2-security-private-connectivity-cost-limits-and-scenarios.md",
+   "q": "Two teams share an account. Each must use only its own Salesforce connection in flows. Which control fits?",
+   "options": [
+    {
+     "t": "Give each team its own S3 bucket",
+     "why": "Wrong: this controls destinations, not which stored credentials are used."
+    },
+    {
+     "t": "Delete the connection after each flow run",
+     "why": "Wrong: deleting a connection removes its metadata permanently and breaks flows."
+    },
+    {
+     "t": "Restrict `appflow:UseConnectorProfile` to each team's connection ARN",
+     "why": "Right: that action is the permission to use stored credentials in a flow."
+    },
+    {
+     "t": "Store the Salesforce password in the flow name",
+     "why": "Wrong: secrets must not go in names, tags or free text."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "UseConnectorProfile scoped per connection ARN.",
+   "remember": "Control who may use stored SaaS credentials \u2192 `appflow:UseConnectorProfile` per connection ARN (and tags). Credentials live in Secrets Manager, encrypted with KMS.",
+   "variants": [
+    "A SaaS password is rotated \u2192 edit the connection so flows keep working.",
+    "Who can create or run flows \u2192 AmazonAppFlowFullAccess versus ReadOnlyAccess."
+   ]
+  },
+  {
+   "id": "appflow-006",
+   "skill": "1.1.2",
+   "source": "2-security-private-connectivity-cost-limits-and-scenarios.md",
+   "q": "A flow must pull 300 GB from a SaaS application. What should the data engineer do?",
+   "options": [
+    {
+     "t": "Split it into several flows using date filters, each under 100 GB",
+     "why": "Right: 100 GB per run is a hard limit."
+    },
+    {
+     "t": "Request a quota increase for the run size",
+     "why": "Wrong: the 100 GB per run limit is hard and not adjustable."
+    },
+    {
+     "t": "Raise the schedule frequency",
+     "why": "Wrong: frequency does not change the per-run size limit."
+    },
+    {
+     "t": "Use the incremental offset",
+     "why": "Wrong: the offset only shifts the time window and is under 10 hours."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "100 GB per run is hard, so split by filters.",
+   "remember": "Run over 100 GB \u2192 split by filters or time ranges, or use another tool. Source caps also apply (Marketo 20 MB, ServiceNow 100,000 records).",
+   "variants": [
+    "A one-time very large transfer \u2192 DataSync, Glue or Snow family.",
+    "The limits on flows per Region (1,000) are adjustable, unlike run size."
+   ]
+  },
+  {
+   "id": "appflow-007",
+   "skill": "1.1.2",
+   "source": "1-basics-flows-sources-and-destinations.md",
+   "q": "Analysts want SaaS data in S3 to be queryable in Athena right after landing, with partition pruning and no crawler. Which AppFlow destination settings help?",
+   "options": [
+    {
+     "t": "CSV output with no aggregation and no catalog",
+     "why": "Wrong: Athena cannot prune and no table exists."
+    },
+    {
+     "t": "JSON output into a single prefix",
+     "why": "Wrong: there is no catalog table and no partitions."
+    },
+    {
+     "t": "Mask all fields",
+     "why": "Wrong: masking hides values and does not build tables."
+    },
+    {
+     "t": "Parquet format, date partition folders and Glue Data Catalog table creation",
+     "why": "Right: Parquet suits Athena, date partitions allow pruning, and AppFlow creates or updates the Glue table."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Parquet plus date partitions plus Glue catalog.",
+   "remember": "Athena-ready landing from AppFlow \u2192 Parquet, date-partitioned folders and the Glue Data Catalog option (needs a Glue database and an IAM role).",
+   "variants": [
+    "PII in the data \u2192 add a masking task, and scan with Macie.",
+    "Loading into Redshift \u2192 AppFlow uses an intermediate S3 bucket and COPY."
+   ]
+  },
+  {
+   "id": "appflow-008",
+   "skill": "4.1.5",
+   "source": "2-security-private-connectivity-cost-limits-and-scenarios.md",
+   "q": "Security rules say Salesforce data must not travel over the public internet, and Salesforce supports a private endpoint. What should be used?",
+   "options": [
+    {
+     "t": "A public flow with TLS 1.2",
+     "why": "Wrong: TLS encrypts the traffic but it still crosses the public internet."
+    },
+    {
+     "t": "A private flow using AWS PrivateLink",
+     "why": "Right: traffic stays on the AWS network for supported SaaS apps."
+    },
+    {
+     "t": "A NAT gateway for the flow",
+     "why": "Wrong: AppFlow is a managed service and does not run in your NAT path."
+    },
+    {
+     "t": "An EventBridge API destination",
+     "why": "Wrong: it pushes events to HTTP endpoints and is not a bulk transfer path."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Private flows use PrivateLink.",
+   "remember": "Traffic must stay off the internet and the SaaS supports it \u2192 private flow (PrivateLink). TLS alone is not private.",
+   "variants": [
+    "The SaaS has no PrivateLink option \u2192 public flow with TLS and SaaS-side IP allow-listing.",
+    "JDBC or RDS PostgreSQL connectors let the database stay non-public."
+   ]
+  }
+ ]
+}

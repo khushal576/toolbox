@@ -1,0 +1,278 @@
+{
+ "questions": [
+  {
+   "id": "datasync-001",
+   "skill": "2.1.4",
+   "source": "1-datasync-locations-agents-tasks-security-cost-and-scenarios.md",
+   "q": "A company must copy 200 TB from an on-premises NFS server to S3 over Direct Connect and keep the copy in sync afterwards, with integrity checks. Which service fits best?",
+   "options": [
+    {
+     "t": "`aws s3 sync` run by cron",
+     "why": "Wrong: it works but is slower, single-path, and has no managed retries, verification or monitoring."
+    },
+    {
+     "t": "AWS DMS",
+     "why": "Wrong: DMS migrates databases, not file shares."
+    },
+    {
+     "t": "AWS DataSync with an agent and a scheduled task",
+     "why": "Right: an agent reads NFS, the task transfers only changed data after the first run and verifies integrity."
+    },
+    {
+     "t": "AWS Application Migration Service (MGN)",
+     "why": "Wrong: MGN migrates whole servers, not file data."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Online, recurring, verified file transfer from NFS/SMB to AWS is DataSync.",
+   "remember": "Online bulk or recurring file/object transfer into S3, EFS or FSx, with integrity checks \u2192 DataSync (agent for on-premises sources).",
+   "variants": [
+    "Database migration \u2192 DMS.",
+    "Whole server migration \u2192 MGN.",
+    "SFTP/FTPS partners uploading \u2192 Transfer Family.",
+    "Poor or no network \u2192 Snow Family or Data Transfer Terminal."
+   ]
+  },
+  {
+   "id": "datasync-002",
+   "skill": "2.1.4",
+   "source": "1-datasync-locations-agents-tasks-security-cost-and-scenarios.md",
+   "q": "A team must copy a bucket in account A to a bucket in account B (both S3) using DataSync. They want the least operational effort. What is needed?",
+   "options": [
+    {
+     "t": "An EC2-hosted agent in each account",
+     "why": "Wrong: an agent is not required when S3 is one side of a cross-account transfer."
+    },
+    {
+     "t": "A Direct Connect link between the accounts",
+     "why": "Wrong: S3 traffic does not need Direct Connect and it is not part of DataSync requirements."
+    },
+    {
+     "t": "A VMware agent on-premises",
+     "why": "Wrong: nothing on-premises is involved."
+    },
+    {
+     "t": "No agent; create locations and a task",
+     "why": "Right: S3 to other AWS storage across accounts needs no agent."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Agents are needed for on-premises sources, not for S3 to AWS storage.",
+   "remember": "No agent for AWS storage to AWS storage in one account, S3 to other AWS storage cross-account, or S3 to other-cloud object storage. Agent for on-premises sources.",
+   "variants": [
+    "Source is on-premises NFS \u2192 agent needed.",
+    "EFS/FSx to another cloud \u2192 agent needed.",
+    "Azure Blob to S3 \u2192 no agent.",
+    "Both sides EFS/FSx in different accounts \u2192 may need an agent."
+   ]
+  },
+  {
+   "id": "datasync-003",
+   "skill": "1.1.3",
+   "source": "1-datasync-locations-agents-tasks-security-cost-and-scenarios.md",
+   "q": "A DataSync task copies hundreds of millions of objects to S3 and Basic mode keeps hitting the item quota. What should the team do?",
+   "options": [
+    {
+     "t": "Switch the existing task to Enhanced mode",
+     "why": "Wrong: task mode cannot be changed after creation."
+    },
+    {
+     "t": "Create the task in Enhanced mode",
+     "why": "Right: Enhanced mode lists, prepares, transfers and verifies in parallel and has virtually unlimited objects per execution."
+    },
+    {
+     "t": "Add more agents to the location",
+     "why": "Wrong: agents add throughput but do not remove the Basic mode quota (25 to 50 million)."
+    },
+    {
+     "t": "Raise the bandwidth limit",
+     "why": "Wrong: the limit throttles speed; it does not change item quotas."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Enhanced mode removes the practical item limit; mode is fixed at creation.",
+   "remember": "Very many objects \u2192 Enhanced mode (create a new task, mode cannot change). Basic mode has 25 to 50 million item quotas, or split with filters.",
+   "variants": [
+    "Destination is FSx for Windows File Server \u2192 Basic mode.",
+    "You want to avoid creating a new task \u2192 split the data by prefix with filters in Basic mode.",
+    "Need full point-in-time verification \u2192 Basic mode only."
+   ]
+  },
+  {
+   "id": "datasync-004",
+   "skill": "1.1.3",
+   "source": "1-datasync-locations-agents-tasks-security-cost-and-scenarios.md",
+   "q": "A DataSync task writes data straight into the S3 Glacier Deep Archive storage class. Which verification setting is correct?",
+   "options": [
+    {
+     "t": "Disable CloudWatch Logs",
+     "why": "Wrong: logging does not control verification."
+    },
+    {
+     "t": "Verify all data in Enhanced mode",
+     "why": "Wrong: Enhanced mode only verifies transferred data, and Glacier classes need the same."
+    },
+    {
+     "t": "`ONLY_FILES_TRANSFERRED`",
+     "why": "Right: it checks only transferred data and is required for Glacier Flexible Retrieval and Deep Archive."
+    },
+    {
+     "t": "`POINT_IN_TIME_CONSISTENT`",
+     "why": "Wrong: full comparison is not supported for Glacier classes."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Glacier destinations need verify-only-transferred.",
+   "remember": "Glacier Flexible Retrieval or Deep Archive destination \u2192 set the storage class on the task and use ONLY_FILES_TRANSFERRED.",
+   "variants": [
+    "Want a full compare at the end \u2192 POINT_IN_TIME_CONSISTENT (Basic mode, not Glacier).",
+    "Want checks only during transfer \u2192 NONE.",
+    "Archived objects at the source \u2192 restore them first or they are skipped."
+   ]
+  },
+  {
+   "id": "datasync-005",
+   "skill": "1.1.3",
+   "source": "1-datasync-locations-agents-tasks-security-cost-and-scenarios.md",
+   "q": "A nightly DataSync copy shares a 1 Gbps link with production traffic. Which task option protects production?",
+   "options": [
+    {
+     "t": "Enable task reports",
+     "why": "Wrong: reports describe results only."
+    },
+    {
+     "t": "Set a bandwidth limit on the task",
+     "why": "Right: it throttles bytes per second for each task execution."
+    },
+    {
+     "t": "Use include/exclude filters",
+     "why": "Wrong: filters choose files, they do not control speed."
+    },
+    {
+     "t": "Add up to 4 agents to the location",
+     "why": "Wrong: more agents increase throughput and make congestion worse."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Bandwidth limit throttles the task.",
+   "remember": "Link shared with production \u2192 bandwidth limit on the task. Need only certain files \u2192 filters or a manifest.",
+   "variants": [
+    "Move an exact list of files \u2192 manifest.",
+    "Skip *.tmp files \u2192 exclude filter.",
+    "Need faster transfer \u2192 more agents or Enhanced mode."
+   ]
+  },
+  {
+   "id": "datasync-006",
+   "skill": "1.1.3",
+   "source": "1-datasync-locations-agents-tasks-security-cost-and-scenarios.md",
+   "q": "A company needs an on-premises share synced to S3 every 15 minutes with DataSync scheduling. What is the issue?",
+   "options": [
+    {
+     "t": "Only Enhanced mode supports sub-hour schedules",
+     "why": "Wrong: the minimum applies to all modes."
+    },
+    {
+     "t": "Schedules require Lambda",
+     "why": "Wrong: schedules are built in using EventBridge-style expressions."
+    },
+    {
+     "t": "The minimum schedule interval is 1 hour, so use another approach for faster sync",
+     "why": "Right: DataSync schedules accept cron or rate expressions with a 1-hour minimum."
+    },
+    {
+     "t": "It works with a rate of 15 minutes",
+     "why": "Wrong: the minimum is 1 hour."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "The schedule floor is hourly.",
+   "remember": "DataSync scheduled tasks run at most hourly. Faster flows \u2192 File Gateway, Transfer Family or S3 Replication; or start tasks from EventBridge/API.",
+   "variants": [
+    "Hourly or slower \u2192 built-in task schedule.",
+    "S3 to S3 continuous \u2192 S3 Replication.",
+    "Need to pause schedule \u2192 set it DISABLED."
+   ]
+  },
+  {
+   "id": "datasync-007",
+   "skill": "2.1.4",
+   "source": "1-datasync-locations-agents-tasks-security-cost-and-scenarios.md",
+   "q": "A security team requires DataSync agent traffic to never cross the public internet. What should be used?",
+   "options": [
+    {
+     "t": "The public endpoint with TLS",
+     "why": "Wrong: TLS encrypts the traffic but it still uses the public internet."
+    },
+    {
+     "t": "A bandwidth limit",
+     "why": "Wrong: it only throttles speed."
+    },
+    {
+     "t": "A FIPS endpoint",
+     "why": "Wrong: FIPS is for compliance, not private routing."
+    },
+    {
+     "t": "A VPC interface endpoint (PrivateLink) for DataSync",
+     "why": "Right: agent to service traffic stays on private connectivity."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "PrivateLink keeps the path private.",
+   "remember": "Agent traffic must stay off the internet \u2192 VPC (PrivateLink) endpoint. FIPS endpoint \u2192 compliance requirement. All data is TLS-encrypted in transit anyway.",
+   "variants": [
+    "Compliance needs FIPS 140 endpoints \u2192 FIPS endpoint.",
+    "Encryption in transit only \u2192 already TLS by default.",
+    "SMB credentials storage \u2192 Secrets Manager."
+   ]
+  },
+  {
+   "id": "datasync-008",
+   "skill": "1.1.2",
+   "source": "1-datasync-locations-agents-tasks-security-cost-and-scenarios.md",
+   "q": "A DataSync task to a KMS-encrypted S3 bucket fails with access denied, although the bucket policy allows the DataSync role. What is the likely fix?",
+   "options": [
+    {
+     "t": "Raise the task quota",
+     "why": "Wrong: quotas do not cause access denied."
+    },
+    {
+     "t": "Grant the S3 location IAM role the needed KMS permissions",
+     "why": "Right: for SSE-KMS buckets the role DataSync assumes also needs KMS access."
+    },
+    {
+     "t": "Add a second agent",
+     "why": "Wrong: S3 access uses the IAM role, not agents."
+    },
+    {
+     "t": "Switch the task to Basic mode",
+     "why": "Wrong: mode does not affect KMS permissions."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "SSE-KMS bucket needs KMS permissions on the DataSync role.",
+   "remember": "DataSync reaches S3 through an IAM role trusted by datasync.amazonaws.com; for SSE-KMS buckets that role also needs KMS permissions. Scope it to the bucket/prefix.",
+   "variants": [
+    "NFS permission denied \u2192 check export, ACLs and root squash.",
+    "Agent offline \u2192 check network, VM, endpoint.",
+    "Cross-account \u2192 bucket policy plus role."
+   ]
+  }
+ ]
+}

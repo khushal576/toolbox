@@ -1,0 +1,334 @@
+{
+ "questions": [
+  {
+   "id": "config-001",
+   "skill": "4.5.4",
+   "source": "1-recorder-configuration-items-history-and-queries.md",
+   "q": "An auditor asks what a security group allowed on a specific date three months ago. Which service and feature answers this directly?",
+   "options": [
+    {
+     "t": "AWS Config configuration timeline or GetResourceConfigHistory",
+     "why": "Right: Config stores point-in-time configuration items for each resource."
+    },
+    {
+     "t": "CloudTrail event history",
+     "why": "Wrong: it shows who called which API, not the full resource configuration at a date."
+    },
+    {
+     "t": "CloudWatch Logs Insights",
+     "why": "Wrong: it queries log data, not resource configuration."
+    },
+    {
+     "t": "GuardDuty findings",
+     "why": "Wrong: it detects threats and does not keep configuration history."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Config answers what the resource looked like and when it changed.",
+   "remember": "What a resource looked like at a past time → Config history. Who called the API → CloudTrail.",
+   "variants": [
+    "The question is who opened the port → the Config item links the CloudTrail event ID, then use CloudTrail.",
+    "The question is whether the resource is compliant → Config rules."
+   ]
+  },
+  {
+   "id": "config-002",
+   "skill": "4.5.4",
+   "source": "1-recorder-configuration-items-history-and-queries.md",
+   "q": "A security team must find all unencrypted EBS volumes across 40 accounts and several Regions, using the current configuration. What is the best approach?",
+   "options": [
+    {
+     "t": "An aggregator plus an advanced query",
+     "why": "Right: advanced queries (SelectAggregateResourceConfig) run across accounts and Regions from an aggregator."
+    },
+    {
+     "t": "An advanced query in each account's console",
+     "why": "Wrong: it works but is manual and not centralized."
+    },
+    {
+     "t": "CloudTrail Lake query",
+     "why": "Wrong: it queries API activity, not current resource state."
+    },
+    {
+     "t": "Athena over config history files only",
+     "why": "Wrong: heavier, and not needed for a current-state question."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Aggregator queries give a central current-state view.",
+   "remember": "Current-state question across accounts → aggregator + advanced query. Past state → history/timeline/S3 + Athena.",
+   "variants": [
+    "You need history over years → history files in S3 queried with Athena.",
+    "You need to deploy rules to all accounts → organization rules or conformance packs, not an aggregator."
+   ]
+  },
+  {
+   "id": "config-003",
+   "skill": "4.5.4",
+   "source": "1-recorder-configuration-items-history-and-queries.md",
+   "q": "Config bills are high after turning on recording for all resource types. Some resources, like network interfaces, change constantly and per-change history is not needed. What should be done?",
+   "options": [
+    {
+     "t": "Use daily recording for the noisy types, or exclude them",
+     "why": "Right: continuous recording bills per configuration item, daily gives at most one per resource per day."
+    },
+    {
+     "t": "Delete the delivery channel",
+     "why": "Wrong: it only stops delivery to S3 and does not fix recording costs."
+    },
+    {
+     "t": "Lower the S3 retention only",
+     "why": "Wrong: S3 storage is a small part of the cost; CIs drive it."
+    },
+    {
+     "t": "Switch the rules to hybrid trigger",
+     "why": "Wrong: this affects rule evaluation, not CI count."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Cost follows the number of CIs recorded.",
+   "remember": "High Config cost from noisy resources → record only needed types, exclude noisy ones, or record them daily.",
+   "variants": [
+    "Cost comes from too many periodic rules → reduce frequency or use configuration-change triggers.",
+    "Many rules over many resources → scope rules by tag or resource type."
+   ]
+  },
+  {
+   "id": "config-004",
+   "skill": "4.5.4",
+   "source": "2-rules-conformance-packs-remediation-and-aggregators.md",
+   "q": "A company wants an S3 bucket that becomes public to be fixed automatically. Which design fits?",
+   "options": [
+    {
+     "t": "A Config rule such as s3-bucket-public-read-prohibited with automatic remediation using an SSM Automation runbook",
+     "why": "Right: Config detects the NON_COMPLIANT resource and runs the runbook."
+    },
+    {
+     "t": "A conformance pack with no remediation",
+     "why": "Wrong: it detects but does not fix."
+    },
+    {
+     "t": "An aggregator in the security account",
+     "why": "Wrong: it is a read-only view and cannot change resources."
+    },
+    {
+     "t": "CloudTrail Insights",
+     "why": "Wrong: it detects unusual API activity but does not remediate."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Detect with a rule, fix with an SSM Automation runbook.",
+   "remember": "Auto-fix a non-compliant resource → Config rule + remediation action (SSM Automation, with an AutomationAssumeRole).",
+   "variants": [
+    "The fix could break production → use manual remediation with an approval step.",
+    "You need custom fix logic → your own SSM runbook, or Lambda through EventBridge."
+   ]
+  },
+  {
+   "id": "config-005",
+   "skill": "4.5.4",
+   "source": "2-rules-conformance-packs-remediation-and-aggregators.md",
+   "q": "A company must block non-compliant resources before they are deployed through CloudFormation. Which Config capability applies?",
+   "options": [
+    {
+     "t": "Proactive evaluation mode, for example with CloudFormation Hooks",
+     "why": "Right: proactive rules check configuration before deployment."
+    },
+    {
+     "t": "Detective rule with periodic trigger",
+     "why": "Wrong: it evaluates resources that already exist."
+    },
+    {
+     "t": "Aggregator authorization",
+     "why": "Wrong: it only allows data sharing to an aggregator."
+    },
+    {
+     "t": "Configuration snapshot",
+     "why": "Wrong: it is a picture of existing resources."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Proactive mode evaluates before deployment.",
+   "remember": "Check before deploy → proactive rules or Hooks. Check after deploy → detective rules. Block actions outright → SCPs.",
+   "variants": [
+    "You must stop any user from performing an action → SCP or IAM (preventive).",
+    "Existing resources must be checked → detective mode."
+   ]
+  },
+  {
+   "id": "config-006",
+   "skill": "4.5.4",
+   "source": "2-rules-conformance-packs-remediation-and-aggregators.md",
+   "q": "A company needs CIS and PCI DSS checks, with remediation, deployed the same way to 50 accounts in an organization. Which option is best?",
+   "options": [
+    {
+     "t": "An organization conformance pack from a delegated administrator",
+     "why": "Right: a pack bundles rules and remediation in one template and deploys to all accounts."
+    },
+    {
+     "t": "An aggregator",
+     "why": "Wrong: it views data and does not deploy rules."
+    },
+    {
+     "t": "Individual rules created by hand in each account",
+     "why": "Wrong: slow and hard to keep consistent."
+    },
+    {
+     "t": "A configuration snapshot per account",
+     "why": "Wrong: it is a data export, not governance."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Packs deploy rules and remediation as one unit.",
+   "remember": "Repeatable framework-aligned governance across accounts → organization conformance pack. Central view → aggregator.",
+   "variants": [
+    "You only need a cross-account compliance dashboard → organization aggregator.",
+    "You need one rule deployed to all accounts → organization Config rule."
+   ]
+  },
+  {
+   "id": "config-007",
+   "skill": "4.5.4",
+   "source": "2-rules-conformance-packs-remediation-and-aggregators.md",
+   "q": "A custom Config rule only needs to check that a resource property equals a required value. The team wants no code to maintain. Which type fits?",
+   "options": [
+    {
+     "t": "A CloudFormation Guard custom rule",
+     "why": "Right: Guard is a policy-as-code DSL over the configuration item and needs no Lambda."
+    },
+    {
+     "t": "A Lambda custom rule",
+     "why": "Wrong: it works but needs code and permissions, better for complex logic."
+    },
+    {
+     "t": "A service-linked rule",
+     "why": "Wrong: created by other services and cannot be edited."
+    },
+    {
+     "t": "A conformance pack alone",
+     "why": "Wrong: a pack is only a bundle of rules."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Simple property check → Guard.",
+   "remember": "Simple check → Guard rule. Complex logic or calling other APIs → Lambda rule (PutEvaluations).",
+   "variants": [
+    "The check must call another API → Lambda custom rule.",
+    "A prebuilt check exists → use a managed rule."
+   ]
+  },
+  {
+   "id": "config-008",
+   "skill": "4.5.4",
+   "source": "3-security-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "A security team wants to make sure no one, including administrators, can stop the Config recorder or delete the delivery channel in member accounts. What should they use?",
+   "options": [
+    {
+     "t": "An SCP denying StopConfigurationRecorder, DeleteConfigurationRecorder and DeleteDeliveryChannel",
+     "why": "Right: SCPs apply even to account administrators."
+    },
+    {
+     "t": "A Config rule that checks the recorder",
+     "why": "Wrong: it detects but does not prevent."
+    },
+    {
+     "t": "S3 versioning on the bucket",
+     "why": "Wrong: it protects delivered files, not the recorder."
+    },
+    {
+     "t": "An aggregator",
+     "why": "Wrong: it is a read-only view."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Prevent with SCPs.",
+   "remember": "Protect Config from being switched off → SCP deny on recorder and delivery channel actions.",
+   "variants": [
+    "You need to be alerted when it is changed → EventBridge rule on the API call via CloudTrail.",
+    "Protect delivered data → versioning, Object Lock, locked-down log archive bucket."
+   ]
+  },
+  {
+   "id": "config-009",
+   "skill": "4.5.4",
+   "source": "3-security-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "Security Hub controls show no data for some resource types. What is the most likely fix?",
+   "options": [
+    {
+     "t": "Enable the Config recorder for those resource types",
+     "why": "Right: Security Hub controls rely on Config rules, which only evaluate recorded resources."
+    },
+    {
+     "t": "Increase the S3 retention",
+     "why": "Wrong: retention does not affect evaluations."
+    },
+    {
+     "t": "Create an aggregator",
+     "why": "Wrong: it does not make rules evaluate."
+    },
+    {
+     "t": "Enable Macie",
+     "why": "Wrong: it finds sensitive data and is unrelated to control evaluation."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "No recording means no evaluation data.",
+   "remember": "A Config rule shows no data or INSUFFICIENT_DATA → check the resource type is recorded and the rule scope.",
+   "variants": [
+    "Control Tower detective controls show not available → check recorder and Config service-linked rules in that Region.",
+    "An aggregator shows missing accounts → authorization not accepted or recorder off."
+   ]
+  },
+  {
+   "id": "config-010",
+   "skill": "4.5.4",
+   "source": "3-security-cost-troubleshooting-limits-and-scenarios.md",
+   "q": "An unencrypted RDS instance is found by the rds-storage-encrypted rule. Encryption cannot be added in place. What is the right response?",
+   "options": [
+    {
+     "t": "Mark NON_COMPLIANT, notify through EventBridge, and restore from an encrypted snapshot copy",
+     "why": "Right: the fix is a restore, so alert a human."
+    },
+    {
+     "t": "Use automatic remediation to enable encryption on the instance",
+     "why": "Wrong: encryption cannot be turned on for an existing unencrypted instance."
+    },
+    {
+     "t": "Delete the rule",
+     "why": "Wrong: this hides the problem."
+    },
+    {
+     "t": "Switch recording to daily",
+     "why": "Wrong: it only changes CI frequency."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Some fixes need rebuilds, so notify instead of auto-fixing.",
+   "remember": "Fix not possible in place → detect with a rule, notify via EventBridge/SNS, rebuild manually.",
+   "variants": [
+    "The fix is a simple setting such as public access block → automatic remediation.",
+    "Compliance change must notify a team → EventBridge rule on Config Rules Compliance Change → SNS."
+   ]
+  }
+ ]
+}

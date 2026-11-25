@@ -1,0 +1,270 @@
+{
+ "questions": [
+  {
+   "id": "smus-001",
+   "skill": "4.5.6",
+   "source": "1-unified-studio-domains-projects-and-catalog.md",
+   "q": "Several analytics teams must share curated datasets inside one company. Producers want consumers to request access, an approver to accept, and access to follow the consumer team rather than individual users. Which design fits?",
+   "options": [
+    {
+     "t": "Publish assets in SageMaker Catalog and let consumer projects subscribe",
+     "why": "Right: access is requested, approved and fulfilled per project."
+    },
+    {
+     "t": "Grant each analyst an IAM user policy on the S3 bucket",
+     "why": "Wrong: per-user grants have no approval flow and do not follow the team."
+    },
+    {
+     "t": "Copy the datasets into every team's account",
+     "why": "Wrong: copies add cost and drift, and have no approval workflow."
+    },
+    {
+     "t": "Publish the data as AWS Data Exchange products",
+     "why": "Wrong: Data Exchange targets external data sharing, not internal governed sharing."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Internal governed sharing with approval is publish/subscribe in SageMaker Catalog.",
+   "remember": "Governed internal sharing with approval, per project \u2192 SageMaker Catalog publish/subscribe.",
+   "variants": [
+    "Sharing with external vendors or customers \u2192 AWS Data Exchange.",
+    "Only table/column permissions in a lake, no catalog needed \u2192 Lake Formation alone."
+   ]
+  },
+  {
+   "id": "smus-002",
+   "skill": "4.1.7",
+   "source": "1-unified-studio-domains-projects-and-catalog.md",
+   "q": "An administrator wants every new project in a domain to start with the same set of blueprints, with some tools available later on demand. Which feature defines this?",
+   "options": [
+    {
+     "t": "IAM permissions boundary",
+     "why": "Wrong: it limits permissions but does not define what a project gets."
+    },
+    {
+     "t": "A project profile",
+     "why": "Right: a collection of blueprints, each enabled at creation or available on demand."
+    },
+    {
+     "t": "A business glossary",
+     "why": "Wrong: glossary terms describe data, not project resources."
+    },
+    {
+     "t": "A data source",
+     "why": "Wrong: a data source imports metadata, it does not provision project tools."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Project profiles are templates made of blueprints.",
+   "remember": "What a project gets at creation or on demand \u2192 project profile (a set of blueprints); only domain administrators manage profiles.",
+   "variants": [
+    "Template types: All capabilities, SQL analytics, Generative AI application development, Custom.",
+    "Who can create profiles \u2192 domain administrators only."
+   ]
+  },
+  {
+   "id": "smus-003",
+   "skill": "4.5.6",
+   "source": "2-administration-security-cost-and-troubleshooting.md",
+   "q": "A new analyst joins a team that already has access to governed data in a SageMaker Unified Studio project. What is the most scalable way to give access?",
+   "options": [
+    {
+     "t": "Add a bucket policy for the analyst's IAM user",
+     "why": "Wrong: bypasses the project and does not scale."
+    },
+    {
+     "t": "Create a new domain for the analyst",
+     "why": "Wrong: a domain is the top-level boundary, far too heavy."
+    },
+    {
+     "t": "Share the project role credentials",
+     "why": "Wrong: sharing credentials breaks least privilege and auditing."
+    },
+    {
+     "t": "Add the analyst to the Identity Center group mapped to the project",
+     "why": "Right: data access flows through the project role, so membership gives access."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Project membership drives access; groups scale it.",
+   "remember": "Data access goes through the project role, so manage membership (via Identity Center groups), not per-user data grants.",
+   "variants": [
+    "Revoke access \u2192 remove membership; data permissions stay untouched.",
+    "User cannot sign in at all \u2192 not assigned to the domain or an Identity Center/SAML mismatch."
+   ]
+  },
+  {
+   "id": "smus-004",
+   "skill": "4.5.7",
+   "source": "2-administration-security-cost-and-troubleshooting.md",
+   "q": "Consumers of a published table must see only some columns and rows. Which layer enforces this?",
+   "options": [
+    {
+     "t": "The business glossary",
+     "why": "Wrong: glossary terms are metadata and enforce nothing."
+    },
+    {
+     "t": "Lake Formation filters on the published asset",
+     "why": "Right: Lake Formation enforces column, row and cell permissions."
+    },
+    {
+     "t": "Lineage graphs",
+     "why": "Wrong: lineage traces data movement and does not restrict access."
+    },
+    {
+     "t": "Metadata forms",
+     "why": "Wrong: they hold fields such as owner or classification, not permissions."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Fine-grained enforcement comes from Lake Formation.",
+   "remember": "Fine-grained (column/row/cell) access on catalog data \u2192 Lake Formation filters; the Catalog adds the business layer.",
+   "variants": [
+    "Need to trace where data came from \u2192 lineage.",
+    "Redshift data \u2192 shared through datashares."
+   ]
+  },
+  {
+   "id": "smus-005",
+   "skill": "2.2.6",
+   "source": "1-unified-studio-domains-projects-and-catalog.md",
+   "q": "A team already has technical metadata in the Glue Data Catalog and wants owners, descriptions and business terms added so people can search by business meaning. What should they do?",
+   "options": [
+    {
+     "t": "Replace the Glue Data Catalog with Lake Formation",
+     "why": "Wrong: Lake Formation manages permissions, not business metadata."
+    },
+    {
+     "t": "Use Glue as a source and enrich the assets in SageMaker Catalog",
+     "why": "Right: the Catalog layers business metadata on top of Glue."
+    },
+    {
+     "t": "Store descriptions in S3 object tags",
+     "why": "Wrong: not searchable as a business catalog."
+    },
+    {
+     "t": "Rebuild all tables in Redshift",
+     "why": "Wrong: unnecessary migration."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Glue holds technical metadata; the Catalog adds the business layer.",
+   "remember": "Business context on lake tables \u2192 Glue Data Catalog as source plus SageMaker Catalog enrichment (glossary, metadata forms).",
+   "variants": [
+    "Only technical metadata needed \u2192 Glue Data Catalog alone.",
+    "Metadata is stale \u2192 schedule data source runs, since metadata is imported, not live."
+   ]
+  },
+  {
+   "id": "smus-006",
+   "skill": "4.1.7",
+   "source": "2-administration-security-cost-and-troubleshooting.md",
+   "q": "A subscription was approved, but the consumer's Athena query fails with access errors. Which are likely causes?  Choose 2.",
+   "options": [
+    {
+     "t": "The consumer project has too few members",
+     "why": "Wrong: membership count does not affect data access."
+    },
+    {
+     "t": "The S3 location is not registered with Lake Formation, or grants are missing",
+     "why": "Right: Lake Formation must hold the grants and the registered location."
+    },
+    {
+     "t": "The glossary has no terms",
+     "why": "Wrong: the glossary does not gate queries."
+    },
+    {
+     "t": "The KMS key policy does not let the project role decrypt",
+     "why": "Right: the project role needs kms:Decrypt on keys protecting the data."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Check Lake Formation grants/registration and KMS key access.",
+   "remember": "Approved subscription but query fails \u2192 Lake Formation grants or registration, or KMS permissions for the project role.",
+   "variants": [
+    "Asset missing from inventory \u2192 data source run failed or lacks permissions.",
+    "Cannot create project \u2192 blueprint not enabled, account not associated, role or quota issue."
+   ]
+  },
+  {
+   "id": "smus-007",
+   "skill": "2.4.4",
+   "source": "1-unified-studio-domains-projects-and-catalog.md",
+   "q": "An auditor asks where a dataset's data came from and how it was transformed. Which capability answers this in SageMaker Catalog?",
+   "options": [
+    {
+     "t": "Subscription approvals",
+     "why": "Wrong: they show who got access, not data origin."
+    },
+    {
+     "t": "Project profiles",
+     "why": "Wrong: they define project templates."
+    },
+    {
+     "t": "Lineage",
+     "why": "Right: lineage tracks data movement and transformation."
+    },
+    {
+     "t": "Data source schedules",
+     "why": "Wrong: they control metadata import timing."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Lineage stores the graph of origin and transformation.",
+   "remember": "Trace data origin and transformations \u2192 lineage in the Catalog.",
+   "variants": [
+    "Lineage missing \u2192 the job does not emit lineage events or integration is not enabled.",
+    "Who accessed data \u2192 CloudTrail, subscription history and Lake Formation logs."
+   ]
+  },
+  {
+   "id": "smus-008",
+   "skill": "4.1.7",
+   "source": "2-administration-security-cost-and-troubleshooting.md",
+   "q": "Costs in SageMaker Unified Studio projects are rising. Which levers reduce spend?  Choose 2.",
+   "options": [
+    {
+     "t": "Share data through subscriptions or datashares instead of copies",
+     "why": "Right: avoids duplicate storage."
+    },
+    {
+     "t": "Allow every compute type in every profile",
+     "why": "Wrong: this raises cost; limiting compute in project profiles lowers it."
+    },
+    {
+     "t": "Restrict compute choices in project profiles",
+     "why": "Right: profiles define which tools projects can use."
+    },
+    {
+     "t": "Run data source imports every minute",
+     "why": "Wrong: frequent runs add compute cost; schedule them sparingly."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Cost comes from underlying services; constrain profiles and avoid copies.",
+   "remember": "You pay for the underlying services, so limit compute in project profiles, auto-stop idle resources, budget per project, and share rather than copy.",
+   "variants": [
+    "Idle notebook spaces or clusters \u2192 auto-stop.",
+    "Track spend per team \u2192 tag project resources and set budgets per project."
+   ]
+  }
+ ]
+}

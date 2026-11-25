@@ -1,0 +1,276 @@
+{
+ "questions": [
+  {
+   "id": "keyspaces-001",
+   "skill": "2.1.2",
+   "source": "1-basics-data-model-and-vs-cassandra.md",
+   "q": "A company runs Apache Cassandra on EC2 and spends much time on repairs, compaction and upgrades. The application uses CQL and Cassandra drivers. Which service removes the operations work with the least code change?",
+   "options": [
+    {
+     "t": "DynamoDB",
+     "why": "Wrong: it needs a rewrite to the DynamoDB API."
+    },
+    {
+     "t": "Amazon Keyspaces",
+     "why": "Right: it is serverless and Cassandra-compatible, so CQL and drivers stay the same."
+    },
+    {
+     "t": "DocumentDB",
+     "why": "Wrong: it is a MongoDB-compatible document store, not CQL."
+    },
+    {
+     "t": "Neptune",
+     "why": "Wrong: it is a graph database."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Managed Cassandra with the same CQL and drivers is Keyspaces.",
+   "remember": "Existing Cassandra code and want serverless/managed \u2192 Keyspaces. New app with no Cassandra code \u2192 DynamoDB.",
+   "variants": [
+    "No Cassandra code, new serverless app \u2192 DynamoDB.",
+    "MongoDB API \u2192 DocumentDB.",
+    "Graph relationships \u2192 Neptune."
+   ]
+  },
+  {
+   "id": "keyspaces-002",
+   "skill": "2.1.2",
+   "source": "1-basics-data-model-and-vs-cassandra.md",
+   "q": "An application migrated to Keyspaces now fails when it writes and reads with `QUORUM` consistency. What is the fix?",
+   "options": [
+    {
+     "t": "Switch to LOCAL_QUORUM",
+     "why": "Right: Keyspaces writes are LOCAL_QUORUM and reads support only ONE, LOCAL_ONE and LOCAL_QUORUM."
+    },
+    {
+     "t": "Switch to ALL",
+     "why": "Wrong: ALL is not supported and is rejected."
+    },
+    {
+     "t": "Switch to EACH_QUORUM",
+     "why": "Wrong: it is not supported."
+    },
+    {
+     "t": "Switch to SERIAL",
+     "why": "Wrong: SERIAL is not supported."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Only LOCAL_QUORUM, ONE and LOCAL_ONE are supported for reads.",
+   "remember": "Keyspaces consistency: writes LOCAL_QUORUM; reads ONE, LOCAL_ONE, LOCAL_QUORUM. Others error.",
+   "variants": [
+    "Need the latest data \u2192 LOCAL_QUORUM read.",
+    "Cheapest reads, stale OK \u2192 LOCAL_ONE (half the units).",
+    "Use of ALL or ANY \u2192 not supported."
+   ]
+  },
+  {
+   "id": "keyspaces-003",
+   "skill": "2.1.2",
+   "source": "1-basics-data-model-and-vs-cassandra.md",
+   "q": "A table is queried often by a non-key column. A developer wants `CREATE INDEX`. What should the team do in Keyspaces?",
+   "options": [
+    {
+     "t": "Create a secondary index",
+     "why": "Wrong: secondary indexes are not supported."
+    },
+    {
+     "t": "Create a materialized view",
+     "why": "Wrong: materialized views are not supported."
+    },
+    {
+     "t": "Create another table with that column in its key",
+     "why": "Right: one table per access pattern is the Keyspaces design, since there are no secondary indexes."
+    },
+    {
+     "t": "Use ALLOW FILTERING on every query",
+     "why": "Wrong: scans are slow and you pay for rows read."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "No indexes or materialized views: denormalize into another table.",
+   "remember": "No secondary indexes, materialized views, UDFs, triggers or TRUNCATE in Keyspaces \u2192 query-first design, one table per query.",
+   "variants": [
+    "Secondary indexes needed natively \u2192 DynamoDB GSI/LSI.",
+    "Delete all rows \u2192 drop and recreate the table or use TTL (no TRUNCATE).",
+    "Aggregates like SUM over big tables \u2192 export to Athena/Redshift."
+   ]
+  },
+  {
+   "id": "keyspaces-004",
+   "skill": "2.1.2",
+   "source": "1-basics-data-model-and-vs-cassandra.md",
+   "q": "A Keyspaces table partitioned by month shows throttling although total traffic is far below the table capacity. Which metric confirms the cause, and what is the fix?",
+   "options": [
+    {
+     "t": "`StoragePartitionThroughputCapacityExceeded`; add a bucket or salt to spread the partition key",
+     "why": "Right: this is a hot partition: a storage partition caps at about 1,000 write and 3,000 read units per second."
+    },
+    {
+     "t": "`ReplicationLatency`; add a Region",
+     "why": "Wrong: this metric is for multi-Region lag."
+    },
+    {
+     "t": "`TTLDeletes`; disable TTL",
+     "why": "Wrong: TTL is unrelated to throttling."
+    },
+    {
+     "t": "`BillableTableSizeInBytes`; shrink rows",
+     "why": "Wrong: it is a storage cost metric."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Throttling with low total traffic = hot partition.",
+   "remember": "Throttled while the average is low \u2192 hot partition; use a high-cardinality or bucketed partition key.",
+   "variants": [
+    "One connection above 3,000 requests/sec \u2192 `PerConnectionRequestRateExceeded`, open more connections.",
+    "On-demand throttled after a sudden jump \u2192 ramp traffic up gradually.",
+    "Provisioned throttled \u2192 raise capacity or add auto scaling."
+   ]
+  },
+  {
+   "id": "keyspaces-005",
+   "skill": "2.1.1",
+   "source": "2-operations-security-integrations-cost-limits-and-scenarios.md",
+   "q": "A new table has unknown, spiky traffic, and a marketing event may multiply load tenfold in minutes. Which choice reduces throttling risk?",
+   "options": [
+    {
+     "t": "On-demand mode, ramping traffic up gradually",
+     "why": "Right: on-demand needs no planning and serves up to double the previous peak instantly, so ramp beyond that."
+    },
+    {
+     "t": "On-demand mode, expecting any jump to be served instantly",
+     "why": "Wrong: the instant limit is double the previous peak; more within about 30 minutes can throttle."
+    },
+    {
+     "t": "Provisioned mode with the lowest capacity",
+     "why": "Wrong: reads and writes would time out."
+    },
+    {
+     "t": "Switch between modes every hour",
+     "why": "Wrong: switching to on-demand is allowed only once per 24 hours."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "On-demand serves 2x the previous peak instantly; ramp beyond that.",
+   "remember": "Unknown/spiky \u2192 on-demand. Steady and predictable \u2192 provisioned with auto scaling (cheaper).",
+   "variants": [
+    "Steady load \u2192 provisioned with auto scaling.",
+    "Switching provisioned \u2192 on-demand \u2192 once per 24 hours.",
+    "LOCAL_ONE reads cost 0.5 unit per 4 KB, LOCAL_QUORUM 1 unit."
+   ]
+  },
+  {
+   "id": "keyspaces-006",
+   "skill": "2.3.6",
+   "source": "2-operations-security-integrations-cost-limits-and-scenarios.md",
+   "q": "A developer drops the wrong table. PITR was enabled on it three days ago. What is the recovery path?",
+   "options": [
+    {
+     "t": "Restore with PITR to a new table, then copy the data back",
+     "why": "Right: restore always creates a new table, to any second in the last 35 days."
+    },
+    {
+     "t": "Restore over the dropped table in place",
+     "why": "Wrong: restore never overwrites."
+    },
+    {
+     "t": "Use TRUNCATE rollback",
+     "why": "Wrong: TRUNCATE is not supported."
+    },
+    {
+     "t": "Recreate the table with the same name first",
+     "why": "Wrong: that makes the deleted table non-restorable."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "PITR restores to a new table; a deleted table is restorable within 35 days if PITR was on.",
+   "remember": "PITR: per-table, 35-day fixed window, new table on restore. It does not restore IAM policies, CloudWatch alarms, CDC streams or tags.",
+   "variants": [
+    "Disabling PITR erases backup history.",
+    "Encrypted with a customer managed key \u2192 the key must still be accessible.",
+    "Multi-Region table \u2192 PITR must be on in all replicas."
+   ]
+  },
+  {
+   "id": "keyspaces-007",
+   "skill": "2.3.6",
+   "source": "2-operations-security-integrations-cost-limits-and-scenarios.md",
+   "q": "An app needs active-active reads and writes in two Regions with low-latency local access and no failover step. Which Keyspaces feature fits, and which restriction applies?",
+   "options": [
+    {
+     "t": "Multi-Region replication; use an AWS owned key, as a customer managed key is not allowed",
+     "why": "Right: replication is asynchronous with last writer wins, and writes are billed in each Region."
+    },
+    {
+     "t": "PITR copy to another Region",
+     "why": "Wrong: PITR restores a new table, it is not active-active."
+    },
+    {
+     "t": "CDC streams to a second table",
+     "why": "Wrong: CDC is a 24-hour change feed, not replication."
+    },
+    {
+     "t": "Cross-Region read replicas with a customer managed key",
+     "why": "Wrong: Keyspaces does not offer that."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Multi-Region keyspace: active-active, last writer wins.",
+   "remember": "Multi-Region: async (usually under 1 second), cell-level last writer wins, AWS owned key only, set TTL at creation, writes billed in each Region.",
+   "variants": [
+    "Need only a backup \u2192 PITR.",
+    "Region failure \u2192 just point the app to another Region.",
+    "3 KB write in a 2-Region keyspace \u2192 6 WRU."
+   ]
+  },
+  {
+   "id": "keyspaces-008",
+   "skill": "2.3.6",
+   "source": "2-operations-security-integrations-cost-limits-and-scenarios.md",
+   "q": "Downstream OpenSearch must receive row-level changes from a Keyspaces table within seconds, without using table capacity. Which feature should be used?",
+   "options": [
+    {
+     "t": "CDC streams read with the Keyspaces Streams API",
+     "why": "Right: CDC is serverless, uses no table capacity and keeps ordered, de-duplicated records for 24 hours."
+    },
+    {
+     "t": "TTL",
+     "why": "Wrong: TTL expires data, it does not emit changes."
+    },
+    {
+     "t": "PITR",
+     "why": "Wrong: it restores tables, not a change feed."
+    },
+    {
+     "t": "Kinesis Data Streams enabled on the table",
+     "why": "Wrong: not a Keyspaces feature."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "CDC streams give a 24-hour change feed without table capacity.",
+   "remember": "Changes to OpenSearch/Redshift/S3 \u2192 CDC streams (24 h retention). PITR does not restore CDC settings.",
+   "variants": [
+    "Expire old data automatically \u2192 TTL.",
+    "Backup \u2192 PITR.",
+    "DynamoDB equivalent \u2192 DynamoDB Streams."
+   ]
+  }
+ ]
+}

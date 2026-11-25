@@ -1,0 +1,684 @@
+{
+ "questions": [
+  {
+   "id": "cfn-001",
+   "skill": "1.4.8",
+   "source": "1-cloudformation-basics-templates-and-stacks.md",
+   "q": "Before updating a production stack, a team wants to know whether the change will replace the RDS database. Which feature gives that preview without changing anything?",
+   "options": [
+    {
+     "t": "Drift detection",
+     "why": "Wrong: it compares live resources with the template; it does not preview an update."
+    },
+    {
+     "t": "A stack policy",
+     "why": "Wrong: it blocks updates to chosen resources; it does not show what an update would do."
+    },
+    {
+     "t": "A change set",
+     "why": "Right: it lists add, modify and remove actions and shows Replacement True, False or Conditional per resource, then you execute or delete it."
+    },
+    {
+     "t": "Rollback triggers",
+     "why": "Wrong: they roll back after a deploy when alarms fire; they do not preview."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Change sets preview an update, including replacements, before you execute it.",
+   "remember": "Want to see what an update will do, especially replacement → create a change set and review it before execute.",
+   "variants": [
+    "Want to stop an update from ever replacing a resource → stack policy denying Update:Replace.",
+    "Want to find manual console changes → drift detection.",
+    "Want automatic rollback when error alarms fire after deploy → rollback triggers."
+   ]
+  },
+  {
+   "id": "cfn-002",
+   "skill": "1.4.8",
+   "source": "1-cloudformation-basics-templates-and-stacks.md",
+   "q": "The first create of a stack failed and it now shows ROLLBACK_COMPLETE. The template is fixed. What must the engineer do?",
+   "options": [
+    {
+     "t": "Delete the stack and create it again",
+     "why": "Right: a stack in ROLLBACK_COMPLETE after a failed create cannot be updated."
+    },
+    {
+     "t": "Run UpdateStack with the fixed template",
+     "why": "Wrong: a ROLLBACK_COMPLETE stack cannot be updated."
+    },
+    {
+     "t": "Run ContinueUpdateRollback",
+     "why": "Wrong: that is for UPDATE_ROLLBACK_FAILED, not for a failed create."
+    },
+    {
+     "t": "Enable termination protection and retry",
+     "why": "Wrong: termination protection blocks deletion and does not repair the stack."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Failed first create leaves a stack that can only be deleted.",
+   "remember": "ROLLBACK_COMPLETE (failed create) → read the first failure event, delete the stack, create again.",
+   "variants": [
+    "UPDATE_ROLLBACK_FAILED → fix the cause, then ContinueUpdateRollback, skipping resources if needed.",
+    "DELETE_FAILED on a bucket → empty the bucket or use Retain.",
+    "Long stack fails near the end and you want to keep what worked → preserve successfully provisioned resources."
+   ]
+  },
+  {
+   "id": "cfn-003",
+   "skill": "4.5.4",
+   "source": "1-cloudformation-basics-templates-and-stacks.md",
+   "q": "Someone changed a security group by hand in the console. The team must find which stack resources no longer match their templates. What should they use?",
+   "options": [
+    {
+     "t": "A change set",
+     "why": "Wrong: it compares the new template with the stack, not the live resource state."
+    },
+    {
+     "t": "CloudFormation Guard",
+     "why": "Wrong: it validates templates before deploy; it does not inspect live resources."
+    },
+    {
+     "t": "cfn-lint",
+     "why": "Wrong: it lints template syntax and best practice only."
+    },
+    {
+     "t": "Drift detection",
+     "why": "Right: it compares actual configuration with the template and flags MODIFIED, DELETED or IN_SYNC; the AWS Config rule cloudformation-stack-drift-detection-check can schedule it."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Drift detection finds manual changes but does not fix them.",
+   "remember": "Manual changes outside the template → drift detection (schedule it with a Config rule). Fix by updating the template or reverting the change.",
+   "variants": [
+    "Need to see who made the change → CloudTrail.",
+    "Need to block manual edits → SCPs or permissions, not drift detection.",
+    "Need to block non-compliant templates before deploy → Hooks or cfn-guard."
+   ]
+  },
+  {
+   "id": "cfn-004",
+   "skill": "1.4.9",
+   "source": "4-cdk-pipelines-and-cicd-for-cdk-apps.md",
+   "q": "A CDK Pipelines pipeline in a tools account deploys to a production account. The deploy fails because the target cannot decrypt the artifacts. What is the fix?",
+   "options": [
+    {
+     "t": "Set `selfMutation: false`",
+     "why": "Wrong: self-mutation updates the pipeline itself and has nothing to do with artifact decryption."
+    },
+    {
+     "t": "Set `crossAccountKeys: true`",
+     "why": "Right: it creates a customer-managed KMS key on the artifact bucket so other accounts can decrypt artifacts."
+    },
+    {
+     "t": "Set `publishAssetsInParallel: false`",
+     "why": "Wrong: that only limits CodeBuild concurrency for asset publishing."
+    },
+    {
+     "t": "Use a legacy bootstrap in the target",
+     "why": "Wrong: legacy bootstrap is not supported for CDK Pipelines."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Cross-account deploys need a shared KMS key for the artifact bucket.",
+   "remember": "Pipeline deploys to other accounts and artifact decrypt fails → crossAccountKeys: true (the key costs money).",
+   "variants": [
+    "Pipeline cannot assume the target roles → bootstrap the target with --trust <pipeline-account>.",
+    "Docker build fails during synth → dockerEnabledForSynth.",
+    "Same-account deploys only → crossAccountKeys can stay false."
+   ]
+  },
+  {
+   "id": "cfn-005",
+   "skill": "4.2.6",
+   "source": "1-cloudformation-basics-templates-and-stacks.md",
+   "q": "Developers must be able to deploy stacks without having broad rights to every resource the stacks create. What is the classic pattern?",
+   "options": [
+    {
+     "t": "Give every developer AdministratorAccess",
+     "why": "Wrong: it removes least privilege."
+    },
+    {
+     "t": "Put the access keys of an admin user in the template",
+     "why": "Wrong: secrets in templates are a security failure."
+    },
+    {
+     "t": "Use a CloudFormation service role and give developers CloudFormation permissions plus iam:PassRole on it",
+     "why": "Right: CloudFormation assumes the role to make the changes, so developers need no direct resource rights."
+    },
+    {
+     "t": "Use NoEcho on all parameters",
+     "why": "Wrong: NoEcho only masks parameter values in output."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Service role plus iam:PassRole is the least-privilege deploy path.",
+   "remember": "Deployers without broad rights → CloudFormation service role (CDK: execution role) plus iam:PassRole; add permissions boundaries.",
+   "variants": [
+    "Template creates IAM resources → acknowledge CAPABILITY_IAM or CAPABILITY_NAMED_IAM.",
+    "SAM or macros in the template → CAPABILITY_AUTO_EXPAND.",
+    "Pipeline in another account → trust and deploy roles in the target."
+   ]
+  },
+  {
+   "id": "cfn-006",
+   "skill": "1.4.8",
+   "source": "1-cloudformation-basics-templates-and-stacks.md",
+   "q": "A stack update changes a property that forces replacement of an RDS instance. The team wants a snapshot kept of the old instance that CloudFormation removes. Which setting does that?",
+   "options": [
+    {
+     "t": "DeletionPolicy: Snapshot only",
+     "why": "Wrong: DeletionPolicy applies to stack deletion or removal from the template, not to replacement during an update."
+    },
+    {
+     "t": "DependsOn on the instance",
+     "why": "Wrong: it only orders resource creation."
+    },
+    {
+     "t": "CreationPolicy with a timeout",
+     "why": "Wrong: it waits for success signals during create."
+    },
+    {
+     "t": "UpdateReplacePolicy: Snapshot",
+     "why": "Right: it controls what happens to the old physical resource when an update replaces it; set both policies on databases and buckets."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "UpdateReplacePolicy covers replacement; DeletionPolicy covers deletion.",
+   "remember": "Protect the old resource when an update replaces it → UpdateReplacePolicy; protect on delete → DeletionPolicy. Set both on stateful resources.",
+   "variants": [
+    "Bucket must survive stack deletion → DeletionPolicy: Retain.",
+    "Final backup on delete for RDS or EBS → DeletionPolicy: Snapshot.",
+    "Block an update from replacing the DB at all → stack policy."
+   ]
+  },
+  {
+   "id": "cfn-007",
+   "skill": "1.4.8",
+   "source": "1-cloudformation-basics-templates-and-stacks.md",
+   "q": "An organization must deploy a CloudTrail and AWS Config baseline to every current and future account in all its Regions. Which approach fits?",
+   "options": [
+    {
+     "t": "A service-managed StackSet targeting OUs with automatic deployment",
+     "why": "Right: AWS creates the roles, and automatic deployment adds the stack to new accounts joining the OU."
+    },
+    {
+     "t": "A nested stack in the management account",
+     "why": "Wrong: a nested stack lives in one account and Region."
+    },
+    {
+     "t": "A single stack with cross-stack exports",
+     "why": "Wrong: exports work only within one account and Region."
+    },
+    {
+     "t": "A self-managed StackSet with manual account lists",
+     "why": "Wrong: you would create roles yourself and add each new account by hand."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Service-managed StackSets with auto-deployment cover new accounts in OUs.",
+   "remember": "Same template across many accounts and Regions including new ones → service-managed StackSet with automatic deployment on OUs.",
+   "variants": [
+    "No Organizations, accounts outside it → self-managed StackSet with admin and execution roles.",
+    "Same lifecycle components inside one parent → nested stacks.",
+    "Template uses a transform such as SAM → service-managed StackSets cannot deploy it."
+   ]
+  },
+  {
+   "id": "cfn-008",
+   "skill": "1.4.6",
+   "source": "2-sam-serverless-application-model.md",
+   "q": "A platform team wants to roll a SAM template with the AWS::Serverless-2016-10-31 transform out to many accounts using a service-managed StackSet. What is the problem?",
+   "options": [
+    {
+     "t": "SAM resources cannot contain IAM roles",
+     "why": "Wrong: SAM generates IAM roles from Policies; that is not the limit."
+    },
+    {
+     "t": "Service-managed StackSets cannot use templates with macros or transforms",
+     "why": "Right: the SAM transform is a macro, so the template must be turned into plain CloudFormation first."
+    },
+    {
+     "t": "StackSets support only JSON templates",
+     "why": "Wrong: StackSets accept YAML and JSON."
+    },
+    {
+     "t": "StackSets cannot create Lambda functions",
+     "why": "Wrong: Lambda resources are normal CloudFormation types."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Service-managed StackSets reject transforms, which includes SAM.",
+   "remember": "SAM or any macro in a service-managed StackSet → not allowed; deploy plain CloudFormation (transformed output) instead.",
+   "variants": [
+    "SAM deploy by hand → needs CAPABILITY_AUTO_EXPAND.",
+    "Org-wide baseline with plain resources → service-managed StackSet.",
+    "Self-managed StackSet → you create the admin and execution roles yourself."
+   ]
+  },
+  {
+   "id": "cfn-009",
+   "skill": "4.2.2",
+   "source": "1-cloudformation-basics-templates-and-stacks.md",
+   "q": "A template creates an RDS database. The master password must never appear in the template, a parameter value or the console. Which option is best?",
+   "options": [
+    {
+     "t": "A parameter with NoEcho: true",
+     "why": "Wrong: NoEcho only masks display; it is not a secure store."
+    },
+    {
+     "t": "A Mappings section with the password per environment",
+     "why": "Wrong: it puts the secret in the template."
+    },
+    {
+     "t": "A dynamic reference such as {{resolve:secretsmanager:...}}, or a secret generated with GenerateSecretString",
+     "why": "Right: the value is resolved at deploy time and is not stored in the template."
+    },
+    {
+     "t": "The password in the instance user data",
+     "why": "Wrong: user data is visible and dynamic references are not supported there."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Use Secrets Manager dynamic references or generated secrets.",
+   "remember": "Keep secrets out of templates → dynamic reference to Secrets Manager or SSM SecureString, or let Secrets Manager generate it.",
+   "variants": [
+    "Plain non-secret config → SSM parameter types or {{resolve:ssm:...}}.",
+    "Latest AMI ID at deploy time → AWS::SSM::Parameter::Value<String> parameter type.",
+    "Limit: 60 dynamic references per template."
+   ]
+  },
+  {
+   "id": "cfn-010",
+   "skill": "1.4.8",
+   "source": "1-cloudformation-basics-templates-and-stacks.md",
+   "q": "An EC2 instance in a stack must finish installing software from user data before the stack is marked complete. Which combination does this?",
+   "options": [
+    {
+     "t": "DeletionPolicy with cfn-hup",
+     "why": "Wrong: DeletionPolicy is for deletion; cfn-hup re-applies metadata on updates."
+    },
+    {
+     "t": "DependsOn on the instance itself",
+     "why": "Wrong: DependsOn orders resources and cannot wait for a script."
+    },
+    {
+     "t": "A stack policy with cfn-lint",
+     "why": "Wrong: neither waits for success signals."
+    },
+    {
+     "t": "CreationPolicy with cfn-signal sent from user data",
+     "why": "Right: the resource waits for the signal, with a Timeout and a Count; cfn-init can apply the configuration first."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "CreationPolicy plus cfn-signal makes CloudFormation wait for real readiness.",
+   "remember": "Wait for software install before create completes → CreationPolicy + cfn-signal (cfn-init for config); WaitCondition is the older way.",
+   "variants": [
+    "Re-run config when metadata changes → cfn-hup.",
+    "Rolling update of an Auto Scaling group → UpdatePolicy.",
+    "Lambda alias gradual update → UpdatePolicy CodeDeployLambdaAliasUpdate."
+   ]
+  },
+  {
+   "id": "cfn-011",
+   "skill": "4.1.4",
+   "source": "1-cloudformation-basics-templates-and-stacks.md",
+   "q": "A security team wants deployments blocked before creation when an S3 bucket is not encrypted, and also to check templates in CI. What combination fits?",
+   "options": [
+    {
+     "t": "A CloudFormation Hook in FAIL mode, plus cfn-guard in CI",
+     "why": "Right: Hooks run proactively before provisioning and can block; cfn-guard shifts the check left into CI."
+    },
+    {
+     "t": "AWS Config rule only",
+     "why": "Wrong: Config detects after the resource exists; it does not block creation."
+    },
+    {
+     "t": "Drift detection on a schedule",
+     "why": "Wrong: it finds changes after the fact."
+    },
+    {
+     "t": "A stack policy on the bucket",
+     "why": "Wrong: it controls updates to resources, not encryption rules."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Hooks and cfn-guard are the proactive, preventive path.",
+   "remember": "Block non-compliant resources before creation → Hooks (Guard rule or Lambda) in FAIL mode, cfn-guard in CI; Config is detective.",
+   "variants": [
+    "Hook set to WARN → allows the deployment but warns.",
+    "cdk-nag → the same idea for CDK apps using aspects.",
+    "SCP → backstop that denies even when the template asks."
+   ]
+  },
+  {
+   "id": "cfn-012",
+   "skill": "1.4.8",
+   "source": "1-cloudformation-basics-templates-and-stacks.md",
+   "q": "A company has buckets and roles created by hand last year. They now want them managed as code without re-creating them. Which path fits?",
+   "options": [
+    {
+     "t": "Delete them and deploy a new stack",
+     "why": "Wrong: re-creating risks data loss and downtime."
+    },
+    {
+     "t": "Run drift detection on a new empty stack",
+     "why": "Wrong: drift detection only checks resources already in a stack."
+    },
+    {
+     "t": "Use the IaC generator to scan and build a template, then import the resources into a stack",
+     "why": "Right: the scan generates a template, and resource import brings the existing resources in; `cdk migrate` can convert it into a CDK app."
+    },
+    {
+     "t": "Copy the console settings into a StackSet",
+     "why": "Wrong: StackSets deploy templates; they do not discover resources."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "IaC generator scan, then resource import (or cdk migrate).",
+   "remember": "Click-ops resources to IaC → IaC generator scan → template → resource import or cdk migrate; imports need a DeletionPolicy in the template.",
+   "variants": [
+    "Move a resource between stacks → Retain, remove from stack A, import into stack B.",
+    "Existing resources into a CDK stack directly → cdk import.",
+    "Scan validity is 30 days and a template holds up to 500 resources."
+   ]
+  },
+  {
+   "id": "cfn-013",
+   "skill": "1.4.6",
+   "source": "2-sam-serverless-application-model.md",
+   "q": "A team deploys Lambda code with AWS SAM and wants 10% of traffic on the new version for 10 minutes, with automatic rollback if the error alarm fires. What do they configure?",
+   "options": [
+    {
+     "t": "A Lambda function URL with a weighted alias in the console",
+     "why": "Wrong: manual console work is not repeatable and has no alarm rollback."
+    },
+    {
+     "t": "`sam sync --watch` on the production stack",
+     "why": "Wrong: sam sync is for dev only and causes drift."
+    },
+    {
+     "t": "An Auto Scaling rolling update with UpdatePolicy",
+     "why": "Wrong: that is for Auto Scaling groups, not Lambda traffic shifting."
+    },
+    {
+     "t": "`AutoPublishAlias` plus `DeploymentPreference: Canary10Percent10Minutes` with `Alarms`",
+     "why": "Right: SAM publishes a version, shifts traffic through CodeDeploy, and rolls back if an alarm fires."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "AutoPublishAlias plus DeploymentPreference gives canary releases with alarm rollback.",
+   "remember": "Gradual Lambda release with auto rollback → AutoPublishAlias + DeploymentPreference (canary or linear) + Alarms. CDK equivalent: LambdaDeploymentGroup.",
+   "variants": [
+    "Run a test Lambda before traffic shifts → PreTraffic hook.",
+    "Increase 10% every few minutes → a Linear type such as Linear10PercentEvery2Minutes.",
+    "The first deploy needs an existing version, so add DeploymentPreference after the first deploy."
+   ]
+  },
+  {
+   "id": "cfn-014",
+   "skill": "1.4.6",
+   "source": "2-sam-serverless-application-model.md",
+   "q": "A SAM Python function using numpy deploys fine but fails in Lambda with `Unable to import module`. Which command fixes the build?",
+   "options": [
+    {
+     "t": "`sam build --use-container`",
+     "why": "Right: it builds inside a Lambda-like image so native dependencies match the Lambda platform and architecture."
+    },
+    {
+     "t": "`sam local start-api`",
+     "why": "Wrong: it runs the API locally and does not change the packaged dependencies."
+    },
+    {
+     "t": "`sam delete`",
+     "why": "Wrong: it deletes the stack and artifacts."
+    },
+    {
+     "t": "`sam pipeline init`",
+     "why": "Wrong: it generates CI/CD config and does not rebuild dependencies."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Native libraries need a build matching the Lambda environment.",
+   "remember": "Import errors from native dependencies after deploy → sam build --use-container and check Architectures (arm64 or x86).",
+   "variants": [
+    "Speed up builds → --parallel and --cached.",
+    "Test locally with a sample S3 event → sam local generate-event plus sam local invoke -e.",
+    "Need to review before executing a deploy → sam deploy --no-execute-changeset."
+   ]
+  },
+  {
+   "id": "cfn-015",
+   "skill": "4.2.6",
+   "source": "2-sam-serverless-application-model.md",
+   "q": "A SAM function must write to one DynamoDB table in the same template. The team wants least-privilege permissions without writing IAM policies by hand. What should they use?",
+   "options": [
+    {
+     "t": "A managed policy such as AdministratorAccess in Policies",
+     "why": "Wrong: far too broad."
+    },
+    {
+     "t": "A wildcard inline statement for dynamodb:*",
+     "why": "Wrong: it is broader than needed and hand-written."
+    },
+    {
+     "t": "A SAM connector from the function to the table with Write permission",
+     "why": "Right: SAM writes the IAM policies from a Source, Destination and Read or Write statement; a policy template such as DynamoDBCrudPolicy is the other option."
+    },
+    {
+     "t": "A permissions boundary only",
+     "why": "Wrong: a boundary limits the maximum permissions; it grants none."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Connectors and policy templates generate scoped permissions.",
+   "remember": "Least-privilege between serverless resources without writing IAM → SAM connectors or policy templates.",
+   "variants": [
+    "Read only one bucket → S3ReadPolicy with the bucket name.",
+    "In CDK → use L2 grant methods such as table.grantReadWriteData(fn).",
+    "Enterprise accounts that require boundaries → PermissionsBoundary on generated roles."
+   ]
+  },
+  {
+   "id": "cfn-016",
+   "skill": "1.4.4",
+   "source": "2-sam-serverless-application-model.md",
+   "q": "Developers want to change Lambda code and see it in the cloud within seconds while coding, on a personal dev stack. Which SAM command fits?",
+   "options": [
+    {
+     "t": "`sam package`",
+     "why": "Wrong: it only uploads artifacts."
+    },
+    {
+     "t": "`sam sync --watch`",
+     "why": "Right: it pushes code changes directly with service APIs where possible, skipping CloudFormation; use it for dev only because it causes drift."
+    },
+    {
+     "t": "`sam validate --lint`",
+     "why": "Wrong: it checks the template; it does not deploy."
+    },
+    {
+     "t": "`sam publish`",
+     "why": "Wrong: it publishes an app to the Serverless Application Repository."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "sam sync --watch is the fast dev loop, never for prod.",
+   "remember": "Seconds-level cloud feedback in dev → sam sync --watch (CDK: cdk watch or hotswap; CloudFormation: express mode).",
+   "variants": [
+    "Test an HTTP endpoint on the laptop → sam local start-api.",
+    "Production release → normal sam deploy through a change set.",
+    "Clean up a dev stack and artifacts → sam delete."
+   ]
+  },
+  {
+   "id": "cfn-017",
+   "skill": "1.4.5",
+   "source": "3-cdk-security-operations-and-scenarios.md",
+   "q": "A Python team wants to define a data pipeline with loops and reusable components, and have S3 and Lambda permissions generated at least privilege. Which tool fits best?",
+   "options": [
+    {
+     "t": "AWS CDK with L2 constructs and grant methods",
+     "why": "Right: CDK synthesizes CloudFormation from real code, and L2 grant* methods write resource-scoped IAM."
+    },
+    {
+     "t": "Plain CloudFormation JSON",
+     "why": "Wrong: it has no loops or grant helpers."
+    },
+    {
+     "t": "CloudFormation StackSets",
+     "why": "Wrong: StackSets spread a template across accounts and Regions; they are not an authoring tool."
+    },
+    {
+     "t": "AWS SAM with no Lambda",
+     "why": "Wrong: SAM is a serverless shorthand in YAML, not a general programming model."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "CDK is the code-first option with built-in least privilege helpers.",
+   "remember": "Define infrastructure in Python or TypeScript → CDK (cdk synth makes the template). Serverless YAML with local tests → SAM.",
+   "variants": [
+    "L1 constructs (Cfn*) map one-to-one and have no defaults.",
+    "Short serverless YAML expanded by a transform → SAM.",
+    "Same template to many accounts → StackSets."
+   ]
+  },
+  {
+   "id": "cfn-018",
+   "skill": "1.4.8",
+   "source": "3-cdk-security-operations-and-scenarios.md",
+   "q": "A CDK deploy to a new account fails with an error that the toolkit stack must be deployed because the stack uses assets. What should the engineer do?",
+   "options": [
+    {
+     "t": "Run `cdk synth` again",
+     "why": "Wrong: synth produces the template and does not create the toolkit stack."
+    },
+    {
+     "t": "Switch to CDK v1",
+     "why": "Wrong: CDK v1 reached end of support on 1 June 2023."
+    },
+    {
+     "t": "Run `cdk bootstrap` for that account and Region, with `--trust` for a pipeline account",
+     "why": "Right: bootstrap deploys the CDKToolkit stack with the asset S3 bucket, ECR repository and IAM roles; it is needed once per account and Region."
+    },
+    {
+     "t": "Set `autoDeleteObjects: true`",
+     "why": "Wrong: it empties buckets on delete and has nothing to do with the toolkit stack."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Bootstrap once per account and Region before the first deploy.",
+   "remember": "Assets or bootstrap errors in CDK → cdk bootstrap that environment; cross-account CI/CD adds --trust.",
+   "variants": [
+    "Tighten what CloudFormation can create → --cloudformation-execution-policies instead of the default AdministratorAccess.",
+    "Bootstrap version too old → re-run cdk bootstrap.",
+    "Pipeline context lookups in the target → --trust-for-lookup."
+   ]
+  },
+  {
+   "id": "cfn-019",
+   "skill": "1.4.9",
+   "source": "4-cdk-pipelines-and-cicd-for-cdk-apps.md",
+   "q": "A CDK app must deploy to dev, test and prod accounts. A developer changes the pipeline definition in code and wants it applied automatically before the app stages. Which feature does this?",
+   "options": [
+    {
+     "t": "The self-mutating UpdatePipeline stage of CDK Pipelines",
+     "why": "Right: it runs cdk deploy on the pipeline stack and restarts the run with the new definition before app stages."
+    },
+    {
+     "t": "`cdk watch` with hotswap",
+     "why": "Wrong: hotswap skips CloudFormation for dev and does not update the pipeline."
+    },
+    {
+     "t": "A CloudFormation StackSet",
+     "why": "Wrong: it deploys templates to accounts but does not rebuild a pipeline from commits."
+    },
+    {
+     "t": "`sam pipeline init`",
+     "why": "Wrong: it generates pipelines for SAM apps, not CDK apps."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "CDK Pipelines is self-mutating.",
+   "remember": "CDK app across several accounts from one pipeline → CDK Pipelines (a Stage per account with explicit env, targets bootstrapped with --trust). SAM app → sam pipeline init.",
+   "variants": [
+    "Turn off self-update → selfMutation: false.",
+    "Pipeline stuck after a bad pipeline change → fix and run cdk deploy locally.",
+    "A manual gate before prod → ManualApprovalStep in pre."
+   ]
+  },
+  {
+   "id": "cfn-020",
+   "skill": "1.4.8",
+   "source": "3-cdk-security-operations-and-scenarios.md",
+   "q": "After a refactor, a CDK deploy unexpectedly replaces a production table. The code change only moved the construct into another class. What is the likely cause and rule?",
+   "options": [
+    {
+     "t": "The construct ID or logical ID changed, so CloudFormation sees a new resource; keep construct IDs stable",
+     "why": "Right: a renamed or moved construct changes the logical ID, which triggers replacement."
+    },
+    {
+     "t": "CDK v2 always replaces stateful resources",
+     "why": "Wrong: it does not; the ID change is the trigger."
+    },
+    {
+     "t": "The bootstrap stack was missing",
+     "why": "Wrong: a missing bootstrap fails the deploy with a toolkit error instead."
+    },
+    {
+     "t": "Termination protection was off",
+     "why": "Wrong: it only blocks stack deletion, not replacement."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Logical IDs come from construct IDs, so changing them replaces resources.",
+   "remember": "Unexpected CDK replacement → a construct or logical ID changed. Keep IDs stable, use overrideLogicalId, and read cdk diff before deploy.",
+   "variants": [
+    "Stop replacement damage → RemovalPolicy RETAIN or SNAPSHOT, which sets DeletionPolicy and UpdateReplacePolicy.",
+    "Review changes before deploy → cdk diff or a change set.",
+    "Stack policy denying Update:Replace is the CloudFormation guard."
+   ]
+  }
+ ]
+}

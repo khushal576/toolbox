@@ -1,0 +1,750 @@
+{
+ "questions": [
+  {
+   "id": "rds-001",
+   "source": "3-availability-replication-backup-and-recovery.md",
+   "q": "A production RDS for MySQL instance must survive an AZ failure with automatic failover. The standby does not need to serve reads. Which setup is the simplest?",
+   "options": [
+    {
+     "t": "Create a read replica in another AZ",
+     "why": "Wrong: replicas use asynchronous replication and are not an automatic failover mechanism for the instance deployment."
+    },
+    {
+     "t": "Enable automated backups with 35-day retention",
+     "why": "Wrong: backups help recovery, but restoring takes minutes to hours and is not automatic failover."
+    },
+    {
+     "t": "Enable a Multi-AZ DB instance deployment",
+     "why": "Right: one synchronous standby in another AZ; RDS flips the endpoint DNS on failure."
+    },
+    {
+     "t": "Move storage to io2 Block Express",
+     "why": "Wrong: faster storage does nothing for AZ failure."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Multi-AZ instance = synchronous standby for HA only.",
+   "remember": "HA for an RDS instance = Multi-AZ (synchronous standby, same endpoint, no reads). Read replicas, backups and faster storage are different problems.",
+   "variants": [
+    "Readable standbys plus faster failover on RDS MySQL/PostgreSQL → Multi-AZ DB cluster.",
+    "Aurora → add an Aurora Replica in another AZ.",
+    "Need more read capacity only → read replicas."
+   ]
+  },
+  {
+   "id": "rds-002",
+   "source": "3-availability-replication-backup-and-recovery.md",
+   "q": "A team wants an RDS for PostgreSQL deployment where standbys can also serve read traffic and write latency is lower than classic Multi-AZ. Which option fits?",
+   "options": [
+    {
+     "t": "Multi-AZ DB instance deployment",
+     "why": "Wrong: its single standby is synchronous and cannot serve reads."
+    },
+    {
+     "t": "A cross-Region read replica",
+     "why": "Wrong: asynchronous and not a standby in the same Region for failover."
+    },
+    {
+     "t": "Aurora Serverless v1",
+     "why": "Wrong: deprecated and a different architecture, not an RDS deployment option."
+    },
+    {
+     "t": "Multi-AZ DB cluster deployment",
+     "why": "Right: one writer and two readable standbys in three AZs with semisynchronous replication."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Multi-AZ DB cluster has two readable standbys.",
+   "remember": "Multi-AZ DB cluster (MySQL/PostgreSQL) = writer + 2 readable standbys, semisynchronous, only on certain instance classes. Multi-AZ instance standby is not readable.",
+   "variants": [
+    "One non-readable standby, synchronous → Multi-AZ DB instance.",
+    "Up to 15 readers in an Aurora cluster → Aurora Replicas.",
+    "Multi-AZ cluster failover slow → check replica lag."
+   ]
+  },
+  {
+   "id": "rds-003",
+   "source": "3-availability-replication-backup-and-recovery.md",
+   "q": "A company needs cross-Region disaster recovery for a database with RPO of about 1 second and RTO of about 1 minute. Which solution fits?",
+   "options": [
+    {
+     "t": "Cross-Region snapshot copies",
+     "why": "Wrong: RPO is minutes to hours and RTO is hours."
+    },
+    {
+     "t": "RDS Multi-AZ instance deployment",
+     "why": "Wrong: protects against AZ failure only, not a Region failure."
+    },
+    {
+     "t": "Aurora Global Database",
+     "why": "Right: storage-based replication with lag usually under 1 second and managed failover in about a minute."
+    },
+    {
+     "t": "RDS cross-Region read replica promoted manually",
+     "why": "Wrong: RPO equals replica lag and recovery is manual, so RTO is minutes."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Aurora Global Database targets RPO ~1 s and RTO ~1 min.",
+   "remember": "Region-level DR with ~1 s RPO and ~1 min RTO → Aurora Global Database (up to 10 secondary Regions). Cheaper options: cross-Region replica (pilot light) or snapshot copy.",
+   "variants": [
+    "Hours of RTO at the lowest cost → cross-Region snapshot copy or cross-Region automated backups.",
+    "Pilot light on RDS → cross-Region read replica, promote on disaster.",
+    "Need to use Backtrack with it → not supported on Global Database."
+   ]
+  },
+  {
+   "id": "rds-004",
+   "source": "3-availability-replication-backup-and-recovery.md",
+   "q": "A bad `DELETE` ran 15 minutes ago on an Aurora MySQL cluster. Backtrack was enabled when the cluster was created. What is the fastest recovery?",
+   "options": [
+    {
+     "t": "Restore a snapshot into a new cluster",
+     "why": "Wrong: slow and creates a new cluster with a new endpoint."
+    },
+    {
+     "t": "Promote an Aurora Replica",
+     "why": "Wrong: the replica shares the same volume, so it already has the bad delete."
+    },
+    {
+     "t": "Enable Backtrack now and rewind",
+     "why": "Wrong: Backtrack must be enabled at create or restore; it cannot be turned on later."
+    },
+    {
+     "t": "Backtrack the cluster to before the delete",
+     "why": "Right: rewinds the cluster in place in minutes, up to 72 hours."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Backtrack rewinds in place; only for Aurora MySQL.",
+   "remember": "Backtrack = in-place rewind (Aurora MySQL only, enabled at create/restore, up to 72 h, whole cluster). Without it, use PITR to a new cluster. Replicas are not a backup.",
+   "variants": [
+    "Aurora PostgreSQL or RDS → PITR to a new DB, then copy rows back.",
+    "Cluster is in a Global Database → Backtrack not supported; use PITR.",
+    "Only one table needed → PITR to a new DB and export that table."
+   ]
+  },
+  {
+   "id": "rds-005",
+   "source": "3-availability-replication-backup-and-recovery.md",
+   "q": "A developer asks for a full copy of a 2 TB Aurora production cluster for testing within minutes and with very little extra storage cost. What should you do?",
+   "options": [
+    {
+     "t": "Create an Aurora fast database clone",
+     "why": "Right: copy-on-write at the storage layer; the clone stores only changes."
+    },
+    {
+     "t": "Restore the latest automated backup",
+     "why": "Wrong: creates a full copy, takes much longer and costs more storage."
+    },
+    {
+     "t": "Create a cross-Region Aurora Global Database",
+     "why": "Wrong: adds replication cost and is meant for DR, not test copies."
+    },
+    {
+     "t": "Export a snapshot to S3 in Parquet",
+     "why": "Wrong: exported data cannot be restored into RDS."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Aurora cloning is copy-on-write.",
+   "remember": "Fast test copy of Aurora data → clone (same Region, up to 15 copy-on-write clones, can share cross-account with RAM).",
+   "variants": [
+    "Need a copy in another Region → snapshot copy or Global Database, not clone.",
+    "Need to undo a mistake → Backtrack or PITR, not clone.",
+    "16th clone → it is a full copy."
+   ]
+  },
+  {
+   "id": "rds-006",
+   "source": "3-availability-replication-backup-and-recovery.md",
+   "q": "An unencrypted RDS instance must be encrypted with a customer managed KMS key. What is the process?",
+   "options": [
+    {
+     "t": "Modify the instance and enable encryption",
+     "why": "Wrong: encryption can only be enabled at creation."
+    },
+    {
+     "t": "Create an encrypted read replica of the instance",
+     "why": "Wrong: an encrypted replica of an unencrypted source is not allowed."
+    },
+    {
+     "t": "Snapshot, copy the snapshot with encryption on, restore, then cut over",
+     "why": "Right: encryption is applied during the snapshot copy."
+    },
+    {
+     "t": "Enable TDE on the instance",
+     "why": "Wrong: TDE exists only for Oracle and SQL Server and is separate from RDS encryption."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "You encrypt during the snapshot copy.",
+   "remember": "Existing unencrypted DB → snapshot → encrypted copy → restore → switch endpoint. You can neither add nor remove encryption in place, nor change its KMS key.",
+   "variants": [
+    "Change KMS key of an encrypted DB → copy a snapshot with the new key and restore.",
+    "Share snapshot with another account → needs a customer managed key shared with that account.",
+    "Require encryption for all new DBs → AWS Config rule or SCP."
+   ]
+  },
+  {
+   "id": "rds-007",
+   "skill": "4.5.3",
+   "source": "3-availability-replication-backup-and-recovery.md",
+   "q": "A compliance team must stop engineers from creating RDS read replicas or snapshot copies in unapproved Regions across all accounts. Which control is best?",
+   "options": [
+    {
+     "t": "A security group on each database",
+     "why": "Wrong: security groups filter network traffic, not API actions."
+    },
+    {
+     "t": "An SCP that denies `rds:CopyDBSnapshot` and `rds:CreateDBInstanceReadReplica` outside approved Regions",
+     "why": "Right: controls the API actions centrally across accounts."
+    },
+    {
+     "t": "Enable Multi-AZ",
+     "why": "Wrong: an HA setting; it does not restrict Regions."
+    },
+    {
+     "t": "Turn on Performance Insights",
+     "why": "Wrong: a monitoring feature, not a preventive control."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Use IAM/SCP and Region restrictions.",
+   "remember": "Data sovereignty on RDS = deny cross-Region replica and snapshot copy actions with IAM policies or SCPs plus Region restrictions.",
+   "variants": [
+    "Detect rather than prevent → AWS Config rules.",
+    "Who made the change → CloudTrail.",
+    "Prevent S3 replication to other Regions → bucket policy/SCP on S3 actions."
+   ]
+  },
+  {
+   "id": "rds-008",
+   "skill": "1.1.9",
+   "source": "4-security-connectivity-integrations-and-vector-search.md",
+   "q": "Thousands of short-lived Lambda invocations open connections to an Aurora MySQL database and cause `too many connections` errors. The database is in a private subnet. What reduces the problem with the least code change?",
+   "options": [
+    {
+     "t": "Increase the Lambda memory",
+     "why": "Wrong: does not change how many DB connections are opened."
+    },
+    {
+     "t": "Add more Aurora Replicas",
+     "why": "Wrong: readers do not raise the writer connection limit."
+    },
+    {
+     "t": "Make the database publicly accessible",
+     "why": "Wrong: does not fix the connection storm and adds exposure."
+    },
+    {
+     "t": "Put RDS Proxy in front of the database",
+     "why": "Right: it pools and multiplexes client connections over fewer DB connections."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "RDS Proxy absorbs connection storms.",
+   "remember": "Many short connections (Lambda, microservices) → RDS Proxy. It also speeds failover and supports IAM auth plus Secrets Manager. Pinning disables multiplexing.",
+   "variants": [
+    "Lambda outside a VPC with no connections to manage → Aurora Data API.",
+    "Proxy does not reduce DB connections → sessions are pinned (SET variables, temp tables, large statements).",
+    "Need the proxy reachable from the internet → not possible; it is VPC-only."
+   ]
+  },
+  {
+   "id": "rds-009",
+   "source": "4-security-connectivity-integrations-and-vector-search.md",
+   "q": "A Lambda function outside any VPC needs to run SQL against an Aurora cluster without managing connections or VPC configuration. Which feature fits?",
+   "options": [
+    {
+     "t": "RDS Proxy",
+     "why": "Wrong: it is VPC-only, so the caller must be inside the VPC."
+    },
+    {
+     "t": "IAM database authentication alone",
+     "why": "Wrong: it still needs a network path and a native connection."
+    },
+    {
+     "t": "Database Activity Streams",
+     "why": "Wrong: an auditing feature, not a query path."
+    },
+    {
+     "t": "Aurora Data API",
+     "why": "Right: an HTTPS SQL endpoint using IAM and a Secrets Manager secret, with no persistent connections."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Data API = HTTPS SQL for Aurora.",
+   "remember": "No VPC, no connection management, Aurora → Data API (limits: 4 MB request, 1 MB result set, 10 MB JSON response). Not for high-throughput transactional loops.",
+   "variants": [
+    "Data API result over 1 MB → paginate or use a native connection.",
+    "Lambda inside the VPC with heavy traffic → RDS Proxy.",
+    "Plain RDS (non-Aurora) instance → Data API is Aurora-only."
+   ]
+  },
+  {
+   "id": "rds-010",
+   "skill": "4.1.3",
+   "source": "4-security-connectivity-integrations-and-vector-search.md",
+   "q": "An application stores RDS database passwords in code. The security team wants credentials rotated automatically with no application downtime. What should you do?",
+   "options": [
+    {
+     "t": "Rotate the master password manually each quarter",
+     "why": "Wrong: manual and error-prone, and the app still holds the password."
+    },
+    {
+     "t": "Store the password in an AMI",
+     "why": "Wrong: embedding secrets in images is explicitly discouraged."
+    },
+    {
+     "t": "Store the credentials in Secrets Manager with alternating-users rotation",
+     "why": "Right: rotation uses a Lambda function and one user stays valid during the change, so there is no downtime."
+    },
+    {
+     "t": "Use CloudTrail to detect password age",
+     "why": "Wrong: CloudTrail does not rotate anything."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Secrets Manager rotation, alternating users for zero downtime.",
+   "remember": "Credentials rotation for RDS → Secrets Manager (Lambda-based, built-in templates). Alternating-users avoids downtime. RDS can also manage and rotate the master password.",
+   "variants": [
+    "No passwords at all for MySQL/MariaDB/PostgreSQL → IAM database authentication (15-minute token, TLS required).",
+    "High connection churn with IAM auth → RDS Proxy.",
+    "Rotation fails when adding a Region to Aurora Global Database → turn the managed master password off first."
+   ]
+  },
+  {
+   "id": "rds-011",
+   "source": "4-security-connectivity-integrations-and-vector-search.md",
+   "q": "An application on EC2 should connect to RDS for PostgreSQL without any stored password. Which statements are correct? (Choose 2)",
+   "options": [
+    {
+     "t": "Call `generate-db-auth-token` and use the token as the password",
+     "why": "Right: the signed token lasts 15 minutes."
+    },
+    {
+     "t": "Grant `rds:connect` on the instance ARN",
+     "why": "Wrong: the action is `rds-db:connect` on a dbuser resource ARN."
+    },
+    {
+     "t": "Connect over SSL/TLS and grant the `rds_iam` role to the database user",
+     "why": "Right: IAM authentication requires TLS and the PostgreSQL role mapping."
+    },
+    {
+     "t": "The token never expires",
+     "why": "Wrong: tokens expire after 15 minutes."
+    },
+    {
+     "t": "CloudTrail logs every token generation",
+     "why": "Wrong: token generation is not logged by CloudTrail."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "IAM DB auth = 15-minute token, TLS, rds-db:connect.",
+   "remember": "IAM database authentication works for MySQL, MariaDB and PostgreSQL. Token lasts 15 minutes, TLS is required, policy uses `rds-db:connect`. PostgreSQL users need `rds_iam`.",
+   "variants": [
+    "IAM auth fails after a few minutes → token expired; generate a new one.",
+    "Many new connections per second → use RDS Proxy.",
+    "Oracle or SQL Server → not supported; use Secrets Manager or Kerberos."
+   ]
+  },
+  {
+   "id": "rds-012",
+   "skill": "4.3.1",
+   "source": "4-security-connectivity-integrations-and-vector-search.md",
+   "q": "Analysts need to query an RDS for PostgreSQL table but must not see raw PII columns. Which statement about RDS is accurate?",
+   "options": [
+    {
+     "t": "RDS has a built-in managed masking feature to enable",
+     "why": "Wrong: RDS has no managed masking."
+    },
+    {
+     "t": "Macie scans RDS tables directly",
+     "why": "Wrong: Macie only scans S3."
+    },
+    {
+     "t": "Use masking views or app-layer tokenization, or move data to a lake or warehouse and apply column controls there",
+     "why": "Right: RDS has no managed masking, so you build it with views/extensions or downstream controls."
+    },
+    {
+     "t": "Enable TDE to hide columns from analysts",
+     "why": "Wrong: TDE encrypts storage and is transparent to authorized users."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "No managed masking in RDS.",
+   "remember": "RDS/Aurora have no managed masking: use views, extensions, tokenization, or replicate to Redshift/Lake Formation for column and row controls. Macie scans only S3 (use it on exports).",
+   "variants": [
+    "Per-tenant row filtering in PostgreSQL → row-level security policies.",
+    "Find PII in exported snapshots → Macie on the S3 export.",
+    "Mask while moving data downstream → Glue sensitive-data detection or DataBrew."
+   ]
+  },
+  {
+   "id": "rds-013",
+   "skill": "2.4.3",
+   "source": "1-basics-engines-architecture-and-locks.md",
+   "q": "A company wants to migrate an on-premises Oracle database to Aurora PostgreSQL with minimal downtime. Which combination is correct?",
+   "options": [
+    {
+     "t": "DMS alone, since it converts all schema and code",
+     "why": "Wrong: DMS moves data; schema and code conversion needs SCT or DMS Schema Conversion."
+    },
+    {
+     "t": "A snapshot restore of the Oracle backup",
+     "why": "Wrong: a heterogeneous migration cannot restore across engines."
+    },
+    {
+     "t": "An Aurora cross-Region replica",
+     "why": "Wrong: replicas only exist within the same engine family."
+    },
+    {
+     "t": "SCT or DMS Schema Conversion for schema and code, then DMS full load plus CDC",
+     "why": "Right: converts the schema, loads data, then streams changes until cut-over."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Heterogeneous migration = SCT + DMS (full load + CDC).",
+   "remember": "Changing engine → SCT/DMS Schema Conversion for schema, DMS for data (full load + CDC). Same engine → native tools or snapshots.",
+   "variants": [
+    "DMS source on PostgreSQL → set `rds.logical_replication=1`.",
+    "DMS source on MySQL → `binlog_format=ROW` and retain binary logs.",
+    "Oracle source CDC → supplemental logging."
+   ]
+  },
+  {
+   "id": "rds-014",
+   "skill": "1.1.2",
+   "source": "4-security-connectivity-integrations-and-vector-search.md",
+   "q": "Analysts want near-real-time analytics on Aurora MySQL data in Amazon Redshift without building or maintaining a pipeline. Both are in the same Region. What is best?",
+   "options": [
+    {
+     "t": "Nightly snapshot export to S3 plus a COPY job",
+     "why": "Wrong: batch-oriented and it needs a pipeline."
+    },
+    {
+     "t": "Redshift federated query only",
+     "why": "Wrong: queries the live database and adds load, instead of replicating data."
+    },
+    {
+     "t": "An Aurora zero-ETL integration with Redshift",
+     "why": "Right: near-real-time replication with no pipeline to build."
+    },
+    {
+     "t": "A Glue crawler over the cluster",
+     "why": "Wrong: a crawler catalogs tables but does not replicate data continuously."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Zero-ETL = near-real-time, no pipeline.",
+   "remember": "OLTP → Redshift continuously without pipeline code → zero-ETL (same Region, PK needed on Aurora PostgreSQL tables, max 5 integrations per source). One-off or batch lake load → snapshot export to S3 (Parquet).",
+   "variants": [
+    "A zero-ETL table is failed on Aurora PostgreSQL → likely no primary key.",
+    "Lake needs a cheap one-off copy → snapshot export to S3 plus Athena.",
+    "Per-query access to live data → federated query."
+   ]
+  },
+  {
+   "id": "rds-015",
+   "skill": "2.1.8",
+   "source": "4-security-connectivity-integrations-and-vector-search.md",
+   "q": "A RAG application stores embeddings in Aurora PostgreSQL with pgvector. The table is large and queries are slow. Developers want the fastest queries with high recall and can afford memory; the table is built up as data arrives. Which index?",
+   "options": [
+    {
+     "t": "IVFFlat created on the empty table",
+     "why": "Wrong: it needs data first to compute its clusters."
+    },
+    {
+     "t": "HNSW with an operator class matching the distance, for example `vector_cosine_ops`",
+     "why": "Right: graph-based approximate search, fast with high recall, no training, and it can start empty."
+    },
+    {
+     "t": "No index",
+     "why": "Wrong: exact search scans the whole table; slow on large data."
+    },
+    {
+     "t": "A B-tree index on the vector column",
+     "why": "Wrong: B-tree cannot do similarity search."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "HNSW = speed and recall; IVFFlat = cheaper builds.",
+   "remember": "pgvector: HNSW for best speed/recall and updates as data arrives (more memory, slower build). IVFFlat for cheaper, faster builds on large data but build after loading data. No index = exact search for small tables.",
+   "variants": [
+    "Memory constrained, big data, fast build → IVFFlat (build after data is loaded).",
+    "Must have 100% recall on a small table → no ANN index.",
+    "Build fails or is slow → raise `maintenance_work_mem`."
+   ]
+  },
+  {
+   "id": "rds-016",
+   "skill": "2.4.6",
+   "source": "4-security-connectivity-integrations-and-vector-search.md",
+   "q": "A team wants Amazon Bedrock Knowledge Bases to use Aurora PostgreSQL as the vector store. Which prerequisites are required? (Choose 2)",
+   "options": [
+    {
+     "t": "pgvector 0.5.0 or later with a `vector(n)` column matching the embedding model dimension",
+     "why": "Right: the table needs an embedding column and an HNSW cosine index."
+    },
+    {
+     "t": "Aurora Serverless v1",
+     "why": "Wrong: it is deprecated and not the stated requirement."
+    },
+    {
+     "t": "RDS Data API enabled and a Secrets Manager secret",
+     "why": "Right: Bedrock accesses the database through the Data API with credentials in Secrets Manager."
+    },
+    {
+     "t": "Aurora MySQL with Backtrack",
+     "why": "Wrong: the vector store needs PostgreSQL with pgvector."
+    },
+    {
+     "t": "A public endpoint on the cluster",
+     "why": "Wrong: not required; the Data API handles access."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Bedrock KB on Aurora = pgvector + Data API + secret.",
+   "remember": "Aurora PostgreSQL as a Bedrock KB vector store: supported version, pgvector 0.5.0+, Data API enabled, Secrets Manager secret, table with id/embedding/chunks/metadata and HNSW index. Dimension must match the model (for example 1024).",
+   "variants": [
+    "Large-scale hybrid text and vector search → OpenSearch.",
+    "Ultra-low-latency vector search → MemoryDB.",
+    "SQL filters, joins and transactions with vectors → Aurora/RDS PostgreSQL pgvector."
+   ]
+  },
+  {
+   "id": "rds-017",
+   "skill": "2.1.6",
+   "source": "1-basics-engines-architecture-and-locks.md",
+   "q": "On RDS for PostgreSQL, all application requests suddenly hang. Investigation suggests one session holds locks and blocks others. How do you find and end the blocker?",
+   "options": [
+    {
+     "t": "Query `SHOW ENGINE INNODB STATUS` and run `CALL mysql.rds_kill`",
+     "why": "Wrong: these are MySQL/InnoDB tools."
+    },
+    {
+     "t": "Check `pg_stat_activity` and `pg_blocking_pids()`, then run `pg_terminate_backend(pid)`",
+     "why": "Right: the PostgreSQL way to find and end a blocker."
+    },
+    {
+     "t": "Reboot with failover",
+     "why": "Wrong: a drastic step that does not fix the application's transaction handling."
+    },
+    {
+     "t": "Create a read replica",
+     "why": "Wrong: replicas do not release locks on the primary."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Use engine-specific lock views.",
+   "remember": "Blocked sessions: PostgreSQL `pg_stat_activity`/`pg_locks`/`pg_blocking_pids()`; MySQL `innodb_trx`, `rds_kill`; SQL Server `sys.dm_tran_locks`; Oracle `V$LOCK`. Prevent with short transactions and timeouts.",
+   "variants": [
+    "MySQL blocker → `information_schema.innodb_trx`, then `mysql.rds_kill`.",
+    "Deadlock → engine kills a victim; the app must retry.",
+    "Idle-in-transaction sessions → set `idle_in_transaction_session_timeout`."
+   ]
+  },
+  {
+   "id": "rds-018",
+   "source": "2-instances-storage-serverless-and-configuration.md",
+   "q": "An Aurora cluster's bill shows I/O charges at 40% of the total. The workload is steady and I/O heavy. What is the best change?",
+   "options": [
+    {
+     "t": "Switch to Aurora Serverless v2",
+     "why": "Wrong: pays per ACU but does not remove per-I/O charges."
+    },
+    {
+     "t": "Add more Aurora Replicas",
+     "why": "Wrong: readers add instance cost and I/O is counted on readers too."
+    },
+    {
+     "t": "Switch the cluster to Aurora I/O-Optimized",
+     "why": "Right: no per-I/O charges; best when I/O is 25% or more of the bill."
+    },
+    {
+     "t": "Move to gp3 storage",
+     "why": "Wrong: Aurora uses its own cluster volume, not gp3."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "I/O at 25% of bill or more → I/O-Optimized.",
+   "remember": "Aurora Standard = storage + per-million I/O; I/O-Optimized = no I/O charge but higher instance and storage price. Choose by the 25% rule. Standard → I/O-Optimized once per 30 days; back to Standard any time.",
+   "variants": [
+    "I/O under about 25% of the bill → stay on Standard.",
+    "Plain RDS needs predictable high IOPS → io2 Block Express.",
+    "Switched to I/O-Optimized yesterday and want to switch again → Standard→I/O-Optimized limited to once per 30 days; switching back is allowed."
+   ]
+  },
+  {
+   "id": "rds-019",
+   "source": "2-instances-storage-serverless-and-configuration.md",
+   "q": "A SaaS company has spiky and unpredictable Aurora MySQL traffic and dev environments that sit idle overnight. They want cost to follow usage. Which option fits?",
+   "options": [
+    {
+     "t": "A large provisioned writer with Reserved Instances",
+     "why": "Wrong: good for steady 24/7 load, wasteful for spiky load."
+    },
+    {
+     "t": "Aurora Serverless v1",
+     "why": "Wrong: deprecated; use v2."
+    },
+    {
+     "t": "RDS Multi-AZ DB cluster",
+     "why": "Wrong: fixed capacity, not usage-based."
+    },
+    {
+     "t": "Aurora Serverless v2, with min 0 ACU auto-pause for dev",
+     "why": "Right: scales in 0.5 ACU steps without disrupting connections; at 0 ACU only storage is billed."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Serverless v2 for spiky or idle workloads.",
+   "remember": "Serverless v2: min/max ACU, per-second billing, auto-pause at 0 ACU for idle dev. Steady heavy 24/7 load is cheaper on provisioned plus Reserved Instances. Keep min ACU high enough to keep the cache warm.",
+   "variants": [
+    "Steady 24/7 heavy load → provisioned with Reserved Instances.",
+    "Readers should be ready for failover → promotion tier 0–1 keep capacity at least the writer's.",
+    "RDS (non-Aurora) dev instance idle at night → stop it (up to 7 days)."
+   ]
+  },
+  {
+   "id": "rds-020",
+   "source": "2-instances-storage-serverless-and-configuration.md",
+   "q": "A major MySQL version upgrade on RDS must cause minimal downtime, and the team wants to test first and be able to roll back. What should they use?",
+   "options": [
+    {
+     "t": "Modify the instance directly in the maintenance window",
+     "why": "Wrong: may need significant downtime and has no staging environment."
+    },
+    {
+     "t": "Create a read replica and promote it after upgrade",
+     "why": "Wrong: not a managed test-and-switch workflow."
+    },
+    {
+     "t": "Enable RDS Extended Support",
+     "why": "Wrong: it keeps an old version running for a fee; it does not upgrade."
+    },
+    {
+     "t": "Blue/Green Deployments",
+     "why": "Right: copies production to a synchronized green environment, upgrade and test there, then switch over, typically in under a minute."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Blue/Green = upgrade in staging, switch over.",
+   "remember": "Low-downtime major upgrade or schema/parameter change → Blue/Green Deployments (MySQL, MariaDB, PostgreSQL, Aurora). Keep the old blue for rollback. Extended Support only delays the upgrade, for a per-vCPU-hour fee.",
+   "variants": [
+    "Cannot upgrade MySQL 5.7 yet → RDS Extended Support as a paid bridge (up to 3 years).",
+    "Minor version upgrade → maintenance window or auto minor upgrade.",
+    "Zero-ETL source during switchover → delete integration first, recreate afterwards."
+   ]
+  },
+  {
+   "id": "rds-021",
+   "source": "2-instances-storage-serverless-and-configuration.md",
+   "q": "An RDS for PostgreSQL instance has `storage-full` events every few months because data growth is unpredictable. The team cannot shrink the volume later but wants to avoid outages. What should they do?",
+   "options": [
+    {
+     "t": "Enable storage autoscaling with a maximum storage threshold",
+     "why": "Right: RDS grows storage automatically when space is low; it never shrinks."
+    },
+    {
+     "t": "Switch to magnetic storage",
+     "why": "Wrong: magnetic is deprecated and does not support autoscaling."
+    },
+    {
+     "t": "Take a snapshot daily",
+     "why": "Wrong: backups do not add free space."
+    },
+    {
+     "t": "Add a read replica",
+     "why": "Wrong: a replica does not increase source storage."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Storage autoscaling with a max threshold.",
+   "remember": "RDS storage grows (autoscaling or manual) but cannot shrink in place; to shrink, migrate to a smaller new instance. Aurora grows automatically. WAL or replication slots can also fill the disk.",
+   "variants": [
+    "Aurora → storage grows automatically; no autoscaling setting.",
+    "Disk full because of WAL → find a lagging or unused replication slot and drop it.",
+    "Need to shrink storage → dump/restore or DMS to a new instance."
+   ]
+  },
+  {
+   "id": "rds-022",
+   "skill": "1.1.9",
+   "source": "3-availability-replication-backup-and-recovery.md",
+   "q": "An RDS for MySQL source has automated backups and several read replicas. A KMS key used to encrypt the source is disabled by mistake and the instance becomes `inaccessible-encryption-credentials-recoverable`. What is correct?",
+   "options": [
+    {
+     "t": "The instance is gone; only a PITR can help",
+     "why": "Wrong: not yet: it is recoverable for a limited time."
+    },
+    {
+     "t": "Changing the instance class restores access",
+     "why": "Wrong: the problem is the key, not compute."
+    },
+    {
+     "t": "Re-enable the key and start the instance within 7 days, or restore from the final snapshot",
+     "why": "Right: the instance is stopped and recoverable for up to 7 days; after that the state is terminal."
+    },
+    {
+     "t": "Create an unencrypted replica to bypass the key",
+     "why": "Wrong: mixing encrypted and unencrypted is not allowed."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Re-enable the KMS key within 7 days.",
+   "remember": "Disabled or deleted KMS key → `inaccessible-encryption-credentials-recoverable` (up to 7 days to re-enable and start), then terminal `inaccessible-encryption-credentials` (restore from snapshot). Revoking a user's key access does not affect a running DB.",
+   "variants": [
+    "Replicas must use the same KMS key in the same Region as the source.",
+    "Cross-Region replica → key from the destination Region.",
+    "Accidentally set retention to 0 on RDS → PITR is impossible."
+   ]
+  }
+ ]
+}

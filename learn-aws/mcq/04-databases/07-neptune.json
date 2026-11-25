@@ -1,0 +1,345 @@
+{
+ "questions": [
+  {
+   "id": "neptune-001",
+   "skill": "2.1.2",
+   "source": "1-basics-graph-models-and-query-languages.md",
+   "q": "A fraud team must find rings of accounts linked through shared devices and addresses across many hops. Data is billions of relationships and queries must return in milliseconds. Which store fits?",
+   "options": [
+    {
+     "t": "Amazon Neptune",
+     "why": "Right: it stores relationships as first-class data and traverses edges directly, so cost follows the neighborhood touched."
+    },
+    {
+     "t": "Amazon Redshift with self-joins",
+     "why": "Wrong: multi-hop self-joins get slower with depth and Redshift is for reporting, not millisecond lookups."
+    },
+    {
+     "t": "Amazon DynamoDB",
+     "why": "Wrong: it is built for key lookups, not multi-hop traversals."
+    },
+    {
+     "t": "Amazon DocumentDB",
+     "why": "Wrong: it stores JSON documents, not relationship paths."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Questions about connections across several hops point to a graph database.",
+   "remember": "Relationships, highly connected data, fraud rings, social network, knowledge graph \u2192 Neptune.",
+   "variants": [
+    "Simple key lookups at scale \u2192 DynamoDB.",
+    "Reporting with joins \u2192 Redshift or Aurora.",
+    "JSON documents \u2192 DocumentDB."
+   ]
+  },
+  {
+   "id": "neptune-002",
+   "skill": "2.1.2",
+   "source": "1-basics-graph-models-and-query-languages.md",
+   "q": "A team has existing Neo4j Cypher queries over a property graph and wants to move to AWS with minimal query rewrites. Which option fits?",
+   "options": [
+    {
+     "t": "Neptune with SPARQL",
+     "why": "Wrong: SPARQL queries RDF data, not a property graph."
+    },
+    {
+     "t": "Neptune with openCypher",
+     "why": "Right: openCypher is a declarative pattern-matching language on the property graph, compatible with Cypher."
+    },
+    {
+     "t": "Neptune with Gremlin",
+     "why": "Wrong: it works on property graphs but is an imperative traversal language, so every query would be rewritten."
+    },
+    {
+     "t": "Aurora PostgreSQL with recursive CTEs",
+     "why": "Wrong: it does not scale on deep traversals and needs full rewrites."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Cypher skills map to openCypher on the property graph model.",
+   "remember": "Neo4j/Cypher \u2192 openCypher; TinkerPop step-by-step \u2192 Gremlin; RDF, ontology, linked data \u2192 SPARQL.",
+   "variants": [
+    "Team uses TinkerPop traversals \u2192 Gremlin.",
+    "Data is linked open data or ontologies \u2192 RDF and SPARQL.",
+    "The same property graph can be read with both Gremlin and openCypher."
+   ]
+  },
+  {
+   "id": "neptune-003",
+   "skill": "2.1.2",
+   "source": "1-basics-graph-models-and-query-languages.md",
+   "q": "A replica-heavy Neptune cluster has clients on long-lived WebSocket connections. Several hours in, one reader handles nearly all the read traffic although the reader endpoint is used. What is the cause and fix?",
+   "options": [
+    {
+     "t": "The reader endpoint balances queries, so a replica is broken; reboot it",
+     "why": "Wrong: Neptune does not balance queries at all."
+    },
+    {
+     "t": "The reader endpoint balances connections through DNS, so open connections stay on one replica; reconnect and disable DNS caching",
+     "why": "Right: each connection keeps its replica until closed, and cached DNS answers defeat round robin."
+    },
+    {
+     "t": "Add a custom endpoint",
+     "why": "Wrong: custom endpoints group instances but do not rebalance existing connections."
+    },
+    {
+     "t": "Enable IAM database authentication",
+     "why": "Wrong: authentication has no effect on how connections are spread."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "The reader endpoint round-robins connections, not queries.",
+   "remember": "Reader endpoint = connection-level DNS round robin. Long connections and DNS caching cause skew; reconnect and disable DNS caching.",
+   "variants": [
+    "Need query-level balance \u2192 spread across instance endpoints in the app.",
+    "Isolate analytics from OLTP reads \u2192 custom endpoint (up to 5).",
+    "Writes must follow failover \u2192 cluster endpoint."
+   ]
+  },
+  {
+   "id": "neptune-004",
+   "skill": "2.3.6",
+   "source": "2-availability-backup-security-and-integrations.md",
+   "q": "A production Neptune cluster has a single writer and no replicas. Leadership wants failover to finish in about a minute, even if an AZ fails. What should you do?",
+   "options": [
+    {
+     "t": "Add one or more replicas in other AZs",
+     "why": "Right: with replicas a replica is promoted, typically under 120 seconds and often under 60; without them the primary is recreated in up to about 10 minutes."
+    },
+    {
+     "t": "Enable more cluster volume copies",
+     "why": "Wrong: storage already keeps six copies across 3 AZs; compute is the gap."
+    },
+    {
+     "t": "Take more frequent manual snapshots",
+     "why": "Wrong: snapshots help recovery, not failover time."
+    },
+    {
+     "t": "Enable Global Database",
+     "why": "Wrong: it targets Region DR and is more than this need."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Storage spans 3 AZs already; compute availability comes from replicas.",
+   "remember": "No replica \u2192 primary recreated (up to ~10 min). With replicas \u2192 failover under 120 s. Multi-AZ is not a backup.",
+   "variants": [
+    "Need a specific replica to take over first \u2192 promotion tier 0.",
+    "Region failure with seconds of lag \u2192 Global Database.",
+    "After failover apps need retry logic, a new connection and no DNS caching."
+   ]
+  },
+  {
+   "id": "neptune-005",
+   "skill": "2.3.6",
+   "source": "2-availability-backup-security-and-integrations.md",
+   "q": "A company needs low-latency local reads in three Regions and disaster recovery for a Region outage, with storage-level replication lag typically under a second. Which Neptune feature fits?",
+   "options": [
+    {
+     "t": "Cross-Region snapshot copy",
+     "why": "Wrong: it gives a higher RPO and is slower to recover."
+    },
+    {
+     "t": "Read-replica auto scaling",
+     "why": "Wrong: it adds readers inside one Region only."
+    },
+    {
+     "t": "Neptune Global Database",
+     "why": "Right: one primary Region plus up to 5 read-only secondary Regions, replicated at the storage layer typically under 1 second."
+    },
+    {
+     "t": "Neptune Analytics",
+     "why": "Wrong: it is an in-memory analytics engine, not a DR feature."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Global Database is the low-lag multi-Region option.",
+   "remember": "Seconds of lag, local reads, Region DR \u2192 Global Database (5 secondary Regions). Cheap, cold DR \u2192 snapshot copy.",
+   "variants": [
+    "Cheap cold DR with higher RPO \u2192 copy snapshots to another Region.",
+    "Secondary clusters cannot use auto scaling and t3/t4g.medium is not supported.",
+    "Region outage \u2192 detach and promote a secondary."
+   ]
+  },
+  {
+   "id": "neptune-006",
+   "skill": "2.3.6",
+   "source": "2-availability-backup-security-and-integrations.md",
+   "q": "An auditor requires encryption at rest on an existing, unencrypted Neptune cluster. What is the correct approach?",
+   "options": [
+    {
+     "t": "Enable KMS encryption on the running cluster",
+     "why": "Wrong: encryption can only be chosen at creation, not in place."
+    },
+    {
+     "t": "Modify the instances to use TLS",
+     "why": "Wrong: TLS is encryption in transit and is already required."
+    },
+    {
+     "t": "Take a snapshot, copy it with encryption, and restore a new cluster",
+     "why": "Right: this is the only path from unencrypted to encrypted; the restore creates a new cluster."
+    },
+    {
+     "t": "Turn on IAM database authentication",
+     "why": "Wrong: it controls who can connect, not storage encryption."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Encrypt by snapshot, encrypted copy, then restore.",
+   "remember": "Neptune encryption at rest (KMS) is set at creation; to change, snapshot \u2192 copy with encryption \u2192 restore.",
+   "variants": [
+    "Recover from accidental deletes \u2192 PITR to a new cluster within retention.",
+    "Long retention beyond 35 days \u2192 manual snapshots.",
+    "Need no passwords in the app \u2192 IAM authentication with SigV4."
+   ]
+  },
+  {
+   "id": "neptune-007",
+   "skill": "2.3.6",
+   "source": "2-availability-backup-security-and-integrations.md",
+   "q": "A load of billions of rows from S3 into Neptune fails. The role has S3 read access and files are valid CSV. Which two causes are the most likely? (Choose two.)",
+   "options": [
+    {
+     "t": "The VPC has no S3 gateway VPC endpoint",
+     "why": "Right: the loader runs inside the VPC and needs an S3 VPC endpoint."
+    },
+    {
+     "t": "The files are encrypted with SSE-C",
+     "why": "Right: the loader supports SSE-S3 and SSE-KMS but not SSE-C."
+    },
+    {
+     "t": "The files are gzip-compressed",
+     "why": "Wrong: single-file gzip and bzip2 are supported."
+    },
+    {
+     "t": "The files are UTF-8",
+     "why": "Wrong: UTF-8 is the required encoding."
+    }
+   ],
+   "answer": [
+    0,
+    1
+   ],
+   "explain": "Loader needs the IAM role, S3 VPC endpoint, supported format and non-SSE-C encryption.",
+   "remember": "Loader failures: missing role, missing S3 VPC endpoint, wrong Region, bad format, SSE-C, or .zip/.tar archives.",
+   "variants": [
+    "Files are .zip \u2192 not supported; use .gz or .bz2 single files.",
+    "Slow load \u2192 temporary larger writer, split files, same-Region bucket.",
+    "Loader is not ACID."
+   ]
+  },
+  {
+   "id": "neptune-008",
+   "skill": "2.1.1",
+   "source": "3-performance-cost-monitoring-limits-and-scenarios.md",
+   "q": "A Neptune bill is dominated by per-million I/O request charges on a busy cluster. Which change cuts the cost while keeping the cluster?",
+   "options": [
+    {
+     "t": "Switch to Neptune Serverless",
+     "why": "Wrong: it changes compute billing, not the per-I/O charge."
+    },
+    {
+     "t": "Switch to I/O-Optimized storage",
+     "why": "Right: it removes the per-I/O charge for a higher instance and storage price; it needs engine 1.3.0.0+ and can be switched once per 30 days."
+    },
+    {
+     "t": "Add read replicas",
+     "why": "Wrong: more instances raise cost and do not remove per-I/O charges."
+    },
+    {
+     "t": "Enable Neptune Streams",
+     "why": "Wrong: Streams add I/O and storage cost."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "I/O-heavy bills fit I/O-Optimized.",
+   "remember": "I/O a large part of the bill \u2192 I/O-Optimized (once per 30 days). Standard pays per million I/O.",
+   "variants": [
+    "Spiky or dev/test compute \u2192 Serverless or t4g.medium.",
+    "Storage is billed on the high-water mark.",
+    "Idle dev/test cluster \u2192 stop it."
+   ]
+  },
+  {
+   "id": "neptune-009",
+   "skill": "2.1.1",
+   "source": "1-basics-graph-models-and-query-languages.md",
+   "q": "A Neptune workload has unpredictable spikes lasting a few minutes each day and the team does not want to plan capacity. Which design fits?",
+   "options": [
+    {
+     "t": "Provisioned r6g instances sized for the peak",
+     "why": "Wrong: they are billed hourly all day and require capacity planning."
+    },
+    {
+     "t": "t4g.medium instances",
+     "why": "Wrong: burstable classes are for dev/test only."
+    },
+    {
+     "t": "Neptune Serverless with a generous maximum NCU",
+     "why": "Right: compute scales in NCUs (1 NCU = 2 GiB) between your min and max, billed per second."
+    },
+    {
+     "t": "Neptune Analytics",
+     "why": "Wrong: it is an in-memory analytics engine, not an OLTP database."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Variable demand fits Serverless.",
+   "remember": "Spiky or unknown load \u2192 Serverless. Too low min or max NCU causes timeouts; tier 0-1 readers scale with the writer.",
+   "variants": [
+    "Slow steady read growth \u2192 read-replica auto scaling on CPU.",
+    "Graph algorithms on tens of billions of edges \u2192 Neptune Analytics.",
+    "BufferCacheHitRatio below 99.9% \u2192 bigger memory instance."
+   ]
+  },
+  {
+   "id": "neptune-010",
+   "skill": "2.1.1",
+   "source": "3-performance-cost-monitoring-limits-and-scenarios.md",
+   "q": "Latency on a provisioned Neptune cluster rises, and `BufferCacheHitRatio` is 97%. What is the best fix?",
+   "options": [
+    {
+     "t": "Move to a larger, more memory-rich instance class",
+     "why": "Right: the graph working set does not fit in the buffer cache; below 99.9% means scale up."
+    },
+    {
+     "t": "Add more replicas only",
+     "why": "Wrong: replicas do not enlarge the writer's cache and the same-class rule still applies."
+    },
+    {
+     "t": "Enable Neptune Streams",
+     "why": "Wrong: Streams add I/O and slightly reduce write performance."
+    },
+    {
+     "t": "Raise the query timeout",
+     "why": "Wrong: it hides timeouts but does not fix cache misses."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "A low cache hit ratio means too little memory.",
+   "remember": "BufferCacheHitRatio below 99.9% \u2192 bigger instance. Resize the writer by creating a bigger replica and failing over.",
+   "variants": [
+    "Many pending requests or 429 throttling \u2192 add capacity or smooth load.",
+    "Serverless timeouts \u2192 raise min and max NCU.",
+    "UndoLogListSize keeps growing \u2192 upgrade the writer."
+   ]
+  }
+ ]
+}

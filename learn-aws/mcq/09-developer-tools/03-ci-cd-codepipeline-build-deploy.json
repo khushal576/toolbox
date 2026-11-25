@@ -1,0 +1,684 @@
+{
+ "questions": [
+  {
+   "id": "cicd-001",
+   "skill": "1.4.9",
+   "source": "2-codebuild-and-codepipeline.md",
+   "q": "A data team keeps ten pipelines in one monorepo. Today every commit starts all ten CodePipeline pipelines. Each pipeline should run only when its own folder changes. What is the simplest fix?",
+   "options": [
+    {
+     "t": "Switch change detection to polling",
+     "why": "Wrong: Polling is legacy, capped at 300 pipelines per Region, and has no path filtering."
+    },
+    {
+     "t": "Convert each pipeline to V2 and add file-path filters to its trigger",
+     "why": "Right: V2 triggers support include/exclude file-path globs, so each pipeline starts only for its folder."
+    },
+    {
+     "t": "Split the monorepo into ten repositories",
+     "why": "Wrong: It works but is heavy; V2 file-path filters solve it without restructuring."
+    },
+    {
+     "t": "Add a Lambda invoke action that cancels unrelated runs",
+     "why": "Wrong: Custom code and wasted runs; triggers filter before the run starts."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "V2 pipeline triggers filter on branches, tags, pull requests and file paths.",
+   "remember": "Run a pipeline only for certain paths, tags or PRs → V2 trigger filters.",
+   "variants": [
+    "Start only on release tags like v* → V2 trigger on Git tags.",
+    "Each PR needs its own environment → V2 PR trigger + PARALLEL mode.",
+    "Legacy V1 pipeline → no filters, only polling or event detection."
+   ]
+  },
+  {
+   "id": "cicd-002",
+   "skill": "1.4.9",
+   "source": "2-codebuild-and-codepipeline.md",
+   "q": "A pipeline deploys to production. Deployments must never overlap, and no commit may be skipped. Which CodePipeline setting fits?",
+   "options": [
+    {
+     "t": "V2 QUEUED execution mode",
+     "why": "Right: Runs are processed one by one in order and nothing is skipped."
+    },
+    {
+     "t": "PARALLEL execution mode",
+     "why": "Wrong: Runs are fully independent, so they can overlap."
+    },
+    {
+     "t": "Disable the transition into the prod stage",
+     "why": "Wrong: That blocks all promotion rather than ordering runs."
+    },
+    {
+     "t": "SUPERSEDED execution mode",
+     "why": "Wrong: Default mode; a newer run replaces older waiting runs, so commits can be skipped."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "QUEUED = ordered, no skipping, no overlap.",
+   "remember": "No overlap and no skipped runs → QUEUED. Latest wins → SUPERSEDED (default). Independent runs → PARALLEL.",
+   "variants": [
+    "Feature/PR environments side by side → PARALLEL.",
+    "Only the newest commit matters → SUPERSEDED.",
+    "QUEUED and PARALLEL allow up to 50 concurrent executions."
+   ]
+  },
+  {
+   "id": "cicd-003",
+   "skill": "1.4.9",
+   "source": "2-codebuild-and-codepipeline.md",
+   "q": "A CodeBuild project must build a Docker image and push it to Amazon ECR. The build fails with 'Cannot connect to the Docker daemon'. What is the cause?",
+   "options": [
+    {
+     "t": "The buildspec uses version 0.2",
+     "why": "Wrong: Version 0.2 only changes shell behaviour; it does not affect Docker."
+    },
+    {
+     "t": "The ECR repository has immutable tags",
+     "why": "Wrong: That fails at push time, not at the daemon connection."
+    },
+    {
+     "t": "The build timeout is too short",
+     "why": "Wrong: A timeout gives a timeout error, not a daemon error."
+    },
+    {
+     "t": "Privileged mode is not enabled on the project",
+     "why": "Right: Docker builds need privileged mode (Docker-in-Docker)."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Docker builds need privileged mode and non-Lambda compute.",
+   "remember": "Docker daemon error in CodeBuild → turn on privileged mode; Lambda compute cannot build Docker images.",
+   "variants": [
+    "Project uses Lambda compute → Docker builds are not supported at all.",
+    "Login to ECR before the push → do it in pre_build.",
+    "Build must reach a private RDS → run it in the VPC."
+   ]
+  },
+  {
+   "id": "cicd-004",
+   "skill": "4.2.2",
+   "source": "2-codebuild-and-codepipeline.md",
+   "q": "A buildspec needs a database password for integration tests. The password must not be visible in the console or API. Where should it come from?",
+   "options": [
+    {
+     "t": "The `variables` section of the buildspec `env`",
+     "why": "Wrong: Plain text; visible in the console and API."
+    },
+    {
+     "t": "A pipeline-level variable in CodePipeline V2",
+     "why": "Wrong: Pipeline variables are plain values, not secret storage."
+    },
+    {
+     "t": "The `secrets-manager` (or `parameter-store`) section of the buildspec `env`",
+     "why": "Right: Values are fetched at build time by the service role and masked in logs."
+    },
+    {
+     "t": "An environment variable in the repository's `.env` file",
+     "why": "Wrong: Secrets must never be committed to Git."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Use secrets-manager or parameter-store in env, with the matching IAM permissions on the build role.",
+   "remember": "Secret in a build → buildspec env secrets-manager/parameter-store; the role needs secretsmanager:GetSecretValue or ssm:GetParameters.",
+   "variants": [
+    "Non-sensitive value like a region → plain `variables` is fine.",
+    "A value must reach later pipeline actions → `exported-variables`.",
+    "Log masking only works if the value is printed exactly as stored."
+   ]
+  },
+  {
+   "id": "cicd-005",
+   "skill": "1.4.9",
+   "source": "2-codebuild-and-codepipeline.md",
+   "q": "Thousands of small Python repos need unit tests that finish in seconds. They need no Docker and run under 15 minutes. Which CodeBuild option is the best fit?",
+   "options": [
+    {
+     "t": "Reserved capacity fleet",
+     "why": "Wrong: You pay while it is provisioned; overkill for short quick tests."
+    },
+    {
+     "t": "Lambda compute",
+     "why": "Right: Starts in seconds, billed per second; no Docker and a 15-minute limit are fine here."
+    },
+    {
+     "t": "Large on-demand EC2 compute",
+     "why": "Wrong: Slower to start and billed per minute at a higher rate."
+    },
+    {
+     "t": "A self-managed Jenkins fleet",
+     "why": "Wrong: Adds servers to manage."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Lambda compute is for fast, short, no-Docker builds.",
+   "remember": "Quick lint/unit tests → CodeBuild Lambda compute. Docker, privileged mode or long builds → EC2 compute.",
+   "variants": [
+    "Builds queue every morning → raise concurrency quotas or use reserved capacity.",
+    "Build needs Docker → on-demand EC2 compute with privileged mode.",
+    "Build runs 20 hours → EC2 compute (limit up to 36 hours)."
+   ]
+  },
+  {
+   "id": "cicd-006",
+   "skill": "1.4.9",
+   "source": "2-codebuild-and-codepipeline.md",
+   "q": "Production CloudFormation changes must be reviewed by humans before they are applied. Which CodePipeline deploy design fits?",
+   "options": [
+    {
+     "t": "CHANGE_SET_REPLACE, a manual approval, then CHANGE_SET_EXECUTE",
+     "why": "Right: Reviewers inspect the change set before it is executed."
+    },
+    {
+     "t": "CREATE_UPDATE, then a manual approval",
+     "why": "Wrong: CREATE_UPDATE already applies the change before the approval."
+    },
+    {
+     "t": "REPLACE_ON_FAILURE only",
+     "why": "Wrong: It deletes and recreates failed stacks; no review step."
+    },
+    {
+     "t": "DELETE_ONLY followed by CREATE_UPDATE",
+     "why": "Wrong: That destroys the stack first; no preview."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Change set → approval → execute is the standard prod pattern.",
+   "remember": "Preview before apply → CHANGE_SET_REPLACE → approval → CHANGE_SET_EXECUTE.",
+   "variants": [
+    "Disposable test stack that may fail → REPLACE_ON_FAILURE.",
+    "Tear down a PR environment → DELETE_ONLY.",
+    "SAM template deploy fails on capabilities → add CAPABILITY_AUTO_EXPAND."
+   ]
+  },
+  {
+   "id": "cicd-007",
+   "skill": "4.3.2",
+   "source": "2-codebuild-and-codepipeline.md",
+   "q": "A pipeline in a tools account deploys to a prod account. The prod deploy role fails with KMS AccessDenied reading the artifacts. The artifact bucket uses the default encryption. What is the fix?",
+   "options": [
+    {
+     "t": "Increase the pipeline's artifact size limit",
+     "why": "Wrong: Unrelated to a KMS permission error."
+    },
+    {
+     "t": "Add kms:Decrypt to the prod role only",
+     "why": "Wrong: The AWS managed key's policy cannot grant another account."
+    },
+    {
+     "t": "Make the artifact bucket public",
+     "why": "Wrong: Insecure and does not solve the KMS decrypt."
+    },
+    {
+     "t": "Re-encrypt with a customer managed KMS key, share it in the key policy, and update the bucket policy",
+     "why": "Right: The AWS managed key cannot be shared across accounts; a CMK can."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Cross-account pipelines need a customer managed KMS key plus bucket policy.",
+   "remember": "Cross-account pipeline KMS/S3 AccessDenied → customer managed CMK shared to the target account + bucket policy + cross-account role.",
+   "variants": [
+    "Same-account pipeline → the default aws/s3 key works.",
+    "Deploy fails with iam:PassRole not authorized → allow PassRole on the CloudFormation service role.",
+    "Many accounts at once → StackSets actions."
+   ]
+  },
+  {
+   "id": "cicd-008",
+   "skill": "1.4.8",
+   "source": "2-codebuild-and-codepipeline.md",
+   "q": "A team must deploy the same CloudFormation stack to 30 accounts from one pipeline. Which action type fits?",
+   "options": [
+    {
+     "t": "CloudFormation CREATE_UPDATE action repeated 30 times",
+     "why": "Wrong: Hard to maintain and it deploys one stack per action."
+    },
+    {
+     "t": "A CodeBuild step looping `aws cloudformation deploy`",
+     "why": "Wrong: Custom scripting where a native action exists."
+    },
+    {
+     "t": "CloudFormation StackSet and StackInstances actions",
+     "why": "Right: They deploy to many accounts and Regions from the pipeline."
+    },
+    {
+     "t": "A CodeDeploy deployment group with 30 targets",
+     "why": "Wrong: CodeDeploy deploys application revisions, not stacks."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "StackSets actions fan out stacks across accounts/Regions.",
+   "remember": "One template into many accounts/Regions from a pipeline → StackSet/StackInstances actions.",
+   "variants": [
+    "One account only → a normal CloudFormation action.",
+    "Application revision to servers → CodeDeploy.",
+    "Cross-account single target → cross-account role plus CMK."
+   ]
+  },
+  {
+   "id": "cicd-009",
+   "skill": "1.4.4",
+   "source": "1-git-basics-source-and-artifacts.md",
+   "q": "Two engineers keep overwriting each other's Glue script changes, and a bad change reached production on the shared `main` branch. How should the bad change be undone?",
+   "options": [
+    {
+     "t": "`git reset --hard` and force-push",
+     "why": "Wrong: Rewrites shared history and can discard others' work."
+    },
+    {
+     "t": "`git revert` of the commit, then redeploy",
+     "why": "Right: Creates a new commit that undoes the old one; safe for shared branches."
+    },
+    {
+     "t": "`git rebase` the shared branch",
+     "why": "Wrong: Rebasing pushed branches rewrites history."
+    },
+    {
+     "t": "`git stash`",
+     "why": "Wrong: Parks local unfinished changes only."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Shared branch → revert, never reset.",
+   "remember": "Undo a change on a shared/pushed branch → git revert. Reset and rebase are for local, unpushed work.",
+   "variants": [
+    "Copy one fix onto another branch → cherry-pick.",
+    "Park unfinished local work → stash.",
+    "Linear history on a private branch → rebase."
+   ]
+  },
+  {
+   "id": "cicd-010",
+   "skill": "4.2.2",
+   "source": "1-git-basics-source-and-artifacts.md",
+   "q": "A developer committed an AWS secret access key to a Git repository. What is the first action?",
+   "options": [
+    {
+     "t": "Deactivate and rotate the key at once, then check CloudTrail",
+     "why": "Right: Rotation closes the exposure; CloudTrail shows any misuse. Then clean history and add scanning."
+    },
+    {
+     "t": "Rewrite history with a force-push only",
+     "why": "Wrong: Others may already have cloned; history cleanup is not enough."
+    },
+    {
+     "t": "Enable branch protection",
+     "why": "Wrong: Does not stop an exposed key being used."
+    },
+    {
+     "t": "Delete the file and push a new commit",
+     "why": "Wrong: The key stays in history and in any clones."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "A pushed secret is compromised; rotate first.",
+   "remember": "Secret committed → rotate immediately, review CloudTrail, then clean history and add secret scanning.",
+   "variants": [
+    "Prevent it going forward → pre-commit scanners (git-secrets, gitleaks).",
+    "Large data files in Git → move to S3.",
+    "GitHub Actions needs AWS access → OIDC role, no stored keys."
+   ]
+  },
+  {
+   "id": "cicd-011",
+   "skill": "4.1.4",
+   "source": "1-git-basics-source-and-artifacts.md",
+   "q": "A GitHub Actions workflow must deploy to AWS without storing long-term access keys. What should the team configure?",
+   "options": [
+    {
+     "t": "An IAM user with keys stored as repository secrets",
+     "why": "Wrong: Long-term keys are exactly what to avoid."
+    },
+    {
+     "t": "A public S3 bucket for artifacts",
+     "why": "Wrong: Unrelated and insecure."
+    },
+    {
+     "t": "A CodeConnections connection",
+     "why": "Wrong: Connections link CodePipeline/CodeBuild to the Git provider; they do not give Actions AWS credentials."
+    },
+    {
+     "t": "An IAM OIDC identity provider and a role whose trust policy limits the `sub` claim to the repo and branch",
+     "why": "Right: The workflow gets temporary credentials via federation."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "OIDC federation gives temporary credentials, no stored keys.",
+   "remember": "External CI deploying to AWS safely → IAM OIDC provider + role trusting the repo/branch sub claim.",
+   "variants": [
+    "Pipeline in AWS must use GitHub → CodeConnections.",
+    "Connection stuck Pending → complete the handshake in the console.",
+    "Pipeline role needs codeconnections:UseConnection."
+   ]
+  },
+  {
+   "id": "cicd-012",
+   "skill": "1.4.9",
+   "source": "1-git-basics-source-and-artifacts.md",
+   "q": "Builds fail when pypi.org is slow, and security wants control over which packages can be used. Which service helps?",
+   "options": [
+    {
+     "t": "Amazon ECR pull-through cache",
+     "why": "Wrong: It caches container images, not Python packages."
+    },
+    {
+     "t": "AWS CodeCommit",
+     "why": "Wrong: A Git repository, not a package repository."
+    },
+    {
+     "t": "AWS CodeArtifact with an upstream external connection to PyPI",
+     "why": "Right: It caches public packages and lets you control what is allowed."
+    },
+    {
+     "t": "S3 versioning on the artifact bucket",
+     "why": "Wrong: Does not proxy or control packages."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "CodeArtifact is the private package repository with upstream caching.",
+   "remember": "Control and cache pip/npm/Maven dependencies → CodeArtifact with upstream connections; origin controls stop dependency confusion.",
+   "variants": [
+    "Share an internal Python library across projects → publish it to CodeArtifact.",
+    "Block public versions of internal names → package origin controls.",
+    "Container images → ECR."
+   ]
+  },
+  {
+   "id": "cicd-013",
+   "skill": "1.4.9",
+   "source": "3-codedeploy-security-cost-monitoring-and-scenarios.md",
+   "q": "A Lambda release must shift traffic gradually and roll back automatically when errors rise. Which approach fits?",
+   "options": [
+    {
+     "t": "CodeDeploy in-place deployment to the function",
+     "why": "Wrong: In-place is for EC2/on-premises only."
+    },
+    {
+     "t": "CodeDeploy canary or linear on a Lambda alias with CloudWatch alarms",
+     "why": "Right: Traffic shifts between versions and an alarm triggers rollback."
+    },
+    {
+     "t": "Re-run the CloudFormation stack twice",
+     "why": "Wrong: No gradual shift or alarm-based rollback."
+    },
+    {
+     "t": "An ECS blue/green deployment",
+     "why": "Wrong: ECS deployments are for container services."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Lambda deployments are traffic shifts on an alias.",
+   "remember": "Gradual Lambda release with auto rollback → CodeDeploy canary/linear (SAM DeploymentPreference) + alarms.",
+   "variants": [
+    "Run a check before traffic moves → BeforeAllowTraffic (PreTraffic) hook.",
+    "Run a check after all traffic moves → AfterAllowTraffic (PostTraffic) hook.",
+    "Move 100% immediately → AllAtOnce."
+   ]
+  },
+  {
+   "id": "cicd-014",
+   "skill": "1.4.9",
+   "source": "5-codedeploy-appspec-hooks-and-deployment-patterns.md",
+   "q": "A Lambda canary deployment never shifts traffic and fails after an hour. The BeforeAllowTraffic hook function runs fine. What is missing?",
+   "options": [
+    {
+     "t": "A call to `PutLifecycleEventHookExecutionStatus` with Succeeded or Failed",
+     "why": "Right: The hook must report back; without it CodeDeploy waits and then fails."
+    },
+    {
+     "t": "A deployment group alarm",
+     "why": "Wrong: Alarms trigger rollback; they do not cause a stall."
+    },
+    {
+     "t": "The alias points to $LATEST",
+     "why": "Wrong: CodeDeploy needs published versions, but that is not the symptom described."
+    },
+    {
+     "t": "A larger Lambda memory setting",
+     "why": "Wrong: Memory does not affect the callback."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Hook functions must report status to CodeDeploy.",
+   "remember": "Lambda/ECS deployment hangs then fails → the hook never called PutLifecycleEventHookExecutionStatus (check its permissions).",
+   "variants": [
+    "Hook role needs codedeploy:PutLifecycleEventHookExecutionStatus.",
+    "CodeDeploy service role needs permission to invoke hooks → AWSCodeDeployRoleForLambda.",
+    "ECS test traffic checks → AfterAllowTestTraffic hook."
+   ]
+  },
+  {
+   "id": "cicd-015",
+   "skill": "1.4.9",
+   "source": "3-codedeploy-security-cost-monitoring-and-scenarios.md",
+   "q": "An EC2 ETL fleet must be updated while at least 75% of instances stay healthy. Which CodeDeploy approach fits?",
+   "options": [
+    {
+     "t": "ECSAllAtOnce",
+     "why": "Wrong: An ECS configuration, not for EC2."
+    },
+    {
+     "t": "CodeDeployDefault.AllAtOnce",
+     "why": "Wrong: Updates every instance at once, so capacity drops."
+    },
+    {
+     "t": "A Lambda canary configuration",
+     "why": "Wrong: Lambda configs apply only to Lambda deployments."
+    },
+    {
+     "t": "In-place with a custom deployment configuration (minimum healthy hosts 75%)",
+     "why": "Right: Custom configs set minimum healthy hosts as a count or percentage."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Custom minimum healthy hosts controls capacity during in-place updates.",
+   "remember": "Keep X% capacity during an EC2 update → in-place + custom minimum healthy hosts. Default is OneAtATime.",
+   "variants": [
+    "Zero downtime and instant switch-back → blue/green with the load balancer.",
+    "Fastest and riskiest → AllAtOnce.",
+    "Half the fleet per batch → HalfAtATime."
+   ]
+  },
+  {
+   "id": "cicd-016",
+   "skill": "1.4.9",
+   "source": "5-codedeploy-appspec-hooks-and-deployment-patterns.md",
+   "q": "In an EC2 in-place deployment, `ApplicationStop` fails even though the new revision's script is correct. Why?",
+   "options": [
+    {
+     "t": "The timeout is fixed at 60 seconds",
+     "why": "Wrong: The hook timeout defaults to 3,600 seconds, which is the maximum."
+    },
+    {
+     "t": "ApplicationStop runs after ValidateService",
+     "why": "Wrong: It runs first, before the bundle is downloaded."
+    },
+    {
+     "t": "ApplicationStop uses the AppSpec and scripts from the previously deployed revision",
+     "why": "Right: The previous successful revision's scripts run for ApplicationStop, so a broken old script fails it."
+    },
+    {
+     "t": "Hook scripts cannot run as root",
+     "why": "Wrong: The agent runs as root by default."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "ApplicationStop comes from the previous revision.",
+   "remember": "ApplicationStop or rollback script failure → check the previous revision's scripts; it does not run on a first deployment.",
+   "variants": [
+    "Run smoke tests last → ValidateService.",
+    "Reserved events you cannot script → DownloadBundle, Install, BlockTraffic, AllowTraffic.",
+    "Hook exceeds its timeout → the instance deployment fails."
+   ]
+  },
+  {
+   "id": "cicd-017",
+   "skill": "1.4.9",
+   "source": "5-codedeploy-appspec-hooks-and-deployment-patterns.md",
+   "q": "ECS blue/green deployments with CodeDeploy are configured with a Network Load Balancer and a canary configuration. The deployment fails. Why?",
+   "options": [
+    {
+     "t": "Canary is only valid for Lambda",
+     "why": "Wrong: ECS has its own canary configs, but only with an ALB."
+    },
+    {
+     "t": "With a Network Load Balancer only ECSAllAtOnce is supported",
+     "why": "Right: Canary and linear need an Application Load Balancer."
+    },
+    {
+     "t": "The target groups share one listener",
+     "why": "Wrong: Blue/green uses two target groups by design."
+    },
+    {
+     "t": "The task definition is too large",
+     "why": "Wrong: Not related to the traffic configuration."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "NLB supports only ECSAllAtOnce.",
+   "remember": "ECS blue/green gradual shift needs an ALB; with an NLB use ECSAllAtOnce.",
+   "variants": [
+    "Run tests on the green set before production traffic → test listener + AfterAllowTestTraffic hook.",
+    "Keep old task set for quick rollback → termination wait time.",
+    "CodePipeline blue/green action → CodeDeployToECS with appspec and taskdef."
+   ]
+  },
+  {
+   "id": "cicd-018",
+   "skill": "3.3.3",
+   "source": "3-codedeploy-security-cost-monitoring-and-scenarios.md",
+   "q": "A team must be told in Slack when any pipeline execution fails, with minimal setup. What should they use?",
+   "options": [
+    {
+     "t": "A notification rule or EventBridge rule on pipeline state changes, sent to Amazon Q Developer in chat applications or SNS",
+     "why": "Right: CodePipeline emits state-change events; rules route them to chat or SNS."
+    },
+    {
+     "t": "A CloudTrail trail with a metric filter on every API call",
+     "why": "Wrong: Heavy and indirect for a state-change alert."
+    },
+    {
+     "t": "A CodeBuild webhook",
+     "why": "Wrong: Webhooks start builds, not notifications."
+    },
+    {
+     "t": "Polling the pipeline with a cron job",
+     "why": "Wrong: Polling is unnecessary when events are emitted."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "State-change events plus notification rules or EventBridge send alerts.",
+   "remember": "Alert on pipeline/build/deploy failure → notification rule or EventBridge rule → SNS or Amazon Q Developer in chat applications.",
+   "variants": [
+    "Auto-open a ticket → EventBridge to Lambda.",
+    "Alarm on failed builds → CloudWatch metrics such as FailedBuilds.",
+    "Who approved the prod deploy → CloudTrail."
+   ]
+  },
+  {
+   "id": "cicd-019",
+   "skill": "3.3.5",
+   "source": "3-codedeploy-security-cost-monitoring-and-scenarios.md",
+   "q": "Auditors ask who approved last week's production deployment in CodePipeline. Where do you find this?",
+   "options": [
+    {
+     "t": "CodeBuild build logs",
+     "why": "Wrong: They show build output, not approvals."
+    },
+    {
+     "t": "The CodeDeploy agent log on the instance",
+     "why": "Wrong: Only covers on-instance deployment steps."
+    },
+    {
+     "t": "CloudWatch Container Insights",
+     "why": "Wrong: For container metrics."
+    },
+    {
+     "t": "CloudTrail PutApprovalResult events and the pipeline execution history",
+     "why": "Right: CloudTrail records API calls such as approvals; history is kept 12 months."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "CloudTrail logs the approval API call.",
+   "remember": "Who started, approved or changed a pipeline → CloudTrail; pipeline execution history is kept 12 months.",
+   "variants": [
+    "Who may approve → restrict codepipeline:PutApprovalResult in IAM.",
+    "Approval ignored for days → it times out after 7 days by default and fails.",
+    "Config drift of project settings → AWS Config."
+   ]
+  },
+  {
+   "id": "cicd-020",
+   "skill": "4.1.4",
+   "source": "3-codedeploy-security-cost-monitoring-and-scenarios.md",
+   "q": "A pipeline deploys with a CloudFormation action using a separate service role and fails with 'iam:PassRole not authorized'. What is the fix?",
+   "options": [
+    {
+     "t": "Add CAPABILITY_IAM to the action",
+     "why": "Wrong: Capabilities address a different error (InsufficientCapabilities)."
+    },
+    {
+     "t": "Make the CloudFormation role an administrator",
+     "why": "Wrong: Over-privileged and does not fix PassRole."
+    },
+    {
+     "t": "Grant the pipeline role iam:PassRole on the CloudFormation service role ARN",
+     "why": "Right: The role that hands over a service role must be allowed to pass it."
+    },
+    {
+     "t": "Move the template to a different S3 bucket",
+     "why": "Wrong: Unrelated to IAM passing."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "The pipeline role needs PassRole on the role it passes.",
+   "remember": "PassRole not authorized → add iam:PassRole for that role ARN to the passing (pipeline or cross-account) role.",
+   "variants": [
+    "InsufficientCapabilities → add CAPABILITY_IAM/NAMED_IAM/AUTO_EXPAND.",
+    "CodeBuild AccessDenied → fix the CodeBuild service role.",
+    "Keep separate least-privilege roles per service."
+   ]
+  }
+ ]
+}

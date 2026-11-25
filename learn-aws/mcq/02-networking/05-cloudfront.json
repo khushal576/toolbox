@@ -1,0 +1,345 @@
+{
+ "questions": [
+  {
+   "id": "cf-001",
+   "skill": "1.2.8",
+   "source": "1-distributions-origins-behaviors-and-caching.md",
+   "q": "A company shares 5 TB datasets stored in a private S3 bucket with partners worldwide. Downloads must be fast and the bucket must accept requests only from CloudFront. What should the team configure?",
+   "options": [
+    {
+     "t": "A CloudFront distribution with Origin Access Control and a bucket policy for the `cloudfront.amazonaws.com` principal",
+     "why": "Right: OAC signs requests to S3 and the policy limits access to the distribution through `AWS:SourceArn`."
+    },
+    {
+     "t": "A public bucket with a CloudFront distribution using the S3 website endpoint",
+     "why": "Wrong: the bucket stays public, so people can bypass CloudFront."
+    },
+    {
+     "t": "S3 Transfer Acceleration on the bucket",
+     "why": "Wrong: it speeds up uploads to S3 and does not cache downloads at the edge."
+    },
+    {
+     "t": "Global Accelerator in front of the bucket",
+     "why": "Wrong: it does not cache content and is for TCP/UDP traffic with fixed IPs."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Private S3 + CloudFront means OAC plus a bucket policy tied to the distribution ARN.",
+   "remember": "Private S3 content through CloudFront → OAC (not OAI, not a public bucket) and a bucket policy with principal cloudfront.amazonaws.com and AWS:SourceArn.",
+   "variants": [
+    "The origin is an S3 static website endpoint → it is a custom origin, so OAC does not work.",
+    "Objects are SSE-KMS → also allow the CloudFront service principal in the KMS key policy.",
+    "The legacy method is OAI → still works but OAC is recommended."
+   ]
+  },
+  {
+   "id": "cf-002",
+   "skill": "1.2.8",
+   "source": "2-security-signed-access-waf-and-logging.md",
+   "q": "Paying subscribers must download a single report for one hour only. An application authorizes each user first. Which approach fits?",
+   "options": [
+    {
+     "t": "The app returns a CloudFront signed URL with a one-hour expiry, signed with a key group private key",
+     "why": "Right: a signed URL gives time-limited access to a single object."
+    },
+    {
+     "t": "CloudFront signed cookies",
+     "why": "Wrong: cookies fit many files, such as a video library, not one report."
+    },
+    {
+     "t": "Geo restriction on the distribution",
+     "why": "Wrong: it filters by country, not by user or time."
+    },
+    {
+     "t": "Field-level encryption",
+     "why": "Wrong: it protects form fields, not downloads."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "One object, limited time → signed URL.",
+   "remember": "One file with expiry → signed URL; many files (video, whole area) → signed cookies. Use key groups, not root key pairs.",
+   "variants": [
+    "A whole video library needs auth → signed cookies.",
+    "Direct S3 access, including uploads, without a distribution → S3 presigned URL.",
+    "The behavior must have Restrict viewer access enabled with a trusted key group."
+   ]
+  },
+  {
+   "id": "cf-003",
+   "skill": "1.2.8",
+   "source": "1-distributions-origins-behaviors-and-caching.md",
+   "q": "Hundreds of edge locations all request the same large objects from a limited-capacity origin on a cache miss. Which feature lowers the load on the origin the most?",
+   "options": [
+    {
+     "t": "Origin Shield",
+     "why": "Right: an extra caching layer in one Region collapses misses from all edges into one request to the origin."
+    },
+    {
+     "t": "Price Class 100",
+     "why": "Wrong: it limits edge locations for cost and does not reduce misses."
+    },
+    {
+     "t": "Field-level encryption",
+     "why": "Wrong: it is unrelated to origin load."
+    },
+    {
+     "t": "Geo restriction",
+     "why": "Wrong: it blocks countries and does not collapse requests."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Origin Shield collapses misses from many edges.",
+   "remember": "Many edges hitting one origin with the same misses → Origin Shield (higher hit ratio, adds a per-request fee).",
+   "variants": [
+    "Poor hit ratio from a wide cache key → shrink the cache key first.",
+    "The origin is fine but cost is high in far Regions → price class.",
+    "Origin down → origin group failover."
+   ]
+  },
+  {
+   "id": "cf-004",
+   "skill": "1.2.8",
+   "source": "1-distributions-origins-behaviors-and-caching.md",
+   "q": "A CloudFront distribution in front of an ALB has a poor cache hit ratio. The cache policy forwards all cookies and all query strings. What should the engineer do?",
+   "options": [
+    {
+     "t": "Include only the needed headers, cookies and query strings in the cache key, and lengthen TTLs",
+     "why": "Right: a smaller cache key fragments the cache less."
+    },
+    {
+     "t": "Add more invalidations",
+     "why": "Wrong: invalidations remove cached objects and lower the hit ratio further."
+    },
+    {
+     "t": "Switch to the `CachingDisabled` managed policy",
+     "why": "Wrong: it turns caching off."
+    },
+    {
+     "t": "Enable WAF rate-based rules",
+     "why": "Wrong: that protects against abuse and does not improve the hit ratio."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Fewer elements in the cache key → higher hit ratio.",
+   "remember": "Low hit ratio → reduce cache key elements, normalize query strings, lengthen TTL, use versioned names. Things forwarded but not keyed go in an origin request policy.",
+   "variants": [
+    "Values needed by the origin but not by the cache → origin request policy.",
+    "API with no caching wanted → CachingDisabled.",
+    "Static S3 content → CachingOptimized."
+   ]
+  },
+  {
+   "id": "cf-005",
+   "skill": "1.2.8",
+   "source": "1-distributions-origins-behaviors-and-caching.md",
+   "q": "A team must serve new static assets right after each release without relying on invalidations, and wants to keep long TTLs. What is the best approach?",
+   "options": [
+    {
+     "t": "Versioned file names such as `app.v123.js`",
+     "why": "Right: each release is a new cache key, so old objects never need removal."
+    },
+    {
+     "t": "Run `/*` invalidation after every release only",
+     "why": "Wrong: it works, but it costs after the first 1,000 paths a month and is not the preferred way."
+    },
+    {
+     "t": "Set the TTL to 0",
+     "why": "Wrong: this removes the benefit of caching."
+    },
+    {
+     "t": "Use Lambda@Edge to rewrite every response",
+     "why": "Wrong: it adds cost and latency and is not needed."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Prefer versioned names over invalidations.",
+   "remember": "Instant new asset version with long TTL → version the file names; invalidation is the fallback (first 1,000 paths a month free).",
+   "variants": [
+    "A single file must disappear now → invalidate that path.",
+    "HTML entry page needs fresh content → short TTL for it.",
+    "Cache hit ratio matters → keep long TTLs on versioned assets."
+   ]
+  },
+  {
+   "id": "cf-006",
+   "skill": "4.3.4",
+   "source": "1-distributions-origins-behaviors-and-caching.md",
+   "q": "A data team exposes an internal Superset dashboard. The ALB must have no public IP, yet users reach it through CloudFront with WAF. What should they use?",
+   "options": [
+    {
+     "t": "A CloudFront VPC origin pointing to the ALB in a private subnet",
+     "why": "Right: CloudFront connects privately, so the ALB has no public exposure."
+    },
+    {
+     "t": "An internet-facing ALB with a public security group",
+     "why": "Wrong: it leaves the ALB exposed to direct access."
+    },
+    {
+     "t": "An S3 website endpoint origin",
+     "why": "Wrong: that is for static website content."
+    },
+    {
+     "t": "Origin Shield",
+     "why": "Wrong: it is a caching layer and does not make the origin private."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "VPC origins keep private ALB/NLB/EC2 origins private.",
+   "remember": "Origin must have no public exposure → CloudFront VPC origin. Without VPC origins → SG allowing the CloudFront managed prefix list plus a secret header.",
+   "variants": [
+    "Public ALB that must only accept CloudFront → prefix list SG + secret custom header.",
+    "S3 origin kept private → OAC.",
+    "Custom origin must use HTTPS → set origin protocol policy to HTTPS only."
+   ]
+  },
+  {
+   "id": "cf-007",
+   "skill": "4.3.4",
+   "source": "2-security-signed-access-waf-and-logging.md",
+   "q": "A company wants to serve a custom domain over HTTPS from CloudFront. The certificate was created in `eu-west-1`, and the browser shows a certificate error. What is the fix?",
+   "options": [
+    {
+     "t": "Request or import the ACM certificate in `us-east-1` and attach it, with the domain as an alternate domain name",
+     "why": "Right: CloudFront only uses ACM certificates from us-east-1."
+    },
+    {
+     "t": "Move the distribution to `eu-west-1`",
+     "why": "Wrong: CloudFront is a global service and has no Region."
+    },
+    {
+     "t": "Buy a dedicated IP custom SSL certificate",
+     "why": "Wrong: it is a paid option for legacy clients and does not fix the Region."
+    },
+    {
+     "t": "Set the viewer protocol policy to HTTP and HTTPS",
+     "why": "Wrong: it does not fix a certificate problem."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "ACM certs for CloudFront live in us-east-1.",
+   "remember": "Certificate error on a CloudFront custom domain → cert not in us-east-1 or the CNAME (alternate domain name) is missing or not covered. WAF web ACLs for CloudFront are also created in us-east-1.",
+   "variants": [
+    "Need all HTTP redirected → viewer protocol policy Redirect HTTP to HTTPS.",
+    "Legacy clients without SNI → dedicated IP SSL (paid).",
+    "Sensitive form fields → field-level encryption."
+   ]
+  },
+  {
+   "id": "cf-008",
+   "skill": "4.4.4",
+   "source": "2-security-signed-access-waf-and-logging.md",
+   "q": "Analysts need per-request CDN usage analytics at low cost, and a separate alert within seconds on abusive traffic. Which combination fits?",
+   "options": [
+    {
+     "t": "Standard logs to S3 queried with Athena, and real-time logs to Kinesis Data Streams for alerting",
+     "why": "Right: standard logs are cheap and queryable; real-time logs arrive within seconds."
+    },
+    {
+     "t": "Real-time logs only, queried in Athena directly",
+     "why": "Wrong: real-time logs go to Kinesis Data Streams, not straight to Athena."
+    },
+    {
+     "t": "CloudTrail only",
+     "why": "Wrong: it records control-plane changes, not viewer requests."
+    },
+    {
+     "t": "CloudWatch default metrics only",
+     "why": "Wrong: they give aggregates, not per-request fields."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Standard logs to S3 for analytics, real-time logs to Kinesis for seconds-level visibility.",
+   "remember": "Per-request analytics → standard logs to S3 + Athena (partition them). Second-level visibility → real-time logs to Kinesis Data Streams.",
+   "variants": [
+    "Cache hit rate or origin latency graphs → additional CloudWatch metrics (extra cost).",
+    "Who changed the distribution → CloudTrail.",
+    "Delivery into OpenSearch or S3 from the stream → Kinesis Data Firehose."
+   ]
+  },
+  {
+   "id": "cf-009",
+   "skill": "1.1.4",
+   "source": "3-data-delivery-patterns-limits-and-scenarios.md",
+   "q": "IoT clients far from the Region need a static pair of IP addresses and a TCP/UDP backend with health-based failover. Which service fits?",
+   "options": [
+    {
+     "t": "AWS Global Accelerator",
+     "why": "Right: it gives two static anycast IPs, supports TCP/UDP and fails over by endpoint health, with no caching."
+    },
+    {
+     "t": "CloudFront",
+     "why": "Wrong: it is HTTP(S) and caches content, and fixed IPs are not its default."
+    },
+    {
+     "t": "S3 Transfer Acceleration",
+     "why": "Wrong: it only speeds up uploads to S3."
+    },
+    {
+     "t": "Route 53 alone",
+     "why": "Wrong: it is DNS routing and does not give static anycast IPs."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Non-HTTP, static IPs → Global Accelerator.",
+   "remember": "TCP/UDP, fixed IPs, fast failover, no cache → Global Accelerator; HTTP(S) content with caching → CloudFront.",
+   "variants": [
+    "Large uploads to S3 from far clients → S3 Transfer Acceleration.",
+    "Cache content at the edge → CloudFront.",
+    "Public API needing WAF and caching control → regional API Gateway plus your own CloudFront."
+   ]
+  },
+  {
+   "id": "cf-010",
+   "skill": "1.1.4",
+   "source": "1-distributions-origins-behaviors-and-caching.md",
+   "q": "An API must validate a JWT at the edge cheaply for millions of requests per second, with no network calls. Another API needs custom auth that calls an external service. Which choices fit? Choose 2.",
+   "options": [
+    {
+     "t": "CloudFront Functions for the JWT validation",
+     "why": "Right: lightweight, sub-millisecond JavaScript at the viewer events, and cheaper than Lambda@Edge."
+    },
+    {
+     "t": "Lambda@Edge for the auth that calls an external service",
+     "why": "Right: it can make network calls and use the AWS SDK; CloudFront Functions cannot."
+    },
+    {
+     "t": "CloudFront Functions for the external service call",
+     "why": "Wrong: they have no network access."
+    },
+    {
+     "t": "Lambda@Edge for the JWT check at millions of requests per second",
+     "why": "Wrong: it works, but costs more and scales to thousands of requests per second per Region."
+    }
+   ],
+   "answer": [
+    0,
+    1
+   ],
+   "explain": "Simple and cheap at the edge → CloudFront Functions; network calls or body access → Lambda@Edge.",
+   "remember": "Header rewrites, redirects, simple JWT checks, cache-key normalization → CloudFront Functions. Network calls, origin events, larger code → Lambda@Edge.",
+   "variants": [
+    "Need origin request or response triggers → Lambda@Edge.",
+    "URL rewrite for index.html on a static site → CloudFront Function.",
+    "Need Python runtime → Lambda@Edge."
+   ]
+  }
+ ]
+}

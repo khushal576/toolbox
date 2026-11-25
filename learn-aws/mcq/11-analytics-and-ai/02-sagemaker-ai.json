@@ -1,0 +1,339 @@
+{
+ "questions": [
+  {
+   "id": "sagemaker-001",
+   "skill": "4.5.6",
+   "source": "1-overview-studio-domains-and-unified-studio.md",
+   "q": "Data engineers, analysts and ML engineers must share governed data. Consumers should request access to published datasets, owners approve, and access is granted through Lake Formation. Which approach fits?",
+   "options": [
+    {
+     "t": "Separate SageMaker Studio domains with shared S3 bucket policies",
+     "why": "Wrong: no publish, subscribe and approve workflow, and bucket policies bypass Lake Formation governance."
+    },
+    {
+     "t": "SageMaker Unified Studio projects with SageMaker Catalog subscriptions",
+     "why": "Right: Catalog (built on DataZone) lets owners publish assets and approve subscriptions, granted through Lake Formation."
+    },
+    {
+     "t": "SageMaker Feature Store with cross-account sharing",
+     "why": "Wrong: Feature Store serves ML features, it is not a business data catalog with approval workflows."
+    },
+    {
+     "t": "SageMaker Model Registry model groups",
+     "why": "Wrong: the Registry versions models, not data assets."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Publish, subscribe, approve, grant via Lake Formation is SageMaker Catalog in Unified Studio.",
+   "remember": "Governed data sharing with request/approve across teams → SageMaker Unified Studio projects plus SageMaker Catalog subscriptions (DataZone, Lake Formation grants).",
+   "variants": [
+    "Only ML teams need a hub for pretrained models → JumpStart.",
+    "A project user cannot read data → check the project role's Lake Formation/S3 permissions or whether the subscription was approved.",
+    "A business glossary and metadata forms are needed → SageMaker Catalog."
+   ]
+  },
+  {
+   "id": "sagemaker-002",
+   "skill": "4.1.7",
+   "source": "1-overview-studio-domains-and-unified-studio.md",
+   "q": "A large company wants each business unit to govern its own projects and set its own owners inside a single SageMaker Unified Studio domain. Which construct delegates this governance?",
+   "options": [
+    {
+     "t": "Domain units",
+     "why": "Right: domain units form a hierarchy in the domain, with their own owners, project creation rights and shared rules."
+    },
+    {
+     "t": "Project profiles",
+     "why": "Wrong: profiles choose which capabilities (blueprints) a new project gets, not who governs."
+    },
+    {
+     "t": "Studio spaces",
+     "why": "Wrong: a space is a workspace for an app, not a governance boundary."
+    },
+    {
+     "t": "Blueprints",
+     "why": "Wrong: blueprints deploy resources such as Glue or EMR through CloudFormation."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Domain units delegate governance inside a Unified Studio domain.",
+   "remember": "Delegate governance per business unit in Unified Studio → domain units; the collaboration unit with its role, S3 location and members is the project.",
+   "variants": [
+    "Choose which capabilities a new project gets (SQL analytics, ML and GenAI) → project profiles.",
+    "The unit that holds the project role, S3 location and compute connections → project.",
+    "Each Studio person has a profile in a classic Studio domain → user profile."
+   ]
+  },
+  {
+   "id": "sagemaker-003",
+   "skill": "4.1.7",
+   "source": "1-overview-studio-domains-and-unified-studio.md",
+   "q": "Security requires that no SageMaker Studio notebook traffic crosses the public internet. Which domain setting meets this?",
+   "options": [
+    {
+     "t": "PublicInternetOnly network access type",
+     "why": "Wrong: this is the default and uses SageMaker-managed internet access."
+    },
+    {
+     "t": "A shared space for all users",
+     "why": "Wrong: a shared space is about co-editing, not network paths."
+    },
+    {
+     "t": "Idle shutdown on every app",
+     "why": "Wrong: idle shutdown saves cost, it does not change network paths."
+    },
+    {
+     "t": "VpcOnly network access type with VPC endpoints or NAT",
+     "why": "Right: all traffic goes through your VPC, and you provide endpoints (SageMaker API/runtime, S3, STS, Logs, ECR) or NAT."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "VpcOnly routes everything through your VPC.",
+   "remember": "No internet for Studio → VpcOnly domain, plus VPC endpoints for SageMaker API/runtime, S3, STS, CloudWatch Logs and ECR.",
+   "variants": [
+    "A VpcOnly app is stuck starting → missing endpoints or the security group lacks NFS (2049) to EFS.",
+    "Notebooks in VpcOnly need to install packages → NAT gateway or mirrors such as CodeArtifact.",
+    "Enforce VPC attachment for jobs → condition key sagemaker:VpcSubnets."
+   ]
+  },
+  {
+   "id": "sagemaker-004",
+   "skill": "3.1.6",
+   "source": "2-data-prep-labeling-and-feature-store.md",
+   "q": "Analysts want to clean data visually, with a natural-language option, and export the repeatable flow as a SageMaker Pipelines step. Which tool fits?",
+   "options": [
+    {
+     "t": "Ground Truth",
+     "why": "Wrong: it builds labeled datasets with human workforces."
+    },
+    {
+     "t": "SageMaker Model Monitor",
+     "why": "Wrong: it monitors endpoints in production, not data prep."
+    },
+    {
+     "t": "Data Wrangler in SageMaker Canvas",
+     "why": "Right: visual and natural-language prep with built-in transforms, exportable to Pipelines, S3 or Feature Store."
+    },
+    {
+     "t": "SageMaker Debugger",
+     "why": "Wrong: it inspects training tensors and system metrics."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Data Wrangler (now in Canvas) is the visual prep tool with export to Pipelines.",
+   "remember": "Visual or no-code data prep for ML with repeatable exportable flows → Data Wrangler in Canvas; heavy production ETL → Glue or EMR.",
+   "variants": [
+    "Visual prep for analytics rather than ML → Glue DataBrew.",
+    "Large Spark transforms without a cluster to manage → SageMaker Processing.",
+    "Large nightly ETL → Glue or EMR, cheaper and simpler."
+   ]
+  },
+  {
+   "id": "sagemaker-005",
+   "skill": "2.4.4",
+   "source": "2-data-prep-labeling-and-feature-store.md",
+   "q": "Auditors ask which datasets, code and training job produced a model in production. Which SageMaker capability records these relationships automatically for Pipelines executions?",
+   "options": [
+    {
+     "t": "ML Lineage Tracking",
+     "why": "Right: it records artifacts, actions, contexts and associations, and is auto-created for Pipelines executions."
+    },
+    {
+     "t": "Model Dashboard",
+     "why": "Wrong: it gives one view of models and monitoring status, not the full artifact graph."
+    },
+    {
+     "t": "Data capture on the endpoint",
+     "why": "Wrong: it logs requests and responses, not how the model was built."
+    },
+    {
+     "t": "CloudTrail management events",
+     "why": "Wrong: they show who called APIs, not data-to-model relationships."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "ML Lineage Tracking links data, code and model.",
+   "remember": "Which data and job produced this model → ML Lineage Tracking (with Pipelines executions, Registry versions and MLflow runs).",
+   "variants": [
+    "Lineage on the data side → SageMaker Catalog (DataZone) lineage, Glue Data Catalog and Lake Formation.",
+    "Documentation of intended use and risks → Model Cards.",
+    "Who invoked an endpoint → CloudTrail data events for InvokeEndpoint."
+   ]
+  },
+  {
+   "id": "sagemaker-006",
+   "source": "2-data-prep-labeling-and-feature-store.md",
+   "q": "A fraud model needs the same customer features in training and in real-time inference, with the latest values read in a few milliseconds and full history kept for training. What should the team use?",
+   "options": [
+    {
+     "t": "DynamoDB only",
+     "why": "Wrong: it can serve features but has no feature versioning, offline join tooling or catalog."
+    },
+    {
+     "t": "Feature Store with online and offline stores",
+     "why": "Right: the online store returns the latest record per ID quickly and the offline store keeps append-only history in S3 for training."
+    },
+    {
+     "t": "An S3 bucket of CSV files read by the endpoint",
+     "why": "Wrong: too slow for millisecond reads and no point-in-time history."
+    },
+    {
+     "t": "Feature Store with only the online store",
+     "why": "Wrong: it keeps only the latest record, so history for training is lost."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Online for fresh serving, offline for training history.",
+   "remember": "Same features in training and serving, low-millisecond reads → Feature Store with both stores; online keeps only the latest record, offline is append-only history queried with Athena.",
+   "variants": [
+    "Only batch training needs history → offline store only.",
+    "A newer record returns old data → its event time is older than the stored record, so it was ignored.",
+    "Pure analytics with no serving → skip Feature Store."
+   ]
+  },
+  {
+   "id": "sagemaker-007",
+   "source": "3-training-tuning-and-large-scale-compute.md",
+   "q": "A team trains on a few hundred GB of data and wants training to start quickly without downloading everything to the instance volume first. Which option fits?",
+   "options": [
+    {
+     "t": "File mode",
+     "why": "Wrong: it downloads the entire dataset to EBS before training starts."
+    },
+    {
+     "t": "ShardedByS3Key distribution",
+     "why": "Wrong: it splits objects across instances but does not change the download behaviour."
+    },
+    {
+     "t": "Larger EBS volumes",
+     "why": "Wrong: more disk does not remove the download wait."
+    },
+    {
+     "t": "FastFile mode or Pipe mode, or FSx for Lustre",
+     "why": "Right: they stream data on demand, so training starts fast."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Streaming input modes avoid the full download.",
+   "remember": "Large dataset and fast training start → FastFile (local-filesystem view) or Pipe (sequential stream) mode, or FSx for Lustre for repeated epochs.",
+   "variants": [
+    "Many small S3 files slow training → shard or combine files.",
+    "Repeated experiments waste startup time → managed warm pools (billed while warm).",
+    "Small dataset, simplest setup → File mode."
+   ]
+  },
+  {
+   "id": "sagemaker-008",
+   "source": "4-deployment-and-inference-options.md",
+   "q": "A company must score 200 million rows every night. No endpoint is needed outside the batch window, and cost must stay low. Which design fits?",
+   "options": [
+    {
+     "t": "A real-time endpoint with autoscaling",
+     "why": "Wrong: instance-hours are billed even when idle, and it is not built for whole datasets."
+    },
+    {
+     "t": "A serverless inference endpoint",
+     "why": "Wrong: it targets small models with spiky traffic, not bulk scoring."
+    },
+    {
+     "t": "Batch Transform over many split input files with several instances",
+     "why": "Right: no persistent endpoint, and parallelism comes from mapping S3 objects to instances."
+    },
+    {
+     "t": "An asynchronous endpoint with one large input file",
+     "why": "Wrong: async is for large single payloads with queueing, and one big file would not spread across instances."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Batch Transform is offline scoring with no persistent endpoint.",
+   "remember": "Score a whole dataset offline → Batch Transform; split the input into many files, because one big file uses only one instance.",
+   "variants": [
+    "One 500 MB image per request, results can wait → asynchronous inference (up to 1 GB, 1 hour).",
+    "Steady low-latency traffic → real-time endpoint with autoscaling across 2 or more AZs.",
+    "Spiky traffic, small CPU model, cold start acceptable → serverless inference."
+   ]
+  },
+  {
+   "id": "sagemaker-009",
+   "source": "4-deployment-and-inference-options.md",
+   "q": "A data scientist needs inference on a GPU inside a VPC with data capture enabled. Traffic is unpredictable and the team wants to scale to zero. What is the best fit?",
+   "options": [
+    {
+     "t": "Serverless inference",
+     "why": "Wrong: it does not support GPUs, VPC config or data capture."
+    },
+    {
+     "t": "A real-time endpoint with autoscaling and a schedule to scale down",
+     "why": "Right: real-time supports GPU, VPC and data capture, and the scheduled scale-down limits idle instance-hours."
+    },
+    {
+     "t": "Batch Transform",
+     "why": "Wrong: it is offline and has no live endpoint to invoke."
+    },
+    {
+     "t": "A multi-model endpoint on serverless",
+     "why": "Wrong: multi-model endpoints are not supported on serverless."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Serverless lacks GPU, VPC and data capture, so use real-time.",
+   "remember": "Need GPU, VPC, data capture, multiple variants or Model Monitor → real-time endpoint; serverless supports none of them.",
+   "variants": [
+    "Large payload up to 1 GB and scale to zero → asynchronous inference.",
+    "Serverless cold starts hurt a predictable burst → provisioned concurrency, capped at max concurrency.",
+    "Many small sparse-traffic models → multi-model endpoint on real-time."
+   ]
+  },
+  {
+   "id": "sagemaker-010",
+   "source": "5-pipelines-mlops-monitoring-and-governance.md",
+   "q": "A new ML project needs drift monitoring. The team tries to set up SageMaker Model Monitor but the account cannot. What is the AWS-recommended path?",
+   "options": [
+    {
+     "t": "Keep requesting Model Monitor through Service Quotas",
+     "why": "Wrong: Model Monitor is closed to new customers, which is not a quota issue."
+    },
+    {
+     "t": "Use Ground Truth to label drift",
+     "why": "Wrong: Ground Truth builds labeled datasets and is also closed to new customers."
+    },
+    {
+     "t": "Use Debugger rules on the endpoint",
+     "why": "Wrong: Debugger watches training jobs and is in maintenance mode."
+    },
+    {
+     "t": "Open-source monitoring with MLflow and Evidently, EventBridge, SNS and CloudWatch or QuickSight",
+     "why": "Right: this is the AWS-suggested replacement, with data capture feeding scheduled drift checks."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Model Monitor no longer accepts new customers.",
+   "remember": "Model Monitor and Clarify are closed to new customers (from 30 July 2026) → MLflow plus Evidently for drift, SHAP and fmeval for explanations, CloudWatch alarms for alerts.",
+   "variants": [
+    "Bias and explainability needed for a new project → pandas/scikit-learn bias metrics and SHAP, logged to MLflow.",
+    "Drift alarm should trigger retraining → EventBridge starts a Pipelines execution.",
+    "Labels arrive days later → join by inference ID and compute quality metrics on a schedule."
+   ]
+  }
+ ]
+}
