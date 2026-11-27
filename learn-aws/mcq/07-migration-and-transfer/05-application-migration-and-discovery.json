@@ -1,0 +1,104 @@
+{
+ "questions": [
+  {
+   "id": "mgn-001",
+   "skill": "2.1.4",
+   "source": "1-mgn-discovery-migration-hub-strategies-and-scenarios.md",
+   "q": "A company must move 300 on-premises VMware and physical servers to Amazon EC2 with as little change as possible. The cutover window for each application is only minutes. Which service fits?",
+   "options": [
+    { "t": "AWS DMS with ongoing replication", "why": "Wrong: DMS migrates database engines, not whole servers with their OS and applications." },
+    { "t": "AWS DataSync", "why": "Wrong: DataSync copies files and objects, not bootable servers." },
+    { "t": "AWS Application Migration Service (MGN)", "why": "Right: it continuously replicates source servers at block level into a staging area, then converts them to run natively on EC2, so cutover takes minutes." },
+    { "t": "AWS Elastic Disaster Recovery (DRS)", "why": "Wrong: it uses the same replication technology, but it is built for disaster recovery, not migration." }
+   ],
+   "answer": [2],
+   "explain": "Lift-and-shift (rehost) of servers with minimal downtime: MGN.",
+   "remember": "Rehost servers (physical, virtual or cloud) to EC2 with minimal change and minutes of downtime → MGN. Databases → DMS; files → DataSync; DR → Elastic Disaster Recovery.",
+   "variants": [
+    "The goal is a standby copy for disaster recovery, not a move → Elastic Disaster Recovery.",
+    "Only the database must move to a managed engine with continuous replication → DMS (replatform).",
+    "Only file shares must move → DataSync."
+   ]
+  },
+  {
+   "id": "mgn-002",
+   "skill": "2.1.4",
+   "source": "1-mgn-discovery-migration-hub-strategies-and-scenarios.md",
+   "q": "An existing Application Discovery Service customer must inventory its VMware VMs and their CPU, RAM and disk utilization before planning a migration. The team has vCenter access but is not allowed to install any software on the VMs. Which collection method fits?",
+   "options": [
+    { "t": "Agentless Collector deployed as an OVA in vCenter", "why": "Right: it discovers VMs and hosts through vCenter and collects static configuration and utilization without touching the VMs." },
+    { "t": "Discovery Agent on each VM", "why": "Wrong: it needs software installed on every VM, which is not allowed." },
+    { "t": "AWS Replication Agent from MGN", "why": "Wrong: it is installed on the source server and replicates data for migration; it is not an inventory tool." },
+    { "t": "File-based import of an RVTools export", "why": "Wrong: it is a single snapshot, so it gives no ongoing utilization data; the collector is the low-effort path when vCenter access exists." }
+   ],
+   "answer": [0],
+   "explain": "vCenter access and no installs on the VMs: Agentless Collector.",
+   "remember": "Inventory and utilization from vCenter without installing anything → Agentless Collector. It cannot see inside VMs, so no processes or network connections.",
+   "variants": [
+    "Running processes and TCP connections are needed → Discovery Agent.",
+    "Only a one-off spreadsheet of servers exists → file-based import (Migration Hub template or RVTools).",
+    "The customer is new to AWS migration tools → Application Discovery Service is closed to new customers; use AWS Transform."
+   ]
+  },
+  {
+   "id": "mgn-003",
+   "skill": "2.1.4",
+   "source": "1-mgn-discovery-migration-hub-strategies-and-scenarios.md",
+   "q": "Before a migration, an architect must group on-premises servers into applications based on which servers talk to each other, and also needs the running processes on each server. Which Application Discovery Service option provides this?",
+   "options": [
+    { "t": "Agentless Collector", "why": "Wrong: it works through vCenter and cannot see inside VMs, so it has no process or connection data." },
+    { "t": "File-based import of a Migration Hub template", "why": "Wrong: a single snapshot with no connections or processes." },
+    { "t": "Migration Hub status tracking", "why": "Wrong: it tracks migration progress from tools such as MGN and DMS; it does not collect server data." },
+    { "t": "Discovery Agent installed on each server", "why": "Right: it collects time-series performance, inbound and outbound TCP connections and running processes, which feed network dependency mapping." }
+   ],
+   "answer": [3],
+   "explain": "Processes and network dependencies need the Discovery Agent.",
+   "remember": "Need processes or server-to-server connections → Discovery Agent. Low effort with vCenter only → Agentless Collector.",
+   "variants": [
+    "Software cannot be installed on the servers → Agentless Collector (accepting no dependency data).",
+    "Physical (non-VMware) servers must be discovered with performance data → Discovery Agent, which works on VMs and physical servers.",
+    "Discovery is about to start for the first time → set the Migration Hub home Region first."
+   ]
+  },
+  {
+   "id": "mgn-004",
+   "skill": "2.1.4",
+   "source": "1-mgn-discovery-migration-hub-strategies-and-scenarios.md",
+   "q": "A team used AWS Application Migration Service to cut over an application to EC2 last month. The new instances run fine, but the bill still shows replication servers and staging EBS volumes for the migrated servers. What should they do?",
+   "options": [
+    { "t": "Stop the production EC2 instances outside business hours", "why": "Wrong: the extra cost is the replication resources, not the production instances." },
+    { "t": "Finalize the cutover for the migrated servers", "why": "Right: finalizing cutover stops replication and cleans up the replication servers and staging volumes." },
+    { "t": "Edit the replication template to use a cheaper EBS volume type", "why": "Wrong: template changes apply to newly added servers and do not stop existing replication." },
+    { "t": "Launch new test instances to validate the application again", "why": "Wrong: test launches add resources; replication keeps running." }
+   ],
+   "answer": [1],
+   "explain": "Replication keeps costing until the cutover is finalized.",
+   "remember": "After a successful MGN cutover, finalize the cutover so replication stops and staging resources are removed; then disconnect and archive finished servers.",
+   "variants": [
+    "The app must be validated before cutover without stopping replication → launch test instances.",
+    "Encryption or bandwidth settings must apply to servers added later → edit the replication template.",
+    "Agents or scripts must run on the new instances after launch → post-launch template."
+   ]
+  },
+  {
+   "id": "mgn-005",
+   "skill": "2.1.4",
+   "source": "1-mgn-discovery-migration-hub-strategies-and-scenarios.md",
+   "q": "A legacy application runs on two on-premises app servers with an Oracle database. The company wants the app servers moved as-is to EC2 and the database moved to Amazon Aurora with continuous replication until cutover. Which combination fits?",
+   "options": [
+    { "t": "MGN for the app servers and the database server, then convert to Aurora later", "why": "Wrong: MGN rehosts the Oracle server onto EC2; it does not move data into a managed engine like Aurora." },
+    { "t": "MGN for the app servers; DMS with Schema Conversion for the database", "why": "Right: MGN rehosts the servers, and DMS (with Schema Conversion for the engine change) replicates the database into Aurora." },
+    { "t": "DMS for both the app servers and the database", "why": "Wrong: DMS migrates databases, not whole servers." },
+    { "t": "DataSync for the app servers; MGN for the database", "why": "Wrong: DataSync copies files, not bootable servers, and MGN does not migrate into managed database engines." }
+   ],
+   "answer": [1],
+   "explain": "Servers → MGN (rehost); database into a managed engine → DMS (replatform).",
+   "remember": "Split by asset: servers as-is → MGN; databases into RDS/Aurora with continuous replication → DMS, plus Schema Conversion when the engine changes.",
+   "variants": [
+    "The database stays Oracle on EC2 with no engine change → MGN can rehost that server too.",
+    "The app must be broken into microservices → refactor strategy, not rehost.",
+    "Large file shares also move → DataSync."
+   ]
+  }
+ ]
+}

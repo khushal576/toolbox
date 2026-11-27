@@ -36,7 +36,7 @@ Goal: the owner reads one service months later and can answer any exam (DEA-C01,
 - **Plan first** (topics/skills and the count from the tier table in `MCQ-GUIDE.md`), wait for approval, then write. Core services 30–40, important 18–25, supporting 8–12.
 - DEA-C01 style: short scenario, one decision, plausible wrong options, a `why` for every option, plus `remember` and `variants`.
 - Every fact from the notes; nothing marked "(verify)" may be a correct answer. Ids are permanent (browser progress is keyed by id) — never renumber.
-- Done so far: 49 services, 943 questions (see `mcq/`); every tier A service is done. Not yet written: CloudWatch, CloudTrail, DMS, Elastic Load Balancing, and the tier D services. CI/CD has no question from note 4 (CodeCommit, mostly "(verify)").
+- Done: all 65 services have questions, 1090 in total (see `mcq/`). New notes need a new question file. Kendra has no skill rows in EXAM-COVERAGE.md; its questions use the closest skills. CI/CD has no question from note 4 (CodeCommit, mostly "(verify)").
 
 ## Gotchas
 - `tests/unit/test_learn_aws.py` checks question shape, unique ids, valid answers and that every `source` note exists — it is the only validator now.

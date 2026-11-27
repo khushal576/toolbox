@@ -1,0 +1,102 @@
+{
+ "questions": [
+  {
+   "id": "snow-001",
+   "skill": "2.1.4",
+   "source": "1-snow-family-status-devices-jobs-security-and-scenarios.md",
+   "q": "In 2026 a company that has never used Snow devices must move 400 TB of video archives from a site with a weak, expensive network link. They want a physical transfer and must keep custody of their own drives at all times. What should they use?",
+   "options": [
+    { "t": "Order a Snowball Edge Storage Optimized device", "why": "Wrong: Snowball Edge is no longer available to new customers, and AWS takes custody of the device once it is shipped back." },
+    { "t": "AWS DataSync over the existing link", "why": "Wrong: DataSync is the online option; over a weak, expensive link 400 TB would take too long and cost too much." },
+    { "t": "AWS Data Transfer Terminal", "why": "Right: you reserve a slot, bring your own storage devices to the terminal, upload over a very fast connection, and keep custody the whole time." },
+    { "t": "AWS Transfer Family SFTP endpoint", "why": "Wrong: it is for partners pushing files over SFTP/FTPS/FTP/AS2, still over the same weak network." }
+   ],
+   "answer": [2],
+   "explain": "New customer + physical transfer + keep custody of own devices: Data Transfer Terminal.",
+   "remember": "Snowball Edge is closed to new customers. For new designs: online → DataSync, physical with your own devices → Data Transfer Terminal, edge compute → Outposts.",
+   "variants": [
+    "The network is good and the transfer can finish in time → DataSync.",
+    "The question says a Snow device is already in use by an existing customer → Snow Family is still a valid answer.",
+    "The need is compute at a disconnected site, not transfer → Outposts."
+   ]
+  },
+  {
+   "id": "snow-002",
+   "skill": "2.1.4",
+   "source": "1-snow-family-status-devices-jobs-security-and-scenarios.md",
+   "q": "A team must copy 100 TB of files from its data center to S3 within one month. The site has a dedicated 1 Gbps link with spare capacity. Which approach is simplest?",
+   "options": [
+    { "t": "AWS DataSync over the existing link", "why": "Right: 100 TB over 1 Gbps at about 80% efficiency takes roughly 11-12 days, well inside the deadline, with no shipping or device logistics." },
+    { "t": "An offline device job shipped to AWS", "why": "Wrong: offline transfer only wins when online transfer takes too long or costs too much; here it adds shipping and days to weeks of logistics." },
+    { "t": "AWS Database Migration Service", "why": "Wrong: DMS is for databases, not file transfers." },
+    { "t": "AWS Application Migration Service (MGN)", "why": "Wrong: MGN moves entire servers, not a file set into S3." }
+   ],
+   "answer": [0],
+   "explain": "Do the network time math first: if the link finishes in time, use DataSync.",
+   "remember": "Time = data ÷ usable bandwidth. If online transfer fits the deadline and budget → DataSync; only when it takes too long or costs too much → offline (Snow if available, or Data Transfer Terminal).",
+   "variants": [
+    "The same 100 TB over a 100 Mbps link (about 110 days) with a one-month deadline → offline method.",
+    "500 TB from a remote site with a 50 Mbps link → offline method, because online would take years.",
+    "Only a small one-time upload → S3 console or CLI."
+   ]
+  },
+  {
+   "id": "snow-003",
+   "skill": "2.1.4",
+   "source": "1-snow-family-status-devices-jobs-security-and-scenarios.md",
+   "q": "An existing Snow customer loaded the bulk of a file share onto devices and shipped them to AWS. Users keep changing files until the cutover weekend, several weeks later. How should the changes made after loading reach S3?",
+   "options": [
+    { "t": "Order a second Snow job every week until cutover", "why": "Wrong: each job takes days to weeks end-to-end, so it can never keep up with ongoing changes." },
+    { "t": "The Snow device keeps replicating changes after it is shipped back", "why": "Wrong: a Snow job is a one-time offline copy; it has no change data capture." },
+    { "t": "Storage Gateway in front of the file share", "why": "Wrong: Storage Gateway gives local protocol access with a cache to S3; it is not the migration tool for syncing a delta before cutover." },
+    { "t": "Run AWS DataSync for the delta until cutover", "why": "Right: the standard pattern is Snow for the bulk first, then DataSync (or DMS CDC for databases) for the changes." }
+   ],
+   "answer": [3],
+   "explain": "Snow is one-time; the delta goes online with DataSync or DMS.",
+   "remember": "Bulk first offline, delta online: Snow (or another offline method) for the bulk load, then DataSync for files or DMS CDC for databases until cutover.",
+   "variants": [
+    "The source is a database that keeps changing → DMS with CDC after the bulk load.",
+    "There are no changes after the load → the offline job alone is enough.",
+    "The link is fast enough for the whole data set → DataSync from the start, no device needed."
+   ]
+  },
+  {
+   "id": "snow-004",
+   "source": "1-snow-family-status-devices-jobs-security-and-scenarios.md",
+   "q": "A security team will approve shipping regulated data on a Snowball Edge device only if a stolen device cannot reveal the encryption keys. Which statement about Snowball Edge answers their concern?",
+   "options": [
+    { "t": "Data is encrypted only after AWS imports it into S3, using SSE-S3", "why": "Wrong: data is encrypted on the device itself, not only after import." },
+    { "t": "Data is encrypted on the device with 256-bit keys managed in AWS KMS, and the keys are not stored on the device", "why": "Right: the keys stay with KMS, so a lost or stolen device does not carry the keys needed to read the data." },
+    { "t": "The team must encrypt the files client-side because the device stores data in plain text", "why": "Wrong: the device encrypts data by default; extra client-side encryption is optional, not required." },
+    { "t": "The encryption key is printed on the E Ink shipping label so AWS can import the data", "why": "Wrong: the E Ink label shows the shipping address; keys are never shipped with the device." }
+   ],
+   "answer": [1],
+   "explain": "Snow encryption uses KMS-managed 256-bit keys that never live on the device.",
+   "remember": "Snow device security: data encrypted on the device with KMS-managed 256-bit keys, keys not stored on the device. Use a KMS customer managed key for more control; losing KMS access blocks the import.",
+   "variants": [
+    "The team wants to control and audit the key themselves → choose a KMS customer managed key for the job.",
+    "The question asks who may create jobs → IAM controls it, and CloudTrail logs the API calls.",
+    "The question asks how the job writes to the bucket → an IAM role on the job grants S3 access."
+   ]
+  },
+  {
+   "id": "snow-005",
+   "source": "1-snow-family-status-devices-jobs-security-and-scenarios.md",
+   "q": "A new design must run machine-learning inference on a research ship that has no internet connection for weeks. The company has no existing Snow devices. Which AWS option does AWS point new customers to for this edge compute need?",
+   "options": [
+    { "t": "AWS DataSync", "why": "Wrong: DataSync is for online transfers; it does not run compute at a disconnected site." },
+    { "t": "AWS Data Transfer Terminal", "why": "Wrong: it is a physical site for uploading your own storage devices, not compute on board a ship." },
+    { "t": "AWS Outposts", "why": "Right: AWS points new customers to Outposts for edge computing, now that Snowball Edge is closed to new customers." },
+    { "t": "Snowball Edge Compute Optimized", "why": "Wrong: it is the legacy edge-compute answer, and Snowball Edge is no longer available to new customers." }
+   ],
+   "answer": [2],
+   "explain": "Edge compute for a new customer: Outposts; Snowball Edge compute is legacy.",
+   "remember": "Edge compute → Outposts (current); Snowball Edge Compute Optimized only if the customer already uses Snow. Treat the Snow Family as legacy unless the question says a device is already in use.",
+   "variants": [
+    "An existing Snow customer needs inference on the ship → Snowball Edge Compute Optimized is still possible.",
+    "The ship only needs to bring data back, not process it → Data Transfer Terminal or a partner solution.",
+    "The ship gets a good network link → DataSync for the transfer."
+   ]
+  }
+ ]
+}

@@ -1,0 +1,122 @@
+{
+  "questions": [
+    {
+      "id": "waf-001",
+      "skill": "1.2.8",
+      "source": "1-waf.md",
+      "q": "A public data API on an API Gateway REST API stage is receiving SQL injection attempts in query strings. The team wants a managed fix with little rule writing. What should they do?",
+      "options": [
+        { "t": "Enable Shield Advanced on the API", "why": "Wrong: Shield focuses on L3/L4 DDoS, it does not inspect request content for SQLi." },
+        { "t": "Tighten the security group of the backend", "why": "Wrong: security groups filter ports and sources, not HTTP request content." },
+        { "t": "Associate a web ACL with the stage using the AWS managed Core rule set and SQL database rule groups", "why": "Right: WAF inspects requests at L7 and these managed groups target SQLi and bad inputs." },
+        { "t": "Add an API Gateway usage plan with API keys", "why": "Wrong: usage plans set per-client quotas; they do not inspect request content." }
+      ],
+      "answer": [2],
+      "explain": "Request-content attacks (SQLi, XSS) on HTTP endpoints are WAF's job, ideally with AWS managed rule groups.",
+      "remember": "SQLi / XSS / bad inputs on a public HTTP endpoint → AWS WAF managed rules on the API Gateway stage, ALB or CloudFront. Shield and security groups do not look inside requests.",
+      "variants": [
+        "The attack is a volumetric UDP or SYN flood → Shield (Standard is automatic; Advanced for more).",
+        "The endpoint is an ALB in front of Superset or Grafana → same answer, attach the web ACL to the ALB.",
+        "The threat is bad IP ranges → WAF IP set (up to 10,000 CIDRs) or geo match rule."
+      ]
+    },
+    {
+      "id": "waf-002",
+      "skill": "1.2.8",
+      "source": "1-waf.md",
+      "q": "One client is flooding the `/login` path of an application behind an ALB with thousands of requests per minute. Other paths are fine. Which control limits this abuse with the least impact on normal users?",
+      "options": [
+        { "t": "A WAF rate-based rule keyed on source IP with a scope-down statement for `/login`", "why": "Right: it counts requests per IP on that path and blocks the source only while it is over the limit." },
+        { "t": "A network ACL deny rule for the whole subnet range of the ALB", "why": "Wrong: NACLs work at subnet level, not per HTTP path, and this would block legitimate users too." },
+        { "t": "An API Gateway usage plan quota", "why": "Wrong: usage plans are API-key quotas for API Gateway, not edge-level traffic control on an ALB." },
+        { "t": "Shield Standard", "why": "Wrong: it is already on and handles common L3/L4 attacks; an HTTP flood on one path looks like normal HTTP." }
+      ],
+      "answer": [0],
+      "explain": "Rate-based rules count requests per aggregation key over a window and block above the limit; scope them to the hot path.",
+      "remember": "HTTP flood from one source on one path → WAF rate-based rule (key: IP, forwarded IP or a custom key like `x-api-key`) scoped to that path. It unblocks automatically when the rate drops.",
+      "variants": [
+        "Clients sit behind a proxy → aggregate on forwarded IP (X-Forwarded-For).",
+        "Limit per customer, not per IP → custom key on a header such as `x-api-key`.",
+        "Need per-client daily quotas → API Gateway usage plans, with WAF for abuse."
+      ]
+    },
+    {
+      "id": "waf-003",
+      "skill": "1.2.8",
+      "source": "1-waf.md",
+      "q": "An ingestion service runs behind a Network Load Balancer. Security now requires L7 request filtering and bot protection for its HTTP traffic. What is the right design?",
+      "options": [
+        { "t": "Associate a WAF web ACL directly with the NLB", "why": "Wrong: WAF does not attach to Network Load Balancers." },
+        { "t": "Rely on Shield Standard", "why": "Wrong: Shield covers L3/L4 DDoS, not L7 request filtering or bots." },
+        { "t": "Add security group rules to the targets", "why": "Wrong: security groups filter ports and sources, not HTTP content or bots." },
+        { "t": "Put an ALB or CloudFront in front and attach the web ACL there", "why": "Right: ALB and CloudFront are supported WAF resource types." }
+      ],
+      "answer": [3],
+      "explain": "WAF only attaches to supported resource types; for an NLB, front it with ALB or CloudFront.",
+      "remember": "WAF attaches to CloudFront (global, web ACL in us-east-1), ALB, API Gateway REST stages, AppSync, Cognito, App Runner, Verified Access, Amplify. Not NLB, CLB or EC2 → put a supported resource in front.",
+      "variants": [
+        "The resource is a CloudFront distribution → create the web ACL with CLOUDFRONT scope in us-east-1.",
+        "The resource is EC2 directly → front it with an ALB or CloudFront.",
+        "Private data services such as Redshift, RDS or MSK → not WAF targets; use VPC, security groups, IAM, TLS, PrivateLink."
+      ]
+    },
+    {
+      "id": "waf-004",
+      "source": "2-shield-firewall-manager-and-scenarios.md",
+      "q": "A company's public data download site on CloudFront has been hit by large DDoS attacks. It wants near-real-time attack diagnostics, access to AWS DDoS experts during attacks, and credits for scaling charges caused by attacks. What should it use?",
+      "options": [
+        { "t": "Shield Standard, which is already enabled", "why": "Wrong: it is free and automatic but gives no per-customer visibility, no response team and no cost protection." },
+        { "t": "Shield Advanced with the CloudFront distribution added as a protected resource", "why": "Right: Advanced adds enhanced detection, the Shield Response Team and DDoS cost protection." },
+        { "t": "AWS WAF rate-based rules only", "why": "Wrong: they help with L7 floods but give no SRT access or cost protection." },
+        { "t": "Amazon GuardDuty", "why": "Wrong: GuardDuty detects threats; it does not mitigate DDoS or offer cost credits." }
+      ],
+      "answer": [1],
+      "explain": "SRT access, detailed attack diagnostics and DDoS cost protection are Shield Advanced features.",
+      "remember": "Shield Standard = free, automatic L3/L4 protection with no extras. Shield Advanced (about $3,000/month, 1-year commitment, resources added explicitly) = enhanced detection, SRT, cost protection, WAF fees included for protected resources.",
+      "variants": [
+        "Only basic protection from common SYN/UDP floods, no budget → Shield Standard (plus CloudFront and Route 53 in front).",
+        "Cost protection credits are wanted → only if the 1-year Advanced commitment is met.",
+        "The attack is an HTTP flood → WAF rate-based rules plus bot rules, or Advanced automatic L7 mitigation."
+      ]
+    },
+    {
+      "id": "waf-005",
+      "source": "2-shield-firewall-manager-and-scenarios.md",
+      "q": "An organization with 50 AWS accounts must apply the same WAF baseline to every ALB and API Gateway stage, including ones created later, and see compliance per account. What is the lowest-effort approach?",
+      "options": [
+        { "t": "Create a web ACL in each account by hand and review them quarterly", "why": "Wrong: high operations effort and new resources are not covered automatically." },
+        { "t": "Shield Advanced protection groups", "why": "Wrong: protection groups group resources for DDoS detection, they do not deploy WAF rules across accounts." },
+        { "t": "A Firewall Manager WAF policy with auto-remediation", "why": "Right: it deploys and enforces web ACLs across the organization and shows a compliance dashboard." },
+        { "t": "Security Hub findings", "why": "Wrong: Security Hub reports compliance findings; it does not deploy or enforce WAF rules." }
+      ],
+      "answer": [2],
+      "explain": "Firewall Manager centrally applies WAF (and other firewall) policies across an AWS Organization.",
+      "remember": "Same firewall rules across many accounts → Firewall Manager. Needs Organizations (all features), a Firewall Manager admin account and AWS Config in member accounts; auto-remediation covers new resources.",
+      "variants": [
+        "The central rules must run before each account's own rules → first rule groups in the WAF policy.",
+        "The org-wide control is security groups, Network Firewall or DNS Firewall → still Firewall Manager (other policy types).",
+        "Only one account → a single web ACL can be shared by up to 100 resources per type in a Region."
+      ]
+    },
+    {
+      "id": "waf-006",
+      "skill": "1.2.8",
+      "source": "1-waf.md",
+      "q": "After enabling the AWS managed Core rule set on a data API, one rule in it blocks valid requests from a partner. The rest of the group is useful. What is the best fix?",
+      "options": [
+        { "t": "Override that single rule's action to Count (rule action override) or add a scope-down exception", "why": "Right: it removes the false positive while keeping the rest of the group blocking." },
+        { "t": "Remove the Core rule set from the web ACL", "why": "Wrong: it drops all of the group's protection to fix one rule." },
+        { "t": "Change the web ACL default action to Allow", "why": "Wrong: the default action only applies when no rule matches; the managed rule still terminates with Block." },
+        { "t": "Raise the web ACL WCU limit to 5,000", "why": "Wrong: WCUs measure rule complexity and capacity; they do not change which requests match." }
+      ],
+      "answer": [0],
+      "explain": "Use per-rule action overrides to Count to exclude false positives without disabling the managed group.",
+      "remember": "Managed rule false positive → override that one rule to Count or scope it down. Testing a new rule or group → run it in Count first, watch logs/metrics, then switch to Block.",
+      "variants": [
+        "A new rule must be tested safely → set its action to Count first (Count does not terminate evaluation).",
+        "Expensive groups like Bot Control or ATP → scope-down statements to paths like `/login`.",
+        "WAF logs must be analysed with SQL → log to an S3 bucket named `aws-waf-logs-...` and query with Athena."
+      ]
+    }
+  ]
+}

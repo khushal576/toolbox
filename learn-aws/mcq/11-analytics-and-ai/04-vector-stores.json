@@ -1,0 +1,124 @@
+{
+ "questions": [
+  {
+   "id": "vector-001",
+   "skill": "2.1.1",
+   "source": "2-aws-vector-store-options-and-decision-guide.md",
+   "q": "A company has 500 million document chunk embeddings for a RAG archive. Users search it only a few times per minute, sub-second latency is fine, and cost is the main driver. The team does not want to provision infrastructure. Which vector store fits best?",
+   "options": [
+    { "t": "MemoryDB with an HNSW vector index", "why": "Wrong: everything lives in RAM, the most expensive option, and vector search is single shard only, so this corpus would not fit cheaply." },
+    { "t": "OpenSearch Service managed domain with k-NN indexes", "why": "Wrong: fast and good at high QPS, but always-on nodes and graph memory cost money even when queries are rare." },
+    { "t": "Amazon S3 Vectors", "why": "Right: storage-based, pay-per-use pricing, up to 2 billion vectors per index, sub-second queries and no infrastructure to provision." },
+    { "t": "Aurora PostgreSQL with pgvector", "why": "Wrong: HNSW indexes are memory-hungry and a single cluster is strained by hundreds of millions of vectors." }
+   ],
+   "answer": [2],
+   "explain": "Huge corpus, rare queries, cost first, no servers: S3 Vectors.",
+   "remember": "Very large vector set, low or medium QPS, sub-second is enough and cost matters most → S3 Vectors. Latency and cost run in opposite orders across the stores.",
+   "variants": [
+    "Thousands of QPS with single-digit ms latency → OpenSearch (or MemoryDB if it fits in RAM).",
+    "Queries must mix keywords and vectors with aggregations → OpenSearch, not S3 Vectors.",
+    "A small hot subset needs low latency → keep it in OpenSearch and the long tail in S3 Vectors (hot/cold pattern)."
+   ]
+  },
+  {
+   "id": "vector-002",
+   "skill": "2.1.3",
+   "source": "2-aws-vector-store-options-and-decision-guide.md",
+   "q": "A chatbot gets many near-duplicate questions. The team wants to store (question embedding → answer) and return a cached answer in milliseconds when a new question is close enough, skipping the LLM call. The data must survive a node failure. Which store fits best?",
+   "options": [
+    { "t": "MemoryDB with vector search", "why": "Right: durable in-memory Valkey/Redis-compatible store with the lowest latency, a stated use case being semantic caching of LLM answers." },
+    { "t": "Amazon S3 Vectors", "why": "Wrong: sub-second (about 100 ms at best) is too slow for a millisecond cache and it is not built for high QPS." },
+    { "t": "DocumentDB with an IVFFlat index", "why": "Wrong: it suits apps that already keep JSON documents there, not a millisecond semantic cache." },
+    { "t": "Neptune Analytics vector index", "why": "Wrong: it is for combining graph relationships with similarity (GraphRAG), not a low-latency cache." }
+   ],
+   "answer": [0],
+   "explain": "Semantic cache, millisecond latency, durable: MemoryDB vector search.",
+   "remember": "Lowest latency, semantic cache or real-time similarity, and the vector set fits in RAM → MemoryDB vector search (durable via a multi-AZ transaction log).",
+   "variants": [
+    "The vector set must scale beyond one shard → choose OpenSearch, because MemoryDB vector search is single shard only.",
+    "An existing MemoryDB cluster needs vector search → create a new cluster (optionally from a snapshot); existing clusters cannot be modified to enable it.",
+    "The corpus is huge and cost-sensitive → avoid MemoryDB (RAM is expensive); use S3 Vectors."
+   ]
+  },
+  {
+   "id": "vector-003",
+   "skill": "2.1.8",
+   "source": "2-aws-vector-store-options-and-decision-guide.md",
+   "q": "An Aurora PostgreSQL table holds product embeddings with an HNSW index. A query asks for the 10 most similar items with a selective filter (`category = 'rare'`), but it often returns only 2 or 3 rows. What is the best fix?",
+   "options": [
+    { "t": "Drop the HNSW index and switch to IVFFlat with more lists", "why": "Wrong: IVFFlat generally has lower recall and does not fix filtering after the scan." },
+    { "t": "Move the embeddings to S3 Vectors", "why": "Wrong: a full migration and re-index is not needed for a filtering problem that pgvector itself solves." },
+    { "t": "Increase the Top-K to 10,000 in the application", "why": "Wrong: a brute-force workaround that costs more and still does not guarantee enough matches." },
+    { "t": "Upgrade to pgvector 0.8.0 and enable iterative index scans (`hnsw.iterative_scan`)", "why": "Right: iterative scans keep scanning the HNSW index until enough rows pass the filter." }
+   ],
+   "answer": [3],
+   "explain": "Selective filters applied after an HNSW scan drop candidates; pgvector 0.8.0 iterative scans fix it.",
+   "remember": "Too few results with a selective filter = post-filtering problem → pre-filter, or in pgvector use 0.8.0 iterative scans.",
+   "variants": [
+    "The filter leaves only a few hundred candidate rows → exact search over them is fine and gives perfect recall.",
+    "The same problem in a generic store → pre-filtering (restrict candidates first, then search).",
+    "pgvector HNSW will not install at all → HNSW needs pgvector 0.5.0 or later."
+   ]
+  },
+  {
+   "id": "vector-004",
+   "skill": "2.4.6",
+   "source": "2-aws-vector-store-options-and-decision-guide.md",
+   "q": "A team builds an Amazon Bedrock knowledge base and wants binary embeddings to cut vector storage by about 32x. Which vector store should the knowledge base use?",
+   "options": [
+    { "t": "Amazon S3 Vectors", "why": "Wrong: S3 Vectors stores float32 only, with no binary vectors." },
+    { "t": "OpenSearch (Serverless vector collection or managed domain)", "why": "Right: in Bedrock knowledge bases, binary vectors are supported only with OpenSearch." },
+    { "t": "Aurora PostgreSQL with pgvector", "why": "Wrong: a supported KB store, but not the one that supports binary vectors in knowledge bases." },
+    { "t": "MemoryDB with vector search", "why": "Wrong: MemoryDB is not a Bedrock knowledge base vector store at all." }
+   ],
+   "answer": [1],
+   "explain": "Binary embeddings in a Bedrock KB → OpenSearch only.",
+   "remember": "Bedrock KB + binary embeddings → OpenSearch. KB stores include OpenSearch, S3 Vectors, Aurora PostgreSQL, Neptune Analytics and some third parties, but not MemoryDB or DocumentDB.",
+   "variants": [
+    "The KB uses a managed OpenSearch domain → it needs the faiss engine and must be a public domain (no VPC domains).",
+    "The KB must follow relationships between entities → Neptune Analytics (GraphRAG).",
+    "Cheapest KB store for a large, rarely queried corpus → S3 Vectors (watch its tighter KB metadata limits)."
+   ]
+  },
+  {
+   "id": "vector-005",
+   "skill": "2.4.6",
+   "source": "1-embeddings-and-vector-search-concepts.md",
+   "q": "A RAG pipeline indexed 20 million chunks with Titan Text Embeddings V2. The team switches query embedding to Cohere Embed, which also outputs 1,024 dimensions. Search quality collapses. What should they do?",
+   "options": [
+    { "t": "Change the index metric from cosine to Euclidean", "why": "Wrong: the metric is not the cause; vectors from different models live in different spaces." },
+    { "t": "Add a reranker on top of the current results", "why": "Wrong: a reranker re-scores candidates, but the candidates themselves are wrong because the vectors are not comparable." },
+    { "t": "Re-embed all chunks with the new model into a new index", "why": "Right: index and query must use the same model; changing the model means re-embedding everything." },
+    { "t": "Nothing; the dimensions match, so the vectors are comparable", "why": "Wrong: equal dimensions do not make vectors from different models comparable." }
+   ],
+   "answer": [2],
+   "explain": "Different embedding models produce different vector spaces: re-embed into a new index.",
+   "remember": "Index and query must use the same embedding model and dimension. Changing the model = re-embed everything into a new index.",
+   "variants": [
+    "Ingestion fails with errors after a model change → likely a dimension mismatch.",
+    "Rankings look odd with the same model → check the metric matches what the model recommends.",
+    "Moving to another store with the same model and dimension → vectors can be exported and re-imported without re-embedding."
+   ]
+  },
+  {
+   "id": "vector-006",
+   "skill": "2.1.8",
+   "source": "1-embeddings-and-vector-search-concepts.md",
+   "q": "A team creates a vector index on an empty table before any data loads. The corpus will grow to tens of millions of vectors, queries are frequent, and they want the best latency and recall. Memory is not a constraint. Which index type fits?",
+   "options": [
+    { "t": "IVFFlat", "why": "Wrong: it clusters vectors into lists, so it needs data before building and generally has lower recall than HNSW." },
+    { "t": "HNSW", "why": "Right: graph index with the best query speed and recall and no training step; its cost is high memory, which is acceptable here." },
+    { "t": "Exact k-NN (FLAT, brute force)", "why": "Wrong: perfect recall but it compares every vector, so it is slow at tens of millions of vectors." },
+    { "t": "Binary embeddings with Hamming distance", "why": "Wrong: saves storage at the cost of precision, which works against the best-recall goal." }
+   ],
+   "answer": [1],
+   "explain": "Large, frequently queried, best recall, memory available, no training data yet: HNSW.",
+   "remember": "HNSW = best latency and recall, no training, high memory. IVF/IVFFlat = less memory and faster build, needs data first, lower recall. Exact k-NN = perfect recall for small sets.",
+   "variants": [
+    "The dataset is only a few thousand vectors → exact k-NN is fast enough and gives perfect recall.",
+    "Memory is the bottleneck and some recall loss is fine → IVF, quantization, smaller dimensions or S3 Vectors.",
+    "HNSW recall is too low → raise efSearch (query time) or M / efConstruction (build time)."
+   ]
+  }
+ ]
+}

@@ -1,0 +1,81 @@
+{
+  "questions": [
+    {
+      "id": "wat-001",
+      "skill": "1.3.2",
+      "source": "1-well-architected-framework-and-tool.md",
+      "q": "A Well-Architected review of a nightly ETL pipeline finds that failed jobs are not retried, there is no dead-letter queue, and reruns create duplicate rows. Which pillar do these findings belong to?",
+      "options": [
+        { "t": "Performance Efficiency", "why": "Wrong: this pillar is about using resources efficiently (right-sizing, partitioning, columnar formats), not recovering from failure." },
+        { "t": "Cost Optimization", "why": "Wrong: this pillar is about avoiding unnecessary spend, such as lifecycle policies and Spot." },
+        { "t": "Reliability", "why": "Right: recovering from failure with retries, DLQs and idempotent jobs is the Reliability pillar." },
+        { "t": "Sustainability", "why": "Wrong: this pillar is about reducing environmental impact, such as efficient compute and deleting unused data." }
+      ],
+      "answer": [2],
+      "explain": "Retries, DLQs and idempotent reruns are failure handling, which maps to Reliability.",
+      "remember": "Retries, DLQs, idempotent jobs, Multi-AZ, backups and DR → Reliability. Monitoring, alarms, runbooks and IaC for pipelines → Operational Excellence.",
+      "variants": [
+        "The pipeline has no alarms or runbooks → Operational Excellence.",
+        "Data is not encrypted with KMS or access is too broad → Security.",
+        "Spark clusters are oversized and data is not partitioned → Performance Efficiency."
+      ]
+    },
+    {
+      "id": "wat-002",
+      "skill": "1.2.4",
+      "source": "1-well-architected-framework-and-tool.md",
+      "q": "During a Well-Architected review of a data lake, the team discusses S3 lifecycle policies to tier old data and running EMR task nodes on Spot. Which pillar's questions are they answering?",
+      "options": [
+        { "t": "Cost Optimization", "why": "Right: lifecycle policies, Spot and Savings Plans exist to avoid unnecessary spend." },
+        { "t": "Reliability", "why": "Wrong: Reliability covers recovery from failure (retries, Multi-AZ, backups), not spend." },
+        { "t": "Security", "why": "Wrong: Security covers IAM, encryption, Lake Formation and audit, not storage tiering for price." },
+        { "t": "Operational Excellence", "why": "Wrong: this pillar covers running and monitoring systems, IaC and runbooks." }
+      ],
+      "answer": [0],
+      "explain": "Lifecycle tiering and Spot are cost levers, so they map to Cost Optimization.",
+      "remember": "Lifecycle policies, Spot, Savings Plans, serverless vs provisioned and less data transfer → Cost Optimization.",
+      "variants": [
+        "The goal is stated as reducing environmental impact (Graviton, deleting unused data) → Sustainability.",
+        "The goal is choosing the right engine or file format for query speed → Performance Efficiency."
+      ]
+    },
+    {
+      "id": "wat-003",
+      "source": "1-well-architected-framework-and-tool.md",
+      "q": "A platform team wants to clean up an old workload in the AWS Well-Architected Tool. A developer in another account it was shared with tries to delete it, and the auditors still want the review history kept. What should the team know?",
+      "options": [
+        { "t": "Any account the workload is shared with can delete it, and its milestones are kept for audit", "why": "Wrong: only the owner can delete a workload, and deleting removes its milestones." },
+        { "t": "Deleting the workload keeps the milestones, which can be restored for 30 days", "why": "Wrong: deleting removes all milestones and cannot be undone." },
+        { "t": "Removing the share deletes the workload in the owner's account too", "why": "Wrong: a share only grants access to the workload; it does not control deletion." },
+        { "t": "Only the owner can delete it, and deleting also removes all its milestones and cannot be undone", "why": "Right: delete is owner-only and permanent, including every milestone, so keep the workload if the history is needed." }
+      ],
+      "answer": [3],
+      "explain": "Workload delete is owner-only, removes all milestones and is irreversible.",
+      "remember": "Only the workload owner can delete it; deleting wipes all its milestones permanently, so keep the workload while review history is needed.",
+      "variants": [
+        "Who is shown as a workload's owner on the Workloads page → its AWS account ID.",
+        "Other teams need access to the review → share it with accounts, users, an AWS Organization or OUs.",
+        "You want to track progress over time instead of deleting → keep the workload and its milestones."
+      ]
+    },
+    {
+      "id": "wat-004",
+      "source": "1-well-architected-framework-and-tool.md",
+      "q": "A Well-Architected review flags a high risk issue (HRI) on a reporting pipeline. The business decides not to fix it because the workload is retiring in three months. What is the recommended way to handle this in the tool?",
+      "options": [
+        { "t": "Mark the best practice as met so the HRI disappears from the improvement plan", "why": "Wrong: a best practice should be marked met only once it is actually fixed." },
+        { "t": "Document the reason in the workload notes and record the business approval for not fixing it", "why": "Right: AWS suggests documenting reasons and recording business approval when you choose not to fix a risk." },
+        { "t": "Delete the workload and create a new one without that question", "why": "Wrong: deleting is permanent, removes all milestones and hides the risk instead of recording the decision." },
+        { "t": "Leave the question unanswered so no risk is shown", "why": "Wrong: unanswered questions hide the decision; the risk is not reviewed or recorded." }
+      ],
+      "answer": [1],
+      "explain": "Not fixing a risk is allowed, but the reason and the business approval should be recorded.",
+      "remember": "Risks come from your answers. Fixed → mark the best practice met. Cannot apply it → document the reason in notes. Chose not to fix → record business approval.",
+      "variants": [
+        "The improvement status values to know → None, Not Started, In Progress, Complete, Risk Acknowledged.",
+        "The issue would cause a lesser negative impact → it is a medium risk issue (MRI), not an HRI.",
+        "Leadership asks for the biggest risks → review the HRIs first."
+      ]
+    }
+  ]
+}

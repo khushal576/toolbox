@@ -1,0 +1,101 @@
+{
+ "questions": [
+  {
+   "id": "amazonq-001",
+   "source": "1-q-business-q-apps-and-the-move-to-amazon-quick.md",
+   "q": "A company has never used Amazon Q. It wants a managed AI assistant that lets employees ask questions over SharePoint and Confluence content, with answers that respect each user's document permissions. Which service should it adopt?",
+   "options": [
+    { "t": "Amazon Quick, with ACL-enabled knowledge bases", "why": "Right: Quick is the recommended successor for new customers and supports document-level ACLs on SharePoint and Confluence Cloud knowledge bases." },
+    { "t": "Amazon Q Business", "why": "Wrong: it fits the need, but it is no longer open to new customers." },
+    { "t": "Amazon Q Developer", "why": "Wrong: it is an assistant for building and operating on AWS, not an employee assistant over company documents." },
+    { "t": "Amazon Bedrock Knowledge Bases with a custom UI", "why": "Wrong: that is the build-your-own path, more work than a finished employee assistant." }
+   ],
+   "answer": [0],
+   "explain": "New employee-assistant projects go to Amazon Quick; Q Business is closed to new customers.",
+   "remember": "Employee assistant over company data, new customer → Amazon Quick. Q Business only for existing customers (run, secure, migrate).",
+   "variants": [
+    "The company already runs Q Business → keep it, or move to Quick with BYOI.",
+    "The team wants its own RAG backend or custom UI → Bedrock Knowledge Bases + AgentCore.",
+    "Developers want help in the AWS console → Amazon Q Developer."
+   ]
+  },
+  {
+   "id": "amazonq-002",
+   "source": "1-q-business-q-apps-and-the-move-to-amazon-quick.md",
+   "q": "A company runs Amazon Q Business with a large index. It wants employees to use Amazon Quick quickly, without re-crawling all its data sources, while Q Business keeps running. Both are in the same account and Region. What should it do?",
+   "options": [
+    { "t": "Re-create every data source as a native Quick connector and re-ingest", "why": "Wrong: it works, but re-crawls all the data, which the company wants to avoid." },
+    { "t": "Use BYOI to connect the existing Q Business index as a Quick knowledge base", "why": "Right: BYOI reuses the index with no re-crawl and Q Business runs in parallel; it needs the same account and Region." },
+    { "t": "Export the index to S3 and load it into Quick with an MCP integration", "why": "Wrong: MCP integrations support actions, not knowledge-base indexing." },
+    { "t": "Share the index with Quick through a Q Business data accessor", "why": "Wrong: data accessors share the index with verified ISVs, not the migration path to Quick." }
+   ],
+   "answer": [1],
+   "explain": "BYOI connects an existing Q index to Quick with no re-crawl.",
+   "remember": "Existing Q Business → Quick fast, no re-crawl → BYOI (same account and Region). BYOI does NOT carry Q Apps, Actions or chat guardrails.",
+   "variants": [
+    "The Q Apps must keep working → recreate them as Quick Flows (forms not yet supported).",
+    "BYOI is used in non-IDC mode and users see too much → split content into separate knowledge bases and set permissions per space.",
+    "A third index is needed in the Region → BYOI allows at most 2 Q Business indexes per Region, not increasable."
+   ]
+  },
+  {
+   "id": "amazonq-003",
+   "skill": "3.3.3",
+   "source": "2-q-developer-which-q-and-scenarios.md",
+   "q": "A data engineering team wants AWS Budgets alerts to appear in its Slack channel with the least custom code. Which approach fits?",
+   "options": [
+    { "t": "A Lambda function that polls Cost Explorer and posts to a Slack webhook", "why": "Wrong: it works, but it is custom code to write and run." },
+    { "t": "Amazon Q Business with a Slack integration", "why": "Wrong: that is an employee assistant over company data, not an AWS notification relay." },
+    { "t": "Budgets alerts to an SNS topic, delivered by Amazon Q Developer in chat applications", "why": "Right: Q Developer in chat applications forwards AWS notifications such as Budgets alerts to Slack or Teams channels." },
+    { "t": "CloudTrail logs to a CloudWatch Logs subscription filter", "why": "Wrong: CloudTrail records API activity; it does not deliver budget alerts to chat." }
+   ],
+   "answer": [2],
+   "explain": "SNS + Amazon Q Developer in chat applications relays AWS alerts to Slack/Teams.",
+   "remember": "AWS alerts into Slack or Microsoft Teams → SNS topic + Amazon Q Developer in chat applications. Restrict chat users with channel guardrails and per-channel IAM roles.",
+   "variants": [
+    "Alerts by email only → SNS email subscription.",
+    "Unexpected spend patterns, not fixed thresholds → Cost Anomaly Detection, delivered the same way.",
+    "Chat users must not run broad actions → channel guardrails and scoped IAM roles per channel."
+   ]
+  },
+  {
+   "id": "amazonq-004",
+   "source": "1-q-business-q-apps-and-the-move-to-amazon-quick.md",
+   "q": "In an existing Amazon Q Business application, users report that answers only ever use public documents, even for content they can open in the source system. What is the most likely cause?",
+   "options": [
+    { "t": "The application is set to answer from enterprise data only", "why": "Wrong: that blocks LLM-knowledge answers; it does not hide permitted enterprise documents." },
+    { "t": "The index has hit its query-per-second quota", "why": "Wrong: exceeding QPS causes throttling, not public-only answers." },
+    { "t": "The users have Lite instead of Pro subscriptions", "why": "Wrong: Lite still includes permission-aware Q&A; Pro adds Q Apps and plugins." },
+    { "t": "The data source has no email-based ACLs, or the user's email is missing", "why": "Right: Q Business filters documents by the user's email identity; without it, only public documents are used." }
+   ],
+   "answer": [3],
+   "explain": "Q Business matches users to document ACLs by email; no match means public documents only.",
+   "remember": "Q Business answers follow document ACLs matched by user email. Public-only answers → fix connector ACLs or identity (email) mapping.",
+   "variants": [
+    "Users are throttled → index QPS (default 1) exceeded; request an increase.",
+    "\"Couldn't find an answer\" → content not synced, enterprise-only mode, or no access.",
+    "A user sees no Apps tab → Lite subscription, Q Apps disabled, or a Region without Q Apps."
+   ]
+  },
+  {
+   "id": "amazonq-005",
+   "skill": "4.2.6",
+   "source": "2-q-developer-which-q-and-scenarios.md",
+   "q": "A pipeline engineer used Amazon Q Developer to generate the IAM policy for a new Glue job role. What should the team do before deploying it?",
+   "options": [
+    { "t": "Review the policy for least privilege and test it, as with any IaC", "why": "Right: AI output can be wrong or too broad, so generated IAM policies and IaC must be reviewed for least privilege." },
+    { "t": "Deploy it as is, because Q Developer is augmented with AWS content", "why": "Wrong: grounding in AWS content does not make the output correct or minimal." },
+    { "t": "Attach `AdministratorAccess` to be safe and trim it later", "why": "Wrong: this is the opposite of least privilege." },
+    { "t": "Paste the job's database credentials into the chat so Q can scope the policy", "why": "Wrong: never paste secrets or PII into an AI assistant." }
+   ],
+   "answer": [0],
+   "explain": "Treat AI-generated IAM and IaC like any other code: review for least privilege, test, and code-review it.",
+   "remember": "AI-generated IAM policies or IaC → review for least privilege, run tests and normal code review; never paste secrets or PII into the assistant.",
+   "variants": [
+    "The team wants vulnerabilities flagged in pipeline code while coding → Q Developer IDE security scan plus normal static analysis.",
+    "Q Developer must be blocked in some accounts → SCPs.",
+    "Users need console chat access → IAM permissions such as the `AmazonQDeveloperAccess` managed policy."
+   ]
+  }
+ ]
+}

@@ -1,0 +1,445 @@
+{
+ "questions": [
+  {
+   "id": "cw-001",
+   "skill": "3.3.4",
+   "source": "1-metrics-namespaces-custom-metrics-and-streams.md",
+   "q": "A consumer application reads from a Kinesis data stream. Downstream tables sometimes show data that is many minutes old. The team wants an alarm that fires when the consumer falls behind the stream. Which metric should the alarm watch?",
+   "options": [
+    { "t": "`IncomingRecords` on the stream", "why": "Wrong: it shows how much data producers write, not how far behind the consumer is." },
+    { "t": "`WriteProvisionedThroughputExceeded` on the stream", "why": "Wrong: it shows producer throttling, not consumer lag." },
+    { "t": "`GetRecords.IteratorAgeMilliseconds` on the stream", "why": "Right: it measures how old the last record read is, which is the stream lag." },
+    { "t": "`CPUUtilization` of the consumer hosts", "why": "Wrong: a cause, not the symptom; CPU can look normal while the consumer still falls behind." }
+   ],
+   "answer": [2],
+   "explain": "Consumer lag on Kinesis is measured by iterator age.",
+   "remember": "Stream lag → iterator age (`GetRecords.IteratorAgeMilliseconds` for Kinesis, `IteratorAge` for a Lambda reading a stream). Lag metrics are the main pipeline health signals.",
+   "variants": [
+    "The consumer is a Lambda function on the stream → alarm on `IteratorAge` and `Throttles`.",
+    "The source is MSK → `MaxOffsetLag`.",
+    "Firehose delivery looks late → `DeliveryToS3.DataFreshness`.",
+    "An SQS backlog is ageing → `ApproximateAgeOfOldestMessage`."
+   ]
+  },
+  {
+   "id": "cw-002",
+   "skill": "3.3.4",
+   "source": "1-metrics-namespaces-custom-metrics-and-streams.md",
+   "q": "Spark jobs on self-managed EC2 instances crash with out-of-memory errors. The team wants to graph memory and disk usage of each host in CloudWatch. What should they do?",
+   "options": [
+    { "t": "Install the CloudWatch agent on the instances", "why": "Right: memory and disk are OS-level metrics that EC2 does not publish by default; the agent collects them." },
+    { "t": "Turn on EC2 detailed monitoring", "why": "Wrong: it only makes the default metrics 1-minute; it still has no memory metric." },
+    { "t": "Turn on Container Insights", "why": "Wrong: it is for ECS, EKS and Kubernetes containers, not plain EC2 hosts." },
+    { "t": "Read the `AWS/EC2` namespace, which already holds memory usage", "why": "Wrong: memory is not a default EC2 metric." }
+   ],
+   "answer": [0],
+   "explain": "OS-level metrics such as memory need the CloudWatch agent.",
+   "remember": "Memory or disk usage inside an EC2 or on-prem host → CloudWatch agent. Detailed monitoring only changes the period of the default metrics.",
+   "variants": [
+    "You only need the default EC2 metrics every 1 minute instead of 5 → detailed monitoring.",
+    "The workload runs as ECS or EKS tasks/pods → Container Insights.",
+    "The agent must also ship application log files → the same CloudWatch agent sends logs to CloudWatch Logs."
+   ]
+  },
+  {
+   "id": "cw-003",
+   "skill": "3.3.2",
+   "source": "1-metrics-namespaces-custom-metrics-and-streams.md",
+   "q": "A Lambda function processes batches of records. The team wants a custom metric for rows processed per batch, while keeping detailed context (batch ID, source file) in the logs. They want no extra API calls from the function. Which approach fits best?",
+   "options": [
+    { "t": "Call `PutMetricData` at the end of each invocation", "why": "Wrong: it adds an API call per invocation, which the team wants to avoid." },
+    { "t": "Add the batch ID as a dimension on a custom metric", "why": "Wrong: every unique dimension value is a separate billed metric, so high-cardinality IDs explode cost." },
+    { "t": "Use a metric stream to Firehose", "why": "Wrong: metric streams export existing metrics; they do not create new ones from function output." },
+    { "t": "Write log lines in Embedded Metric Format (EMF)", "why": "Right: CloudWatch extracts the metric from the structured log line automatically, and the rich context stays in the log." }
+   ],
+   "answer": [3],
+   "explain": "EMF turns structured JSON log lines into metrics with no PutMetricData call.",
+   "remember": "Custom metrics from Lambda or containers with rich context and no API call → Embedded Metric Format (or Powertools metrics). Keep high-cardinality values in the log, not in dimensions.",
+   "variants": [
+    "The metric must come from existing log lines you cannot change → metric filter.",
+    "The code runs on EC2 and wants StatsD/collectd metrics → CloudWatch agent.",
+    "You need memory/OS metrics on EC2 → CloudWatch agent."
+   ]
+  },
+  {
+   "id": "cw-004",
+   "skill": "3.3.2",
+   "source": "1-metrics-namespaces-custom-metrics-and-streams.md",
+   "q": "After a release, the CloudWatch custom metrics bill grew 50 times. The new code publishes a `RecordsProcessed` metric with dimensions `JobName` and `RequestId`. What is the most likely cause and fix?",
+   "options": [
+    { "t": "High-resolution storage is on; switch to standard resolution", "why": "Wrong: resolution changes the price of alarms and storage detail, not the number of billed metrics." },
+    { "t": "`RequestId` makes every request a new metric; remove that dimension", "why": "Right: each unique name + dimension combination is a separate billed metric, so a per-request dimension multiplies cost." },
+    { "t": "Metrics are kept 15 months; delete old metrics", "why": "Wrong: metrics cannot be deleted; they expire after 15 months with no new data." },
+    { "t": "The namespace starts with `AWS/`; rename it", "why": "Wrong: custom namespaces cannot start with `AWS/`, and the namespace name does not change cost." }
+   ],
+   "answer": [1],
+   "explain": "Cardinality drives custom metric cost.",
+   "remember": "Each unique namespace + metric name + dimension set is a separate metric and is billed separately. Never use request IDs or user IDs as dimensions.",
+   "variants": [
+    "The overall CloudWatch bill is high → check log ingestion and custom metric cardinality first.",
+    "You still need per-request detail → keep it in logs (EMF) and query with Logs Insights.",
+    "A metric has too many dimensions → the limit is 30 dimensions per metric."
+   ]
+  },
+  {
+   "id": "cw-005",
+   "skill": "3.3.2",
+   "source": "1-metrics-namespaces-custom-metrics-and-streams.md",
+   "q": "A compliance team must analyze pipeline metrics from the last 3 years with SQL. What is the lowest-effort design?",
+   "options": [
+    { "t": "A CloudWatch metric stream to Firehose, delivered to S3 and queried with Athena", "why": "Right: streams push metrics continuously into S3, where they are kept as long as needed and queried with Athena." },
+    { "t": "Raise the CloudWatch metric retention to 3 years", "why": "Wrong: retention is fixed by rollup; 1-hour points are kept 455 days (15 months) at most." },
+    { "t": "Use Metrics Insights queries over the 3 years", "why": "Wrong: Metrics Insights can only read what CloudWatch still keeps, which is 15 months." },
+    { "t": "Turn on detailed monitoring for all resources", "why": "Wrong: it changes the period, not how long data is kept." }
+   ],
+   "answer": [0],
+   "explain": "CloudWatch keeps metrics at most 15 months; use streams to land them in S3.",
+   "remember": "Metric history beyond 15 months, a metrics data lake, or a third-party observability tool → metric stream → Firehose → S3 (or the partner). Metrics are not in S3 by default.",
+   "variants": [
+    "Only a few metrics, and delay is fine → a scheduled Lambda calling `GetMetricData`, cheaper for small sets.",
+    "Metrics must go to Datadog, Splunk or New Relic → metric stream via Firehose.",
+    "Logs (not metrics) need long-term archive → subscription filter → Firehose → S3."
+   ]
+  },
+  {
+   "id": "cw-006",
+   "skill": "3.3.3",
+   "source": "1-metrics-namespaces-custom-metrics-and-streams.md",
+   "q": "A Lambda function runs thousands of times per hour. A fixed alarm on `Errors` > 10 fires during busy hours and misses problems at night. The team wants to alarm when more than 2% of invocations fail. What should they use?",
+   "options": [
+    { "t": "A new custom metric published by the function with `PutMetricData`", "why": "Wrong: it works, but adds code and cost when the needed metrics already exist." },
+    { "t": "An alarm on the `Throttles` metric", "why": "Wrong: throttles show concurrency limits, not the error rate." },
+    { "t": "A metric math alarm on `Errors / Invocations * 100`", "why": "Right: metric math creates a derived error-rate series, and alarms can use math expressions." },
+    { "t": "An alarm on `ConcurrentExecutions`", "why": "Wrong: it measures load, not failures." }
+   ],
+   "answer": [2],
+   "explain": "Metric math builds the rate from existing metrics.",
+   "remember": "A ratio the service does not publish (error rate, success ratio) → metric math expression, usable in graphs and alarms.",
+   "variants": [
+    "Graph the same metric across many functions dynamically → a `SEARCH` expression.",
+    "Query and alarm across a whole fleet with SQL-like syntax → Metrics Insights.",
+    "Fill gaps where no data was published → `FILL(m1, 0)`."
+   ]
+  },
+  {
+   "id": "cw-007",
+   "skill": "3.3.2",
+   "source": "1-metrics-namespaces-custom-metrics-and-streams.md",
+   "q": "A company runs data pipelines in 15 AWS accounts in one AWS Organization. The operations team wants one place to view metrics, logs and traces from all accounts, without copying data. What should they set up?",
+   "options": [
+    { "t": "A metric stream from every account into a central S3 bucket", "why": "Wrong: it copies metrics only, adds cost, and does not cover logs and traces in the console." },
+    { "t": "An IAM user in each account for the operations team", "why": "Wrong: it means switching accounts, not one view." },
+    { "t": "A scheduled Lambda that copies metrics with `PutMetricData`", "why": "Wrong: custom code, copied data, extra metric charges." },
+    { "t": "CloudWatch cross-account observability (OAM) with a monitoring account linked to source accounts", "why": "Right: the monitoring account sees metrics, logs, traces and Application Signals from linked accounts without copying data." }
+   ],
+   "answer": [3],
+   "explain": "OAM centralizes observability through a sink and links.",
+   "remember": "One pane of glass across accounts → OAM monitoring account (sink) + source account links; it supports Organizations and does not copy data.",
+   "variants": [
+    "Only several Regions in one account → one dashboard can show widgets from many Regions.",
+    "A central security account must keep copies of all logs → cross-account destination + subscription filters.",
+    "Control which accounts may link → the OAM sink policy."
+   ]
+  },
+  {
+   "id": "cw-008",
+   "skill": "3.3.3",
+   "source": "2-alarms-dashboards-synthetics-and-automation.md",
+   "q": "A nightly ETL job publishes a custom `LoadSucceeded` metric after each run. Last week the scheduler failed, the job never started, and no alarm fired. How should the alarm be configured?",
+   "options": [
+    { "t": "Alarm when `LoadSucceeded` Sum > 1, with missing data treated as `notBreaching`", "why": "Wrong: wrong threshold, and `notBreaching` treats silence as good, which hides the failure." },
+    { "t": "Alarm when `LoadSucceeded` Sum < 1 per expected window, with missing data treated as `breaching`", "why": "Right: in a heartbeat alarm, absence of data is the failure, so missing data must count as breaching." },
+    { "t": "Alarm on `LoadSucceeded` with missing data treated as `ignore`", "why": "Wrong: `ignore` keeps the current state, so the alarm stays OK when no data arrives." },
+    { "t": "An EventBridge rule on the job's FAILED state", "why": "Wrong: the job never ran, so no FAILED event is emitted." }
+   ],
+   "answer": [1],
+   "explain": "Heartbeat (dead-man) pattern: missing data = breaching.",
+   "remember": "When silence means failure (heartbeat, scheduler, nightly load) → treat missing data as `breaching`. When silence is normal (no traffic) → `notBreaching`.",
+   "variants": [
+    "MWAA scheduler might be dead → alarm on `SchedulerHeartbeat` with `breaching` on missing data.",
+    "The job runs but fails → EventBridge rule on the FAILED state change.",
+    "A Lambda `Errors` alarm goes INSUFFICIENT_DATA at night with no traffic → treat missing data as `notBreaching`."
+   ]
+  },
+  {
+   "id": "cw-009",
+   "skill": "3.3.3",
+   "source": "2-alarms-dashboards-synthetics-and-automation.md",
+   "q": "On-call engineers get dozens of pages a day from alarms that flip to ALARM for one data point and recover a minute later. Which TWO changes reduce this noise? (Choose 2)",
+   "options": [
+    { "t": "Combine the related alarms into a composite alarm that notifies only when the symptom and its cause are both in ALARM", "why": "Right: composite alarms use AND/OR/NOT rules to cut noise." },
+    { "t": "Switch the alarms to high resolution (10-second periods)", "why": "Wrong: shorter periods react to even smaller spikes and cost more." },
+    { "t": "Treat missing data as `breaching` on every alarm", "why": "Wrong: it adds false alarms whenever a service is idle and does not publish." },
+    { "t": "Require M out of N datapoints (for example 3 of 5) to breach before going to ALARM", "why": "Right: one short spike no longer changes the state, which reduces flapping." }
+   ],
+   "answer": [0, 3],
+   "explain": "Composite alarms and M-of-N datapoints both reduce flapping.",
+   "remember": "Noisy alarms → M-of-N datapoints to alarm and composite alarms (AND of symptom and cause). Suppress actions during maintenance with an actions-suppressor alarm.",
+   "variants": [
+    "Pages during a planned maintenance window → composite alarm with an actions-suppressor alarm.",
+    "Alarms fire because traffic has daily peaks → anomaly detection alarm.",
+    "Many per-resource alarms on a fleet → one Metrics Insights alarm."
+   ]
+  },
+  {
+   "id": "cw-010",
+   "skill": "3.3.3",
+   "source": "2-alarms-dashboards-synthetics-and-automation.md",
+   "q": "Ingested record counts are high every weekday morning and very low on weekends. A static threshold alarm on `IncomingRecords` either fires every weekend or misses real drops. What should the team use?",
+   "options": [
+    { "t": "A composite alarm over two static alarms", "why": "Wrong: it combines states but still relies on static thresholds that ignore seasonality." },
+    { "t": "A high-resolution alarm with a 10-second period", "why": "Wrong: a shorter period does not model the weekly pattern." },
+    { "t": "An anomaly detection alarm on `IncomingRecords`", "why": "Right: ML builds an expected-value band from history, with daily and weekly seasonality, and alarms outside it." },
+    { "t": "A Contributor Insights rule", "why": "Wrong: it ranks top contributors in logs; it does not alarm on seasonal metrics." }
+   ],
+   "answer": [2],
+   "explain": "Seasonal metrics need an anomaly detection band, not a fixed line.",
+   "remember": "Metric with daily/weekly patterns where static thresholds false-alarm → anomaly detection alarm (expected-value band learned from history; time ranges can be excluded).",
+   "variants": [
+    "The threshold is a fixed business limit (disk > 80%) → a static alarm is fine.",
+    "Alarms are noisy from short spikes → M-of-N datapoints.",
+    "A holiday distorts the model → exclude that time range from training."
+   ]
+  },
+  {
+   "id": "cw-011",
+   "skill": "3.3.3",
+   "source": "2-alarms-dashboards-synthetics-and-automation.md",
+   "q": "The team needs an immediate notification each time an AWS Glue job run ends in FAILED, without polling. What is the simplest design?",
+   "options": [
+    { "t": "An EventBridge rule on the Glue Job State Change event with state FAILED, targeting an SNS topic", "why": "Right: discrete failures are best caught by EventBridge state-change events; they are immediate and free for AWS events." },
+    { "t": "A Lambda that calls `GetJobRuns` every 5 minutes", "why": "Wrong: polling adds delay, code and cost." },
+    { "t": "A metric filter on the Glue error log group", "why": "Wrong: it works, but depends on log text and is slower and less direct than the state event." },
+    { "t": "An anomaly detection alarm on job duration", "why": "Wrong: it catches slow runs, not a discrete failed state." }
+   ],
+   "answer": [0],
+   "explain": "Use EventBridge for discrete events, alarms for thresholds over time.",
+   "remember": "Discrete state changes (Glue, Step Functions, EMR, Batch, DMS failures) → EventBridge rule → SNS/Lambda. Conditions over time (lag, rate, disk) → CloudWatch alarm.",
+   "variants": [
+    "Alert when the job becomes much slower than normal → duration anomaly / custom metric alarm.",
+    "Remediate when an alarm changes state → EventBridge rule on `CloudWatch Alarm State Change`.",
+    "Send the alert to Slack → SNS with Amazon Q Developer in chat (AWS Chatbot)."
+   ]
+  },
+  {
+   "id": "cw-012",
+   "skill": "3.3.3",
+   "source": "2-alarms-dashboards-synthetics-and-automation.md",
+   "q": "Failed order events are sent to an SQS dead-letter queue. Operations must know as soon as any message arrives in that DLQ. Which alarm fits?",
+   "options": [
+    { "t": "`ApproximateAgeOfOldestMessage` > 1 hour on the main queue", "why": "Wrong: it shows backlog on the main queue, not that messages failed." },
+    { "t": "`NumberOfMessagesSent` > 1,000 on the main queue", "why": "Wrong: it measures volume, not failures." },
+    { "t": "Anomaly detection on DLQ `ApproximateNumberOfMessagesVisible`", "why": "Wrong: any DLQ message needs attention, so a band that tolerates some messages is wrong." },
+    { "t": "`ApproximateNumberOfMessagesVisible` > 0 on the DLQ", "why": "Right: any message in a DLQ means a failure that needs attention." }
+   ],
+   "answer": [3],
+   "explain": "Any message in a DLQ is a problem: alarm at > 0.",
+   "remember": "DLQ not empty → alarm on DLQ `ApproximateNumberOfMessagesVisible` > 0. Backlog growing on the main queue → `ApproximateAgeOfOldestMessage`.",
+   "variants": [
+    "Consumers fall behind on the main queue → `ApproximateAgeOfOldestMessage` > N.",
+    "Automatically replay the DLQ → alarm → SNS → Lambda (self-healing).",
+    "A Step Functions workflow fails → `ExecutionsFailed` > 0 or an EventBridge rule."
+   ]
+  },
+  {
+   "id": "cw-013",
+   "skill": "3.3.3",
+   "source": "2-alarms-dashboards-synthetics-and-automation.md",
+   "q": "A data API sits behind a private API Gateway endpoint inside a VPC. The team wants to test its availability every 5 minutes and alarm on failures. What should they use?",
+   "options": [
+    { "t": "CloudWatch RUM", "why": "Wrong: RUM measures real users' browser performance, not a scheduled API test." },
+    { "t": "A CloudWatch Synthetics canary that runs in the VPC", "why": "Right: canaries run scripts on a schedule, can run in a VPC to reach private endpoints, and publish success metrics to alarm on." },
+    { "t": "Internet Monitor", "why": "Wrong: it monitors internet-path performance for users, not a private endpoint." },
+    { "t": "A canary that runs outside the VPC", "why": "Wrong: it cannot reach a private endpoint." }
+   ],
+   "answer": [1],
+   "explain": "Private endpoint availability checks → VPC canary.",
+   "remember": "Scheduled tests of endpoints, APIs or UI flows → Synthetics canaries (alarm on `SuccessPercent`). Private endpoints → run the canary in the VPC.",
+   "variants": [
+    "Real users' page load times and JavaScript errors → CloudWatch RUM.",
+    "Check a site for broken links → the broken link checker blueprint.",
+    "SLOs on the API's latency and availability → Application Signals."
+   ]
+  },
+  {
+   "id": "cw-014",
+   "skill": "3.3.1",
+   "source": "3-logs-insights-subscriptions-and-pipeline-logging.md",
+   "q": "Application logs must be searchable in CloudWatch for 14 days and archived for 7 years for audits, at the lowest cost. What should the team do?",
+   "options": [
+    { "t": "Keep the default log group retention and query everything with Logs Insights", "why": "Wrong: default retention is never expire, so storage cost grows for 7 years in CloudWatch." },
+    { "t": "Set retention to 10 years on the log group", "why": "Wrong: it works, but storing years of logs in CloudWatch costs more than S3." },
+    { "t": "Set 14-day retention and add a subscription filter to Firehose that delivers to S3 with lifecycle rules", "why": "Right: CloudWatch keeps the searchable window; S3 is cheaper for the long-term archive." },
+    { "t": "Copy the logs once a week to an EBS volume", "why": "Wrong: manual, not durable archive storage, and costly." }
+   ],
+   "answer": [2],
+   "explain": "Short retention in CloudWatch plus a Firehose archive in S3.",
+   "remember": "Short search window + long archive → CloudWatch retention set short + subscription filter → Firehose → S3 (lifecycle). Log groups never expire by default, so always set retention.",
+   "variants": [
+    "A one-off batch copy to S3 is enough → `CreateExportTask` (batch, not streaming; one active task per account).",
+    "Logs are rarely queried and you want cheaper ingestion → Infrequent Access log class.",
+    "Logs must be processed in near real time → subscription filter → Kinesis or Lambda."
+   ]
+  },
+  {
+   "id": "cw-015",
+   "skill": "3.3.7",
+   "source": "3-logs-insights-subscriptions-and-pipeline-logging.md",
+   "q": "A security review finds customer email addresses and card numbers in a pipeline's CloudWatch log group. Support engineers need to keep reading the logs, but must not see these values. What should the team do?",
+   "options": [
+    { "t": "Add a data protection policy to the log group and grant `logs:Unmask` only to a small group", "why": "Right: data protection policies detect and mask sensitive data; only principals with `logs:Unmask` see the real values." },
+    { "t": "Encrypt the log group with a KMS customer managed key", "why": "Wrong: encryption at rest does not hide values from users who can read the logs." },
+    { "t": "Delete the log group and recreate it", "why": "Wrong: it loses data and new events still contain PII." },
+    { "t": "Add a metric filter that counts PII matches", "why": "Wrong: it counts matches but does not hide them." }
+   ],
+   "answer": [0],
+   "explain": "Mask with a data protection policy and control `logs:Unmask`.",
+   "remember": "PII or credentials in CloudWatch Logs → data protection policy (managed or custom identifiers) masks values; restrict `logs:Unmask`. KMS is encryption at rest, not masking.",
+   "variants": [
+    "Some users must not read a sensitive group at all → IAM deny on `logs:GetLogEvents` for that group.",
+    "PII logs must be removed quickly → short retention on that log group.",
+    "Logs must be encrypted with your own key → KMS CMK, with a key policy that allows `logs.<region>.amazonaws.com`."
+   ]
+  },
+  {
+   "id": "cw-016",
+   "skill": "3.3.8",
+   "source": "3-logs-insights-subscriptions-and-pipeline-logging.md",
+   "q": "A data engineer must find, for the past day, which invocations of a Lambda function took longer than 3 seconds, and the hourly maximum duration. The function writes only default logs. What is the quickest approach?",
+   "options": [
+    { "t": "Export the log group to S3 and query it with Athena", "why": "Wrong: works, but an export task is a slow batch job, not the quickest path." },
+    { "t": "Query the `REPORT` lines with CloudWatch Logs Insights", "why": "Right: Lambda writes the duration in each `REPORT` line, and Logs Insights can filter on `@duration` and `stats max(@duration) by bin(1h)`." },
+    { "t": "Create a metric filter on the log group", "why": "Wrong: metric filters apply only to new events, not the past day." },
+    { "t": "Enable X-Ray active tracing", "why": "Wrong: it only traces from now on, not past invocations." }
+   ],
+   "answer": [1],
+   "explain": "Logs Insights reads Lambda REPORT lines for duration and memory.",
+   "remember": "Ad hoc questions over CloudWatch log data (slowest invocations, error counts by hour) → Logs Insights (`filter`, `stats`, `bin()`, `parse`). Narrow the time range and log groups to cut scan cost.",
+   "variants": [
+    "Max memory used per hour → `filter @type=\"REPORT\" | stats max(@maxMemoryUsed)`.",
+    "Watch logs in real time while testing → Live Tail.",
+    "Find common log patterns → the `pattern` command or log anomaly detectors."
+   ]
+  },
+  {
+   "id": "cw-017",
+   "skill": "3.3.7",
+   "source": "3-logs-insights-subscriptions-and-pipeline-logging.md",
+   "q": "Today a team created a metric filter that counts `ERROR` lines in a Glue job's log group, to drive an alarm. The log group holds thousands of ERROR lines from last week, but the new metric shows no data. What is the most likely reason?",
+   "options": [
+    { "t": "Metric filters work only with JSON logs", "why": "Wrong: filter patterns also support term matching and space-delimited logs." },
+    { "t": "The log group is encrypted with KMS", "why": "Wrong: encryption does not stop metric filters." },
+    { "t": "A metric filter needs a subscription filter first", "why": "Wrong: they are independent features." },
+    { "t": "Metric filters apply only to events ingested after the filter is created", "why": "Right: filters are not applied to historical events, so last week's errors are never counted." }
+   ],
+   "answer": [3],
+   "explain": "Metric filters are not retroactive.",
+   "remember": "Metric filter shows no data → events from before the filter was created, pattern syntax, or case sensitivity. For past data use Logs Insights.",
+   "variants": [
+    "Need counts from last week → Logs Insights `stats count() by bin(1h)`.",
+    "Writing new code that should emit metrics → EMF is preferred over metric filters.",
+    "Too many filters on one log group → the limit is 100 metric filters per group."
+   ]
+  },
+  {
+   "id": "cw-018",
+   "skill": "3.3.1",
+   "source": "3-logs-insights-subscriptions-and-pipeline-logging.md",
+   "q": "Application log events must be processed within seconds by a fraud-detection consumer. Which way of getting the data out of CloudWatch Logs fits?",
+   "options": [
+    { "t": "`CreateExportTask` to S3 every hour", "why": "Wrong: export is a batch job with long delay, not for streaming." },
+    { "t": "A scheduled Logs Insights query every 5 minutes", "why": "Wrong: polling adds delay and scan cost." },
+    { "t": "A subscription filter that streams matching events to Kinesis Data Streams", "why": "Right: subscription filters deliver matching events in near real time to Kinesis, Lambda or Firehose." },
+    { "t": "A metric filter with an alarm", "why": "Wrong: it produces counts, not the log events the consumer needs." }
+   ],
+   "answer": [2],
+   "explain": "Near-real-time log delivery → subscription filter.",
+   "remember": "Stream logs out in near real time → subscription filter to Lambda, Kinesis Data Streams, Firehose or a cross-account destination. Payloads to Kinesis/Lambda are base64 + gzip JSON.",
+   "variants": [
+    "The goal is a cheap archive in S3 → subscription filter → Firehose → S3.",
+    "Logs from many accounts go to one security account → cross-account destination.",
+    "The consumer sees unreadable data from Kinesis → decode base64 and gunzip; Firehose can decompress for you."
+   ]
+  },
+  {
+   "id": "cw-019",
+   "skill": "3.3.4",
+   "source": "3-logs-insights-subscriptions-and-pipeline-logging.md",
+   "q": "A DynamoDB table used by an ingestion pipeline throttles even though total consumed capacity is well below provisioned capacity. The team suspects a few hot partition keys. Which feature identifies them fastest?",
+   "options": [
+    { "t": "X-Ray active tracing", "why": "Wrong: it shows call latency per hop, not which keys are hot." },
+    { "t": "Contributor Insights for DynamoDB", "why": "Right: its built-in rules show the most accessed and most throttled keys (top-N contributors)." },
+    { "t": "A metric stream to S3", "why": "Wrong: table-level metrics do not show individual keys." },
+    { "t": "An anomaly detection alarm on `ThrottledRequests`", "why": "Wrong: it tells you throttling happens, not which keys cause it." }
+   ],
+   "answer": [1],
+   "explain": "Top-N contributors such as hot keys → Contributor Insights.",
+   "remember": "Top talkers, top error sources, hot keys → Contributor Insights (rules over logs, plus built-in rules for DynamoDB).",
+   "variants": [
+    "Top client IPs causing errors in access logs → Contributor Insights rule on the log group.",
+    "Just need to know that throttling occurs → alarm on `ThrottledRequests`.",
+    "Where latency builds up across services → X-Ray."
+   ]
+  },
+  {
+   "id": "cw-020",
+   "skill": "3.3.4",
+   "source": "4-tracing-application-signals-security-cost-and-scenarios.md",
+   "q": "A data API built on API Gateway, Lambda and DynamoDB is slow at times. The team must find which hop adds the latency. What should they use?",
+   "options": [
+    { "t": "Logs Insights on the Lambda `REPORT` lines", "why": "Wrong: it shows total function duration, not the split across API Gateway, Lambda and DynamoDB calls." },
+    { "t": "Container Insights", "why": "Wrong: it is for ECS/EKS containers." },
+    { "t": "A Synthetics canary", "why": "Wrong: it measures end-to-end availability and duration, not per-hop latency." },
+    { "t": "X-Ray active tracing and the service map", "why": "Right: traces break latency down per service and per downstream call (subsegments)." }
+   ],
+   "answer": [3],
+   "explain": "Per-hop latency across services → X-Ray.",
+   "remember": "Where does latency happen across Lambda, API Gateway, Step Functions, DynamoDB → X-Ray (service map, segments, subsegments). Not for Spark jobs or streaming throughput.",
+   "variants": [
+    "A Step Functions workflow is slow → enable X-Ray tracing and review time per state.",
+    "Filter traces by a business key → add an annotation (indexed); metadata is not indexed.",
+    "SLOs and error budgets for the API → Application Signals."
+   ]
+  },
+  {
+   "id": "cw-021",
+   "skill": "3.3.4",
+   "source": "4-tracing-application-signals-security-cost-and-scenarios.md",
+   "q": "Leadership wants availability and latency targets tracked for an internal data API running on EKS, including error budgets and alarms when the budget is burning fast. Which CloudWatch feature fits with the least custom work?",
+   "options": [
+    { "t": "CloudWatch Application Signals with SLOs", "why": "Right: it is CloudWatch's APM feature that discovers services and computes SLIs, SLOs and error budgets, with burn-rate alarms." },
+    { "t": "Container Insights", "why": "Wrong: it gives CPU and memory per pod, not SLOs." },
+    { "t": "Contributor Insights", "why": "Wrong: it ranks top contributors; it does not compute SLOs." },
+    { "t": "A dashboard with manual metric math", "why": "Wrong: possible, but much more custom work and no built-in error budget." }
+   ],
+   "answer": [0],
+   "explain": "SLO and error-budget tracking → Application Signals.",
+   "remember": "APM with SLIs/SLOs, error budgets and service maps → Application Signals (built on X-Ray/OpenTelemetry).",
+   "variants": [
+    "CPU and memory per pod or task → Container Insights.",
+    "Lambda memory, CPU and init-time tuning → Lambda Insights.",
+    "Per-hop latency of single requests → X-Ray traces."
+   ]
+  },
+  {
+   "id": "cw-022",
+   "skill": "4.4.2",
+   "source": "4-tracing-application-signals-security-cost-and-scenarios.md",
+   "q": "A data platform's CloudWatch bill keeps growing. The usage shows large log ingestion and storage, and a big number of custom metrics. Which TWO actions cut cost the most? (Choose 2)",
+   "options": [
+    { "t": "Move all dashboards to automatic dashboards", "why": "Wrong: dashboards are a small part of the bill." },
+    { "t": "Set a retention period on every log group and reduce log verbosity", "why": "Right: log groups never expire by default, and ingestion plus storage are the biggest cost drivers." },
+    { "t": "Remove per-request and per-user dimensions from custom metrics", "why": "Right: each unique dimension set is a billed metric, so cardinality drives custom metric cost." },
+    { "t": "Convert standard alarms to high-resolution alarms", "why": "Wrong: high-resolution alarms cost more." }
+   ],
+   "answer": [1, 2],
+   "explain": "Logs ingestion/storage and metric cardinality are the usual cost drivers.",
+   "remember": "High CloudWatch bill → check log ingestion (top groups by `IncomingBytes`) and custom metric cardinality first. Levers: retention, less verbose logs, Infrequent Access for rarely queried logs, fewer dimensions.",
+   "variants": [
+    "Find which log groups cost most → `IncomingBytes` per log group, and `Logs` usage types in Cost Explorer.",
+    "Too many X-Ray traces → sample traces.",
+    "Many per-resource alarms → composite alarms or one Metrics Insights alarm for the fleet."
+   ]
+  }
+ ]
+}
