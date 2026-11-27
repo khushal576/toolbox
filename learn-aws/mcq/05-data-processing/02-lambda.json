@@ -1,0 +1,1210 @@
+{
+ "questions": [
+  {
+   "id": "lambda-001",
+   "skill": "1.2.5",
+   "source": "1-basics-execution-model-and-configuration.md",
+   "q": "A nightly job reads 3 GB of CSV from S3, cleans it and writes Parquet. On one worker it takes about 40 minutes and cannot easily be split. The team wants a managed service with little operations work. What should run it?",
+   "options": [
+    {
+     "t": "Lambda with memory raised to 10,240 MB",
+     "why": "Wrong: more memory adds CPU, but the 15-minute (900 s) limit is hard and a 40-minute job is not guaranteed to fit."
+    },
+    {
+     "t": "Lambda with the timeout raised to 60 minutes",
+     "why": "Wrong: the maximum timeout on default Lambda is 900 s."
+    },
+    {
+     "t": "An AWS Glue job",
+     "why": "Right: managed ETL with no 15-minute cap, built for CSV to Parquet over GBs of data."
+    },
+    {
+     "t": "Lambda with provisioned concurrency",
+     "why": "Wrong: it removes cold starts only; the 15-minute limit stays."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Any single run over 15 minutes does not fit default Lambda.",
+   "remember": "A job that runs longer than 15 minutes → not plain Lambda. Use Glue, Batch, ECS/Fargate or EMR, or split it into sub-15-minute chunks.",
+   "variants": [
+    "The work splits into many independent files → Step Functions (Distributed) Map invoking Lambda per file.",
+    "Each file takes 2 minutes and arrives on upload → S3 event → Lambda.",
+    "Big Spark joins over TBs → Glue Spark or EMR."
+   ]
+  },
+  {
+   "id": "lambda-002",
+   "skill": "1.4.1",
+   "source": "1-basics-execution-model-and-configuration.md",
+   "q": "A Python function parses and compresses files. It is CPU-bound and takes 8 s at 512 MB. The team wants it faster without a big cost increase. What should they try first?",
+   "options": [
+    {
+     "t": "Raise the memory size and compare cost and speed with AWS Lambda Power Tuning",
+     "why": "Right: CPU is given in proportion to memory; billing is GB-seconds, so finishing faster can keep cost the same or lower it."
+    },
+    {
+     "t": "Raise ephemeral storage (/tmp) to 10 GB",
+     "why": "Wrong: more disk space, not more CPU."
+    },
+    {
+     "t": "Add provisioned concurrency",
+     "why": "Wrong: it removes cold starts, not handler run time, and costs extra."
+    },
+    {
+     "t": "Attach the function to a VPC",
+     "why": "Wrong: it changes networking only and adds no CPU."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "CPU-bound code speeds up with more memory because CPU scales with memory.",
+   "remember": "CPU-bound and slow → raise memory (about 1 vCPU at 1,769 MB) and measure with Power Tuning or Compute Optimizer. Cost often stays flat because duration drops.",
+   "variants": [
+    "The function is I/O-bound (waits on an API or DB) → more memory helps little; a lower size may be cheapest.",
+    "It is no faster at 4 GB than at 2 GB → the code is single-threaded; add threads/processes or keep the smaller size.",
+    "You want memory advice from real usage → AWS Compute Optimizer."
+   ]
+  },
+  {
+   "id": "lambda-003",
+   "skill": "1.3.4",
+   "source": "1-basics-execution-model-and-configuration.md",
+   "q": "An EventBridge rule invokes a Lambda function asynchronously through its `prod` and `dev` aliases. Failures from each alias must go to a different target, and the record must contain both the request and the error details. Events are a few KB. What should be configured?",
+   "options": [
+    {
+     "t": "A dead-letter queue on the function",
+     "why": "Wrong: a DLQ is set at function level, shared by all versions, and holds the original event only plus error attributes."
+    },
+    {
+     "t": "An on-failure destination pointing to an SQS FIFO queue",
+     "why": "Wrong: FIFO queues and FIFO topics are not supported as async destinations."
+    },
+    {
+     "t": "A CloudWatch Logs metric filter on the word ERROR",
+     "why": "Wrong: it can alarm, but it does not deliver the event and error record per alias."
+    },
+    {
+     "t": "An on-failure destination on each alias (for example an SNS topic for prod)",
+     "why": "Right: destinations can be set per function, version or alias and carry the request plus the response or error details."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Destinations beat DLQs: per-alias, more targets, and they include the error details.",
+   "remember": "Async failures with full context (request + error), per version/alias → on-failure destination (SQS, SNS, Lambda, EventBridge, or S3). DLQ = older, function-level, event only, standard SQS/SNS only.",
+   "variants": [
+    "Successful results must also be routed → on-success destination.",
+    "Async payloads near 1 MB → avoid an SNS destination (256 KB limit); use SQS or S3.",
+    "The function must stop processing immediately → reserved concurrency 0; new events go to the DLQ/destination."
+   ]
+  },
+  {
+   "id": "lambda-004",
+   "skill": "3.1.8",
+   "source": "1-basics-execution-model-and-configuration.md",
+   "q": "An S3-triggered inference function needs PyTorch and other libraries that total about 1.8 GB unzipped. Which packaging is the simplest that works?",
+   "options": [
+    {
+     "t": "A .zip package uploaded through S3",
+     "why": "Wrong: uploading through S3 lifts the 50 MB zipped limit, but 250 MB unzipped still applies."
+    },
+    {
+     "t": "A container image stored in Amazon ECR",
+     "why": "Right: images can be up to 10 GB uncompressed, built for large ML and native dependencies."
+    },
+    {
+     "t": "Split the libraries across 5 layers",
+     "why": "Wrong: layers count toward the same 250 MB unzipped limit."
+    },
+    {
+     "t": "Download the libraries from S3 into /tmp at every cold start",
+     "why": "Wrong: it can work, but it adds custom code and slow cold starts; an image packages them directly."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Over 250 MB unzipped → container image (up to 10 GB).",
+   "remember": "Dependencies over 250 MB unzipped (code + layers) → container image from ECR (up to 10 GB). Layers do not help, they share the 250 MB limit.",
+   "variants": [
+    "Many functions share small helper libraries → a layer (up to 5 per function).",
+    "A large model file must be shared and updated without redeploying → EFS mount.",
+    "The zip is 80 MB zipped but under 250 MB unzipped → upload it through S3."
+   ]
+  },
+  {
+   "id": "lambda-005",
+   "skill": "1.4.2",
+   "source": "1-basics-execution-model-and-configuration.md",
+   "q": "A Python 3.12 function uses SnapStart. A random UUID is created in global code outside the handler and used as a batch ID. Many unrelated invocations write the same batch ID. What is the fix?",
+   "options": [
+    {
+     "t": "Switch to provisioned concurrency instead of SnapStart",
+     "why": "Wrong: each warm environment would still reuse its one global UUID across many invocations."
+    },
+    {
+     "t": "Publish a new version to refresh the snapshot",
+     "why": "Wrong: the new snapshot has the same problem, just with a new shared value."
+    },
+    {
+     "t": "Generate the UUID inside the handler, or in an after-restore runtime hook",
+     "why": "Right: Init state is snapshotted and copied into every resumed environment, so unique values must be made after restore."
+    },
+    {
+     "t": "Raise the memory size",
+     "why": "Wrong: memory does not affect what is copied into the snapshot."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "SnapStart copies Init state into every restored environment.",
+   "remember": "SnapStart uniqueness trap: random seeds, IDs, credentials or timestamps created in Init are shared. Create them in the handler or an after-restore hook.",
+   "variants": [
+    "Connections made in Init fail after restore → validate and reconnect after restore.",
+    "Strict, guaranteed low latency is required → provisioned concurrency (cannot be combined with SnapStart).",
+    "The runtime is Node.js → SnapStart is not supported."
+   ]
+  },
+  {
+   "id": "lambda-006",
+   "skill": "1.3.3",
+   "source": "1-basics-execution-model-and-configuration.md",
+   "q": "A pipeline step must wait up to 3 days for a human approval before loading data. The team does not want to pay for idle compute during the wait. Which TWO options fit? (Choose 2)",
+   "options": [
+    {
+     "t": "Step Functions with a callback task (wait for a task token)",
+     "why": "Right: the workflow waits for the callback without running compute."
+    },
+    {
+     "t": "A Lambda function that sleeps and polls an approval table",
+     "why": "Wrong: 15-minute limit, and you pay per ms while sleeping."
+    },
+    {
+     "t": "Lambda durable functions with a wait operation",
+     "why": "Right: waits suspend without compute charges and executions can last up to 1 year."
+    },
+    {
+     "t": "Asynchronous invocation with maximum event age set to 3 days",
+     "why": "Wrong: maximum event age is at most 6 hours, and it is not an approval mechanism."
+    },
+    {
+     "t": "Provisioned concurrency to keep the function ready",
+     "why": "Wrong: it costs money while idle and does not wait for anything."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Long waits belong in an orchestrator or durable function, not in a running Lambda.",
+   "remember": "Waiting hours or days (approvals, polling) → Step Functions wait/callback or Lambda durable functions; never sleep inside a Lambda you pay for per ms.",
+   "variants": [
+    "The team wants visual orchestration with many native service integrations → Step Functions.",
+    "The team wants the workflow written as normal code → durable functions.",
+    "The wait is a fixed schedule → EventBridge Scheduler."
+   ]
+  },
+  {
+   "id": "lambda-007",
+   "skill": "3.2.5",
+   "source": "1-basics-execution-model-and-configuration.md",
+   "q": "A Lambda function runs a steady, high, predictable load 24/7. Cost review shows it costs more than an EC2 fleet would. The team wants to keep the Lambda programming model and apply their existing EC2 Savings Plans. Which option fits?",
+   "options": [
+    {
+     "t": "Provisioned concurrency",
+     "why": "Wrong: it keeps environments warm but stays on Lambda pricing, not EC2 pricing."
+    },
+    {
+     "t": "SnapStart",
+     "why": "Wrong: it only shortens cold starts."
+    },
+    {
+     "t": "A larger memory size",
+     "why": "Wrong: it changes speed and per-GB-second cost, not the pricing model."
+    },
+    {
+     "t": "Lambda Managed Instances",
+     "why": "Right: functions run on EC2 instances in your account at EC2 price + a 15% management fee; Savings Plans/RIs apply to the EC2 part."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Steady 24/7 load + EC2 economics + Lambda model → Managed Instances.",
+   "remember": "Steady, high, predictable load that is cheaper on EC2 → Lambda Managed Instances (EC2 pricing, no scale to zero, multi-concurrent so code must be thread-safe), or move to ECS/EC2.",
+   "variants": [
+    "Traffic is spiky with idle periods → default Lambda (scale to zero).",
+    "The team will leave the Lambda model → ECS/Fargate or EC2.",
+    "The concern is cold-start latency only → provisioned concurrency or SnapStart."
+   ]
+  },
+  {
+   "id": "lambda-008",
+   "skill": "1.3.3",
+   "source": "1-basics-execution-model-and-configuration.md",
+   "q": "Messages from an SQS queue must start a Step Functions state machine, but only for messages where `type` is `order`. Today a 'pass-through' Lambda does nothing but filter and forward. How can the team cut code and operations?",
+   "options": [
+    {
+     "t": "Replace the Lambda with EventBridge Pipes (SQS source, filter, Step Functions target)",
+     "why": "Right: Pipes connects a source to a target with filtering and enrichment, with no Lambda to maintain."
+    },
+    {
+     "t": "Keep the Lambda and add an ESM event filter",
+     "why": "Wrong: it skips useless invokes, but there is still a function to maintain."
+    },
+    {
+     "t": "Raise the ESM batch size",
+     "why": "Wrong: fewer invokes, same code to maintain."
+    },
+    {
+     "t": "Subscribe the state machine to an SNS topic with a filter policy",
+     "why": "Wrong: the messages arrive in SQS, so this needs the producers to be rebuilt."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "A Lambda that only moves and filters data is a Pipes job.",
+   "remember": "Move data from SQS, Kinesis, DynamoDB Streams or Kafka to a target with filtering/enrichment and no custom logic → EventBridge Pipes, not a pass-through Lambda.",
+   "variants": [
+    "Real per-record transformation logic is needed → keep Lambda (or use it as the Pipes enrichment step).",
+    "The source is a schedule → EventBridge Scheduler.",
+    "The source is many AWS service events → an EventBridge rule."
+   ]
+  },
+  {
+   "id": "lambda-009",
+   "skill": "1.1.7",
+   "source": "2-event-sources-data-pipelines-and-storage.md",
+   "q": "A Lambda function reads a Kinesis stream with default ESM settings. One malformed record makes the function throw, and IteratorAge on that shard grows for hours while other shards are fine. Which TWO changes stop one bad record from blocking the shard? (Choose 2)",
+   "options": [
+    {
+     "t": "Raise the function memory",
+     "why": "Wrong: the record fails on every attempt, whatever the memory."
+    },
+    {
+     "t": "Enable BisectBatchOnFunctionError, limit MaximumRetryAttempts / MaximumRecordAgeInSeconds, and add an on-failure destination",
+     "why": "Right: the default is infinite retries; limits plus bisect isolate the poison record and send its metadata to SQS/SNS/S3."
+    },
+    {
+     "t": "Add more shards",
+     "why": "Wrong: the bad record still blocks its own shard."
+    },
+    {
+     "t": "Return ReportBatchItemFailures with the sequence number of the failed record",
+     "why": "Right: Lambda checkpoints before the failed record and retries only from there."
+    },
+    {
+     "t": "Switch the consumer to enhanced fan-out",
+     "why": "Wrong: EFO adds read throughput, it does not handle errors."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Default Kinesis ESM retries forever, so one poison record blocks its shard until it expires.",
+   "remember": "Kinesis/DynamoDB stream errors → set max retries / max record age + bisect + on-failure destination, and use partial batch responses. The destination gets metadata (shard, sequence numbers), not the data.",
+   "variants": [
+    "The failed records must be inspected later → read them back from the stream with the metadata before retention ends.",
+    "The source is SQS → partial batch response + a DLQ on the source queue.",
+    "IteratorAge grows with no errors → throughput problem: parallelization factor, shards, memory."
+   ]
+  },
+  {
+   "id": "lambda-010",
+   "skill": "1.1.7",
+   "source": "2-event-sources-data-pipelines-and-storage.md",
+   "q": "A Lambda function reads a 4-shard Kinesis stream. There are no errors and no throttles, but IteratorAge keeps rising. Resharding is not allowed this week. What is the quickest fix?",
+   "options": [
+    {
+     "t": "Change StartingPosition to LATEST",
+     "why": "Wrong: it skips records instead of processing them faster."
+    },
+    {
+     "t": "Lower the function's reserved concurrency",
+     "why": "Wrong: that would cause throttling and more lag."
+    },
+    {
+     "t": "Enable BisectBatchOnFunctionError",
+     "why": "Wrong: there are no errors to isolate."
+    },
+    {
+     "t": "Raise the ESM ParallelizationFactor (up to 10)",
+     "why": "Right: more concurrent batches per shard, while order is still kept per partition key."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Concurrency for Kinesis = shards × parallelization factor.",
+   "remember": "Rising IteratorAge with a healthy function → more parallelism: ParallelizationFactor (1–10), more shards, bigger batches, or more memory to speed the function.",
+   "variants": [
+    "IteratorAge rises because of errors → bisect, partial batch response, max retries/age.",
+    "IteratorAge rises because of throttles → raise reserved concurrency or the account quota.",
+    "Many consumers compete for read throughput → enhanced fan-out."
+   ]
+  },
+  {
+   "id": "lambda-011",
+   "skill": "1.1.10",
+   "source": "2-event-sources-data-pipelines-and-storage.md",
+   "q": "Four applications, including a Lambda function, read the same Kinesis stream with standard iterators. Latency grows because they compete for read throughput. Which change gives each consumer dedicated throughput?",
+   "options": [
+    {
+     "t": "Register each consumer as an enhanced fan-out (EFO) consumer",
+     "why": "Right: EFO gives each consumer its own 2 MB/s per shard, pushed over HTTP/2, at extra Kinesis cost."
+    },
+    {
+     "t": "Raise the Lambda ParallelizationFactor",
+     "why": "Wrong: more concurrent batches, but all still share the shard's 2 MB/s read limit."
+    },
+    {
+     "t": "Raise the Lambda batch size",
+     "why": "Wrong: fewer, bigger reads still share the same limit."
+    },
+    {
+     "t": "Place an SQS queue between the stream and each consumer",
+     "why": "Wrong: someone still reads the stream, and it adds hops and code."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Standard iterators share 2 MB/s per shard; EFO gives each consumer its own.",
+   "remember": "Many consumers on one stream and low latency needed → enhanced fan-out consumers (dedicated 2 MB/s per shard each).",
+   "variants": [
+    "One consumer falls behind with no contention → parallelization factor or more shards.",
+    "Cost matters more than latency with only one or two consumers → standard iterator.",
+    "Fan-out to many targets of the same event → SNS/EventBridge."
+   ]
+  },
+  {
+   "id": "lambda-012",
+   "skill": "1.1.1",
+   "source": "2-event-sources-data-pipelines-and-storage.md",
+   "q": "Five teams each want their own Lambda function triggered by changes to the same single-Region DynamoDB table. What design avoids throttling on the stream?",
+   "options": [
+    {
+     "t": "Five event source mappings on the table's stream",
+     "why": "Wrong: more than 2 readers per shard causes throttling."
+    },
+    {
+     "t": "Turn the table into a global table",
+     "why": "Wrong: global tables allow only 1 reader per shard."
+    },
+    {
+     "t": "One Lambda reads the stream and fans out through SNS or EventBridge (or use Kinesis Data Streams for DynamoDB)",
+     "why": "Right: only about 2 functions should read the same stream shard, so fan out from one reader."
+    },
+    {
+     "t": "Have each team scan the table every minute",
+     "why": "Wrong: slow, costly, and misses the change order."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "DynamoDB Streams supports about 2 readers per shard (1 for global tables).",
+   "remember": "Many consumers of DynamoDB changes → one reader that fans out (SNS/EventBridge), or Kinesis Data Streams for DynamoDB.",
+   "variants": [
+    "Only INSERT events matter → ESM event filter on eventName = INSERT.",
+    "Two consumers only → two ESMs are fine.",
+    "The handler writes back to the same table → guard against loops; recursion detection does not cover DynamoDB."
+   ]
+  },
+  {
+   "id": "lambda-013",
+   "skill": "3.1.8",
+   "source": "2-event-sources-data-pipelines-and-storage.md",
+   "q": "A Lambda function processes SQS messages in batches of 10. When one message fails, all 10 are processed again, which creates duplicate work. What is the best fix?",
+   "options": [
+    {
+     "t": "Set the batch size to 1",
+     "why": "Wrong: it works, but multiplies invocations and cost."
+    },
+    {
+     "t": "Enable ReportBatchItemFailures and return only the failed message IDs",
+     "why": "Right: only failed messages return to the queue; successful ones are deleted."
+    },
+    {
+     "t": "Raise the queue's visibility timeout",
+     "why": "Wrong: the whole batch is still retried after one failure."
+    },
+    {
+     "t": "Add a dead-letter queue on the Lambda function",
+     "why": "Wrong: a function DLQ applies to async invokes only; SQS sources use a DLQ on the queue."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Without partial batch response, one failure retries the whole batch.",
+   "remember": "Some records in a batch fail (SQS, Kinesis, DynamoDB Streams) → ReportBatchItemFailures (Powertools batch processor helps), plus idempotent code.",
+   "variants": [
+    "Failed messages must be kept for inspection → redrive policy with a DLQ on the source queue.",
+    "Messages run twice while still in progress → visibility timeout too short.",
+    "The source is Kinesis → return the sequence number of the first failed record."
+   ]
+  },
+  {
+   "id": "lambda-014",
+   "skill": "1.2.7",
+   "source": "2-event-sources-data-pipelines-and-storage.md",
+   "q": "An SQS-triggered Lambda function has a 5-minute timeout. The queue's visibility timeout is 30 seconds. Some messages are processed a second time while the first run is still working. What is the fix?",
+   "options": [
+    {
+     "t": "Raise the redrive policy's maxReceiveCount",
+     "why": "Wrong: that controls when messages go to the DLQ, not when they reappear."
+    },
+    {
+     "t": "Lower the ESM batch size",
+     "why": "Wrong: each message can still exceed the 30-second visibility timeout."
+    },
+    {
+     "t": "Move to an SQS FIFO queue",
+     "why": "Wrong: FIFO adds ordering; the timeout mismatch remains."
+    },
+    {
+     "t": "Set the queue's visibility timeout well above the function timeout (plus the batching window)",
+     "why": "Right: messages become visible again after the visibility timeout, so a short one causes parallel re-processing."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Visibility timeout shorter than processing time = duplicate processing.",
+   "remember": "SQS messages processed twice while still running → visibility timeout too short for the function timeout. Make it much longer and keep the code idempotent.",
+   "variants": [
+    "Duplicates come from a whole-batch retry after one failure → ReportBatchItemFailures.",
+    "Messages pile up in the DLQ during throttling → raise maxReceiveCount and concurrency, then redrive.",
+    "Duplicates must have no effect at all → idempotency (conditional writes)."
+   ]
+  },
+  {
+   "id": "lambda-015",
+   "skill": "1.1.6",
+   "source": "2-event-sources-data-pipelines-and-storage.md",
+   "q": "A Lambda function is triggered by `s3:ObjectCreated:*` on the `data` bucket. It writes its output to `data/processed/` in the same bucket. Invocations and cost explode. What is the best fix?",
+   "options": [
+    {
+     "t": "Rely on recursive loop detection",
+     "why": "Wrong: it stops the loop after about 16 invocations, a safety net, not a design fix."
+    },
+    {
+     "t": "Set reserved concurrency to 1",
+     "why": "Wrong: the loop runs slower but never stops."
+    },
+    {
+     "t": "Write the output to a different bucket, or limit the trigger to a prefix such as `raw/`",
+     "why": "Right: the output no longer matches the trigger, so the loop cannot start."
+    },
+    {
+     "t": "Send the S3 events through SNS first",
+     "why": "Wrong: the function is still triggered by its own output."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Never write into the bucket/prefix that triggers the function.",
+   "remember": "S3-triggered function writing back to its trigger location = recursive loop. Use a separate bucket or prefix plus prefix/suffix filters; loop detection only catches it after about 16 calls.",
+   "variants": [
+    "Several consumers need the same upload event → S3 to EventBridge (or SNS fan-out).",
+    "Upload bursts must be smoothed → S3 → SQS → Lambda.",
+    "The loop is through DynamoDB Streams → add guards; recursion detection does not cover DynamoDB."
+   ]
+  },
+  {
+   "id": "lambda-016",
+   "skill": "1.1.5",
+   "source": "2-event-sources-data-pipelines-and-storage.md",
+   "q": "A Lambda export must run every night at 02:00 London time, and keep that local time across daylight saving changes. What is the least effort?",
+   "options": [
+    {
+     "t": "A cron job on a small EC2 instance",
+     "why": "Wrong: a server to run and patch for one call a day."
+    },
+    {
+     "t": "EventBridge Scheduler with a cron expression and the Europe/London time zone",
+     "why": "Right: Scheduler supports time zones, one-time schedules and flexible windows."
+    },
+    {
+     "t": "A Lambda that runs every 15 minutes and sleeps until 02:00",
+     "why": "Wrong: wasteful and limited to 15 minutes per run."
+    },
+    {
+     "t": "An S3 event notification on a daily marker file",
+     "why": "Wrong: something still has to create the file on time."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Time-based triggers → EventBridge Scheduler.",
+   "remember": "Run a function on a schedule, especially in a local time zone → EventBridge Scheduler (cron/rate, time zones). Scheduled EventBridge rules also work for simple cron.",
+   "variants": [
+    "Run once at a future time → a one-time Scheduler schedule.",
+    "Run when a Glue job finishes → EventBridge rule on the Glue state-change event.",
+    "Several dependent steps after the trigger → Scheduler → Step Functions."
+   ]
+  },
+  {
+   "id": "lambda-017",
+   "skill": "1.2.6",
+   "source": "2-event-sources-data-pipelines-and-storage.md",
+   "q": "Clickstream JSON arrives through Amazon Data Firehose. Records need small field fixes and must land in S3 as Parquet. Which design needs the least custom code?",
+   "options": [
+    {
+     "t": "A Lambda function that writes each record as a Parquet file with pyarrow",
+     "why": "Wrong: more code, and many tiny files that hurt query performance."
+    },
+    {
+     "t": "An hourly Glue Spark job converting the raw JSON",
+     "why": "Wrong: works, but adds a job and delay when Firehose can convert in-stream."
+    },
+    {
+     "t": "Athena CTAS on the raw JSON every 5 minutes",
+     "why": "Wrong: scheduling and many small outputs; not a streaming design."
+    },
+    {
+     "t": "A Firehose Lambda transform for the fixes, plus Firehose record format conversion using a Glue table schema",
+     "why": "Right: Lambda only cleans records; Firehose converts to Parquet and writes to S3."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Firehose converts to Parquet; Lambda is only for cleanup.",
+   "remember": "Streaming data to S3 as Parquet/ORC → Firehose record format conversion (Glue table schema). Add a Firehose Lambda transform (recordId, result, data) only when records need cleaning.",
+   "variants": [
+    "Small/medium files arrive in S3 and need CSV → Parquet → Lambda with the AWS SDK for pandas layer.",
+    "Many GB per file or joins → Glue Spark or EMR.",
+    "Lambda outputs created many small files → compact with Glue, Athena CTAS or Iceberg compaction."
+   ]
+  },
+  {
+   "id": "lambda-018",
+   "skill": "1.4.7",
+   "source": "2-event-sources-data-pipelines-and-storage.md",
+   "q": "Several Lambda functions need the same 2 GB reference model file. Data scientists replace it weekly and do not want to redeploy the functions. Which storage fits?",
+   "options": [
+    {
+     "t": "An Amazon EFS file system mounted through the VPC with an access point",
+     "why": "Right: shared, persistent storage under /mnt that can be updated without redeploying."
+    },
+    {
+     "t": "Ephemeral storage (/tmp) raised to 10 GB",
+     "why": "Wrong: private to one environment, lost when it ends, and must be filled on every cold start."
+    },
+    {
+     "t": "A Lambda layer",
+     "why": "Wrong: layers are read-only, count toward 250 MB unzipped, and need a redeploy."
+    },
+    {
+     "t": "An environment variable holding the model location and content",
+     "why": "Wrong: environment variables are limited to 4 KB in total."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Shared, persistent, large, updatable files → EFS mount.",
+   "remember": "Mount storage in Lambda → EFS (or S3 Files) via VPC + access point for shared, persistent data; /tmp (512 MB–10 GB) for private scratch space.",
+   "variants": [
+    "A function needs 5 GB of scratch space for a decompress → raise ephemeral storage.",
+    "The model never changes between releases → package it in a container image.",
+    "Many functions on EFS under high concurrency → use Elastic throughput, bursting credits can run out."
+   ]
+  },
+  {
+   "id": "lambda-019",
+   "skill": "1.1.11",
+   "source": "2-event-sources-data-pipelines-and-storage.md",
+   "q": "A bug in a Kinesis consumer Lambda wrote bad output for all of yesterday's data. The fix is deployed, and the stream keeps 7 days of data. How should the team reprocess yesterday?",
+   "options": [
+    {
+     "t": "Create a new mapping with StartingPosition LATEST",
+     "why": "Wrong: LATEST reads only new records."
+    },
+    {
+     "t": "Create a new event source mapping with StartingPosition AT_TIMESTAMP set to the start of yesterday",
+     "why": "Right: Kinesis keeps records within retention, so a new mapping can replay from a point in time."
+    },
+    {
+     "t": "Redrive the messages from the on-failure destination",
+     "why": "Wrong: for Kinesis the destination holds metadata about discarded records, and these records did not fail."
+    },
+    {
+     "t": "Restart the function to reset the checkpoint",
+     "why": "Wrong: there is no restart that rewinds the mapping."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Streams replay from a position within retention.",
+   "remember": "Replay ingestion: Kinesis/MSK → new ESM at AT_TIMESTAMP or TRIM_HORIZON (within retention); EventBridge → archive replay; SQS → DLQ redrive; keep raw data in S3 to reprocess anything.",
+   "variants": [
+    "The source is EventBridge → replay from an archive.",
+    "The source is SQS with failed messages in a DLQ → redrive to the source queue.",
+    "The data is older than stream retention → reprocess from the raw copy in S3."
+   ]
+  },
+  {
+   "id": "lambda-020",
+   "skill": "1.4.2",
+   "source": "3-concurrency-scaling-performance-and-networking.md",
+   "q": "An API function averages 200 ms per request and must handle a peak of 6,000 requests per second. The account still has default Lambda quotas. What will happen, and what should the team do?",
+   "options": [
+    {
+     "t": "It needs 6,000 concurrency, so split it across six functions",
+     "why": "Wrong: the math is wrong, and the quota is shared by all functions in the Region."
+    },
+    {
+     "t": "Nothing, because the limit is 10,000 requests per second",
+     "why": "Wrong: RPS is fine, but concurrency (1,200) is above the quota."
+    },
+    {
+     "t": "Set reserved concurrency to 1,200",
+     "why": "Wrong: reserved concurrency cannot exceed the quota, and 100 units always stay unreserved."
+    },
+    {
+     "t": "It needs about 1,200 concurrency, above the default 1,000 per Region, so request a quota increase",
+     "why": "Right: concurrency = requests per second × duration = 6,000 × 0.2 s."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Concurrency = RPS × average duration in seconds.",
+   "remember": "Size Lambda with concurrency = requests/s × duration. Default is 1,000 per Region shared by all functions; RPS limit = 10 × concurrency. Over it → throttles (429).",
+   "variants": [
+    "A 20 ms function at 30,000 RPS throttles at low concurrency → the RPS limit (10 × quota) is hit; raise the quota.",
+    "Duration can be cut in half → concurrency needed halves too.",
+    "Only one function must be protected → reserved concurrency."
+   ]
+  },
+  {
+   "id": "lambda-021",
+   "skill": "1.4.2",
+   "source": "3-concurrency-scaling-performance-and-networking.md",
+   "q": "A bursty reporting function uses most of the Region's concurrency, and the order API function then throttles. What is the cheapest way to protect the order API?",
+   "options": [
+    {
+     "t": "Set reserved concurrency on the order API (and optionally cap the reporting function)",
+     "why": "Right: reserved concurrency guarantees a slice for the function and is free."
+    },
+    {
+     "t": "Add provisioned concurrency to the reporting function",
+     "why": "Wrong: it costs money and the reporting function still draws from the shared pool."
+    },
+    {
+     "t": "Attach the order API to a VPC",
+     "why": "Wrong: networking does not change concurrency."
+    },
+    {
+     "t": "Enable SnapStart on the order API",
+     "why": "Wrong: it shortens cold starts, not throttling."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Reserved concurrency = guarantee + cap, at no cost.",
+   "remember": "One function starves others → reserved concurrency on the critical one (guarantee) or on the noisy one (cap). It is free; provisioned concurrency is for warm starts and costs money.",
+   "variants": [
+    "A downstream DB can take only 50 connections → reserved concurrency 50 (cap) on the writer.",
+    "A misbehaving function must stop now → reserved concurrency 0.",
+    "Reserved concurrency set too low → throttles even with spare account capacity."
+   ]
+  },
+  {
+   "id": "lambda-022",
+   "skill": "1.4.2",
+   "source": "3-concurrency-scaling-performance-and-networking.md",
+   "q": "A public Node.js API must have no cold starts every weekday from 09:00, when predictable traffic arrives. Which option fits?",
+   "options": [
+    {
+     "t": "SnapStart on the published version",
+     "why": "Wrong: SnapStart does not support Node.js, and still restores on demand."
+    },
+    {
+     "t": "Reserved concurrency equal to the peak",
+     "why": "Wrong: it guarantees capacity but does not keep environments warm."
+    },
+    {
+     "t": "Provisioned concurrency on an alias, scaled up by scheduled Application Auto Scaling before 09:00",
+     "why": "Right: pre-initialized environments, raised on a schedule for the known peak."
+    },
+    {
+     "t": "Raise memory to 10 GB",
+     "why": "Wrong: it speeds up Init, but cold starts still happen."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Guaranteed no cold starts → provisioned concurrency.",
+   "remember": "Strict latency at known times → provisioned concurrency on a version/alias with scheduled scaling (or target tracking on utilization). It costs money and cannot be used with SnapStart.",
+   "variants": [
+    "The runtime is Java and the budget is tight → SnapStart (free for Java).",
+    "Traffic is unpredictable → target tracking on provisioned concurrency utilization.",
+    "Cold starts only affect async batch work → usually ignore them."
+   ]
+  },
+  {
+   "id": "lambda-023",
+   "skill": "4.1.2",
+   "source": "3-concurrency-scaling-performance-and-networking.md",
+   "q": "A Lambda function is attached to a VPC to reach RDS. It must also call an external SaaS API. The team placed it in a public subnet with an internet gateway route, but the API calls time out. What is the fix?",
+   "options": [
+    {
+     "t": "Assign an Elastic IP to the function's ENI in the public subnet",
+     "why": "Wrong: Lambda-managed ENIs do not get public IPs."
+    },
+    {
+     "t": "Put the function in private subnets with a route to a NAT gateway",
+     "why": "Right: Lambda ENIs never get public IPs, so internet access from a VPC needs NAT."
+    },
+    {
+     "t": "Add an S3 gateway endpoint",
+     "why": "Wrong: it reaches S3 only, not a SaaS API."
+    },
+    {
+     "t": "Raise the function timeout",
+     "why": "Wrong: without a route the call never completes."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "VPC Lambda + internet = private subnet + NAT gateway.",
+   "remember": "VPC-attached Lambda needs a NAT gateway (from private subnets) for the internet, and VPC endpoints for AWS services. A public subnet never gives it internet access.",
+   "variants": [
+    "Only S3 or DynamoDB is needed → gateway endpoints (free).",
+    "Secrets Manager is unreachable → add its interface endpoint (or NAT) and allow HTTPS.",
+    "The function does not need private resources → do not attach it to a VPC."
+   ]
+  },
+  {
+   "id": "lambda-024",
+   "skill": "1.1.9",
+   "source": "3-concurrency-scaling-performance-and-networking.md",
+   "q": "Files arrive in bursts through S3 → SQS → Lambda. The function writes to an RDS PostgreSQL instance that handles about 20 connections, and the database runs out of connections during bursts. Which TWO changes help most? (Choose 2)",
+   "options": [
+    {
+     "t": "Set the SQS event source mapping's maximum concurrency to about 20",
+     "why": "Right: it caps how many concurrent invokes the queue can drive; extra messages wait in the queue."
+    },
+    {
+     "t": "Raise the account concurrency quota",
+     "why": "Wrong: more concurrency means more connections."
+    },
+    {
+     "t": "Add provisioned concurrency to the function",
+     "why": "Wrong: warm environments do not reduce connections."
+    },
+    {
+     "t": "Put RDS Proxy in front of the database",
+     "why": "Right: it pools and reuses connections across Lambda environments."
+    }
+   ],
+   "answer": [
+    0,
+    3
+   ],
+   "explain": "Protect a fragile downstream with a queue, a concurrency cap and connection pooling.",
+   "remember": "Lambda overwhelms a DB → SQS buffer + ESM maximum concurrency (or reserved concurrency) + RDS Proxy (or the Data API). Keep reserved concurrency ≥ the sum of SQS max concurrency settings.",
+   "variants": [
+    "The target is DynamoDB → no connection limit; watch capacity throttling instead.",
+    "There is no SQS in the path → reserved concurrency on the function as the cap.",
+    "The target is a third-party API with rate limits → backoff with jitter or a token bucket."
+   ]
+  },
+  {
+   "id": "lambda-025",
+   "skill": "1.1.12",
+   "source": "3-concurrency-scaling-performance-and-networking.md",
+   "q": "A Lambda function charges customers from SQS messages. Occasional retries make it charge the same payment twice. What is the right fix?",
+   "options": [
+    {
+     "t": "Set the function's async retry attempts to 0",
+     "why": "Wrong: that is an async setting; SQS delivery is still at-least-once."
+    },
+    {
+     "t": "Raise the function timeout",
+     "why": "Wrong: it can reduce some retries but cannot stop duplicates."
+    },
+    {
+     "t": "Make processing idempotent: record each payment ID in DynamoDB with a conditional write (for example the Powertools idempotency utility)",
+     "why": "Right: delivery is at-least-once, so the code must make duplicates harmless."
+    },
+    {
+     "t": "Set reserved concurrency to 1",
+     "why": "Wrong: serial processing still receives duplicate deliveries."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "At-least-once delivery means duplicates will happen; design for them.",
+   "remember": "Duplicates from async retries, ESM at-least-once or client retries → idempotent processing: event/natural keys, conditional writes (attribute_not_exists), SQL MERGE/upserts, deterministic S3 keys.",
+   "variants": [
+    "The S3 event is delivered twice → the same idempotency approach.",
+    "Writes to S3 → deterministic keys make overwrites harmless.",
+    "Writes to SQL → MERGE / upsert."
+   ]
+  },
+  {
+   "id": "lambda-026",
+   "skill": "4.2.2",
+   "source": "4-security-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "A function's database password is stored in an environment variable. Security notes that anyone with `lambda:GetFunctionConfiguration` can read it. They want rotation, low latency and few API calls. What should be used?",
+   "options": [
+    {
+     "t": "Keep the environment variable and use a customer managed KMS key",
+     "why": "Wrong: env vars are already encrypted at rest; values are still shown decrypted and there is no rotation."
+    },
+    {
+     "t": "Secrets Manager, read with the execution role through the AWS Parameters and Secrets Lambda Extension cache",
+     "why": "Right: rotation and versioning, and the extension caches the value locally to cut calls, cost and latency."
+    },
+    {
+     "t": "Hardcode the password in the deployment package",
+     "why": "Wrong: it ends up in source control and artifacts, with no rotation."
+    },
+    {
+     "t": "Put the password in a Lambda layer",
+     "why": "Wrong: layers are code packages, readable by anyone who can get the layer, with no rotation."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Secrets go in Secrets Manager or Parameter Store, not env vars.",
+   "remember": "Credentials for Lambda → Secrets Manager (rotation) or SSM Parameter Store SecureString, read with the execution role and cached (extension or in-memory with refresh).",
+   "variants": [
+    "Rotation is not needed and cost matters → Parameter Store SecureString.",
+    "The DB is RDS → RDS IAM authentication or RDS Proxy with Secrets Manager.",
+    "The function is in a VPC with no NAT → add a Secrets Manager interface endpoint."
+   ]
+  },
+  {
+   "id": "lambda-027",
+   "skill": "4.3.2",
+   "source": "4-security-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "A function reads objects from a bucket encrypted with SSE-KMS using a customer managed key. The execution role allows `s3:GetObject` on the bucket, but reads fail with AccessDenied. Which TWO changes are needed? (Choose 2)",
+   "options": [
+    {
+     "t": "Add `s3.amazonaws.com` to the function's resource-based policy",
+     "why": "Wrong: that controls who invokes the function, not what the code can read."
+    },
+    {
+     "t": "Allow `kms:Decrypt` on the key ARN in the execution role",
+     "why": "Right: reading SSE-KMS objects needs decrypt permission on the key."
+    },
+    {
+     "t": "Make sure the key policy allows the role to use the key",
+     "why": "Right: the key policy must also allow it, or the IAM permission has no effect."
+    },
+    {
+     "t": "Attach the function to a VPC",
+     "why": "Wrong: networking does not cause this AccessDenied."
+    },
+    {
+     "t": "Enable CloudTrail data events",
+     "why": "Wrong: it records the calls, it does not grant access."
+    }
+   ],
+   "answer": [
+    1,
+    2
+   ],
+   "explain": "SSE-KMS reads need both the IAM permission and the key policy.",
+   "remember": "AccessDenied on SSE-KMS objects with correct S3 permissions → add kms:Decrypt (and GenerateDataKey/Encrypt for writes) to the role and allow it in the key policy. Cross-account: the key owner's key policy must allow the role.",
+   "variants": [
+    "The key is in another account → that account's key policy must allow the Lambda role, and the role must allow kms:Decrypt on that key ARN.",
+    "The function writes SSE-KMS objects → kms:GenerateDataKey/Encrypt too.",
+    "A VPC endpoint policy blocks the call → check the endpoint policy."
+   ]
+  },
+  {
+   "id": "lambda-028",
+   "skill": "4.1.4",
+   "source": "4-security-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "An engineer configured an S3 event notification for a Lambda function using the CLI. Uploads do nothing: the function shows no invocations and no errors. What is the most likely cause?",
+   "options": [
+    {
+     "t": "The function's resource-based policy does not allow `s3.amazonaws.com` to invoke it",
+     "why": "Right: push sources need permission in the function policy, ideally with aws:SourceArn / aws:SourceAccount."
+    },
+    {
+     "t": "The execution role lacks `s3:GetObject`",
+     "why": "Wrong: the function would be invoked and then fail, which shows as errors."
+    },
+    {
+     "t": "The function's reserved concurrency is too high",
+     "why": "Wrong: a high limit does not block invocations."
+    },
+    {
+     "t": "The function's timeout is too short",
+     "why": "Wrong: timeouts show as invocations with errors."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Push sources are allowed in the function's resource policy; what the code does is in the execution role.",
+   "remember": "Nothing invokes the function → resource-based policy (or event filter/prefix) problem. Function invoked but fails on AWS calls → execution role / resource policy / KMS problem.",
+   "variants": [
+    "S3 is in another account → resource policy for s3.amazonaws.com with aws:SourceAccount/aws:SourceArn.",
+    "Account B's app must invoke the function in account A → A's resource policy allows B's role, and B's role allows lambda:InvokeFunction.",
+    "The source is an ESM (SQS, Kinesis) → the execution role needs read rights on the source."
+   ]
+  },
+  {
+   "id": "lambda-029",
+   "skill": "4.4.1",
+   "source": "4-security-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "Auditors need a record of which principals invoked a sensitive Lambda function and when. What should be enabled?",
+   "options": [
+    {
+     "t": "The default CloudTrail management events trail",
+     "why": "Wrong: it records CreateFunction, UpdateFunctionCode and similar, not Invoke."
+    },
+    {
+     "t": "The CloudWatch Invocations metric",
+     "why": "Wrong: it counts invocations without identities."
+    },
+    {
+     "t": "AWS Config rules for Lambda",
+     "why": "Wrong: Config tracks configuration and compliance, not invocations."
+    },
+    {
+     "t": "CloudTrail data events for Lambda",
+     "why": "Right: Invoke calls are data events, off by default and charged extra."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Who invoked → CloudTrail data events; who changed the function → management events.",
+   "remember": "Audit Lambda invocations → CloudTrail data events (opt-in). Audit configuration changes → CloudTrail management events and AWS Config.",
+   "variants": [
+    "Auditors need who changed the function's code → CloudTrail management events (UpdateFunctionCode).",
+    "Track configuration history and compliance → AWS Config.",
+    "Count invocations and errors → CloudWatch metrics."
+   ]
+  },
+  {
+   "id": "lambda-030",
+   "skill": "1.4.6",
+   "source": "4-security-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "A team deploys with AWS SAM. New versions must take 10% of traffic for 5 minutes, then 100%, and roll back automatically if an error alarm fires. What is the least effort?",
+   "options": [
+    {
+     "t": "Update the alias weights by hand with the CLI",
+     "why": "Wrong: manual work and no automatic rollback."
+    },
+    {
+     "t": "Run two functions behind Route 53 weighted records",
+     "why": "Wrong: more resources and no Lambda-aware rollback."
+    },
+    {
+     "t": "Set `AutoPublishAlias` and a `DeploymentPreference` of `Canary10Percent5Minutes` with CloudWatch alarms",
+     "why": "Right: SAM wires up CodeDeploy traffic shifting on the alias and rollback on alarms with no extra code."
+    },
+    {
+     "t": "Deploy to $LATEST and add provisioned concurrency",
+     "why": "Wrong: no traffic shifting at all."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "SAM + CodeDeploy gives canary/linear deployments with alarm rollback.",
+   "remember": "Gradual Lambda rollout with rollback → weighted alias + CodeDeploy (Canary, Linear, AllAtOnce), in SAM via AutoPublishAlias + DeploymentPreference; pre/post-traffic hooks run tests.",
+   "variants": [
+    "Shift 10% more every minute → Linear10PercentEvery1Minute.",
+    "Validation tests must run before traffic shifts → a pre-traffic hook.",
+    "Infrastructure must be written in Python with reusable components → AWS CDK."
+   ]
+  },
+  {
+   "id": "lambda-031",
+   "skill": "1.2.7",
+   "source": "4-security-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "A function runs on `arm64`. A developer built the .zip on an x86 laptop with `pip install` of a library that has native code. After deploy the function fails with `Runtime.ImportModuleError`. What is the fix?",
+   "options": [
+    {
+     "t": "Raise the function memory",
+     "why": "Wrong: the import fails regardless of memory."
+    },
+    {
+     "t": "Raise the function timeout",
+     "why": "Wrong: the error is at import, not a timeout."
+    },
+    {
+     "t": "Rebuild the dependencies for the target architecture, for example `sam build --use-container`",
+     "why": "Right: native libraries must match the Lambda architecture and OS."
+    },
+    {
+     "t": "Move the libraries to an EFS mount",
+     "why": "Wrong: the same wrong-architecture binaries would still fail."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Wrong-architecture native binaries fail at import.",
+   "remember": "Runtime.ImportModuleError → missing dependency, wrong handler name, or native libraries built for the wrong arch/OS. Build in a matching container (sam build --use-container).",
+   "variants": [
+    "The error is RequestEntityTooLargeException → the payload is over 6 MB sync / 1 MB async; pass an S3 reference.",
+    "The error is CodeStorageExceededException → delete old versions and layers (300 GB per Region).",
+    "Max Memory Used equals memory size and the runtime is killed → out of memory; raise memory or stream data."
+   ]
+  },
+  {
+   "id": "lambda-032",
+   "skill": "3.3.7",
+   "source": "4-security-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "CloudWatch Logs costs more than the Lambda compute for a set of functions. They log at DEBUG in production, and the log groups never expire. What reduces cost without code changes?",
+   "options": [
+    {
+     "t": "Remove CloudWatch Logs permissions from the execution role",
+     "why": "Wrong: it silently drops all logs, including the ones needed to troubleshoot."
+    },
+    {
+     "t": "Enable Lambda Insights",
+     "why": "Wrong: it adds system metrics at extra cost."
+    },
+    {
+     "t": "Enable X-Ray active tracing",
+     "why": "Wrong: traces add cost and do not shrink logs."
+    },
+    {
+     "t": "Use JSON log format, set the application log level to WARN in production, and set log retention",
+     "why": "Right: with JSON logs the log level can be filtered by configuration, and retention stops unbounded storage."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Log level filtering + retention cut log cost.",
+   "remember": "Lambda log cost too high → JSON log format with a higher log level in prod (no code change) and a retention period (the default is never expire).",
+   "variants": [
+    "Errors must be searched across many functions → CloudWatch Logs Insights on JSON logs.",
+    "Custom metrics without API calls → Embedded Metric Format (Powertools Metrics).",
+    "Logs are missing entirely → check the role's logs permissions and the log level filter."
+   ]
+  },
+  {
+   "id": "lambda-033",
+   "skill": "3.3.4",
+   "source": "4-security-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "An API Gateway → Lambda → DynamoDB path has a high p99 latency. The team needs to see where time is spent across the services, including init versus invoke time. What should they use?",
+   "options": [
+    {
+     "t": "CloudTrail data events",
+     "why": "Wrong: they record who invoked, not where time is spent."
+    },
+    {
+     "t": "AWS Config",
+     "why": "Wrong: configuration history, not latency."
+    },
+    {
+     "t": "AWS X-Ray active tracing (or CloudWatch Application Signals)",
+     "why": "Right: it shows the end-to-end path, latency breakdown, init vs invoke, and downstream errors."
+    },
+    {
+     "t": "A metric filter on ERROR in the logs",
+     "why": "Wrong: it counts errors, not time per service."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Latency across services → tracing.",
+   "remember": "Where is time spent across API Gateway, Lambda and downstream calls → X-Ray / Application Signals. System metrics per function (CPU, memory) → Lambda Insights. Right-sizing memory → REPORT line Max Memory Used, Compute Optimizer.",
+   "variants": [
+    "Need CPU, memory and network per function → Lambda Insights.",
+    "Need to count cold starts → Logs Insights on @initDuration.",
+    "Need alerts on failures → CloudWatch alarm on Errors or error rate → SNS."
+   ]
+  },
+  {
+   "id": "lambda-034",
+   "skill": "4.5.4",
+   "source": "4-security-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "Security must continuously detect Lambda functions that are not attached to a VPC or that allow public access in their resource policy, and keep a history of configuration changes. What should they use?",
+   "options": [
+    {
+     "t": "CloudWatch metrics in the AWS/Lambda namespace",
+     "why": "Wrong: metrics are about runtime behavior, not configuration."
+    },
+    {
+     "t": "AWS Config with the `lambda-inside-vpc` and `lambda-function-public-access-prohibited` rules",
+     "why": "Right: Config evaluates configurations continuously and keeps configuration history."
+    },
+    {
+     "t": "CloudTrail data events",
+     "why": "Wrong: they log Invoke calls, not compliance state."
+    },
+    {
+     "t": "Lambda Insights",
+     "why": "Wrong: system performance metrics only."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Configuration compliance and history → AWS Config.",
+   "remember": "Detect non-compliant Lambda settings (VPC, public access, runtime, concurrency, DLQ) → AWS Config rules; prevent them up front → SCPs/IAM condition keys (lambda:VpcIds, lambda:FunctionUrlAuthType).",
+   "variants": [
+    "Block creating functions outside approved VPCs → IAM/SCP with lambda:VpcIds / lambda:SubnetIds.",
+    "Block public function URLs → SCP on lambda:FunctionUrlAuthType = NONE.",
+    "Find who made a change → CloudTrail management events."
+   ]
+  },
+  {
+   "id": "lambda-035",
+   "skill": "1.2.7",
+   "source": "3-concurrency-scaling-performance-and-networking.md",
+   "q": "A VPC-attached reconciliation function runs only once a month. The first invoke each month fails, and a retry a few minutes later works. What is the cause?",
+   "options": [
+    {
+     "t": "After 14 idle days Lambda reclaims the VPC ENIs; the function is Inactive and the first invoke fails while it returns to Pending",
+     "why": "Right: the ENI is re-created on that call, so later calls succeed."
+    },
+    {
+     "t": "Recursive loop detection stopped the function",
+     "why": "Wrong: that applies to loops of about 16 chained calls, not monthly runs."
+    },
+    {
+     "t": "The account concurrency quota is exhausted",
+     "why": "Wrong: a once-a-month function would see throttles, not a fix after minutes."
+    },
+    {
+     "t": "The function runs out of /tmp space",
+     "why": "Wrong: /tmp starts empty in a new environment."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Idle VPC functions go Inactive after 14 days.",
+   "remember": "Rarely used VPC functions → expect Inactive after 14 idle days; the first call re-creates the ENI. Retry, or invoke periodically. Pending/Inactive can also come from IP or ENI quota limits.",
+   "variants": [
+    "The function stays Pending with EC2ThrottledException or ENILimitReachedException → subnet out of IPs or ENI quota; use bigger subnets.",
+    "A VPC function times out calling a public API → missing NAT gateway route.",
+    "A VPC function cannot reach S3 → add an S3 gateway endpoint or NAT."
+   ]
+  }
+ ]
+}

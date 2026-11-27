@@ -1,0 +1,1071 @@
+{
+  "questions": [
+    {
+      "id": "flink-001",
+      "skill": "1.2.5",
+      "source": "1-basics-architecture-kpus-and-studio.md",
+      "q": "A mobile app streams events to Kinesis Data Streams. The business needs per-user rolling metrics over 30 minutes, and events can arrive several minutes late but must be counted in the right window. Which service fits?",
+      "options": [
+        {
+          "t": "Lambda with a Kinesis event source mapping and tumbling windows",
+          "why": "Wrong: Lambda windows are tumbling only, at most 15 minutes, with no event-time watermarks."
+        },
+        {
+          "t": "Amazon Data Firehose with a Lambda transform",
+          "why": "Wrong: Firehose transforms per record; no windows over many records and no long-lived state."
+        },
+        {
+          "t": "Managed Service for Apache Flink with event-time windows and watermarks",
+          "why": "Right: Flink keeps keyed state and uses watermarks to place late events in the correct window."
+        },
+        {
+          "t": "A KCL consumer on EC2 that checkpoints to DynamoDB",
+          "why": "Wrong: possible, but you build windows, state and late-data logic yourself, with much more operations work."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Event time, watermarks and windows longer than 15 minutes point to Managed Service for Apache Flink.",
+      "remember": "Stateful windows, event time, late data, joins or exactly-once state on a stream → Managed Service for Apache Flink.",
+      "variants": [
+        "Only a simple per-record transform is needed → Lambda.",
+        "Team already uses Spark and accepts seconds of latency → Glue streaming ETL.",
+        "Interactive SQL exploration of the stream → MSF Studio."
+      ]
+    },
+    {
+      "id": "flink-002",
+      "skill": "1.2.5",
+      "source": "1-basics-architecture-kpus-and-studio.md",
+      "q": "A team must land a Kinesis data stream in S3 as Parquet files for Athena. There is no aggregation, joining or other stateful logic. They want the least code and cost. What should they use?",
+      "options": [
+        {
+          "t": "Amazon Data Firehose with format conversion to Parquet",
+          "why": "Right: Firehose buffers and delivers to S3, converts to Parquet, and needs no code."
+        },
+        {
+          "t": "Managed Service for Apache Flink with a FileSink",
+          "why": "Wrong: it works, but adds code and always-on KPU cost for no gain when there is no stateful logic."
+        },
+        {
+          "t": "Flink on Amazon EMR",
+          "why": "Wrong: you also manage a cluster for a job that needs no Flink at all."
+        },
+        {
+          "t": "MSF Studio notebook writing to S3",
+          "why": "Wrong: notebooks are for interactive work and bill extra KPUs while running."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Pure buffered delivery with format conversion is Firehose's job.",
+      "remember": "No-code delivery to S3, Redshift, OpenSearch or Iceberg with buffering → Firehose. Add MSF only when you need windows, joins or state.",
+      "variants": [
+        "The pipeline must also sessionize users before landing → MSF, then FileSink/Iceberg or Firehose.",
+        "Exactly-once file output is required → MSF FileSink (Firehose is at-least-once)."
+      ]
+    },
+    {
+      "id": "flink-003",
+      "skill": "1.2.5",
+      "source": "1-basics-architecture-kpus-and-studio.md",
+      "q": "An older design uses Kinesis Data Analytics for SQL with RANDOM_CUT_FOREST to flag anomalies in a sensor stream. The team is rebuilding it today. What is the correct approach?",
+      "options": [
+        {
+          "t": "Keep the KDA for SQL application and only upgrade its runtime",
+          "why": "Wrong: KDA for SQL was shut down; its applications were deleted starting 27 January 2026."
+        },
+        {
+          "t": "Migrate in place to Managed Service for Apache Flink with no code change",
+          "why": "Wrong: moving from KDA for SQL is a rewrite, not an upgrade."
+        },
+        {
+          "t": "Use Firehose with a RANDOM_CUT_FOREST transform setting",
+          "why": "Wrong: Firehose has no such function and no state across records."
+        },
+        {
+          "t": "Rewrite in Managed Service for Apache Flink (app or Studio) with custom anomaly logic or a SageMaker endpoint call",
+          "why": "Right: RANDOM_CUT_FOREST left with KDA for SQL; in Flink you build detection with keyed state, CEP, or Async I/O to SageMaker."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "KDA for SQL no longer exists; Flink-based MSF replaces it with your own anomaly logic.",
+      "remember": "\"Kinesis Data Analytics for SQL\" in a modern scenario → not available; rewrite in MSF or MSF Studio. \"KDA for Apache Flink\" = MSF (renamed August 2023).",
+      "variants": [
+        "A question names \"Kinesis Data Analytics for Apache Flink\" → read it as Managed Service for Apache Flink.",
+        "Analysts only want ad hoc SQL on the live stream → MSF Studio."
+      ]
+    },
+    {
+      "id": "flink-004",
+      "skill": "1.4.10",
+      "source": "1-basics-architecture-kpus-and-studio.md",
+      "q": "An MSF application is set to Parallelism 8 and ParallelismPerKPU 2. How many KPUs are billed per hour while it runs?",
+      "options": [
+        {
+          "t": "4",
+          "why": "Wrong: 8 ÷ 2 = 4 KPUs for processing, but every application also pays one orchestration KPU."
+        },
+        {
+          "t": "5",
+          "why": "Right: 4 processing KPUs plus 1 orchestration KPU."
+        },
+        {
+          "t": "8",
+          "why": "Wrong: that ignores ParallelismPerKPU, which packs 2 subtasks per KPU."
+        },
+        {
+          "t": "16",
+          "why": "Wrong: KPUs are Parallelism divided by ParallelismPerKPU, not multiplied."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Allocated KPUs = Parallelism ÷ ParallelismPerKPU (rounded up), plus 1 orchestration KPU.",
+      "remember": "KPUs = ceil(Parallelism ÷ ParallelismPerKPU) + 1 orchestration KPU. A KPU = 1 vCPU, 4 GB memory, 50 GB running storage. Billing is on allocated KPUs, not CPU used.",
+      "variants": [
+        "It is a Studio notebook → 2 extra KPUs (orchestration + interactive environment) plus query KPUs.",
+        "The app is stopped (READY) → no KPU charge; snapshots still bill storage.",
+        "Smallest streaming app → 1 + 1 = 2 KPUs."
+      ]
+    },
+    {
+      "id": "flink-005",
+      "skill": "1.2.9",
+      "source": "1-basics-architecture-kpus-and-studio.md",
+      "q": "An MSF job calls an external HTTP service for each record. CPU stays around 25%, but source lag keeps growing. Which change uses the KPUs most efficiently?",
+      "options": [
+        {
+          "t": "Lower ParallelismPerKPU to 1",
+          "why": "Wrong: that gives each subtask a full vCPU it does not use; the job is waiting on I/O, not CPU."
+        },
+        {
+          "t": "Wait for built-in autoscaling to add KPUs",
+          "why": "Wrong: autoscaling triggers only on containerCPUUtilization ≥ 75%, so a low-CPU job never scales."
+        },
+        {
+          "t": "Raise ParallelismPerKPU so more subtasks share each KPU",
+          "why": "Right: I/O-bound subtasks spend time waiting, so more of them per vCPU raises throughput without wasting KPUs."
+        },
+        {
+          "t": "Move the job to Firehose",
+          "why": "Wrong: Firehose cannot run this enrichment logic with state."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "I/O-bound jobs pack well: raise ParallelismPerKPU (max 8).",
+      "remember": "I/O-bound (low CPU, waiting on calls) → raise ParallelismPerKPU. CPU- or memory-heavy → keep it at 1. Too high → less memory per subtask, network buffer errors or OOM.",
+      "variants": [
+        "After raising it, a CPU-heavy job hits OOM → lower ParallelismPerKPU again.",
+        "The calls block the operator thread → also use Async I/O."
+      ]
+    },
+    {
+      "id": "flink-006",
+      "skill": "1.4.10",
+      "source": "1-basics-architecture-kpus-and-studio.md",
+      "q": "A new MSF application starts at parallelism 16. The team expects to scale to parallelism 400 within a year and must keep state across scaling. What should they do now?",
+      "options": [
+        {
+          "t": "Set maxParallelism explicitly in code above the planned peak",
+          "why": "Right: without it, maxParallelism defaults to 128, and changing it later breaks restore from older snapshots."
+        },
+        {
+          "t": "Nothing; autoscaling will raise maxParallelism when needed",
+          "why": "Wrong: autoscaling never scales past maxParallelism."
+        },
+        {
+          "t": "Set Parallelism to 400 from day one",
+          "why": "Wrong: you pay for 400 subtasks you do not need yet, and autoscaling never goes below the configured Parallelism."
+        },
+        {
+          "t": "Raise ParallelismPerKPU to 8",
+          "why": "Wrong: it changes how subtasks pack into KPUs, not the key-group limit."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "maxParallelism (key groups) caps scaling with state and defaults to 128 when the job starts at ≤ 128.",
+      "remember": "Plan to go above parallelism 128 while keeping state → set maxParallelism from day one. Changing it later means starting without a snapshot.",
+      "variants": [
+        "Autoscaling stops at parallelism 128 → maxParallelism is the cap; raising it needs fresh state.",
+        "The app needs more than 64 KPUs → request a per-app KPU quota increase naming the app."
+      ]
+    },
+    {
+      "id": "flink-007",
+      "skill": "1.4.10",
+      "source": "1-basics-architecture-kpus-and-studio.md",
+      "q": "An MSF app reads a Kinesis stream with 4 shards at parallelism 16. Deserialization of large JSON records is the bottleneck and 12 source subtasks are idle. What is the best fix without resharding?",
+      "options": [
+        {
+          "t": "Raise Parallelism to 32",
+          "why": "Wrong: each shard is read by one subtask, so more source subtasks stay idle."
+        },
+        {
+          "t": "Enable enhanced fan-out",
+          "why": "Wrong: EFO adds read throughput per shard; it does not spread the parsing work."
+        },
+        {
+          "t": "Use processing time instead of event time",
+          "why": "Wrong: time semantics do not change how work is spread across subtasks."
+        },
+        {
+          "t": "Read raw bytes at the source, rebalance(), then deserialize in a wider downstream operator",
+          "why": "Right: rebalance spreads records round robin to all subtasks so the heavy parsing uses all 16."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Source parallelism is capped by shards; move heavy work after a rebalance.",
+      "remember": "Shards (Kinesis) or partitions (Kafka) cap source parallelism. Heavy per-record work → read bytes, rebalance(), process wider downstream.",
+      "variants": [
+        "The stream can be resharded → add shards and pass the new count as a runtime property.",
+        "Skew comes from one hot key, not few shards → better key or salting."
+      ]
+    },
+    {
+      "id": "flink-008",
+      "skill": "2.2.1",
+      "source": "1-basics-architecture-kpus-and-studio.md",
+      "q": "Analysts explored a live Kinesis stream in an MSF Studio notebook with Flink SQL. The query must now run 24/7, keep durable state and be able to scale. What should they do?",
+      "options": [
+        {
+          "t": "Leave the notebook running",
+          "why": "Wrong: notebooks do not autoscale, checkpoints are off by default, and the notebook bills 2 extra KPUs."
+        },
+        {
+          "t": "Deploy the note as an application with durable state",
+          "why": "Right: it builds the note into code in S3 and creates a normal streaming MSF app with snapshots and autoscaling."
+        },
+        {
+          "t": "Recreate the query in Kinesis Data Analytics for SQL",
+          "why": "Wrong: KDA for SQL was shut down."
+        },
+        {
+          "t": "Schedule the notebook with EventBridge Scheduler",
+          "why": "Wrong: it is still an interactive notebook without durable state."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Studio is for exploration; production runs as a deployed MSF application.",
+      "remember": "Interactive SQL on a stream → MSF Studio (Zeppelin, needs a Glue Data Catalog database). Must run continuously → deploy as application with durable state.",
+      "variants": [
+        "A deployed note fails on a plain SELECT → change it to INSERT INTO a sink table.",
+        "The user wants Flink 2.2 features in Studio → not possible; Studio stays on 1.x runtimes."
+      ]
+    },
+    {
+      "id": "flink-009",
+      "skill": "1.2.7",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An MSF app shows downtime > 0 and a rising restart count. Logs show RUNNING → FAILED each time on the same malformed record. What fixes it?",
+      "options": [
+        {
+          "t": "Scale up KPUs",
+          "why": "Wrong: more capacity does not help; the same record replays after each restart."
+        },
+        {
+          "t": "Turn off checkpointing",
+          "why": "Wrong: restarts would then lose state and position, and the record would still fail."
+        },
+        {
+          "t": "Catch the exception in the operator and send the bad record to a side output (dead-letter path)",
+          "why": "Right: the poison record is removed from the main flow and the job keeps running."
+        },
+        {
+          "t": "Restart from the latest snapshot",
+          "why": "Wrong: the snapshot's source position is before the bad record, so it fails again."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "A poison record causes an endless restart loop; handle it in code.",
+      "remember": "Restart loop on the same record (poison pill) → catch exceptions, route bad records to a side output/DLQ. Lag rising + restarts → fix the crash before scaling.",
+      "variants": [
+        "Restart loop right after an update → incompatible state or operator ID mismatch: UIDs, AllowNonRestoredState, SKIP_RESTORE_FROM_SNAPSHOT or roll back.",
+        "TaskManager heartbeat timeouts → CPU/memory pressure: more KPUs or lower ParallelismPerKPU."
+      ]
+    },
+    {
+      "id": "flink-010",
+      "skill": "1.4.9",
+      "source": "1-basics-architecture-kpus-and-studio.md",
+      "q": "A team will do an in-place upgrade of a production MSF app from Flink 1.20 to 2.2. Which TWO steps best protect them if the new version fails? (Choose 2)",
+      "options": [
+        {
+          "t": "Delete the app and recreate it with the new runtime",
+          "why": "Wrong: that loses snapshots; in-place upgrade keeps the same ARN, snapshots, logs and settings."
+        },
+        {
+          "t": "Take a snapshot (or keep automatic snapshots on) before the upgrade",
+          "why": "Right: rollback needs a pre-upgrade snapshot, and 2.x state cannot be restored on 1.x."
+        },
+        {
+          "t": "Turn off snapshots during the upgrade",
+          "why": "Wrong: without snapshots, updates lose state."
+        },
+        {
+          "t": "Turn on system rollback before upgrading",
+          "why": "Right: if binary incompatibilities stop the job starting, MSF rolls back without you."
+        }
+      ],
+      "answer": [
+        1,
+        3
+      ],
+      "explain": "Snapshot first and enable system rollback; use RollbackApplication for a restart loop that appears after start.",
+      "remember": "Before any risky update: named snapshot, system rollback on, UIDs set. 1.x → 2.x is one-way for state; going back uses the pre-upgrade 1.x snapshot.",
+      "variants": [
+        "Upgrade \"succeeded\" but the job restart-loops → RollbackApplication manually.",
+        "Upgrade succeeded but app is on the old runtime → a system rollback happened; check ListApplicationOperations.",
+        "The app is a Studio notebook → in-place version upgrades are not supported."
+      ]
+    },
+    {
+      "id": "flink-011",
+      "skill": "3.3.7",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An MSF app restarts now and then, but the team sees no useful errors in CloudWatch Logs. The monitoring log level is ERROR. What should they change?",
+      "options": [
+        {
+          "t": "Set the log level to INFO",
+          "why": "Right: AWS recommends INFO because many Flink errors are logged at INFO, not ERROR."
+        },
+        {
+          "t": "Set the log level to DEBUG permanently",
+          "why": "Wrong: DEBUG significantly slows the app; use it only temporarily."
+        },
+        {
+          "t": "Log every record in the operators",
+          "why": "Wrong: that causes bottlenecks and backpressure."
+        },
+        {
+          "t": "Look in CloudTrail for the failures",
+          "why": "Wrong: CloudTrail records management API calls, not per-record processing errors."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "INFO is the recommended level; ERROR hides many Flink errors.",
+      "remember": "Log level INFO for production, DEBUG only briefly, never log every record. CloudTrail = who called StartApplication/StopApplication; app logs = processing errors.",
+      "variants": [
+        "Logs do not appear at all → check role permissions on the log stream (logs:PutLogEvents) and that the app is running.",
+        "Auditors ask who stopped the app → CloudTrail StopApplication event.",
+        "Logs might contain PII → remove it; MSF cannot encrypt app logs with a CMK."
+      ]
+    },
+    {
+      "id": "flink-012",
+      "skill": "3.2.6",
+      "source": "2-flink-apis-time-windows-and-state.md",
+      "q": "A dashboard must show the average order value for the last 10 minutes, refreshed every minute. Which Flink window fits?",
+      "options": [
+        {
+          "t": "Tumbling window of 10 minutes",
+          "why": "Wrong: tumbling windows do not overlap, so the value refreshes only every 10 minutes."
+        },
+        {
+          "t": "Session window with a 10-minute gap",
+          "why": "Wrong: session windows close after inactivity and vary in length."
+        },
+        {
+          "t": "Global window with a count trigger",
+          "why": "Wrong: it fires on record counts, not on a time schedule."
+        },
+        {
+          "t": "Sliding (hop) window of 10 minutes sliding every 1 minute",
+          "why": "Right: windows overlap, so a new 10-minute result comes out every minute."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Overlapping \"last N, updated every M\" = sliding window.",
+      "remember": "Tumbling = fixed, no overlap; sliding = overlapping (each event in size ÷ slide windows); session = gap of inactivity; cumulate = running total in steps.",
+      "variants": [
+        "Web sessions ending after 30 minutes of inactivity → session window with a 30-minute gap.",
+        "Running daily total updated each hour → CUMULATE window TVF.",
+        "Rolling average per row → SQL OVER window."
+      ]
+    },
+    {
+      "id": "flink-013",
+      "skill": "3.2.6",
+      "source": "2-flink-apis-time-windows-and-state.md",
+      "q": "A retail team wants a running total of sales for the current day, updated every hour, written with Flink SQL. Which window is designed for this?",
+      "options": [
+        {
+          "t": "TUMBLE with a 1-hour size",
+          "why": "Wrong: it gives each hour's total, not a total growing through the day."
+        },
+        {
+          "t": "CUMULATE with a 1-hour step and 1-day max size",
+          "why": "Right: the window grows in steps inside one day and emits the running total each hour."
+        },
+        {
+          "t": "HOP of 1 day sliding every hour",
+          "why": "Wrong: it gives the last 24 hours, not the current calendar day, and copies each event 24 times."
+        },
+        {
+          "t": "windowAll over the whole stream",
+          "why": "Wrong: non-keyed windows run at parallelism 1 and are a bottleneck."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "A running total that grows in steps inside a fixed max size is a CUMULATE window.",
+      "remember": "Grows in steps inside one period → CUMULATE. Fixed buckets → TUMBLE. Last N refreshed every M → HOP.",
+      "variants": [
+        "Hourly totals only → TUMBLE of 1 hour.",
+        "Top 3 products per minute → tumbling window aggregate + window Top-N (ROW_NUMBER ≤ N)."
+      ]
+    },
+    {
+      "id": "flink-014",
+      "skill": "3.4.5",
+      "source": "2-flink-apis-time-windows-and-state.md",
+      "q": "An MSF job reads a Kinesis stream. Some shards get no data at night, and from then on the event-time windows downstream never fire, even though other shards carry traffic. What is the fix?",
+      "options": [
+        {
+          "t": "Switch the source reader to enhanced fan-out",
+          "why": "Wrong: EFO raises read throughput; it does not change watermarks."
+        },
+        {
+          "t": "Lower the out-of-orderness bound",
+          "why": "Wrong: the problem is a stuck minimum watermark, not the bound."
+        },
+        {
+          "t": "Configure withIdleness on the watermark strategy",
+          "why": "Right: idle inputs are excluded from the minimum watermark after that time, so windows fire again."
+        },
+        {
+          "t": "Increase the checkpoint interval",
+          "why": "Wrong: checkpoints do not drive window firing."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Idle shards send no watermark and hold back the minimum; withIdleness excludes them.",
+      "remember": "Event-time windows never fire + quiet shards/partitions → withIdleness (and uniformShardAssigner). If all inputs are idle, time still does not move forward.",
+      "variants": [
+        "Too many records dropped as late → larger out-of-orderness bound, allowed lateness or a late-data side output.",
+        "The very last window in a test never closes → send one more event or a heartbeat."
+      ]
+    },
+    {
+      "id": "flink-015",
+      "skill": "1.1.12",
+      "source": "2-flink-apis-time-windows-and-state.md",
+      "q": "Orders and payments arrive on two streams. Each order must be matched with its payment if it arrives within 1 hour, and state must not grow forever. Which join should be used?",
+      "options": [
+        {
+          "t": "Interval join on order ID with a 1-hour bound",
+          "why": "Right: it keeps only records inside the interval, cleans state as the watermark moves, and outputs append-only rows."
+        },
+        {
+          "t": "Regular SQL join on order ID",
+          "why": "Wrong: both sides are kept in state forever unless you add TTL."
+        },
+        {
+          "t": "Lookup join against a JDBC table",
+          "why": "Wrong: it queries an external table, not a second stream."
+        },
+        {
+          "t": "Broadcast state join",
+          "why": "Wrong: it is for small reference data that fits on every subtask, not a large payment stream."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Two time-related streams → interval join.",
+      "remember": "Time-related streams → interval join; value as of event time → temporal join; external DB enrichment → lookup join or Async I/O; small rules table → broadcast state.",
+      "variants": [
+        "A regular join's state grows forever → set table.exec.state.ttl or switch to an interval join.",
+        "Impression + click within 30 minutes → interval join."
+      ]
+    },
+    {
+      "id": "flink-016",
+      "skill": "1.1.12",
+      "source": "2-flink-apis-time-windows-and-state.md",
+      "q": "Each order event must be enriched with the currency exchange rate that was valid at the order's event time, even when old orders are replayed. Rates arrive as a changelog keyed by currency. Which join gives correct results?",
+      "options": [
+        {
+          "t": "Lookup join on the rates database",
+          "why": "Wrong: a lookup join returns the current value at processing time, not the historic rate."
+        },
+        {
+          "t": "Regular join on currency",
+          "why": "Wrong: it keeps everything forever and does not pick the version valid at order time."
+        },
+        {
+          "t": "Window join in a 1-minute tumbling window",
+          "why": "Wrong: it only matches records that land in the same window."
+        },
+        {
+          "t": "Temporal join FOR SYSTEM_TIME AS OF the order time on a versioned rate table",
+          "why": "Right: it joins each order with the rate version valid at the order's event time."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "\"Value as of the event's time\" = temporal join on a versioned table (primary key + event time).",
+      "remember": "Historic-correct enrichment → temporal join (versioned table, e.g. upsert-kafka or CDC). Current value from a DB → lookup join with cache.",
+      "variants": [
+        "Each event needs the current customer tier from RDS → lookup join (or Async I/O) with a lookup cache.",
+        "Rules change at runtime without redeploy → broadcast state from a rules stream."
+      ]
+    },
+    {
+      "id": "flink-017",
+      "skill": "1.1.12",
+      "source": "2-flink-apis-time-windows-and-state.md",
+      "q": "An MSF app's lastCheckpointSize has grown every week for months, although traffic is flat. Which TWO are likely causes? (Choose 2)",
+      "options": [
+        {
+          "t": "A regular SQL join or GROUP BY on user IDs with no state TTL",
+          "why": "Right: unbounded keys with no TTL keep state forever."
+        },
+        {
+          "t": "Checkpoints use incremental mode",
+          "why": "Wrong: incremental checkpoints upload only changed files; they do not cause growth."
+        },
+        {
+          "t": "A week-long window using ProcessWindowFunction",
+          "why": "Right: ProcessWindowFunction keeps every event in state; use incremental aggregation instead."
+        },
+        {
+          "t": "Operators have .uid() set",
+          "why": "Wrong: UIDs only map state to operators on restore."
+        }
+      ],
+      "answer": [
+        0,
+        2
+      ],
+      "explain": "State leaks come from missing TTL on unbounded keys and from long windows that buffer every event.",
+      "remember": "Checkpoint size growing with flat traffic → state leak: add state TTL, use AggregateFunction/ReduceFunction, prefer interval joins. TTL shrinks size only after RocksDB compaction (or in a snapshot).",
+      "variants": [
+        "TTL is set but checkpoint size has not dropped → wait for RocksDB compaction or take a snapshot.",
+        "Duplicates must be removed within 24 hours → keyed \"seen\" state with a 24-hour TTL."
+      ]
+    },
+    {
+      "id": "flink-018",
+      "skill": "1.2.7",
+      "source": "2-flink-apis-time-windows-and-state.md",
+      "q": "A Flink SQL job runs SELECT user_id, COUNT(*) FROM clicks GROUP BY user_id with no window, and the write to a Kinesis Data Streams sink fails. Why, and what is the fix?",
+      "options": [
+        {
+          "t": "Kinesis records are too large; compress them",
+          "why": "Wrong: the problem is the kind of result, not record size."
+        },
+        {
+          "t": "The result is an updating changelog; window the aggregate or write to an upsert-capable sink",
+          "why": "Right: a plain GROUP BY emits updates, and append-only sinks like Kinesis reject them."
+        },
+        {
+          "t": "The job lacks a watermark; add one",
+          "why": "Wrong: without a window the result still updates on every record."
+        },
+        {
+          "t": "The Kinesis sink needs EFO",
+          "why": "Wrong: EFO is a source reader setting."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Non-windowed GROUP BY produces updates; append-only sinks cannot take them.",
+      "remember": "Updating (changelog) results need upsert sinks (upsert-kafka, JDBC with primary key, DynamoDB, Iceberg v2). Append-only sinks (Kinesis, plain files) need windowed or filter-only queries.",
+      "variants": [
+        "The same query with a tumbling window → append-only, Kinesis sink works.",
+        "EXPLAIN shows the plan and reveals unwanted updating results."
+      ]
+    },
+    {
+      "id": "flink-019",
+      "skill": "1.1.11",
+      "source": "2-flink-apis-time-windows-and-state.md",
+      "q": "After a developer added a stateless map step to an MSF job, the update fails to restore from the snapshot with an operator ID mismatch. What prevents this in the future?",
+      "options": [
+        {
+          "t": "Turn off automatic snapshots",
+          "why": "Wrong: updates would then lose all state."
+        },
+        {
+          "t": "Raise maxParallelism",
+          "why": "Wrong: changing maxParallelism also breaks restore."
+        },
+        {
+          "t": "Set a unique .uid() on every stateful operator",
+          "why": "Right: state is matched by operator ID; generated IDs change when the job graph changes."
+        },
+        {
+          "t": "Use the HashMap state backend",
+          "why": "Wrong: the backend does not fix ID matching, and MSF uses RocksDB."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Stable operator UIDs keep snapshot restore working across code changes.",
+      "remember": "Set .uid() (and .name()) on every stateful operator. Added operator → fine; removed operator → AllowNonRestoredState=true; incompatible state → SKIP_RESTORE_FROM_SNAPSHOT or fix code.",
+      "variants": [
+        "A stateful operator was deleted and the app will not start → AllowNonRestoredState=true.",
+        "State uses Kryo before a Flink 2.2 upgrade → move to Avro/POJO or test, since Kryo 5.6 may not read old state."
+      ]
+    },
+    {
+      "id": "flink-020",
+      "skill": "1.2.7",
+      "source": "2-flink-apis-time-windows-and-state.md",
+      "q": "An MSF job enriches each event with a synchronous DynamoDB GetItem call. The enrichment operator is slow and upstream operators are backpressured. What is the best fix?",
+      "options": [
+        {
+          "t": "Use Async I/O for the DynamoDB calls",
+          "why": "Right: it calls external services without blocking the operator thread, with a timeout and capacity limit."
+        },
+        {
+          "t": "Use processing time instead of event time",
+          "why": "Wrong: time semantics do not affect blocking calls."
+        },
+        {
+          "t": "Lower ParallelismPerKPU to 1",
+          "why": "Wrong: gives more CPU, but the thread still sits blocked on each call."
+        },
+        {
+          "t": "Add withIdleness to the watermark strategy",
+          "why": "Wrong: it fixes stuck watermarks, not slow I/O."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Blocking enrichment calls cause backpressure; Async I/O removes the block.",
+      "remember": "External lookups per event → Async I/O (unordered for lower latency, ordered to keep order) or a SQL lookup join with cache.",
+      "variants": [
+        "The slow operator is a sink → scale the sink target (shards, WCU) or raise parallelism.",
+        "Backpressure reading rule: the slow operator is just downstream of the last highly backpressured one."
+      ]
+    },
+    {
+      "id": "flink-021",
+      "skill": "1.3.2",
+      "source": "3-checkpoints-exactly-once-scaling-and-connectors.md",
+      "q": "A developer set a 10-second checkpoint interval in the Flink code, but the app still checkpoints every 60 seconds. What is the cause?",
+      "options": [
+        {
+          "t": "The app has too few KPUs",
+          "why": "Wrong: capacity does not reset the interval."
+        },
+        {
+          "t": "Snapshots are disabled",
+          "why": "Wrong: snapshots are separate from periodic checkpoints."
+        },
+        {
+          "t": "MinPauseBetweenCheckpoints is 60 seconds",
+          "why": "Wrong: the default minimum pause is 5,000 ms."
+        },
+        {
+          "t": "The checkpoint configuration is ConfigurationType=DEFAULT, which overrides code values",
+          "why": "Right: with DEFAULT, the service defaults (on, 60,000 ms, 5,000 ms min pause) win; set CUSTOM to change them."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "DEFAULT checkpoint configuration ignores values from code; use CUSTOM.",
+      "remember": "MSF checkpoint defaults: enabled, 60 s interval, 5 s min pause. To change them set ConfigurationType=CUSTOM. Shorter interval = less reprocessing but more overhead and small files.",
+      "variants": [
+        "Parquet files on S3 are tiny → lengthen the interval, since bulk formats roll on every checkpoint.",
+        "Kafka exactly-once data appears late → latency equals the checkpoint interval."
+      ]
+    },
+    {
+      "id": "flink-022",
+      "skill": "1.1.11",
+      "source": "3-checkpoints-exactly-once-scaling-and-connectors.md",
+      "q": "A code bug corrupted results starting at 10:00. The team has scheduled named snapshots several times a day. They deploy a fixed version. How do they reprocess from before the bug while keeping earlier state?",
+      "options": [
+        {
+          "t": "Start with SKIP_RESTORE_FROM_SNAPSHOT",
+          "why": "Wrong: that throws away all state from before 10:00."
+        },
+        {
+          "t": "Start with RESTORE_FROM_CUSTOM_SNAPSHOT naming a snapshot taken before 10:00",
+          "why": "Right: the snapshot restores state and source positions, so records after it are reprocessed."
+        },
+        {
+          "t": "Restore a specific checkpoint by name",
+          "why": "Wrong: checkpoints are service-owned; you cannot list or restore one by name."
+        },
+        {
+          "t": "Restart with the source at LATEST",
+          "why": "Wrong: it skips the affected data instead of reprocessing it."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Named snapshots are point-in-time restore points; replay depends on source retention.",
+      "remember": "Rewind = RESTORE_FROM_CUSTOM_SNAPSHOT + SnapshotName. Schedule snapshots (EventBridge Scheduler) and delete old ones (limit 1,000 per app; MSF never deletes them). Sinks must tolerate the replay.",
+      "variants": [
+        "Manual snapshots fail with LimitExceededException → delete old snapshots.",
+        "No snapshot fits and state is not needed → start without snapshot at AT_TIMESTAMP, with source retention covering the gap."
+      ]
+    },
+    {
+      "id": "flink-023",
+      "skill": "1.1.12",
+      "source": "3-checkpoints-exactly-once-scaling-and-connectors.md",
+      "q": "An MSF app reads from MSK and writes to another Kafka topic. Downstream consumers must see each result exactly once, even after failures. Which TWO settings are required? (Choose 2)",
+      "options": [
+        {
+          "t": "KafkaSink with DeliveryGuarantee.EXACTLY_ONCE and a transactionalIdPrefix",
+          "why": "Right: writes go into Kafka transactions committed when the checkpoint completes."
+        },
+        {
+          "t": "Commit source offsets back to Kafka after each record",
+          "why": "Wrong: offsets live in Flink checkpoints; committing to Kafka is only for monitoring."
+        },
+        {
+          "t": "Disable checkpointing to reduce latency",
+          "why": "Wrong: transactions commit on checkpoints, so exactly-once needs them."
+        },
+        {
+          "t": "Downstream consumers use isolation.level=read_committed",
+          "why": "Right: otherwise they read uncommitted or aborted data."
+        }
+      ],
+      "answer": [
+        0,
+        3
+      ],
+      "explain": "End-to-end exactly-once = replayable source + checkpointed state + transactional or idempotent sink.",
+      "remember": "Exactly-once to Kafka → EXACTLY_ONCE KafkaSink + read_committed consumers; transaction timeout > checkpoint interval + restart time, and ≤ broker transaction.max.timeout.ms (15 min default).",
+      "variants": [
+        "Output to Kinesis Data Streams → at-least-once; dedupe downstream by event ID.",
+        "Output to S3 → FileSink or Iceberg sink commit on checkpoint (exactly-once)."
+      ]
+    },
+    {
+      "id": "flink-024",
+      "skill": "1.2.6",
+      "source": "3-checkpoints-exactly-once-scaling-and-connectors.md",
+      "q": "An MSF FileSink writes Parquet to S3 with parallelism 32 and many date/hour partitions. Athena queries are slow because of thousands of tiny files. Which change helps most?",
+      "options": [
+        {
+          "t": "Switch to a row format such as JSON",
+          "why": "Wrong: it loses columnar benefits for Athena."
+        },
+        {
+          "t": "Shorten the checkpoint interval",
+          "why": "Wrong: bulk formats roll on every checkpoint, so this makes even more files."
+        },
+        {
+          "t": "Lengthen the checkpoint interval or lower the sink parallelism (and compact later)",
+          "why": "Right: fewer rolls and fewer writers give larger files."
+        },
+        {
+          "t": "Turn off checkpointing",
+          "why": "Wrong: FileSink finishes files only on checkpoint, so files would never be finished."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Parquet/ORC files roll on every checkpoint; interval × parallelism × partitions sets file count.",
+      "remember": "Small files from MSF → longer checkpoint interval, lower sink parallelism, or compaction. Iceberg sink: one commit per checkpoint → run compaction and snapshot expiry.",
+      "variants": [
+        "Readers see half-written data → read only finished files; in-progress and pending files are hidden by prefix.",
+        "Iceberg tables gather thousands of snapshots a day → enable table optimizers or S3 Tables maintenance."
+      ]
+    },
+    {
+      "id": "flink-025",
+      "skill": "1.2.9",
+      "source": "3-checkpoints-exactly-once-scaling-and-connectors.md",
+      "q": "An MSF app with autoscaling on shows rising millisBehindLatest. CPU (containerCPUUtilization) is steady at 30% because the job waits on a slow sink. What should the team do?",
+      "options": [
+        {
+          "t": "Wait; autoscaling will add KPUs once lag passes its threshold",
+          "why": "Wrong: built-in autoscaling watches only CPU (≥ 75% for 15 minutes); lag does not trigger it."
+        },
+        {
+          "t": "Build custom scaling from a CloudWatch alarm on millisBehindLatest that calls UpdateApplication, or raise ParallelismPerKPU",
+          "why": "Right: CPU-based autoscaling never fires for an I/O-bound job, so scale on lag or pack more subtasks per KPU."
+        },
+        {
+          "t": "Lower the checkpoint interval",
+          "why": "Wrong: that adds overhead and does not speed the sink."
+        },
+        {
+          "t": "Disable autoscaling and set ParallelismPerKPU to 1",
+          "why": "Wrong: gives more CPU to a job that is not CPU-bound."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Only CPU triggers built-in autoscaling.",
+      "remember": "Autoscaling: up when containerCPU ≥ 75% for 15 min (×2), down when < 10% for 6 h (÷2); never below configured Parallelism or above KPU limit/maxParallelism; each scale restarts the job.",
+      "variants": [
+        "CPU at 90% for 20 minutes → autoscaling doubles parallelism.",
+        "Predictable 9:00 peak → scheduled scaling before 9:00.",
+        "Bill doubled after a short spike → scale-down waits 6 hours under 10% CPU."
+      ]
+    },
+    {
+      "id": "flink-026",
+      "skill": "1.1.9",
+      "source": "3-checkpoints-exactly-once-scaling-and-connectors.md",
+      "q": "Two MSF applications and a Lambda function all poll the same Kinesis stream. The MSF apps log ReadProvisionedThroughputExceeded and lag grows, though the stream is not near its write limit. What is the best fix?",
+      "options": [
+        {
+          "t": "Raise Parallelism on both MSF apps",
+          "why": "Wrong: more readers on shared polling make throttling worse."
+        },
+        {
+          "t": "Switch both apps to processing time",
+          "why": "Wrong: time semantics do not affect read limits."
+        },
+        {
+          "t": "Set the source start position to TRIM_HORIZON",
+          "why": "Wrong: it changes where reading starts, not read throughput."
+        },
+        {
+          "t": "Use enhanced fan-out (READER_TYPE=EFO) with a unique consumer name per app",
+          "why": "Right: each EFO consumer gets its own 2 MB/s per shard instead of sharing 2 MB/s and 5 reads/s."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Polling consumers share each shard's read limit; EFO gives dedicated throughput.",
+      "remember": "Read throttling from many consumers → EFO (unique EFO_CONSUMER_NAME per stream), or fewer records per call/longer interval. EFO costs extra; use it only when needed.",
+      "variants": [
+        "Write throttling on the output stream → more shards/on-demand or a better partition key.",
+        "Least-privilege role with EFO → SELF_MANAGED lifecycle, so the role needs no register/deregister permissions."
+      ]
+    },
+    {
+      "id": "flink-027",
+      "skill": "1.1.1",
+      "source": "3-checkpoints-exactly-once-scaling-and-connectors.md",
+      "q": "A new MSF application must process the 3 days of data already in its Kinesis stream before continuing with live data. It has never run before. How should the source be configured?",
+      "options": [
+        {
+          "t": "Start position TRIM_HORIZON (or AT_TIMESTAMP) and start without a snapshot",
+          "why": "Right: the default is LATEST, which skips everything written before the app started."
+        },
+        {
+          "t": "Leave the default start position",
+          "why": "Wrong: the default LATEST reads only new records."
+        },
+        {
+          "t": "Enable enhanced fan-out",
+          "why": "Wrong: EFO changes throughput, not where reading starts."
+        },
+        {
+          "t": "Restore from the latest snapshot",
+          "why": "Wrong: a new app has no snapshot, and a snapshot would resume from its saved position anyway."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Kinesis source default is LATEST; set TRIM_HORIZON or AT_TIMESTAMP to read older data.",
+      "remember": "Reprocess history → start without snapshot at TRIM_HORIZON/AT_TIMESTAMP (Kafka: earliest/timestamp offsets). Replay is limited by source retention (KDS 24 h default, up to 365 days).",
+      "variants": [
+        "Must reprocess the last 7 days → KDS retention must be at least 7 days.",
+        "Early watermarks when catching up from TRIM_HORIZON → add an out-of-orderness buffer or allowed lateness."
+      ]
+    },
+    {
+      "id": "flink-028",
+      "skill": "2.1.7",
+      "source": "3-checkpoints-exactly-once-scaling-and-connectors.md",
+      "q": "A CDC stream from Kafka must be upserted into a transactional data lake table on S3 that Athena queries, with exactly-once results. Which design fits?",
+      "options": [
+        {
+          "t": "MSF writing JSON files with FileSink to S3",
+          "why": "Wrong: append-only files keep every change, not the latest row per key."
+        },
+        {
+          "t": "Firehose delivering to S3 with Lambda transforms",
+          "why": "Wrong: Firehose is at-least-once and has no per-key state."
+        },
+        {
+          "t": "MSF writing to an Iceberg v2 table (Glue Data Catalog or S3 Tables), plus compaction and snapshot expiry",
+          "why": "Right: the Iceberg sink commits on each checkpoint (exactly-once) and v2 supports upserts."
+        },
+        {
+          "t": "MSF writing to a Kinesis Data Streams sink",
+          "why": "Wrong: at-least-once, and not a data lake table."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Streaming ETL into a transactional lake with exactly-once → MSF → Iceberg.",
+      "remember": "MSF → Iceberg v2 for exactly-once upserts into a lake; one commit per checkpoint, so run compaction. Role needs S3 and Glue permissions, and the Glue database must exist.",
+      "variants": [
+        "CDC kept as latest value per key in Kafka → upsert-kafka.",
+        "Producers change record formats often → Glue Schema Registry with compatibility rules."
+      ]
+    },
+    {
+      "id": "flink-029",
+      "skill": "4.1.2",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An MSF app was attached to private subnets so it could read MSK. Since then its DynamoDB sink fails with timeouts. Which fix is most cost-effective?",
+      "options": [
+        {
+          "t": "Move the app into public subnets",
+          "why": "Wrong: the app ENIs get no public IP, so public subnets do not give internet access."
+        },
+        {
+          "t": "Add a DynamoDB gateway VPC endpoint to the private subnets' route tables",
+          "why": "Right: VPC-attached apps lose default internet access, and a gateway endpoint reaches DynamoDB without NAT data charges."
+        },
+        {
+          "t": "Remove the VPC configuration",
+          "why": "Wrong: the app would lose access to the private MSK cluster."
+        },
+        {
+          "t": "Add the DynamoDB permissions to the KMS key policy",
+          "why": "Wrong: this is a network path problem, not a permission problem."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "VPC-attached MSF apps need a NAT gateway or VPC endpoints to reach AWS APIs.",
+      "remember": "VPC config → ENIs in your subnets, no internet unless the VPC gives it: private subnets + NAT or VPC endpoints (S3/DynamoDB gateway; Kinesis, Logs, KMS, STS, Secrets Manager interface). Durable state needs no endpoint.",
+      "variants": [
+        "App cannot reach MSK at all → VPC-configure the app and allow the app's security group inbound on the broker SG.",
+        "Subnets run out of IPs during scale-out → ENI count grows with parallelism; use larger subnets."
+      ]
+    },
+    {
+      "id": "flink-030",
+      "skill": "4.3.2",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A security team wants an MSF app's checkpoints and snapshots encrypted with their own KMS key, and that key must be usable only by that one application. What should they do?",
+      "options": [
+        {
+          "t": "Use the default encryption",
+          "why": "Wrong: default encryption uses AWS owned keys, not the team's key."
+        },
+        {
+          "t": "Use an asymmetric customer managed key",
+          "why": "Wrong: MSF supports symmetric KMS keys only."
+        },
+        {
+          "t": "Set an S3 bucket policy on the durable storage bucket",
+          "why": "Wrong: the durable storage bucket is service-managed and not visible to you."
+        },
+        {
+          "t": "Set a symmetric customer managed key on the app, with a key policy condition on kms:EncryptionContext:aws:kinesisanalytics:arn equal to the app ARN",
+          "why": "Right: MSF sends the app ARN as encryption context, so the condition limits the key to that app."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "CMK for MSF state is symmetric only; encryption context aws:kinesisanalytics:arn ties it to one app.",
+      "remember": "CMK covers running and durable storage (checkpoints/snapshots). It does not cover sources/sinks, app logs or old snapshots. After key rotation, stop and start the app. The API caller also needs key permissions.",
+      "variants": [
+        "The key was rotated → stop and start so running storage uses new key material.",
+        "Sources and sinks must be encrypted → configure KDS SSE-KMS or S3 SSE-KMS on those services."
+      ]
+    },
+    {
+      "id": "flink-031",
+      "skill": "4.1.4",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A CI/CD role gets AccessDenied when calling CreateApplication for an MSF app that uses an existing service execution role. The role already has kinesisanalytics:CreateApplication. What is missing?",
+      "options": [
+        {
+          "t": "iam:PassRole on the service execution role",
+          "why": "Right: the caller passes the execution role to the service and needs iam:PassRole for it."
+        },
+        {
+          "t": "kinesisanalytics:* in the service execution role",
+          "why": "Wrong: the execution role is not used for management calls; do not put lifecycle permissions there."
+        },
+        {
+          "t": "A resource-based policy on the MSF application",
+          "why": "Wrong: MSF does not support resource-based policies on applications."
+        },
+        {
+          "t": "sts:AssumeRole for kinesis.amazonaws.com in the trust policy",
+          "why": "Wrong: the trust principal is kinesisanalytics.amazonaws.com, and the error is on the caller side."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Creating or updating an app with a role needs iam:PassRole on that role.",
+      "remember": "Two kinds of permissions: management (caller's identity policy, kinesisanalytics:* actions + iam:PassRole) and application (the service execution role trusted by kinesisanalytics.amazonaws.com).",
+      "variants": [
+        "One execution role reused by many apps → add aws:SourceArn/aws:SourceAccount to its trust policy (confused deputy).",
+        "Many teams share one account → ABAC on aws:ResourceTag and name-prefix ARNs.",
+        "The app needs a database password → Secrets Manager with secretsmanager:GetSecretValue, never runtime properties."
+      ]
+    },
+    {
+      "id": "flink-032",
+      "skill": "1.2.4",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An MSF app's monthly bill roughly doubled after a short traffic spike. The spike lasted 20 minutes, and traffic has been normal for 3 hours since. What explains this, and what reduces cost for future spikes?",
+      "options": [
+        {
+          "t": "A KMS charge for checkpoints; switch to AWS owned keys",
+          "why": "Wrong: KMS requests are a small separate cost and do not double KPU billing."
+        },
+        {
+          "t": "Autoscaling doubled KPUs and has not scaled down, since scale-down needs CPU under 10% for 6 hours; consider scheduled or custom scaling, and set the base Parallelism to normal load",
+          "why": "Right: one CPU spike doubles parallelism and the larger size is billed for at least 6 hours."
+        },
+        {
+          "t": "The orchestration KPU was billed twice",
+          "why": "Wrong: every app pays exactly one orchestration KPU."
+        },
+        {
+          "t": "Snapshots are billed as KPU-hours",
+          "why": "Wrong: snapshots bill as durable backup storage per GB-month."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Billing follows allocated KPUs; autoscaling doubles fast and halves only after 6 quiet hours.",
+      "remember": "MSF cost = allocated KPU-hours (+1 orchestration KPU per app, +2 per Studio notebook) + running storage + snapshots. Stop apps (READY bills no KPUs), delete old snapshots, right-size Parallelism.",
+      "variants": [
+        "A Studio notebook was left running all weekend → it billed at least 3 KPUs per hour.",
+        "A nightly 10-minute batch job → stop the app between runs.",
+        "Many small pipelines → each app pays its own orchestration KPU."
+      ]
+    }
+  ]
+}

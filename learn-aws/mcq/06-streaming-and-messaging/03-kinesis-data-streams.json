@@ -1,0 +1,1240 @@
+{
+  "questions": [
+    {
+      "id": "kds-001",
+      "skill": "1.1.11",
+      "source": "1-concepts-records-shards-and-capacity-modes.md",
+      "q": "Three analytics teams must read the same clickstream events, each at its own pace, and must be able to reprocess the last 7 days after a bug fix. Which service and setting fit best?",
+      "options": [
+        {
+          "t": "Amazon SQS standard queue with a 7-day message retention period",
+          "why": "Wrong: SQS deletes a message once it is processed, so three teams cannot each read every event or replay it."
+        },
+        {
+          "t": "Kinesis Data Streams with retention raised to 7 days (168 hours)",
+          "why": "Right: reading does not delete records, each consumer tracks its own position, and records can be re-read inside retention."
+        },
+        {
+          "t": "Amazon Data Firehose delivering to three S3 prefixes",
+          "why": "Wrong: Firehose is a delivery pipe with no replay and no custom readers."
+        },
+        {
+          "t": "Amazon SNS topic with three subscriptions",
+          "why": "Wrong: SNS pushes once and keeps nothing, so there is no replay."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Many independent readers plus replay inside a window: KDS with longer retention.",
+      "remember": "Many independent consumers, per-key order and replay → KDS (retention 24 h default, up to 365 days). Each message processed once by one worker → SQS.",
+      "variants": [
+        "Only land the events in S3 as files, no custom readers → Firehose (or KDS S3 delivery).",
+        "Teams need Kafka APIs and tools → Amazon MSK.",
+        "Route events by content to many targets → EventBridge."
+      ]
+    },
+    {
+      "id": "kds-002",
+      "skill": "1.1.9",
+      "source": "1-concepts-records-shards-and-capacity-modes.md",
+      "q": "One industrial sensor sends 3 MB/s using its device ID as the partition key, and its writes throttle. Strict ordering across all of that sensor's records is not required. What should the team do?",
+      "options": [
+        {
+          "t": "Switch the stream to on-demand mode",
+          "why": "Wrong: on-demand splits shards evenly and a single key is still capped at 1 MB/s."
+        },
+        {
+          "t": "Set `ExplicitHashKey` so all of the sensor's records go to one chosen shard",
+          "why": "Wrong: that still puts 3 MB/s on one shard, over its 1 MB/s write limit."
+        },
+        {
+          "t": "Salt the key (for example `deviceId#0` to `deviceId#9`) so the data spreads over several shards",
+          "why": "Right: salting spreads one entity over several shards; the cost is losing order across the salted pieces, which is acceptable here."
+        },
+        {
+          "t": "Run `UpdateShardCount` to add shards",
+          "why": "Wrong: more shards do not help one key; each key maps to one shard."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "One partition key can never exceed one shard's write limit, in any mode.",
+      "remember": "A single key is capped at 1 MB/s and 1,000 records/s per shard in every mode. Fix by salting the key or pre-aggregating, accepting the loss of order across pieces.",
+      "variants": [
+        "Strict order for that device is required → pre-aggregate or reduce data before writing; salting breaks order.",
+        "The hot traffic comes from many keys in one hash range (provisioned) → `SplitShard` at a hash key inside that range."
+      ]
+    },
+    {
+      "id": "kds-003",
+      "skill": "1.2.9",
+      "source": "1-concepts-records-shards-and-capacity-modes.md",
+      "q": "A provisioned stream receives 2,000 records/s with an average size of 3 KB. Two shared-throughput (polling) consumers read all data. How many shards are needed, before headroom?",
+      "options": [
+        {
+          "t": "3",
+          "why": "Wrong: 6,000 KB/s of writes needs about 6 shards at 1 MB/s each."
+        },
+        {
+          "t": "12",
+          "why": "Wrong: that sizes reads at 1 MB/s; a shard gives 2 MB/s of shared read."
+        },
+        {
+          "t": "2",
+          "why": "Wrong: this only meets the 1,000 records/s per shard limit, not the byte limit."
+        },
+        {
+          "t": "6",
+          "why": "Right: write 6,000 KB/s ÷ 1,024 ≈ 6 shards; read 12,000 KB/s ÷ 2,048 ≈ 6 shards; take the larger, then add headroom."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Shards = ceiling(max(write KiB/s ÷ 1024, read KiB/s ÷ 2048)), also checking records/s ÷ 1,000.",
+      "remember": "Size provisioned streams by the largest of: write bytes (1 MB/s per shard), polling read bytes (2 MB/s per shard shared) and records (1,000/s per shard). Add 20–30% headroom for the busiest minute.",
+      "variants": [
+        "Consumers use EFO → reads do not share 2 MB/s, so size by writes only.",
+        "5,000 records/s of 0.2 KB → 5 shards by record count (or 1–2 with KPL aggregation).",
+        "Keys are skewed → size for the busiest shard, not the average."
+      ]
+    },
+    {
+      "id": "kds-004",
+      "skill": "1.2.4",
+      "source": "1-concepts-records-shards-and-capacity-modes.md",
+      "q": "A team launches a new stream for a mobile game. Traffic is unknown and spiky, the account's total streaming volume is small, and the team does not want to plan or watch shards. Which capacity mode fits?",
+      "options": [
+        {
+          "t": "Provisioned mode with 10 shards",
+          "why": "Wrong: you pay shard-hours whether used or not and must scale before peaks yourself."
+        },
+        {
+          "t": "On-demand Advantage",
+          "why": "Wrong: it bills a minimum of 25 MiB/s in and out across the Region, too much for a small account."
+        },
+        {
+          "t": "On-demand Standard",
+          "why": "Right: no capacity planning, KDS adds and removes shards, and you pay per GB plus a stream-hour fee."
+        },
+        {
+          "t": "Amazon MSK Serverless",
+          "why": "Wrong: nothing here needs Kafka APIs; it adds Kafka operations for no benefit."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Unknown or spiky traffic and no shard management → On-demand Standard.",
+      "remember": "On-demand Standard for new, unknown or spiky streams; provisioned for steady, predictable traffic; On-demand Advantage for large steady volume (≥ 25 MiB/s), many consumers or many streams.",
+      "variants": [
+        "Traffic is flat at 8 MB/s all day → provisioned (about 10 shards).",
+        "Steady 40 MiB/s across 30 streams → On-demand Advantage.",
+        "The account only sends 2 MB/s → not Advantage (25 MiB/s minimum)."
+      ]
+    },
+    {
+      "id": "kds-005",
+      "skill": "1.2.4",
+      "source": "1-concepts-records-shards-and-capacity-modes.md",
+      "q": "A company runs 30 on-demand streams with steady total ingest of about 40 MiB/s, and five consumer apps each use enhanced fan-out. The stream-hour and EFO charges are growing. Which change lowers cost with the least work?",
+      "options": [
+        {
+          "t": "Turn on On-demand Advantage for the Region",
+          "why": "Right: no per-stream hourly fee, data in/out at least 60% cheaper, EFO at the normal read rate, and 40 MiB/s is above the 25 MiB/s minimum."
+        },
+        {
+          "t": "Switch every stream to provisioned mode",
+          "why": "Wrong: possible, but you then size and scale 30 streams yourself; more operations work."
+        },
+        {
+          "t": "Replace EFO with polling consumers",
+          "why": "Wrong: five polling apps share 2 MB/s and 5 calls/s per shard, so they would throttle and lag."
+        },
+        {
+          "t": "Lower retention to 24 hours",
+          "why": "Wrong: retention is not the main cost driver described here."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "High steady volume, many streams and many EFO consumers → On-demand Advantage.",
+      "remember": "On-demand Advantage is an account-level Region setting: no stream-hour fee, cheaper GB rates, no EFO premium, up to 50 EFO consumers, but a 25 MiB/s in and out minimum.",
+      "variants": [
+        "Total volume is 1–2 MB/s → stay on Standard or provisioned; Advantage bills the shortfall.",
+        "You need 30 EFO consumers on one stream → Advantage (50 per stream in listed Regions) because the normal limit is 20.",
+        "You want to go back to Standard → wait at least 24 hours and remove warm throughput first."
+      ]
+    },
+    {
+      "id": "kds-006",
+      "skill": "1.3.2",
+      "source": "1-concepts-records-shards-and-capacity-modes.md",
+      "q": "An on-demand stream normally peaks at 20 MB/s. A flash sale next week will push writes to about 200 MB/s within one minute. How do you avoid write throttling at the start of the sale?",
+      "options": [
+        {
+          "t": "Rely on on-demand scaling; it absorbs any increase instantly",
+          "why": "Wrong: on-demand handles up to double the previous 30-day peak; above that, writes can throttle for about 15 minutes."
+        },
+        {
+          "t": "With On-demand Advantage, set warm throughput to 200 MB/s with `UpdateStreamWarmThroughput` before the sale",
+          "why": "Right: warm throughput pre-scales write capacity before a known event at no extra cost."
+        },
+        {
+          "t": "Raise the stream's retention period",
+          "why": "Wrong: retention does not change write capacity."
+        },
+        {
+          "t": "Register more enhanced fan-out consumers",
+          "why": "Wrong: EFO adds read capacity, not write capacity."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "On-demand only absorbs 2× the prior peak instantly; pre-scale for known spikes.",
+      "remember": "Known big spike on on-demand → warm throughput (Advantage) or pre-scale shards. On-demand Standard grows to 2× the last 30-day peak; faster jumps throttle for about 15 minutes, so producers must retry.",
+      "variants": [
+        "The stream is provisioned → add shards ahead of time with `UpdateShardCount`.",
+        "The spike is only 1.5× the previous peak → on-demand handles it without action.",
+        "After the event → set warm throughput lower to scale back down."
+      ]
+    },
+    {
+      "id": "kds-007",
+      "skill": "1.1.11",
+      "source": "1-concepts-records-shards-and-capacity-modes.md",
+      "q": "A stream has the default retention. A consumer crashed on Friday evening and was restarted 30 hours later. Some events were never processed. What happened, and what prevents it next time?",
+      "options": [
+        {
+          "t": "The records are still in the stream; restart the consumer with `TRIM_HORIZON`",
+          "why": "Wrong: `TRIM_HORIZON` starts at the oldest record still in retention; records older than 24 hours are already gone."
+        },
+        {
+          "t": "Resharding during the outage deleted the records; avoid scaling at weekends",
+          "why": "Wrong: resharding does not lose data inside retention."
+        },
+        {
+          "t": "Records older than the 24-hour retention expired; raise retention and alarm on iterator age (Maximum) at 50% of retention",
+          "why": "Right: lag past retention loses data for that consumer; longer retention plus an iterator-age alarm gives time to react."
+        },
+        {
+          "t": "KDS deleted the records because no consumer read them",
+          "why": "Wrong: records expire by age only, whether read or not."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Default retention is 24 hours; a consumer that lags past retention loses data.",
+      "remember": "Lag longer than retention = data loss. Alarm on `GetRecords.IteratorAgeMilliseconds` (Maximum) at 50% of retention, and raise retention (up to 365 days) if outages can be long.",
+      "variants": [
+        "Retention is shrunk from 7 days to 1 day → older records become unreadable at once.",
+        "History must be kept for a year cheaply → archive to S3 rather than long-term retention.",
+        "The stream is deleted → all its data is gone; retention is not a backup."
+      ]
+    },
+    {
+      "id": "kds-008",
+      "skill": "4.3.4",
+      "source": "1-concepts-records-shards-and-capacity-modes.md",
+      "q": "Events in a stream with 7-day retention contain customer personal data. Under a 'right to be forgotten' rule, one customer's events must become unreadable on request. Which design works?",
+      "options": [
+        {
+          "t": "Call the KDS API to delete that customer's records by partition key",
+          "why": "Wrong: records are immutable and expire only by retention; there is no per-record delete."
+        },
+        {
+          "t": "Reshard the stream so the customer's shard is closed",
+          "why": "Wrong: closed shards are still readable until retention ends."
+        },
+        {
+          "t": "Lower retention to 0 hours for one day",
+          "why": "Wrong: the minimum retention is 24 hours, and shrinking it would drop everyone's data."
+        },
+        {
+          "t": "Keep PII out of the stream, or encrypt each customer's fields with a per-customer key and destroy that key on request",
+          "why": "Right: crypto-shredding makes the data unreadable without needing to delete records."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "You cannot delete one record from KDS; design PII out or crypto-shred.",
+      "remember": "KDS records are immutable and expire only by age. Meet deletion rules by keeping PII out (tokenize/mask), short retention, or per-subject client-side encryption plus key destruction. Never put PII in partition keys.",
+      "variants": [
+        "An exam option says 'delete one bad record from the stream' → wrong.",
+        "Data must be protected from anyone with stream read access → client-side encryption before `PutRecord`."
+      ]
+    },
+    {
+      "id": "kds-009",
+      "skill": "1.2.9",
+      "source": "1-concepts-records-shards-and-capacity-modes.md",
+      "q": "A provisioned stream with the default settings receives sensor events of a few KB. About once an hour a device sends a 4 MiB image, and that write fails with `InvalidArgumentException`. What is the simplest fix?",
+      "options": [
+        {
+          "t": "Add shards, because each shard can only accept 1 MB/s",
+          "why": "Wrong: the error is the record size limit, not shard capacity; large records use burst capacity."
+        },
+        {
+          "t": "Raise the stream's max record size to 5 MiB with `UpdateMaxRecordSize`, after checking every consumer can handle it",
+          "why": "Right: the default max record size is 1 MiB even though KDS supports up to 10 MiB; raise it on purpose."
+        },
+        {
+          "t": "Turn on KPL aggregation",
+          "why": "Wrong: aggregation packs many small records into one; it does not raise the record size limit."
+        },
+        {
+          "t": "Send the image with `PutRecords`, which allows 10 MiB per request",
+          "why": "Wrong: each record in `PutRecords` is still limited by the stream's max record size."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Default max record size is 1 MiB; occasional large records → raise it (up to 10 MiB).",
+      "remember": "Occasional large records (1–10 MiB) → raise max record size; they ride burst capacity. Steady large payloads → store the object in S3 and send a pointer (claim-check). Check consumers first: Lambda takes 6 MB per invoke and some Firehose destinations reject large records.",
+      "variants": [
+        "Every payload is 5 MiB → put it in S3 and send only the S3 key.",
+        "A Lambda consumer receives a 7 MiB record → it goes to the on-failure destination.",
+        "Firehose delivers the stream to Redshift → large records are not supported there."
+      ]
+    },
+    {
+      "id": "kds-010",
+      "skill": "1.1.9",
+      "source": "2-producers-kpl-agent-integrations-and-resharding.md",
+      "q": "A producer calls `PutRecords` with 500 records and always gets HTTP 200, yet downstream counts show records missing during busy periods. What is the cause and fix?",
+      "options": [
+        {
+          "t": "KDS dropped records because retention is too short; raise retention",
+          "why": "Wrong: retention does not cause records to be missing right after a successful write."
+        },
+        {
+          "t": "The stream needs encryption; turn on SSE",
+          "why": "Wrong: encryption has nothing to do with missing records."
+        },
+        {
+          "t": "HTTP 200 means all records succeeded; the consumer is losing them",
+          "why": "Wrong: `PutRecords` can partly fail while still returning HTTP 200."
+        },
+        {
+          "t": "The call partly failed; check `FailedRecordCount` and retry only the failed entries with backoff and jitter",
+          "why": "Right: failed entries carry an `ErrorCode` such as `ProvisionedThroughputExceededException`, lined up with the request by position."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "`PutRecords` is not all-or-nothing; always check `FailedRecordCount`.",
+      "remember": "HTTP 200 from `PutRecords` does not mean every record was written. Check `FailedRecordCount`, retry only failed entries with exponential backoff and jitter. `PutRecords.Success` can look healthy while records fail.",
+      "variants": [
+        "Retrying the whole batch → duplicates of the records that already succeeded.",
+        "Retried records must keep order → retries break order; carry an event time or version.",
+        "Which metric shows throttled entries → `PutRecords.ThrottledRecords`."
+      ]
+    },
+    {
+      "id": "kds-011",
+      "skill": "1.1.9",
+      "source": "2-producers-kpl-agent-integrations-and-resharding.md",
+      "q": "A producer's `PutRecords` calls sometimes have throttled entries. The team wants no lost data and no double-counting downstream. Which TWO actions should they take? (Choose 2)",
+      "options": [
+        {
+          "t": "Retry only the failed entries with exponential backoff and jitter",
+          "why": "Right: successful entries are already stored, so only failed ones need resending."
+        },
+        {
+          "t": "Retry the whole batch whenever `FailedRecordCount` is above 0",
+          "why": "Wrong: this re-writes successful records and creates duplicates."
+        },
+        {
+          "t": "Put a unique event ID in each payload and make consumers idempotent",
+          "why": "Right: retries after timeouts can still duplicate records; consumers dedupe by event ID."
+        },
+        {
+          "t": "Set `SequenceNumberForOrdering` on each `PutRecords` entry",
+          "why": "Wrong: that parameter exists on `PutRecord`, and it does not prevent duplicates."
+        },
+        {
+          "t": "Alarm only on `PutRecords.Success`",
+          "why": "Wrong: it counts calls where at least one record succeeded, so it hides failed entries."
+        }
+      ],
+      "answer": [
+        0,
+        2
+      ],
+      "explain": "Retry only failures, and expect duplicates anyway.",
+      "remember": "KDS is at-least-once: producer retries can duplicate. Retry only failed entries with backoff, and make consumers idempotent by event ID (upsert, conditional writes, idempotency table).",
+      "variants": [
+        "Dedupe across a cross-Region copy → use the event ID, not the sequence number.",
+        "Exactly-once results are needed → Flink checkpoints with transactional/idempotent sinks or Iceberg MERGE by event ID."
+      ]
+    },
+    {
+      "id": "kds-012",
+      "skill": "1.1.9",
+      "source": "2-producers-kpl-agent-integrations-and-resharding.md",
+      "q": "A Java service writes 20,000 events/s of about 100 bytes each into a 10-shard provisioned stream (2 MB/s total) and gets `ProvisionedThroughputExceededException`, although total bytes are far below the stream's 10 MB/s. A short buffering delay is acceptable. What is the best fix?",
+      "options": [
+        {
+          "t": "Raise the stream's max record size",
+          "why": "Wrong: records are small; size is not the problem."
+        },
+        {
+          "t": "Add enhanced fan-out consumers",
+          "why": "Wrong: EFO adds read capacity; this is a write limit."
+        },
+        {
+          "t": "Use the KPL with aggregation to pack many user records into each KDS record",
+          "why": "Right: the 1,000 records/s per shard limit binds before 1 MB/s; aggregation cuts the record count."
+        },
+        {
+          "t": "Use a random partition key on each `PutRecord`",
+          "why": "Wrong: load is already spread; the stream as a whole exceeds 10,000 records/s."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Many small records hit 1,000 records/s per shard before 1 MB/s → aggregate.",
+      "remember": "Small records (under ~1 KB) at high rate → KPL aggregation (many user records per KDS record) plus collection (many KDS records per `PutRecords`). It also cuts PUT payload units. It adds buffering latency (`RecordMaxBufferedTime` default 100 ms).",
+      "variants": [
+        "Each write must be confirmed in under 50 ms → SDK `PutRecord`, not KPL.",
+        "The producer is in Python → SDK plus the kinesis-aggregation library.",
+        "Consumers cannot de-aggregate → SDK or KPL with aggregation off."
+      ]
+    },
+    {
+      "id": "kds-013",
+      "skill": "1.1.1",
+      "source": "2-producers-kpl-agent-integrations-and-resharding.md",
+      "q": "A KCL consumer reads a stream correctly, but a new custom consumer that calls `GetRecords` directly sees binary data starting with odd magic bytes instead of JSON. The producer uses the KPL with default settings. What should the team do?",
+      "options": [
+        {
+          "t": "De-aggregate the records in the custom consumer (for example with the kinesis-aggregation library)",
+          "why": "Right: KPL aggregation is on by default; KCL de-aggregates automatically but a raw `GetRecords` app must do it itself."
+        },
+        {
+          "t": "gunzip the data after base64 decoding",
+          "why": "Wrong: that is the fix for CloudWatch Logs subscription data, not KPL records."
+        },
+        {
+          "t": "Turn on server-side encryption so data is decrypted on read",
+          "why": "Wrong: SSE is transparent to authorized readers; it does not cause binary payloads."
+        },
+        {
+          "t": "Switch the consumer to an `AT_TIMESTAMP` iterator",
+          "why": "Wrong: the iterator type changes the start position, not the record format."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "KPL aggregation is on by default; non-KCL consumers must de-aggregate.",
+      "remember": "Garbled consumer data → either KPL aggregation not de-aggregated (use KCL, Firehose, or a de-aggregation library) or gzip-compressed CloudWatch Logs data (decompress).",
+      "variants": [
+        "The consumer is Firehose → it de-aggregates KPL records itself.",
+        "Data came from a CloudWatch Logs subscription → base64 decode then gunzip; skip CONTROL_MESSAGE records.",
+        "Some consumers can never de-aggregate → turn KPL aggregation off."
+      ]
+    },
+    {
+      "id": "kds-014",
+      "skill": "1.1.10",
+      "source": "2-producers-kpl-agent-integrations-and-resharding.md",
+      "q": "Fifty web servers on Amazon Linux write Apache access logs to local files. The logs must reach a Kinesis data stream as JSON, survive log rotation and resume after a restart, with no custom code. What should be used?",
+      "options": [
+        {
+          "t": "A CloudWatch Logs subscription filter on each server",
+          "why": "Wrong: subscription filters read log groups in CloudWatch Logs, not local files, and send gzip data, not converted JSON."
+        },
+        {
+          "t": "Kinesis Agent with the `LOGTOJSON` data processing option",
+          "why": "Right: the agent tails files, handles rotation, checkpoints, retries, and can convert Apache logs to JSON before sending."
+        },
+        {
+          "t": "A cron job that calls `PutRecord` for each new line",
+          "why": "Wrong: custom code with no rotation handling or checkpointing."
+        },
+        {
+          "t": "Amazon Data Firehose writing into the stream",
+          "why": "Wrong: Firehose cannot write into KDS; it only reads from it."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Tail local log files on Linux into KDS → Kinesis Agent.",
+      "remember": "Kinesis Agent = Java service on Amazon Linux/RHEL that tails files, handles rotation, checkpoints and retries, with optional pre-processing (SINGLELINE, CSVTOJSON, LOGTOJSON, ADDMETADATA). Windows servers need Kinesis Agent for Windows.",
+      "variants": [
+        "Servers run Windows → Kinesis Agent for Windows.",
+        "Multi-line stack traces → `multiLineStartPattern`.",
+        "Agent shows duplicates → a `filePattern` matching several files or `copytruncate` rotation."
+      ]
+    },
+    {
+      "id": "kds-015",
+      "skill": "3.3.7",
+      "source": "2-producers-kpl-agent-integrations-and-resharding.md",
+      "q": "Application log groups in 20 workload accounts must stream in near real time into one Kinesis data stream in a central logging account. What is the recommended setup?",
+      "options": [
+        {
+          "t": "Install the Kinesis Agent on every Lambda function",
+          "why": "Wrong: the agent tails files on Linux hosts; it does not read CloudWatch Logs log groups."
+        },
+        {
+          "t": "Give each workload account an IAM user with `kinesis:PutRecord` on the central stream",
+          "why": "Wrong: long-term user keys are poor practice and subscription filters do not use them."
+        },
+        {
+          "t": "A CloudWatch Logs destination in the central account that points to the stream, plus subscription filters in each workload account",
+          "why": "Right: a destination with a destination policy allows cross-account delivery from subscription filters."
+        },
+        {
+          "t": "S3 export of the log groups every hour, then Firehose into the stream",
+          "why": "Wrong: not near real time, and Firehose cannot write into KDS."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Cross-account CloudWatch Logs to KDS → Logs destination + subscription filters.",
+      "remember": "CloudWatch Logs subscription filters push log events to KDS in near real time (gzip + base64). Cross-account needs a CloudWatch Logs destination in the receiving account; same-account needs a role that `logs.amazonaws.com` assumes with `kinesis:PutRecord`.",
+      "variants": [
+        "Consumers cannot parse the data → base64 decode, then gunzip.",
+        "More than 2 filters needed on one log group → not possible; the limit is 2 per log group.",
+        "Logs only need to land in S3 → a Firehose destination is simpler."
+      ]
+    },
+    {
+      "id": "kds-016",
+      "skill": "1.3.2",
+      "source": "2-producers-kpl-agent-integrations-and-resharding.md",
+      "q": "Enhanced shard-level metrics show one shard of a 16-shard provisioned stream is far over its write limit because of a few heavy keys in one hash range. The other shards are fine. Which action targets the problem most precisely?",
+      "options": [
+        {
+          "t": "`UpdateShardCount` to 32 shards",
+          "why": "Wrong: uniform scaling doubles cost for every shard and ignores the hot hash range."
+        },
+        {
+          "t": "Switch to on-demand mode",
+          "why": "Wrong: on-demand splits evenly and cannot isolate a hot key range."
+        },
+        {
+          "t": "`MergeShards` on the hot shard and its neighbor",
+          "why": "Wrong: merging reduces capacity."
+        },
+        {
+          "t": "`SplitShard` on the hot shard with a `NewStartingHashKey` inside the hot range",
+          "why": "Right: provisioned mode lets you split exactly the hot shard at a chosen hash key."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Hot hash range in provisioned mode → targeted `SplitShard`.",
+      "remember": "Hot range → `SplitShard` at a chosen hash key. Whole stream busy → `UpdateShardCount`. Cold shards → merge adjacent pairs. `UpdateShardCount` later resets custom hot-range splits.",
+      "variants": [
+        "The two cold shards are not adjacent → merge each with its adjacent neighbor.",
+        "The stream is on-demand → fix the partition keys; on-demand cannot isolate a hot key.",
+        "Reads after the split show out-of-order keys → read the parent to the end first (KCL/Lambda do this)."
+      ]
+    },
+    {
+      "id": "kds-017",
+      "skill": "1.3.2",
+      "source": "2-producers-kpl-agent-integrations-and-resharding.md",
+      "q": "A provisioned stream must go from 4 shards to 20 shards today using `UpdateShardCount`. What happens?",
+      "options": [
+        {
+          "t": "One call to 20 succeeds because the account quota allows it",
+          "why": "Wrong: each call can at most double the current shard count."
+        },
+        {
+          "t": "It takes several calls, for example 4 → 8 → 16 → 20, and reads and writes continue during scaling",
+          "why": "Right: each call can at most double; the stream stays readable and writable while UPDATING."
+        },
+        {
+          "t": "The stream must be stopped while scaling",
+          "why": "Wrong: reads and writes keep working during resharding."
+        },
+        {
+          "t": "It is impossible; you must create a new stream",
+          "why": "Wrong: three calls are well within the 10 scaling operations per 24 hours."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "`UpdateShardCount`: at most 2× up or 50% down per call, 10 calls per rolling 24 hours.",
+      "remember": "`UpdateShardCount` limits: max double up, min half down per call, 10 operations per 24 h per stream, 10,000 shards per stream by default. Wait for ACTIVE between calls. Temporary shards count toward the shard quota.",
+      "variants": [
+        "You already used 10 calls today → use `SplitShard`/`MergeShards` or switch to on-demand.",
+        "Scale from 20 to 5 → 20 → 10 → 5 (two calls).",
+        "The reshard fails with a shard quota error → raise the shard quota in Service Quotas."
+      ]
+    },
+    {
+      "id": "kds-018",
+      "skill": "2.4.2",
+      "source": "2-producers-kpl-agent-integrations-and-resharding.md",
+      "q": "Producer teams keep changing the JSON event format in a stream, and consumers break after each release. The company wants incompatible changes blocked before they reach the stream. What should be added?",
+      "options": [
+        {
+          "t": "AWS Glue Schema Registry with the default BACKWARD compatibility, using its serializer in producers and deserializer in consumers",
+          "why": "Right: incompatible schema versions are rejected at registration, protecting consumers."
+        },
+        {
+          "t": "A Lambda function that validates and drops bad records after they are written",
+          "why": "Wrong: the bad records are already in the stream and consumers still see them."
+        },
+        {
+          "t": "A second stream per schema version",
+          "why": "Wrong: adds operations work and does not stop breaking changes."
+        },
+        {
+          "t": "Kinesis Agent with `CSVTOJSON` processing",
+          "why": "Wrong: format conversion does not enforce schema compatibility."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Schema evolution control for KDS → Glue Schema Registry with compatibility rules.",
+      "remember": "Glue Schema Registry (Avro, JSON Schema, Protobuf; no extra cost) embeds a schema version ID per record. BACKWARD (default) means new readers can read old data; breaking changes are rejected at registration.",
+      "variants": [
+        "Both old and new readers must handle all versions → FULL compatibility.",
+        "KDS streaming tables delivery → requires a schema in Glue Schema Registry.",
+        "Consumers are Flink or Glue streaming → both read GSR schemas for KDS sources."
+      ]
+    },
+    {
+      "id": "kds-019",
+      "skill": "1.1.10",
+      "source": "3-consumers-kcl-efo-lambda-and-processing-patterns.md",
+      "q": "Four applications poll the same provisioned stream with `GetRecords`. All four lag behind and `ReadProvisionedThroughputExceeded` is above zero. What is the best fix?",
+      "options": [
+        {
+          "t": "Increase retention so the consumers can catch up later",
+          "why": "Wrong: it delays data loss but does not remove the read contention."
+        },
+        {
+          "t": "Make each app poll more often",
+          "why": "Wrong: polling consumers share 5 calls/s per shard; more polls mean more throttling."
+        },
+        {
+          "t": "Add more KCL workers than there are shards",
+          "why": "Wrong: extra workers sit idle; one lease per shard."
+        },
+        {
+          "t": "Register each application as an enhanced fan-out consumer",
+          "why": "Right: each EFO consumer gets its own 2 MB/s per shard, pushed with `SubscribeToShard` at about 70 ms latency."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "More than about 2 polling consumers per shard → enhanced fan-out.",
+      "remember": "Shared-throughput consumers split 2 MB/s and 5 `GetRecords`/s per shard. Use EFO for more than 2 consumers, low latency, or isolation. Limit: 20 EFO consumers per stream (50 on On-demand Advantage).",
+      "variants": [
+        "One or two consumers and ~1 s latency is fine → keep polling and save EFO cost.",
+        "An EFO consumer is no longer used → `DeregisterStreamConsumer` to stop consumer-shard-hour charges.",
+        "Re-subscribing returns `ResourceInUseException` → wait; a re-subscribe within 5 seconds is refused."
+      ]
+    },
+    {
+      "id": "kds-020",
+      "skill": "1.1.11",
+      "source": "3-consumers-kcl-efo-lambda-and-processing-patterns.md",
+      "q": "A bug in a custom consumer corrupted results for the last 6 hours. The stream has 3-day retention. How should the team reprocess just that period?",
+      "options": [
+        {
+          "t": "Create new shard iterators with `AT_TIMESTAMP` set to 6 hours ago (or reset the KCL checkpoints to that point)",
+          "why": "Right: records stay for the retention period and `AT_TIMESTAMP` starts at the first record at or after the given time."
+        },
+        {
+          "t": "Restart the consumer with a `LATEST` iterator",
+          "why": "Wrong: `LATEST` only returns records written after the iterator is created."
+        },
+        {
+          "t": "Ask producers to resend the last 6 hours",
+          "why": "Wrong: unnecessary; the data is still in the stream."
+        },
+        {
+          "t": "Use `TRIM_HORIZON` on every shard",
+          "why": "Wrong: it starts at the oldest record (3 days back), reprocessing far more than needed."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Replay from a point in time → `AT_TIMESTAMP` (inside retention).",
+      "remember": "Iterator types: `TRIM_HORIZON` = oldest in retention; `LATEST` = only new records; `AT/AFTER_SEQUENCE_NUMBER` = resume from checkpoint; `AT_TIMESTAMP` = replay from a time. Restarting with `LATEST` and no checkpoint skips data.",
+      "variants": [
+        "Reprocess everything still retained → `TRIM_HORIZON`, or a new KCL app name with `TRIM_HORIZON`.",
+        "Iterator older than 5 minutes → `ExpiredIteratorException`; get a new one from the last sequence number.",
+        "Lambda consumer → set the ESM starting position to `AT_TIMESTAMP`."
+      ]
+    },
+    {
+      "id": "kds-021",
+      "skill": "1.1.12",
+      "source": "3-consumers-kcl-efo-lambda-and-processing-patterns.md",
+      "q": "After a provisioned stream was split from 4 to 8 shards, the KCL application keeps processing the 4 parent shards to the end but never starts on the 8 child shards. What is the most likely cause?",
+      "options": [
+        {
+          "t": "The lease table is in DynamoDB on-demand mode",
+          "why": "Wrong: on-demand is the recommended mode for KCL tables."
+        },
+        {
+          "t": "Child shards need a new stream ARN",
+          "why": "Wrong: child shards belong to the same stream."
+        },
+        {
+          "t": "The stream needs enhanced fan-out for child shards",
+          "why": "Wrong: child shards can be read with polling or EFO."
+        },
+        {
+          "t": "The record processor does not checkpoint in `shardEnded`",
+          "why": "Right: KCL must see the parent marked finished before it processes the children."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Always checkpoint in `shardEnded`, or children are never processed.",
+      "remember": "KCL record processor: checkpoint in `shardEnded` (required for children) and `shutdownRequested`; cannot checkpoint in `leaseLost`. Never checkpoint before data is safely written downstream.",
+      "variants": [
+        "KCL stalls with DynamoDB throttling → keep lease tables on-demand.",
+        "Workers outnumber shards → extra workers sit idle.",
+        "Uneven CPU across workers → KCL 3.x balances by CPU use."
+      ]
+    },
+    {
+      "id": "kds-022",
+      "skill": "1.1.7",
+      "source": "3-consumers-kcl-efo-lambda-and-processing-patterns.md",
+      "q": "A Lambda function consumes a stream with default event source mapping settings. One malformed record makes the function throw, and that shard has stopped progressing for hours. Which TWO settings best stop one bad record from blocking the shard while keeping it for later analysis? (Choose 2)",
+      "options": [
+        {
+          "t": "Increase the batch size to 10,000",
+          "why": "Wrong: the bad record is still in the batch and still fails it."
+        },
+        {
+          "t": "Turn on `BisectBatchOnFunctionError`",
+          "why": "Right: it splits the failed batch in halves to isolate the bad record, without using retry quota."
+        },
+        {
+          "t": "Raise the parallelization factor to 10",
+          "why": "Wrong: the shard is still blocked for the key range with the bad record; order per key is kept."
+        },
+        {
+          "t": "Set `MaximumRetryAttempts` (and `MaximumRecordAgeInSeconds`) with an on-failure destination",
+          "why": "Right: retries stop after a limit and the failed batch details go to the destination instead of retrying until expiry."
+        },
+        {
+          "t": "Raise the stream's retention period",
+          "why": "Wrong: longer retention means the shard can stay blocked even longer."
+        }
+      ],
+      "answer": [
+        1,
+        3
+      ],
+      "explain": "Defaults retry forever; bound retries, bisect, and add an on-failure destination.",
+      "remember": "Kinesis ESM defaults: infinite retries and infinite record age, so a poison record blocks a shard until it expires. Set max retries, max record age, bisect on error and an on-failure destination on every Kinesis ESM.",
+      "variants": [
+        "Only one record in the batch fails and code can report it → partial batch response (`ReportBatchItemFailures`).",
+        "The full failed payload is needed → use an S3 on-failure destination.",
+        "Records over 6 MB → they go to the on-failure destination."
+      ]
+    },
+    {
+      "id": "kds-023",
+      "skill": "1.1.7",
+      "source": "3-consumers-kcl-efo-lambda-and-processing-patterns.md",
+      "q": "A Lambda function processes batches of 500 records. Occasionally one record fails, and the whole batch is retried, re-running 499 good records each time. How can the function retry only from the failed record?",
+      "options": [
+        {
+          "t": "Set the batch size to 1",
+          "why": "Wrong: works but greatly reduces throughput and raises cost."
+        },
+        {
+          "t": "Enable `ReportBatchItemFailures` and return the failed record's sequence number in `batchItemFailures`",
+          "why": "Right: Lambda checkpoints before that record and retries from it, so earlier good records are not re-run."
+        },
+        {
+          "t": "Return HTTP 500 from the function",
+          "why": "Wrong: any thrown error fails the whole batch."
+        },
+        {
+          "t": "Enable a tumbling window of 60 seconds",
+          "why": "Wrong: tumbling windows carry aggregation state; they do not change retry scope."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Retry only from the failed record → partial batch response.",
+      "remember": "Partial batch response needs `FunctionResponseTypes = ReportBatchItemFailures`; return the first failed sequence number. Lambda retries from the lowest returned sequence number. Without the setting, the response body is ignored.",
+      "variants": [
+        "An empty or null `itemIdentifier` is returned → the whole batch is treated as failed.",
+        "Bisect is also on → the batch is bisected at the returned sequence number.",
+        "Duplicates must still be safe → keep the function idempotent; retries are not removed entirely."
+      ]
+    },
+    {
+      "id": "kds-024",
+      "skill": "1.1.7",
+      "source": "3-consumers-kcl-efo-lambda-and-processing-patterns.md",
+      "q": "A Lambda consumer on a 4-shard provisioned stream shows a steadily rising `IteratorAge`. The function is already efficient, the team does not want to reshard, and per-key order must be kept. What should they change?",
+      "options": [
+        {
+          "t": "Raise `MaximumBatchingWindowInSeconds` to 300",
+          "why": "Wrong: waiting longer for full batches increases delay, it does not add parallel work."
+        },
+        {
+          "t": "Turn on a tumbling window",
+          "why": "Wrong: tumbling windows are for per-shard aggregation, not throughput."
+        },
+        {
+          "t": "Reduce the stream's retention period",
+          "why": "Wrong: this only makes data expire sooner and risks loss."
+        },
+        {
+          "t": "Raise `ParallelizationFactor` (up to 10)",
+          "why": "Right: up to 10 concurrent batches per shard, while Lambda still keeps order per partition key."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Lambda lag without resharding → parallelization factor (1–10 per shard).",
+      "remember": "Lambda Kinesis concurrency ≈ shards × parallelization factor. Raising it keeps per-key order but sends up to 10× more parallel calls downstream. Other levers: add shards, larger batches, faster code, EFO.",
+      "variants": [
+        "Records come from KPL aggregation without EFO → user records in one aggregate must share its partition key to keep per-key order.",
+        "Downstream DB cannot take more parallel writes → add shards or speed up code instead.",
+        "Lag is caused by shared read throughput with another consumer → give one of them EFO."
+      ]
+    },
+    {
+      "id": "kds-025",
+      "skill": "1.1.1",
+      "source": "3-consumers-kcl-efo-lambda-and-processing-patterns.md",
+      "q": "Changes from a DynamoDB table must feed 10 independent consumers, including Firehose and a Flink app, and must be replayable for 7 days. Which change data capture option fits?",
+      "options": [
+        {
+          "t": "DynamoDB Streams with a Lambda trigger per consumer",
+          "why": "Wrong: DynamoDB Streams keeps data 24 hours and supports about 2 readers per shard."
+        },
+        {
+          "t": "A daily DynamoDB export to S3",
+          "why": "Wrong: not a real-time change feed."
+        },
+        {
+          "t": "Kinesis Data Streams for DynamoDB, with 7-day stream retention and EFO consumers",
+          "why": "Right: retention up to 1 year, many consumers (20 EFO, 50 on Advantage), and Firehose/Flink integration."
+        },
+        {
+          "t": "AWS DMS full load to S3 each night",
+          "why": "Wrong: batch copy, not a multi-consumer change stream with replay."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Long replay and many consumers of DynamoDB changes → Kinesis Data Streams for DynamoDB.",
+      "remember": "KDS for DynamoDB: up to 1-year retention, many consumers, Firehose/Flink/Glue, but duplicates possible and order rebuilt by timestamp. DynamoDB Streams: 24 h, 2 readers per shard, exact item order, no duplicates.",
+      "variants": [
+        "Exact per-item order and no duplicates for a simple Lambda trigger → DynamoDB Streams.",
+        "Both are needed → you can turn on both for the same table.",
+        "Relational database changes must reach many consumers → DMS CDC to KDS."
+      ]
+    },
+    {
+      "id": "kds-026",
+      "skill": "2.1.7",
+      "source": "3-consumers-kcl-efo-lambda-and-processing-patterns.md",
+      "q": "An on-demand stream carries JSON events. Analysts want them in Amazon S3 as Parquet files with dynamic partitioning by customer ID, and a Lambda transform to mask fields. Which option fits?",
+      "options": [
+        {
+          "t": "Amazon Data Firehose reading from the stream",
+          "why": "Right: Firehose supports Lambda transforms, format conversion and dynamic partitioning to S3."
+        },
+        {
+          "t": "KDS data delivery to a general purpose S3 bucket",
+          "why": "Wrong: it keeps the original format and supports no transformations."
+        },
+        {
+          "t": "KDS streaming tables delivery to S3 Tables",
+          "why": "Wrong: it creates Iceberg tables with no transformations and hourly partitioning on a timestamp, not custom partitions."
+        },
+        {
+          "t": "Redshift streaming ingestion",
+          "why": "Wrong: it loads into Redshift materialized views, not partitioned Parquet in S3."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Transforms, Parquet or dynamic partitioning → Firehose; plain no-code landing → KDS data delivery.",
+      "remember": "KDS data delivery (on-demand only): no code, no transforms, exactly-once per shard, original format to S3 or new Iceberg streaming tables (schema in Glue Schema Registry). Need transforms, format conversion or dynamic partitions → Firehose.",
+      "variants": [
+        "Analysts want Iceberg tables with no code on an on-demand stream → KDS streaming tables delivery.",
+        "The stream is provisioned and needs KDS data delivery → switch it to on-demand.",
+        "Delivery should not take read throughput from other consumers → KDS data delivery uses no read throughput or EFO slots."
+      ]
+    },
+    {
+      "id": "kds-027",
+      "skill": "1.1.1",
+      "source": "3-consumers-kcl-efo-lambda-and-processing-patterns.md",
+      "q": "A provisioned stream must start landing records in S3 using KDS data delivery (`CreateChannel`). The stream is encrypted with the AWS managed key `aws/kinesis`. What must change?",
+      "options": [
+        {
+          "t": "Nothing; data delivery works on any stream",
+          "why": "Wrong: data delivery has mode and key requirements."
+        },
+        {
+          "t": "Register an EFO consumer for the delivery",
+          "why": "Wrong: data delivery does not use read throughput or EFO slots."
+        },
+        {
+          "t": "Switch the stream to on-demand mode and re-encrypt it with a customer managed KMS key",
+          "why": "Right: data delivery needs an on-demand mode, and a source stream encrypted with `aws/kinesis` cannot use it."
+        },
+        {
+          "t": "Run `UpdateShardCount` to double the shards",
+          "why": "Wrong: shard count is unrelated to delivery support."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "KDS data delivery → on-demand mode and a customer managed key, not `aws/kinesis`.",
+      "remember": "KDS data delivery needs On-demand Standard or Advantage, a customer managed KMS key (not `aws/kinesis`), and delivers only records written after it is ACTIVE (no backfill). Max 2 deliveries per stream (one S3, one streaming table).",
+      "variants": [
+        "Mode must switch three times today → not possible; 2 mode switches per 24 h per stream.",
+        "Historic records must be included → no backfill; reprocess them with another consumer.",
+        "The bucket is in another Region → not allowed; same Region only."
+      ]
+    },
+    {
+      "id": "kds-028",
+      "skill": "4.3.3",
+      "source": "4-security-monitoring-cost-limits-and-scenarios.md",
+      "q": "A stream encrypted with the AWS managed key `aws/kinesis` must be readable by a partner account's Lambda function, without the partner assuming a role in your account. What is required?",
+      "options": [
+        {
+          "t": "Make the stream public with a wildcard principal in its resource policy",
+          "why": "Wrong: KDS resource policies do not allow wildcard principals."
+        },
+        {
+          "t": "Re-encrypt with a customer managed KMS key that allows the partner account, and attach a stream resource policy granting the read actions",
+          "why": "Right: `aws/kinesis` streams cannot be shared this way; the CMK key policy plus `PutResourcePolicy` enable cross-account reads."
+        },
+        {
+          "t": "Share the stream through AWS RAM",
+          "why": "Wrong: KDS cross-account sharing is through resource-based policies."
+        },
+        {
+          "t": "Only add a stream resource policy; `aws/kinesis` works cross-account",
+          "why": "Wrong: the AWS managed key cannot be used for cross-account sharing."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Cross-account KDS → stream resource policy + customer managed key.",
+      "remember": "Resource policies on a stream (and on the EFO consumer for EFO) let other accounts read or write without assuming a role. The other principal still needs an identity policy. No wildcard principals; 20 KB max. `aws/kinesis` blocks sharing.",
+      "variants": [
+        "The partner uses EFO → policies on both the stream ARN and the consumer ARN.",
+        "Compliance needs a key the company controls → SSE with a customer managed key.",
+        "Older design → a role in the stream account that the partner assumes."
+      ]
+    },
+    {
+      "id": "kds-029",
+      "skill": "4.1.2",
+      "source": "4-security-monitoring-cost-limits-and-scenarios.md",
+      "q": "KCL workers run in private subnets with no NAT gateway. A Kinesis interface VPC endpoint already exists, yet the workers hang at startup. Which TWO additions are needed? (Choose 2)",
+      "options": [
+        {
+          "t": "A gateway VPC endpoint for DynamoDB",
+          "why": "Right: KCL keeps leases and checkpoints in DynamoDB tables."
+        },
+        {
+          "t": "A gateway VPC endpoint for Kinesis Data Streams",
+          "why": "Wrong: there is no gateway endpoint for KDS; gateway endpoints exist only for S3 and DynamoDB."
+        },
+        {
+          "t": "An interface VPC endpoint for CloudWatch",
+          "why": "Right: KCL publishes metrics to CloudWatch."
+        },
+        {
+          "t": "An internet gateway attached to the private subnets",
+          "why": "Wrong: the goal is private access; endpoints keep traffic on the AWS network."
+        },
+        {
+          "t": "A second Kinesis interface endpoint in the same subnets",
+          "why": "Wrong: one endpoint already serves KDS; it is not the missing piece."
+        }
+      ],
+      "answer": [
+        0,
+        2
+      ],
+      "explain": "KCL needs KDS, DynamoDB and CloudWatch reachable.",
+      "remember": "Private KDS access → interface VPC endpoint (PrivateLink); no gateway endpoint for KDS. KPL and KCL also call CloudWatch (interface endpoint), and KCL calls DynamoDB (gateway or interface endpoint).",
+      "variants": [
+        "Only one specific endpoint may reach the stream → IAM Deny with `aws:SourceVpce` (StringNotEquals).",
+        "Restrict which streams are reachable through the endpoint → endpoint policy.",
+        "Producer only (SDK, no KPL metrics) → the KDS interface endpoint alone is enough."
+      ]
+    },
+    {
+      "id": "kds-030",
+      "skill": "4.3.2",
+      "source": "4-security-monitoring-cost-limits-and-scenarios.md",
+      "q": "After a stream was switched to SSE with a customer managed KMS key, producers fail with `AccessDeniedException` while consumers with an updated role read fine. What is missing for the producers?",
+      "options": [
+        {
+          "t": "`kms:GenerateDataKey` on the key for the producer role",
+          "why": "Right: producers need `kms:GenerateDataKey`; consumers need `kms:Decrypt`."
+        },
+        {
+          "t": "`kinesis:SubscribeToShard` for the producer role",
+          "why": "Wrong: that is an EFO consumer action."
+        },
+        {
+          "t": "`kms:Decrypt` only",
+          "why": "Wrong: `Decrypt` is what readers need."
+        },
+        {
+          "t": "`kinesis:StartStreamEncryption`",
+          "why": "Wrong: that is an admin action to turn on encryption, not needed to write."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "SSE-KMS: producers need `kms:GenerateDataKey`, consumers need `kms:Decrypt`.",
+      "remember": "With SSE-KMS, writers need `kms:GenerateDataKey` and readers `kms:Decrypt` on the key. Disabled or deleted keys block reads and writes (`KMSDisabledException`, `KMSNotFoundException`). Heavy load can cause `KMSThrottlingException` → retry and raise the KMS quota.",
+      "variants": [
+        "Errors are `KMSThrottlingException` → retry and request a higher KMS quota.",
+        "Errors start after a key change → check the key state and key policy.",
+        "Producers in another account → the key must be customer managed and allow that account."
+      ]
+    },
+    {
+      "id": "kds-031",
+      "skill": "3.3.3",
+      "source": "4-security-monitoring-cost-limits-and-scenarios.md",
+      "q": "A stream has 48-hour retention. The data team wants an early warning before any polling consumer falls so far behind that records expire unread. Which alarm is best?",
+      "options": [
+        {
+          "t": "`IncomingBytes` (Sum) above the stream capacity",
+          "why": "Wrong: shows write volume, not consumer lag."
+        },
+        {
+          "t": "`WriteProvisionedThroughputExceeded` (Average) above 0",
+          "why": "Wrong: shows producer throttling, not consumer lag."
+        },
+        {
+          "t": "`GetRecords.IteratorAgeMilliseconds` (Maximum) above 24 hours, sent to SNS",
+          "why": "Right: iterator age shows how far consumers lag; alarm on Maximum at 50% of retention."
+        },
+        {
+          "t": "`PutRecords.FailedRecords` above 0",
+          "why": "Wrong: shows producer write failures."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Data-loss warning → iterator age (Maximum) at 50% of retention.",
+      "remember": "`GetRecords.IteratorAgeMilliseconds` is the key consumer alarm (Maximum statistic, 50% of retention). EFO consumers use `SubscribeToShardEvent.MillisBehindLatest`; Lambda uses `IteratorAge`.",
+      "variants": [
+        "The consumer uses EFO → alarm on `SubscribeToShardEvent.MillisBehindLatest` per `ConsumerName`.",
+        "Producers are throttled → `WriteProvisionedThroughputExceeded` > 0 for several minutes.",
+        "Polling apps contend for reads → `ReadProvisionedThroughputExceeded` > 0; consider EFO."
+      ]
+    },
+    {
+      "id": "kds-032",
+      "skill": "3.3.4",
+      "source": "4-security-monitoring-cost-limits-and-scenarios.md",
+      "q": "Stream-level CloudWatch metrics show total writes well under the stream's capacity, yet producers see occasional `ProvisionedThroughputExceededException`. How do you find the cause?",
+      "options": [
+        {
+          "t": "Turn on enhanced shard-level metrics with `EnableEnhancedMonitoring` and look at per-shard `IncomingBytes` and `WriteProvisionedThroughputExceeded`",
+          "why": "Right: stream-level metrics hide per-shard skew; shard-level metrics show the hot shard."
+        },
+        {
+          "t": "Turn on CloudTrail management events",
+          "why": "Wrong: these log control-plane calls, not per-shard traffic."
+        },
+        {
+          "t": "Look at the KCL lease table",
+          "why": "Wrong: it shows consumer leases, not producer write load."
+        },
+        {
+          "t": "Raise retention and check `GetRecords.Bytes`",
+          "why": "Wrong: retention and read bytes do not explain write throttling."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Throttling while totals look fine → hot shard; find it with shard-level metrics.",
+      "remember": "Basic stream metrics are free; enhanced shard-level metrics (`EnableEnhancedMonitoring`) are billed per shard per metric, so turn them on to find hot shards and turn them off when done.",
+      "variants": [
+        "Enhanced metrics are costly → enable them only while troubleshooting.",
+        "The hot shard is found in provisioned mode → split it or fix keys.",
+        "Who changed the shard count → CloudTrail management events."
+      ]
+    },
+    {
+      "id": "kds-033",
+      "skill": "1.2.4",
+      "source": "4-security-monitoring-cost-limits-and-scenarios.md",
+      "q": "A provisioned stream receives millions of 500-byte records per hour from a Java service, and the PUT payload unit charge is much higher than expected. What lowers this cost most directly?",
+      "options": [
+        {
+          "t": "Switch from `PutRecords` to `PutRecord`",
+          "why": "Wrong: each record is still billed in 25 KB units either way."
+        },
+        {
+          "t": "Enable enhanced fan-out",
+          "why": "Wrong: EFO adds read charges and does not affect PUT units."
+        },
+        {
+          "t": "Raise the stream's max record size",
+          "why": "Wrong: records are already small; the limit is not the issue."
+        },
+        {
+          "t": "Use KPL aggregation so many small user records share one KDS record",
+          "why": "Right: each record uses at least one 25 KB PUT payload unit, so packing small records cuts units."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Small records waste 25 KB PUT units → aggregate.",
+      "remember": "Provisioned pricing = shard-hours + PUT payload units (25 KB chunks; a 1 KB record still uses a full unit). Levers: KPL aggregation and compression, right mode, merge cold shards, remove unused EFO consumers and enhanced metrics, shorter retention with S3 archive.",
+      "variants": [
+        "A provisioned stream is idle at night → scale down with `UpdateShardCount` (≤ 50% per call).",
+        "Many idle On-demand Standard dev streams → delete them; stream-hour fees run with no traffic.",
+        "Data only needs to land in S3 → Firehose or KDS data delivery instead of always-on custom consumers."
+      ]
+    },
+    {
+      "id": "kds-034",
+      "skill": "4.4.1",
+      "source": "4-security-monitoring-cost-limits-and-scenarios.md",
+      "q": "Auditors ask who deleted a production stream last Tuesday and from which IP address. No special logging was configured beyond the defaults. Where is the answer?",
+      "options": [
+        {
+          "t": "CloudWatch `AWS/Kinesis` metrics",
+          "why": "Wrong: metrics show traffic, not who called an API."
+        },
+        {
+          "t": "CloudTrail management events in event history",
+          "why": "Right: control-plane calls such as `DeleteStream` are logged as management events by default, with caller, IP and time."
+        },
+        {
+          "t": "The KCL lease table in DynamoDB",
+          "why": "Wrong: it holds consumer leases and checkpoints only."
+        },
+        {
+          "t": "The stream's own records, read with `TRIM_HORIZON`",
+          "why": "Wrong: a deleted stream's data is gone, and records do not log API calls."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Who changed or deleted a stream → CloudTrail management events (on by default).",
+      "remember": "CloudTrail logs KDS control-plane calls (CreateStream, DeleteStream, UpdateShardCount, StartStreamEncryption, PutResourcePolicy) as management events by default. Payloads are never logged. Use AWS Config to track configuration drift such as encryption or retention.",
+      "variants": [
+        "Track whether encryption or retention drifts from policy → AWS Config.",
+        "Recover the deleted stream's data → not possible; deletion is permanent unless data was archived to S3.",
+        "Repeatable stream setup → CloudFormation `AWS::Kinesis::Stream`."
+      ]
+    },
+    {
+      "id": "kds-035",
+      "skill": "4.2.6",
+      "source": "4-security-monitoring-cost-limits-and-scenarios.md",
+      "q": "One IAM role with `kinesis:*` on `*` is shared by producer apps, consumer apps and an admin script that reshards streams. A security review flags it. What is the best fix?",
+      "options": [
+        {
+          "t": "Keep the role but add MFA",
+          "why": "Wrong: applications cannot use MFA, and the permissions are still too wide."
+        },
+        {
+          "t": "Attach `AmazonKinesisFullAccess` to each app instead",
+          "why": "Wrong: AWS managed policies are too broad for production apps."
+        },
+        {
+          "t": "Separate roles: producers with `PutRecord(s)`, consumers with read actions, admins with resharding actions, each scoped to stream ARNs",
+          "why": "Right: least privilege stops a producer or consumer from deleting or resharding streams."
+        },
+        {
+          "t": "Use a stream resource policy that allows all principals in the account",
+          "why": "Wrong: still broad, and resource policies are for cross-account sharing."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Least privilege for KDS → separate producer, consumer and admin roles scoped to ARNs.",
+      "remember": "Producers: `PutRecord`, `PutRecords`. Polling consumers: `GetShardIterator`, `GetRecords`, `ListShards`, `DescribeStreamSummary`. EFO adds `RegisterStreamConsumer`, `DescribeStreamConsumer`, `SubscribeToShard`. Admin: create, delete, reshard, mode, retention, encryption.",
+      "variants": [
+        "Lambda consumer → the function's execution role (for example `AWSLambdaKinesisExecutionRole`).",
+        "KCL consumer → also DynamoDB table permissions and `cloudwatch:PutMetricData`.",
+        "Encrypted stream → add `kms:GenerateDataKey` for producers and `kms:Decrypt` for consumers."
+      ]
+    },
+    {
+      "id": "kds-036",
+      "skill": "1.2.9",
+      "source": "4-security-monitoring-cost-limits-and-scenarios.md",
+      "q": "Which requirement points to a service OTHER than Kinesis Data Streams?",
+      "options": [
+        {
+          "t": "An existing Kafka application must move to AWS with no code changes",
+          "why": "Right: KDS does not speak the Kafka protocol; use Amazon MSK."
+        },
+        {
+          "t": "Several apps must read the same clickstream and replay the last 3 days",
+          "why": "Wrong: replay and many independent readers are core KDS features."
+        },
+        {
+          "t": "Per-device ordered telemetry with sub-second latency",
+          "why": "Wrong: KDS gives per-key order and roughly 70–200 ms latency."
+        },
+        {
+          "t": "Change data from DMS must feed five consumers",
+          "why": "Wrong: DMS can target KDS so many consumers read the CDC feed."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Kafka APIs → MSK; video → Kinesis Video Streams; work queue → SQS; content routing → EventBridge.",
+      "remember": "Choose KDS for replay, many independent consumers, per-key order and sub-second latency. Choose MSK for Kafka compatibility, SQS for one-consumer work queues, Firehose for simple delivery to S3/Redshift/OpenSearch, EventBridge for rule-based routing, Kinesis Video Streams for media.",
+      "variants": [
+        "A video doorbell must stream live and store clips → Kinesis Video Streams.",
+        "A worker pool must process each job once and delete it → SQS.",
+        "SaaS events must route to targets by content → EventBridge."
+      ]
+    }
+  ]
+}

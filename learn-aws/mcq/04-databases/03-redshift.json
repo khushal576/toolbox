@@ -1,0 +1,1311 @@
+{
+ "questions": [
+  {
+   "id": "redshift-001",
+   "skill": "1.2.5",
+   "source": "1-basics-architecture-and-deployment-options.md",
+   "q": "A team runs a handful of ad-hoc SQL queries each month on log files already stored in S3. They want no cluster to manage and to pay only when a query runs. Which service fits best?",
+   "options": [
+    {
+     "t": "Redshift provisioned cluster with Spectrum",
+     "why": "Wrong: the cluster bills node hours all month even though queries are rare."
+    },
+    {
+     "t": "Amazon EMR with Spark SQL",
+     "why": "Wrong: EMR is for heavy custom processing and adds cluster administration."
+    },
+    {
+     "t": "Amazon Athena",
+     "why": "Right: serverless SQL directly on S3, billed per TB scanned, made for ad-hoc lake queries."
+    },
+    {
+     "t": "Aurora PostgreSQL with the files imported",
+     "why": "Wrong: an OLTP database is the wrong engine for scanning log files and needs a load step."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Rare ad-hoc SQL on S3 with no cluster: Athena.",
+   "remember": "Ad-hoc, infrequent SQL on files in S3 with no cluster → Athena. Many users, repeated BI, joins on loaded tables → Redshift.",
+   "variants": [
+    "Many analysts run repeated dashboards with consistent speed → Redshift.",
+    "The S3 data must be joined with warehouse tables in one query → Redshift Spectrum.",
+    "Heavy custom Spark code → EMR or Glue."
+   ]
+  },
+  {
+   "id": "redshift-002",
+   "skill": "3.2.5",
+   "source": "1-basics-architecture-and-deployment-options.md",
+   "q": "A new analytics project has unpredictable, spiky query load: busy some days, idle for long stretches. There are no staff to size or manage nodes. Which deployment fits?",
+   "options": [
+    {
+     "t": "Redshift Serverless",
+     "why": "Right: capacity scales automatically, billing is per RPU-second, and there is no charge while idle."
+    },
+    {
+     "t": "Provisioned RA3 cluster with 3-year reserved nodes",
+     "why": "Wrong: reserved nodes pay off for steady 24x7 load, not idle stretches."
+    },
+    {
+     "t": "Provisioned DC2 cluster",
+     "why": "Wrong: DC2 is legacy and still needs nodes sized and paid for when idle."
+    },
+    {
+     "t": "Provisioned cluster with manual WLM queues",
+     "why": "Wrong: WLM shares capacity inside a cluster; it does not remove sizing or idle cost."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Spiky or unpredictable load, no admin staff: Serverless.",
+   "remember": "Spiky, intermittent or unpredictable load with no capacity planning → Redshift Serverless (per-second RPU billing, nothing while idle). Steady 24x7 heavy load → provisioned with reserved nodes.",
+   "variants": [
+    "Steady heavy 24x7 load and lowest cost → provisioned + reserved nodes.",
+    "A provisioned dev cluster is idle overnight → schedule pause/resume.",
+    "Serverless costs must be capped → set max RPU and usage limits."
+   ]
+  },
+  {
+   "id": "redshift-003",
+   "skill": "2.1.1",
+   "source": "1-basics-architecture-and-deployment-options.md",
+   "q": "A provisioned Redshift cluster's data is growing much faster than its compute needs. Adding nodes just for disk space is wasting money. What should the team do?",
+   "options": [
+    {
+     "t": "Move to DC2 nodes, which include storage in the node price",
+     "why": "Wrong: DC2 ties storage to nodes, so more data still means more nodes."
+    },
+    {
+     "t": "Enable concurrency scaling",
+     "why": "Wrong: it adds temporary compute for query bursts, not storage."
+    },
+    {
+     "t": "Turn on Multi-AZ",
+     "why": "Wrong: it improves availability; it does not decouple storage."
+    },
+    {
+     "t": "Move to RA3 (or RG) nodes with Redshift Managed Storage",
+     "why": "Right: compute and managed storage are separate, so storage is billed per GB-month without buying compute."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Scale storage independently of compute: RA3/RG managed storage.",
+   "remember": "\"Scale compute and storage independently\" → RA3 or RG with managed storage (or Serverless). Size nodes on daily data processed, not total data.",
+   "variants": [
+    "Data is small (under about 1 TB) and static → Serverless or a small cluster; DC2 is legacy.",
+    "Only short query bursts are the problem → concurrency scaling.",
+    "Permanent compute growth → elastic resize."
+   ]
+  },
+  {
+   "id": "redshift-004",
+   "skill": "2.3.6",
+   "source": "1-basics-architecture-and-deployment-options.md",
+   "q": "BI dashboards on a provisioned RA3 cluster must keep running if a whole Availability Zone fails, with no data loss and no endpoint change. Which option fits?",
+   "options": [
+    {
+     "t": "Cross-Region snapshot copy",
+     "why": "Wrong: it is disaster recovery by restore, which creates a new cluster and takes time."
+    },
+    {
+     "t": "A Multi-AZ deployment",
+     "why": "Right: compute runs in two AZs behind one endpoint with zero RPO and a 99.99% SLA."
+    },
+    {
+     "t": "A single-AZ cluster with more nodes",
+     "why": "Wrong: node mirroring protects against node failure, not loss of the AZ."
+    },
+    {
+     "t": "Automated snapshots every 8 hours",
+     "why": "Wrong: snapshots are backups; restoring from them means downtime and a new endpoint."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "AZ-failure-proof warehouse: Multi-AZ on RA3/RG.",
+   "remember": "AZ failure must not stop the warehouse → Multi-AZ (RG/RA3): two AZs, one endpoint, zero RPO, 99.99%. Multi-AZ is not a backup; snapshots are.",
+   "variants": [
+    "Region-wide disaster recovery → cross-Region snapshot copy.",
+    "Someone dropped a table → table-level restore from a snapshot.",
+    "Single-node cluster hit hardware failure → restore from snapshot."
+   ]
+  },
+  {
+   "id": "redshift-005",
+   "skill": "1.2.4",
+   "source": "6-cost-monitoring-limits-and-scenarios.md",
+   "q": "A provisioned dev/test Redshift cluster is used only during office hours. The company wants to stop paying for its compute at nights and weekends while keeping the data. What is the simplest fix?",
+   "options": [
+    {
+     "t": "Delete the cluster each night and restore from a snapshot each morning",
+     "why": "Wrong: it works but restore creates a new cluster and endpoint, adding effort and risk."
+    },
+    {
+     "t": "Buy reserved nodes for the cluster",
+     "why": "Wrong: reserved nodes discount steady use; they do not stop billing when idle."
+    },
+    {
+     "t": "Schedule pause and resume for the cluster",
+     "why": "Right: pausing stops compute billing; only storage and backups are billed."
+    },
+    {
+     "t": "Enable concurrency scaling with a usage limit",
+     "why": "Wrong: it controls burst capacity cost, not the base cluster's node hours."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Idle provisioned cluster: scheduled pause/resume.",
+   "remember": "Stop paying compute for an idle provisioned cluster → pause (storage and backups still billed). For workloads that are mostly idle, Serverless charges nothing while idle.",
+   "variants": [
+    "The workload is intermittent and new → consider Serverless.",
+    "Load is steady 24x7 → reserved nodes.",
+    "Cost visibility for idle clusters → Trusted Advisor / Cost Explorer."
+   ]
+  },
+  {
+   "id": "redshift-006",
+   "skill": "2.4.1",
+   "source": "2-table-design-distribution-sort-keys-and-sql.md",
+   "q": "Two very large fact tables are joined on `customer_id` in most queries, and EXPLAIN shows large data redistribution between nodes. How should the tables be distributed?",
+   "options": [
+    {
+     "t": "DISTSTYLE ALL on both tables",
+     "why": "Wrong: copying huge tables to every node wastes storage and slows loads."
+    },
+    {
+     "t": "DISTKEY(customer_id) on both tables",
+     "why": "Right: matching rows land on the same slice, so the join needs no network movement."
+    },
+    {
+     "t": "DISTSTYLE EVEN on both tables",
+     "why": "Wrong: round-robin spreads rows evenly but does not co-locate join rows."
+    },
+    {
+     "t": "An interleaved sort key on customer_id",
+     "why": "Wrong: sort keys help block skipping, not where rows are stored for joins."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Big table joined to big table: KEY distribution on the join column.",
+   "remember": "Big-to-big join on one column → DISTKEY on that column in both tables (high cardinality, even values). Small rarely changed dimension → ALL. No clear choice → AUTO or EVEN.",
+   "variants": [
+    "The join column has one value with 40% of rows → avoid it as DISTKEY (skew).",
+    "The other side is a 50-row dimension → ALL or AUTO.",
+    "Nobody wants to tune → DISTSTYLE AUTO."
+   ]
+  },
+  {
+   "id": "redshift-007",
+   "skill": "2.4.1",
+   "source": "2-table-design-distribution-sort-keys-and-sql.md",
+   "q": "A small `region` dimension (a few thousand rows, changed twice a year) is joined to many large fact tables with different distribution keys. Which distribution style fits this dimension?",
+   "options": [
+    {
+     "t": "KEY on the region id",
+     "why": "Wrong: it only co-locates with a fact table distributed on the same column."
+    },
+    {
+     "t": "EVEN",
+     "why": "Wrong: rows would still have to move to meet each fact table's rows."
+    },
+    {
+     "t": "KEY on a timestamp column",
+     "why": "Wrong: a timestamp is not the join column and does not help these joins."
+    },
+    {
+     "t": "ALL",
+     "why": "Right: a full copy on every node lets every join happen locally; cost is low because the table is small and rarely changes."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Small, slowly changing dimension joined often: ALL (or AUTO).",
+   "remember": "Small, rarely changed dimension joined often → DISTSTYLE ALL (AUTO starts small tables as ALL). ALL multiplies storage by node count and slows loads, so not for big or busy tables.",
+   "variants": [
+    "The table is large and updated constantly → not ALL; use KEY or EVEN.",
+    "You want Redshift to decide → AUTO.",
+    "The table is never joined → EVEN."
+   ]
+  },
+  {
+   "id": "redshift-008",
+   "skill": "3.4.5",
+   "source": "2-table-design-distribution-sort-keys-and-sql.md",
+   "q": "`SVV_TABLE_INFO` shows a high `skew_rows` value for a large table distributed on `merchant_id`; one merchant owns about 40% of the rows and one slice does most of the work. What is the best fix?",
+   "options": [
+    {
+     "t": "Run VACUUM SORT ONLY",
+     "why": "Wrong: sorting does not move rows between slices."
+    },
+    {
+     "t": "Add more nodes with elastic resize",
+     "why": "Wrong: the hot value still lands on one slice; skew remains."
+    },
+    {
+     "t": "Change the distribution to EVEN or to a more evenly spread key",
+     "why": "Right: the skew comes from the distribution key, so pick a key with even values or EVEN."
+    },
+    {
+     "t": "Run ANALYZE on the table",
+     "why": "Wrong: statistics help the planner but do not change row placement."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Data skew from a distribution key: change the key or use EVEN.",
+   "remember": "One slice with far more rows → the distribution key has skewed values; change to an even key or EVEN. Check `skew_rows` in SVV_TABLE_INFO.",
+   "variants": [
+    "Plans are bad after a big load → ANALYZE (stale statistics).",
+    "Scans read too many blocks → sort key on the filtered column.",
+    "Queries filter on one value of the key → also avoid KEY on that column."
+   ]
+  },
+  {
+   "id": "redshift-009",
+   "skill": "2.4.5",
+   "source": "2-table-design-distribution-sort-keys-and-sql.md",
+   "q": "Most queries on a large `orders` table filter on a range of `order_date`, and data is loaded in date order every night. Which table design best reduces blocks scanned?",
+   "options": [
+    {
+     "t": "Compound sort key with order_date as the leading column",
+     "why": "Right: zone maps hold min/max per block, so range filters skip blocks; loading in date order keeps it sorted."
+    },
+    {
+     "t": "DISTKEY(order_date)",
+     "why": "Wrong: distribution decides placement across slices; a date key can also concentrate recent work on few slices."
+    },
+    {
+     "t": "A secondary index on order_date",
+     "why": "Wrong: Redshift has no traditional indexes; sort keys and zone maps replace them."
+    },
+    {
+     "t": "Partition the table by month",
+     "why": "Wrong: Redshift tables have no partition schemes; distribution and sort keys replace them."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Range filters on a date: compound sort key leading with the date.",
+   "remember": "Filters on a date range → sort key on that date (compound, leading column); zone maps skip blocks. Don't wrap the sort-key column in a function in WHERE, or skipping is lost.",
+   "variants": [
+    "Filters vary equally across several columns → interleaved sort key, with heavier VACUUM.",
+    "Team doesn't want to tune → SORTKEY AUTO.",
+    "Data loaded in sort order → little VACUUM needed."
+   ]
+  },
+  {
+   "id": "redshift-010",
+   "skill": "2.4.1",
+   "source": "2-table-design-distribution-sort-keys-and-sql.md",
+   "q": "A table in Redshift declares `PRIMARY KEY (order_id)`. After a retried load job, the table contains duplicate order_ids. Why did this happen and what is the fix?",
+   "options": [
+    {
+     "t": "The load used the wrong IAM role; fix the role",
+     "why": "Wrong: an IAM problem makes COPY fail, it does not create duplicates."
+    },
+    {
+     "t": "Automatic VACUUM had not yet run; wait for it",
+     "why": "Wrong: VACUUM reclaims deleted space and sorts; it never removes duplicates."
+    },
+    {
+     "t": "The table needs DISTSTYLE KEY on order_id to enforce uniqueness",
+     "why": "Wrong: distribution never enforces constraints."
+    },
+    {
+     "t": "Primary keys are informational only; enforce uniqueness in the load logic, for example a staging table with delete-then-insert in one transaction",
+     "why": "Right: PK, FK and UNIQUE are not enforced; only NOT NULL is."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Redshift constraints are informational: dedupe in ELT.",
+   "remember": "PRIMARY KEY, FOREIGN KEY and UNIQUE are not enforced in Redshift (NOT NULL is). Enforce uniqueness yourself: staging table + delete/insert in one transaction, or auto-copy to avoid reloading files.",
+   "variants": [
+    "Duplicates came from running COPY twice → plain COPY doesn't track files; use auto-copy or a manifest + staging merge.",
+    "Wrong PK declared → the optimizer can give wrong results, since it trusts declarations.",
+    "Need an upsert → staging-table delete + insert in one transaction."
+   ]
+  },
+  {
+   "id": "redshift-011",
+   "skill": "3.2.3",
+   "source": "2-table-design-distribution-sort-keys-and-sql.md",
+   "q": "A QuickSight dashboard runs the same heavy join-and-aggregate query every few minutes against base tables that change a few times a day. The BI team cannot change the dashboard SQL. What speeds it up with the least work?",
+   "options": [
+    {
+     "t": "A regular view over the join",
+     "why": "Wrong: a view is a saved query and re-runs the join every time."
+    },
+    {
+     "t": "A materialized view with AUTO REFRESH, relying on automatic query rewriting",
+     "why": "Right: the result is precomputed, and the optimizer can use an up-to-date MV even when queries don't name it."
+    },
+    {
+     "t": "Concurrency scaling on the BI queue",
+     "why": "Wrong: it adds capacity for many concurrent queries but still re-runs the expensive join."
+    },
+    {
+     "t": "A late-binding view",
+     "why": "Wrong: it defers binding to query time, mainly for external tables; it stores no results."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Repeated heavy dashboard SQL: materialized view with auto refresh and auto rewrite.",
+   "remember": "Repeated expensive aggregations → materialized view (AUTO REFRESH YES). Automatic query rewriting can use the MV for queries that don't reference it, if the MV is up to date.",
+   "variants": [
+    "The query must always run on raw tables with no stored copy → regular view.",
+    "Redshift should pick MVs itself → automated materialized views (AutoMV).",
+    "View over Spectrum external tables → late-binding view."
+   ]
+  },
+  {
+   "id": "redshift-012",
+   "skill": "2.1.6",
+   "source": "2-table-design-distribution-sort-keys-and-sql.md",
+   "q": "Two ETL jobs update the same Redshift table at overlapping times. One fails intermittently with a serializable isolation violation. What should the team do?",
+   "options": [
+    {
+     "t": "Raise the WLM queue concurrency",
+     "why": "Wrong: more slots make overlapping writes more likely, not less."
+    },
+    {
+     "t": "Switch the database to read committed isolation",
+     "why": "Wrong: serializable is the only isolation mode for user transactions."
+    },
+    {
+     "t": "Retry the failed transaction, or serialize the writers (or write to separate tables and combine)",
+     "why": "Right: the error means the overlapping transactions can't be serialized; retrying or ordering the writers fixes it."
+    },
+    {
+     "t": "Run VACUUM before each job",
+     "why": "Wrong: VACUUM reclaims space and sorts; it does not resolve write conflicts."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Serializable isolation violation: retry or serialize writers.",
+   "remember": "Concurrent writes to the same table can fail with a serializable isolation violation. Retry, queue the writers one after another, or write to separate tables and merge. Keep transactions short.",
+   "variants": [
+    "Two transactions lock tables in opposite orders → deadlock; always touch tables in the same order.",
+    "DDL hangs → an open transaction holds a lock; find and end it.",
+    "Parallel COPYs into one table → allowed; commits are serialized."
+   ]
+  },
+  {
+   "id": "redshift-013",
+   "skill": "2.1.6",
+   "source": "2-table-design-distribution-sort-keys-and-sql.md",
+   "q": "An `ALTER TABLE` on a Redshift table has hung for 30 minutes. Other users report an analyst left a transaction open on that table. What is the right next step?",
+   "options": [
+    {
+     "t": "Find the blocking session in STV_LOCKS / SVV_TRANSACTIONS and end it with PG_TERMINATE_BACKEND",
+     "why": "Right: the DDL waits for the lock; ending the blocker lets it proceed."
+    },
+    {
+     "t": "Restart the cluster from the console",
+     "why": "Wrong: it ends every session, far beyond the one blocker."
+    },
+    {
+     "t": "Run VACUUM on the table",
+     "why": "Wrong: VACUUM would also wait; DDL is blocked by the open transaction."
+    },
+    {
+     "t": "Enable concurrency scaling",
+     "why": "Wrong: DDL is not offloaded to scaling clusters and the lock remains."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Hung DDL: find the lock holder and terminate it.",
+   "remember": "DDL hangs → an open transaction holds a table lock. Find it in STV_LOCKS / SVV_TRANSACTIONS, end it with PG_TERMINATE_BACKEND(pid). Prevent with short transactions; idle transactions end after 6 hours.",
+   "variants": [
+    "Two writers conflict and one errors → serializable isolation violation; retry or serialize.",
+    "Deadlock → lock tables in the same order.",
+    "Redshift locks are table-level for most writes, unlike row-level locks in RDS/Aurora."
+   ]
+  },
+  {
+   "id": "redshift-014",
+   "skill": "3.3.4",
+   "source": "2-table-design-distribution-sort-keys-and-sql.md",
+   "q": "After a very large nightly load, queries on a table suddenly use poor plans and scan many more blocks. `SVV_TABLE_INFO` shows high `stats_off` and `unsorted`. Which two actions address this? (Choose 2.)",
+   "options": [
+    {
+     "t": "Run ANALYZE on the table",
+     "why": "Right: high stats_off means stale statistics, which lead to bad plans."
+    },
+    {
+     "t": "Increase the WLM default queue to 15 slots",
+     "why": "Wrong: more slots give each query less memory and do not fix plans."
+    },
+    {
+     "t": "Run VACUUM (sort) on the table",
+     "why": "Right: a large unsorted region weakens zone-map block skipping; VACUUM re-sorts."
+    },
+    {
+     "t": "Drop the informational primary key",
+     "why": "Wrong: constraints help the planner; dropping them doesn't fix stale stats or unsorted data."
+    },
+    {
+     "t": "Enable enhanced VPC routing",
+     "why": "Wrong: it routes S3 traffic through the VPC; unrelated to plans."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Stale stats → ANALYZE; unsorted rows → VACUUM.",
+   "remember": "Plan worse after a big load → ANALYZE (stale stats). Many unsorted rows → VACUUM sort (automatic vacuum/analyze run in the background, but run them manually after very large loads). VACUUM skips tables more than 95% sorted by default.",
+   "variants": [
+    "Many deleted rows after a huge DELETE → VACUUM DELETE ONLY.",
+    "Reload the whole table → TRUNCATE + reload is faster than DELETE + VACUUM.",
+    "Load in sort-key order → less VACUUM needed."
+   ]
+  },
+  {
+   "id": "redshift-015",
+   "skill": "2.3.1",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "A nightly COPY loads a single 50 GB uncompressed CSV file from S3 into an 8-slice cluster and is very slow. What is the best fix?",
+   "options": [
+    {
+     "t": "Use many INSERT statements in parallel sessions",
+     "why": "Wrong: row INSERTs are much less efficient than COPY."
+    },
+    {
+     "t": "Add more nodes",
+     "why": "Wrong: one file is still processed by one slice, so extra nodes sit idle."
+    },
+    {
+     "t": "Split the data into many compressed files, a multiple of the slice count, and load them with one COPY on the prefix",
+     "why": "Right: COPY loads in parallel per file across slices; compression cuts I/O."
+    },
+    {
+     "t": "Convert the table to DISTSTYLE ALL",
+     "why": "Wrong: ALL copies data to every node and slows loads further."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Slow COPY of one big file: split into many compressed files.",
+   "remember": "COPY parallelism comes from many files: split into roughly equal, compressed files (a multiple of the slice count) and use one COPY with a prefix or manifest. Columnar formats help too.",
+   "variants": [
+    "Too many tiny files → combine into larger ones.",
+    "Need an exact list of files and fail if one is missing → manifest.",
+    "Some bad rows → MAXERROR and SYS_LOAD_ERROR_DETAIL."
+   ]
+  },
+  {
+   "id": "redshift-016",
+   "skill": "1.1.2",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "Partner files land in an S3 prefix at random times. The team wants them loaded into Redshift automatically, without building a Lambda trigger, and without loading the same file twice. What should they use?",
+   "options": [
+    {
+     "t": "Auto-copy: an S3 event integration plus a COPY JOB with AUTO ON",
+     "why": "Right: Redshift detects new files and runs COPY, tracking loaded files to avoid duplicates."
+    },
+    {
+     "t": "An S3 event notification to Lambda that runs COPY on the whole prefix",
+     "why": "Wrong: this is the pipeline they don't want to build, and a plain COPY on the prefix reloads old files."
+    },
+    {
+     "t": "Redshift Spectrum external table on the prefix",
+     "why": "Wrong: it queries files in place and does not load them into Redshift tables."
+    },
+    {
+     "t": "A zero-ETL integration from S3",
+     "why": "Wrong: zero-ETL sources are databases and applications, not arbitrary S3 file drops."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Automatic load of new S3 files with no duplicates: auto-copy (COPY JOB).",
+   "remember": "New S3 files should load automatically → auto-copy (S3 event integration + COPY JOB AUTO ON). It tracks loaded files, unlike plain COPY. Bucket in the same Region, name without a period.",
+   "variants": [
+    "Files must load once on demand → plain COPY.",
+    "Querying the files without loading → Spectrum.",
+    "Rows come from Aurora/RDS/DynamoDB → zero-ETL."
+   ]
+  },
+  {
+   "id": "redshift-017",
+   "skill": "2.3.1",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "An auto-copy setup fails while creating the S3 event integration. The Redshift IAM role already has `s3:GetObject` and `s3:ListBucket`. Which is the most likely missing piece?",
+   "options": [
+    {
+     "t": "Enhanced VPC routing is off",
+     "why": "Wrong: it controls the network path for COPY traffic, not integration creation."
+    },
+    {
+     "t": "The cluster has no Multi-AZ",
+     "why": "Wrong: auto-copy does not need Multi-AZ."
+    },
+    {
+     "t": "The source table has no sort key",
+     "why": "Wrong: table design has nothing to do with the integration."
+    },
+    {
+     "t": "The bucket policy doesn't allow redshift.amazonaws.com to get/put bucket notifications and get the bucket location",
+     "why": "Right: auto-copy needs a bucket policy for those actions, plus a Redshift resource policy authorizing the inbound integration."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Auto-copy setup: bucket policy + Redshift resource policy + role.",
+   "remember": "Auto-copy needs: a bucket policy allowing redshift.amazonaws.com (GetBucketNotification, PutBucketNotification, GetBucketLocation) with SourceArn/SourceAccount conditions, a Redshift resource policy for the integration, and a role with GetObject/ListBucket. Same Region, no period in the bucket name.",
+   "variants": [
+    "The bucket is in another Region → not supported for auto-copy.",
+    "The bucket already has an S3_OBJECT_CREATED notification → conflicts with the integration.",
+    "Integration deleted → the job goes inactive but is not dropped."
+   ]
+  },
+  {
+   "id": "redshift-018",
+   "skill": "2.3.1",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "A Redshift table holds 5 years of sales. Data older than 1 year is rarely queried but must stay queryable with SQL, and storage cost must drop. What should the team do?",
+   "options": [
+    {
+     "t": "Keep it all in Redshift and run VACUUM DELETE ONLY",
+     "why": "Wrong: VACUUM reclaims deleted rows; it doesn't move cold data to cheaper storage."
+    },
+    {
+     "t": "UNLOAD the old data to S3 as partitioned Parquet and query it with Spectrum",
+     "why": "Right: S3 is cheaper, and Spectrum can still query it and join it with hot tables."
+    },
+    {
+     "t": "Take a manual snapshot and delete the old rows",
+     "why": "Wrong: snapshot data is not queryable without a restore."
+    },
+    {
+     "t": "Move the old rows to a temporary table",
+     "why": "Wrong: temp tables are session-bound and not backed up."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Cold data still queryable: UNLOAD to partitioned Parquet + Spectrum.",
+   "remember": "Data lifecycle pattern: keep hot data in Redshift, UNLOAD older data to S3 as partitioned Parquet, query both with Spectrum (or Athena).",
+   "variants": [
+    "Query result too big to return to a client → UNLOAD to S3.",
+    "A Data API result is needed after 24 hours → UNLOAD instead.",
+    "Copy data between clusters or Regions → UNLOAD then COPY, or data sharing."
+   ]
+  },
+  {
+   "id": "redshift-019",
+   "skill": "2.1.5",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "Analysts need one SQL query that joins a Redshift `customers` table with clickstream Parquet files in S3 catalogued in the Glue Data Catalog. The files must not be loaded. What should they use?",
+   "options": [
+    {
+     "t": "A federated query",
+     "why": "Wrong: federated queries read RDS/Aurora PostgreSQL and MySQL, not S3 files."
+    },
+    {
+     "t": "COPY into a staging table",
+     "why": "Wrong: that loads the data, which is not allowed."
+    },
+    {
+     "t": "Redshift Spectrum with an external schema from the Data Catalog",
+     "why": "Right: Spectrum queries S3 in place and can join external tables with local tables."
+    },
+    {
+     "t": "Amazon Athena alone",
+     "why": "Wrong: Athena queries S3 but cannot join Redshift's local tables in the same SQL."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Join warehouse tables with S3 files in one SQL statement: Spectrum.",
+   "remember": "Query S3 without loading and join with warehouse tables → Redshift Spectrum (external schema FROM DATA CATALOG). It is read-only and billed per bytes scanned (10 MB minimum).",
+   "variants": [
+    "Only S3, no warehouse → Athena.",
+    "Live data in Aurora PostgreSQL → federated query.",
+    "Spectrum gets access denied → the IAM role lacks S3/Glue/Lake Formation rights, or the bucket is in another Region."
+   ]
+  },
+  {
+   "id": "redshift-020",
+   "skill": "2.1.5",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "A report must combine Redshift history with the latest rows in an Aurora PostgreSQL orders database, read live at query time, with no ETL pipeline. The DBAs worry about load on the production database. What is the best design?",
+   "options": [
+    {
+     "t": "A federated query to an Aurora read replica, with credentials in Secrets Manager",
+     "why": "Right: federated queries read Aurora live; pointing them at a replica protects the OLTP primary."
+    },
+    {
+     "t": "A zero-ETL integration from Aurora",
+     "why": "Wrong: it replicates data continuously, which is not reading live at query time (though it also avoids source query load)."
+    },
+    {
+     "t": "Redshift Spectrum on the Aurora tables",
+     "why": "Wrong: Spectrum reads S3 files, not databases."
+    },
+    {
+     "t": "Nightly DMS full load into Redshift",
+     "why": "Wrong: data would be up to a day old and needs a pipeline."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Live operational data at query time: federated query (use a read replica).",
+   "remember": "Query RDS/Aurora PostgreSQL or MySQL live from Redshift → federated query (Secrets Manager secret + IAM role + external schema). It loads the source DB, so use a read replica for heavy use.",
+   "variants": [
+    "Data should be replicated into Redshift within seconds → zero-ETL.",
+    "Load once without a pipeline → INSERT INTO local SELECT FROM the federated schema.",
+    "Federated query fails → check secret, role, network path, unsupported types."
+   ]
+  },
+  {
+   "id": "redshift-021",
+   "skill": "1.1.1",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "Clickstream events in Kinesis Data Streams must be queryable in Redshift within seconds. The team does not want to stage data in S3. What should they use?",
+   "options": [
+    {
+     "t": "Amazon Data Firehose with a Redshift destination",
+     "why": "Wrong: Firehose lands data in S3 and then runs COPY, giving minute-level latency."
+    },
+    {
+     "t": "Auto-copy on an S3 prefix",
+     "why": "Wrong: requires data to be staged in S3 first."
+    },
+    {
+     "t": "A federated query on the stream",
+     "why": "Wrong: federated queries read RDS/Aurora databases, not streams."
+    },
+    {
+     "t": "Redshift streaming ingestion into a materialized view with AUTO REFRESH",
+     "why": "Right: Redshift reads the stream directly into an MV with low latency and no S3 staging."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Low-latency stream into Redshift without S3: streaming ingestion.",
+   "remember": "Kinesis Data Streams or MSK → Redshift with low latency and no S3 → streaming ingestion (external schema + materialized view + refresh). Exactly-once per shard/partition.",
+   "variants": [
+    "You also want the raw stream archived in S3 or a Lambda transform → Firehose (S3 then COPY).",
+    "Source is an Aurora database → zero-ETL.",
+    "Source is MSK in another VPC → no multi-VPC private connectivity; use peering or Transit Gateway."
+   ]
+  },
+  {
+   "id": "redshift-022",
+   "skill": "1.1.1",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "Events from a Kinesis data stream must load into Redshift, but compliance also requires a copy of every raw record in S3, and a Lambda function must clean each record first. Which option fits best?",
+   "options": [
+    {
+     "t": "Redshift streaming ingestion only",
+     "why": "Wrong: it does not land data in S3 and has no Lambda transform step."
+    },
+    {
+     "t": "Amazon Data Firehose with a Lambda transform, delivering to Redshift via S3 and COPY",
+     "why": "Right: Firehose transforms with Lambda, keeps the S3 copy, then runs COPY."
+    },
+    {
+     "t": "A Redshift federated query to Kinesis",
+     "why": "Wrong: federated queries only read RDS/Aurora databases."
+    },
+    {
+     "t": "Zero-ETL integration from Kinesis",
+     "why": "Wrong: Kinesis is not a zero-ETL source; zero-ETL is for databases and applications."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Need the S3 copy or Lambda transform: Firehose to Redshift.",
+   "remember": "Firehose → Redshift goes through S3 + COPY (minute-level latency, buffer settings) and supports Lambda transforms and an S3 copy. Streaming ingestion is lower latency and simpler but lands nothing in S3.",
+   "variants": [
+    "Lowest latency, no S3 copy needed → streaming ingestion.",
+    "Raw archive only, no Redshift → Firehose to S3.",
+    "Files already in S3 → auto-copy."
+   ]
+  },
+  {
+   "id": "redshift-023",
+   "skill": "1.2.3",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "Order data in Aurora MySQL must be available in Redshift for analytics within seconds of each change, with no code or pipeline to maintain. What should the team use?",
+   "options": [
+    {
+     "t": "AWS DMS with ongoing replication to Redshift",
+     "why": "Wrong: it works but needs replication instances and tasks to run and maintain."
+    },
+    {
+     "t": "A Glue ETL job scheduled every 5 minutes",
+     "why": "Wrong: minutes of delay and custom code to maintain."
+    },
+    {
+     "t": "A zero-ETL integration from Aurora MySQL to Redshift",
+     "why": "Right: fully managed continuous replication with seconds of latency and no pipeline."
+    },
+    {
+     "t": "A federated query from Redshift",
+     "why": "Wrong: it reads live on each query and puts load on Aurora; data is not replicated."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Aurora/RDS/DynamoDB to Redshift with no pipeline: zero-ETL.",
+   "remember": "Aurora, RDS (MySQL, PostgreSQL, Oracle), DynamoDB or supported SaaS apps → Redshift within seconds, no code → zero-ETL integration. Needs case-sensitive identifiers enabled and an authorized integration.",
+   "variants": [
+    "Need heavy transformations or unsupported sources → DMS or Glue.",
+    "Query live only when asked → federated query.",
+    "Zero-ETL shows no data → check enable_case_sensitive_identifier, resource policy, source parameters."
+   ]
+  },
+  {
+   "id": "redshift-024",
+   "skill": "4.5.1",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "A central ETL cluster owns curated tables. Three teams, two in other AWS accounts, need live read access without copies, each paying for its own compute and not slowing the ETL cluster. What should be used?",
+   "options": [
+    {
+     "t": "Redshift data sharing: the producer creates a datashare and each team creates a database from it on its own cluster or workgroup",
+     "why": "Right: live, no-copy sharing across accounts; each consumer pays its own compute, isolating workloads."
+    },
+    {
+     "t": "Nightly UNLOAD to S3 and COPY into each team's cluster",
+     "why": "Wrong: copies data, adds delay, and copies escape governance."
+    },
+    {
+     "t": "Concurrency scaling on the ETL cluster",
+     "why": "Wrong: scaling clusters bill to the producer and don't give separate per-team warehouses."
+    },
+    {
+     "t": "Share manual snapshots with the other accounts",
+     "why": "Wrong: a restored snapshot is a static copy, not live data."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Live, no-copy sharing with workload isolation: data sharing.",
+   "remember": "Share live data across clusters, workgroups, accounts and Regions without copying → data sharing (producer datashare, consumer database). Consumer pays its compute; producer pays storage.",
+   "variants": [
+    "Consumer must write back to producer tables → grant INSERT/UPDATE on the datashare.",
+    "Sharing across Regions → data transfer charges; CROSS_REGION_DATASHARING usage limit.",
+    "Selling data externally → AWS Data Exchange datashares."
+   ]
+  },
+  {
+   "id": "redshift-025",
+   "skill": "3.1.3",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "A Lambda function must run SQL against Redshift Serverless after each file arrives. The team doesn't want to package JDBC drivers, manage connections or store passwords in code. What should they use?",
+   "options": [
+    {
+     "t": "A JDBC connection pool inside the Lambda",
+     "why": "Wrong: needs drivers and persistent connections they want to avoid."
+    },
+    {
+     "t": "Query Editor v2",
+     "why": "Wrong: it is a web console editor, not an API for Lambda."
+    },
+    {
+     "t": "Federated query",
+     "why": "Wrong: federated queries let Redshift read RDS/Aurora, not let Lambda call Redshift."
+    },
+    {
+     "t": "The Redshift Data API with Secrets Manager or IAM temporary credentials",
+     "why": "Right: HTTPS/SDK calls, asynchronous, no drivers or connections."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Run SQL from Lambda without drivers: Data API.",
+   "remember": "SQL from Lambda, Step Functions or notebooks without drivers or connections → Redshift Data API (async; auth via Secrets Manager, IAM temporary credentials or Identity Center). Results kept 24 hours; ExecuteStatement 30 TPS.",
+   "variants": [
+    "ThrottlingException → back off and retry; batch with BatchExecuteStatement.",
+    "Result needed after 24 hours or larger than 500 MB → UNLOAD to S3.",
+    "Several statements as one unit → BatchExecuteStatement in TRANSACTION mode."
+   ]
+  },
+  {
+   "id": "redshift-026",
+   "skill": "1.1.1",
+   "source": "3-loading-spectrum-federation-and-data-movement.md",
+   "q": "A team is designing Redshift streaming ingestion from a Kinesis stream. They also need the stream data joined with a dimension table. Which two practices should they follow? (Choose 2.)",
+   "options": [
+    {
+     "t": "Create one streaming materialized view per stream",
+     "why": "Right: each streaming MV creates a consumer per shard, so extra MVs cause throttling and cost."
+    },
+    {
+     "t": "Do the dimension join directly inside the streaming materialized view",
+     "why": "Wrong: joins in the streaming MV are not supported."
+    },
+    {
+     "t": "Create a second materialized view on top of the streaming MV for the join",
+     "why": "Right: transforms and joins go in a second MV built on the streaming MV."
+    },
+    {
+     "t": "Send KPL-aggregated records so Redshift de-aggregates them",
+     "why": "Wrong: KPL-aggregated records stay binary; Redshift does not de-aggregate them."
+    },
+    {
+     "t": "Compress records with gzip before putting them on the stream",
+     "why": "Wrong: streaming ingestion does not decompress records."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "One streaming MV per stream; joins in a second MV.",
+   "remember": "Streaming ingestion: one MV per stream/topic, land the payload as VARBYTE/SUPER with JSON_PARSE, do joins and transforms in a second MV on top. No decompression, no KPL de-aggregation; bad records go to SYS_STREAM_SCAN_ERRORS.",
+   "variants": [
+    "Streaming MV not refreshing → check IAM role, external schema, case-sensitive identifiers, stream throttling, KPL aggregation.",
+    "Mixed-case names with auto refresh → enable_case_sensitive_identifier.",
+    "MSK broker in a different AZ → cross-AZ data transfer cost."
+   ]
+  },
+  {
+   "id": "redshift-027",
+   "skill": "3.3.4",
+   "source": "4-performance-and-workload-management.md",
+   "q": "On a provisioned cluster, 1-second dashboard queries wait behind 20-minute ETL jobs every morning. The cluster has spare capacity later in the day. What is the most appropriate fix?",
+   "options": [
+    {
+     "t": "Elastic resize to double the nodes",
+     "why": "Wrong: permanent cost for a contention problem that WLM can solve."
+    },
+    {
+     "t": "Separate the workloads with WLM queues/priorities (ETL at low priority) and use short query acceleration",
+     "why": "Right: queues and priorities isolate ETL from BI, and SQA fast-tracks short queries."
+    },
+    {
+     "t": "Move the dashboards to Athena",
+     "why": "Wrong: re-platforming is unnecessary and Athena can't read local Redshift tables."
+    },
+    {
+     "t": "Raise the default queue to 50 slots",
+     "why": "Wrong: more slots split memory thinner and can spill to disk."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Short queries stuck behind ETL: WLM queues/priorities + SQA.",
+   "remember": "Protect short BI queries from long ETL on one cluster → WLM queues with priorities (automatic WLM recommended) plus short query acceleration. Manual WLM: up to 8 queues, 50 total slots.",
+   "variants": [
+    "Bursts of many concurrent users → concurrency scaling.",
+    "Strict isolation with separate bills → data sharing with consumer warehouses.",
+    "Runaway queries → query monitoring rules."
+   ]
+  },
+  {
+   "id": "redshift-028",
+   "skill": "3.3.4",
+   "source": "4-performance-and-workload-management.md",
+   "q": "Every weekday at 9 am about 100 analysts hit the BI queue at once and `WLMQueueWaitTime` spikes for an hour; the rest of the day is quiet. Which option handles this most cost-effectively?",
+   "options": [
+    {
+     "t": "Elastic resize up at 9 am and down at 10 am",
+     "why": "Wrong: resize briefly interrupts the cluster and is for permanent size changes."
+    },
+    {
+     "t": "Add more 3-year reserved nodes",
+     "why": "Wrong: pays for peak capacity all day."
+    },
+    {
+     "t": "Enable concurrency scaling on the BI queue",
+     "why": "Right: temporary clusters absorb the burst; 1 free hour accrues per 24 hours of cluster runtime."
+    },
+    {
+     "t": "Lower every query's priority to LOWEST",
+     "why": "Wrong: priorities reorder work; they don't add capacity."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Burst of concurrent queries: concurrency scaling.",
+   "remember": "Bursts of concurrent queries → concurrency scaling per WLM queue (temporary clusters, per-second billing after free credits, cap with max_concurrency_scaling_clusters and usage limits). Sustained growth → elastic resize.",
+   "variants": [
+    "Load is permanently higher → elastic resize.",
+    "Many small dashboard queries → SQA.",
+    "Each team needs its own bill → data sharing with consumer warehouses."
+   ]
+  },
+  {
+   "id": "redshift-029",
+   "skill": "3.3.4",
+   "source": "4-performance-and-workload-management.md",
+   "q": "Concurrency scaling is enabled on a queue, but certain ETL-style queries never run on the scaling cluster and keep waiting. Which query is expected NOT to be offloaded?",
+   "options": [
+    {
+     "t": "A query that reads temporary tables",
+     "why": "Right: concurrency scaling doesn't support temporary tables, so the query stays on the main cluster."
+    },
+    {
+     "t": "A read-only SELECT on an RA3 cluster",
+     "why": "Wrong: read queries are the main use of concurrency scaling."
+    },
+    {
+     "t": "A COPY into a regular table on an RA3 cluster",
+     "why": "Wrong: COPY is a supported write on RA3/RG."
+    },
+    {
+     "t": "An UPDATE on a regular table on an RA3 cluster",
+     "why": "Wrong: UPDATE is a supported write on RA3/RG."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Temp tables, interleaved sort keys, Python/Lambda UDFs: not offloaded.",
+   "remember": "Concurrency scaling skips queries on temp tables, tables with interleaved sort keys, system tables, Python/Lambda UDFs, and writes to DISTSTYLE ALL or identity-column tables. Writes need RA3/RG. Main cluster needs ≤ 32 nodes and multi-node.",
+   "variants": [
+    "Cluster has 64 nodes → concurrency scaling not available.",
+    "Writes on DC2 → not offloaded (write support is RA3/RG only).",
+    "Plain CREATE TABLE in the transaction before writes → whole transaction stays on the main cluster."
+   ]
+  },
+  {
+   "id": "redshift-030",
+   "skill": "3.3.4",
+   "source": "4-performance-and-workload-management.md",
+   "q": "Occasional runaway queries with huge nested loop joins slow the whole cluster. The team wants them handled automatically: aborted if they run too long in the dashboard queue. What should they configure?",
+   "options": [
+    {
+     "t": "WLM timeout (max_execution_time) on every queue",
+     "why": "Wrong: the WLM timeout is deprecated in favour of query monitoring rules."
+    },
+    {
+     "t": "Short query acceleration",
+     "why": "Wrong: SQA speeds up short queries; it doesn't stop long ones."
+    },
+    {
+     "t": "A CloudWatch alarm on CPUUtilization",
+     "why": "Wrong: it notifies but does not act on specific queries."
+    },
+    {
+     "t": "Query monitoring rules on the queue with an abort action on execution time or nested loop join rows",
+     "why": "Right: QMR evaluates per-query metrics and can log, hop, abort or change priority."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Runaway queries: query monitoring rules (log, hop, abort, change priority).",
+   "remember": "Automatic handling of bad queries → query monitoring rules on WLM queues: metrics like execution time, nested loop join rows, blocks read, spill; actions log, hop (manual WLM), abort, change priority.",
+   "variants": [
+    "Only want a record of bad queries → QMR log action.",
+    "Move slow reads to another queue → hop (manual WLM; only restartable queries).",
+    "Serverless → no WLM queues; use max RPU, usage limits and query timeouts."
+   ]
+  },
+  {
+   "id": "redshift-031",
+   "skill": "4.3.1",
+   "source": "5-availability-backup-and-security-governance.md",
+   "q": "Support agents may query the `customers` table, but should see only the last 4 digits of card numbers, while the fraud team sees full values. Data must not be changed. What fits?",
+   "options": [
+    {
+     "t": "Column-level GRANT excluding the card column for agents",
+     "why": "Wrong: agents would see nothing of the column, not the last 4 digits."
+    },
+    {
+     "t": "Dynamic data masking policy on the card column, attached per role with priority",
+     "why": "Right: results are masked per role at query time while stored data stays unchanged."
+    },
+    {
+     "t": "A row-level security policy",
+     "why": "Wrong: RLS filters rows, not values inside a column."
+    },
+    {
+     "t": "A second table with masked values loaded nightly",
+     "why": "Wrong: duplicates data and adds a pipeline; copies escape governance."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Partial masking per role: dynamic data masking.",
+   "remember": "Show different masking levels of PII per user or role without changing stored data → dynamic data masking (CREATE/ATTACH MASKING POLICY). Rows → RLS. Whole columns → column-level grants.",
+   "variants": [
+    "Hide the whole column → column-level GRANT.",
+    "Show only the user's region rows → RLS.",
+    "Govern data-lake tables for Athena and Redshift → Lake Formation."
+   ]
+  },
+  {
+   "id": "redshift-032",
+   "skill": "4.2.3",
+   "source": "5-availability-backup-and-security-governance.md",
+   "q": "Two rules apply to an `employees` table: regional managers may read only rows for their own region, and analysts may read every row but never the `salary` column. Which two features meet these rules? (Choose 2.)",
+   "options": [
+    {
+     "t": "Dynamic data masking on the region column",
+     "why": "Wrong: masking changes displayed values; it does not filter rows."
+    },
+    {
+     "t": "Separate database per region",
+     "why": "Wrong: heavy duplication of data and administration."
+    },
+    {
+     "t": "Row-level security policy attached to the managers' role",
+     "why": "Right: RLS policies decide which rows a role can read."
+    },
+    {
+     "t": "Column-level GRANT SELECT on all columns except salary to the analysts' role",
+     "why": "Right: column-level grants show only the listed columns."
+    },
+    {
+     "t": "Enhanced VPC routing",
+     "why": "Wrong: it controls the S3 network path, not data access."
+    }
+   ],
+   "answer": [
+    2,
+    3
+   ],
+   "explain": "Rows → RLS; columns → column-level grants.",
+   "remember": "Restrict rows by tenant/region → row-level security. Restrict columns → column-level GRANT. Partially hide values → dynamic data masking. Grant to roles (RBAC), not individual users.",
+   "variants": [
+    "Analysts should see salary as masked → DDM instead of a column grant.",
+    "Delegate RLS/DDM admin without superuser → sys:secadmin role.",
+    "Lake tables used by Athena and Redshift → Lake Formation filters."
+   ]
+  },
+  {
+   "id": "redshift-033",
+   "skill": "4.3.3",
+   "source": "5-availability-backup-and-security-governance.md",
+   "q": "Compliance requires backups of a KMS-encrypted provisioned Redshift cluster to be available in a second Region. What must the team configure?",
+   "options": [
+    {
+     "t": "Cross-Region snapshot copy with a snapshot copy grant for a KMS key in the destination Region",
+     "why": "Right: encrypted snapshots copied to another Region need a copy grant using a destination-Region key."
+    },
+    {
+     "t": "Multi-AZ deployment",
+     "why": "Wrong: Multi-AZ spans AZs in one Region and is not a backup."
+    },
+    {
+     "t": "Share the snapshot with another account",
+     "why": "Wrong: account sharing does not move the snapshot to another Region."
+    },
+    {
+     "t": "UNLOAD all tables to an S3 bucket in the same Region",
+     "why": "Wrong: data stays in the same Region and it is not a cluster backup."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Encrypted cross-Region backups: cross-Region snapshot copy + snapshot copy grant.",
+   "remember": "Cross-Region DR for Redshift → cross-Region snapshot copy (automated and manual), with a snapshot copy grant for a KMS key in the destination Region when encrypted. Block disallowed Regions with SCPs.",
+   "variants": [
+    "Restore in another account → authorize the account (max 20 per snapshot) and share the customer managed KMS key.",
+    "AZ failure only → Multi-AZ.",
+    "Need a copy older than the automated retention → manual snapshots (kept until deleted)."
+   ]
+  },
+  {
+   "id": "redshift-034",
+   "skill": "4.1.5",
+   "source": "5-availability-backup-and-security-governance.md",
+   "q": "Security policy says COPY and UNLOAD traffic between a Redshift cluster and S3 must not travel over the public internet and must be visible in VPC flow logs. What should be enabled?",
+   "options": [
+    {
+     "t": "require_ssl in the parameter group",
+     "why": "Wrong: it forces TLS for client connections; it doesn't change the S3 network path."
+    },
+    {
+     "t": "A Redshift-managed VPC endpoint",
+     "why": "Wrong: it lets other VPCs connect to the cluster, not route cluster traffic to S3."
+    },
+    {
+     "t": "Enhanced VPC routing with an S3 gateway endpoint",
+     "why": "Right: COPY/UNLOAD/Spectrum traffic then flows through the VPC, so endpoint policies and flow logs apply."
+    },
+    {
+     "t": "Make the cluster publicly accessible",
+     "why": "Wrong: it exposes an internet endpoint, the opposite of the goal."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Keep Redshift–S3 traffic in the VPC: enhanced VPC routing + S3 gateway endpoint.",
+   "remember": "Force COPY/UNLOAD/Spectrum S3 traffic through your VPC → enhanced VPC routing, with an S3 gateway endpoint (and endpoints/NAT for Glue, KMS). Then security groups, NACLs, endpoint policies and flow logs apply.",
+   "variants": [
+    "Force TLS for clients → require_ssl=true.",
+    "Another VPC or account must connect privately → Redshift-managed VPC endpoint.",
+    "Can't connect at all → check security group on port 5439, public access, routing, MTU."
+   ]
+  },
+  {
+   "id": "redshift-035",
+   "skill": "4.2.2",
+   "source": "5-availability-backup-and-security-governance.md",
+   "q": "An application connects to Redshift with a database password stored in its config file. Security wants no long-lived database passwords in the app. Which approach fits best?",
+   "options": [
+    {
+     "t": "Rotate the password monthly by hand",
+     "why": "Wrong: still a long-lived password in the app."
+    },
+    {
+     "t": "Use a single shared superuser for all apps",
+     "why": "Wrong: worse security and no least privilege."
+    },
+    {
+     "t": "Put the password in an environment variable",
+     "why": "Wrong: still a long-lived password, just moved."
+    },
+    {
+     "t": "IAM authentication: the app's role calls GetClusterCredentials (or the driver does) to get temporary database credentials",
+     "why": "Right: credentials are short-lived and access is controlled by IAM policy."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "No long-lived DB passwords: IAM temporary credentials (or SSO/Secrets Manager).",
+   "remember": "Apps shouldn't store DB passwords → IAM auth with temporary credentials (GetClusterCredentials / GetClusterCredentialsWithIAM / redshift-serverless:GetCredentials), SAML or IAM Identity Center for users, or Secrets Manager with rotation.",
+   "variants": [
+    "Corporate users sign in with Okta/AD → SAML federation or IAM Identity Center.",
+    "Limit which DB users a principal can impersonate → IAM conditions redshift:DbUser / DbName / DbGroups.",
+    "Admin password → let Redshift manage it in Secrets Manager with rotation."
+   ]
+  },
+  {
+   "id": "redshift-036",
+   "skill": "2.3.6",
+   "source": "5-availability-backup-and-security-governance.md",
+   "q": "Someone accidentally dropped one table in a busy production cluster yesterday. The rest of the data is fine and the cluster must stay online. What is the fastest way to recover?",
+   "options": [
+    {
+     "t": "Restore the whole cluster from yesterday's snapshot",
+     "why": "Wrong: restore creates a new cluster and endpoint and rolls back all tables."
+    },
+    {
+     "t": "Fail over the Multi-AZ deployment",
+     "why": "Wrong: Multi-AZ protects against AZ failure, not dropped data; it is not a backup."
+    },
+    {
+     "t": "Query the dropped table with Spectrum",
+     "why": "Wrong: Spectrum reads S3 files, not dropped table data."
+    },
+    {
+     "t": "Table-level restore of that table from the latest snapshot",
+     "why": "Right: it restores a single table into the cluster with a new name while the cluster stays online."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Recover one table: table-level restore from a snapshot.",
+   "remember": "One table lost → table-level restore from a snapshot (cluster stays online). Full restore always creates a new cluster. Tables created with BACKUP NO aren't in snapshots.",
+   "variants": [
+    "Whole cluster corrupted → restore snapshot to a new cluster, then repoint apps.",
+    "Serverless → restore from a recovery point (about 24 hours) or snapshot.",
+    "Need long-term copies → manual snapshots, kept until deleted."
+   ]
+  },
+  {
+   "id": "redshift-037",
+   "skill": "1.2.4",
+   "source": "6-cost-monitoring-limits-and-scenarios.md",
+   "q": "A Redshift Serverless workgroup used by many casual analysts produced a surprise bill after a few runaway queries scaled capacity high. What should the team set to cap spend?",
+   "options": [
+    {
+     "t": "A maximum RPU on the workgroup and usage limits on RPU-hours",
+     "why": "Right: max RPU caps scaling and usage limits alert, log or disable when RPU-hours are exceeded."
+    },
+    {
+     "t": "Reserved nodes",
+     "why": "Wrong: reserved nodes are for provisioned clusters."
+    },
+    {
+     "t": "A higher base capacity",
+     "why": "Wrong: a larger base raises cost; it doesn't cap it."
+    },
+    {
+     "t": "Manual WLM queues with 50 slots",
+     "why": "Wrong: Serverless has no WLM queues to manage."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Serverless cost control: max RPU + usage limits.",
+   "remember": "Serverless spend spikes → set max RPU and usage limits, find runaway queries, avoid large base capacity. Watch ComputeCapacity at max RPU.",
+   "variants": [
+    "Spectrum cost spikes → Parquet, partitions, column pruning and a Spectrum usage limit.",
+    "Concurrency scaling cost → max_concurrency_scaling_clusters and usage limits.",
+    "Steady predictable load → provisioned with reserved nodes."
+   ]
+  },
+  {
+   "id": "redshift-038",
+   "skill": "3.3.1",
+   "source": "6-cost-monitoring-limits-and-scenarios.md",
+   "q": "Auditors need the text of every query run on a provisioned Redshift cluster, kept in S3. Audit logging to an S3 bucket is enabled, but the bucket uses SSE-KMS default encryption and no user activity log appears. Which change is needed?",
+   "options": [
+    {
+     "t": "Turn on CloudTrail data events for Redshift",
+     "why": "Wrong: CloudTrail records API calls, not the SQL text run in the database."
+    },
+    {
+     "t": "Use an S3 bucket with SSE-S3 and set enable_user_activity_logging = true in the parameter group",
+     "why": "Right: audit logs to S3 support only SSE-S3, and the user activity log also needs the parameter."
+    },
+    {
+     "t": "Enable Multi-AZ so logs are written in two AZs",
+     "why": "Wrong: unrelated to logging."
+    },
+    {
+     "t": "Query STL_CONNECTION_LOG for the SQL text",
+     "why": "Wrong: it holds connection events, not query text, and system tables keep only a few days."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Query-text audit: user activity log + parameter, S3 bucket with SSE-S3 (or CloudWatch).",
+   "remember": "Who ran which query → audit logging plus enable_user_activity_logging=true. S3 destinations must use SSE-S3 and no Object Lock; Serverless can send audit logs only to CloudWatch. Add CloudTrail for API calls.",
+   "variants": [
+    "Serverless workgroup needs audit logs → CloudWatch Logs only.",
+    "Keep logs 7 years → S3 (SSE-S3) with lifecycle to Glacier.",
+    "Who changed the cluster configuration → CloudTrail."
+   ]
+  }
+ ]
+}

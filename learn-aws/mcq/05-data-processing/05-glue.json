@@ -1,0 +1,1373 @@
+{
+  "questions": [
+    {
+      "id": "glue-001",
+      "skill": "1.2.5",
+      "source": "1-basics-architecture-and-etl-jobs.md",
+      "q": "Each time a small CSV file lands in S3, a team must validate its header and row count. Each check takes about 3 minutes. They want the lowest cost and fastest start. Which service should run the check?",
+      "options": [
+        {
+          "t": "A Glue Spark ETL job on G.1X workers",
+          "why": "Wrong: Spark start-up time and DPU billing are overkill for a 3-minute task."
+        },
+        {
+          "t": "A Glue Python shell job with 1 DPU",
+          "why": "Wrong: it works, but Lambda is cheaper and starts faster for short event-driven work."
+        },
+        {
+          "t": "AWS Lambda triggered by the S3 upload",
+          "why": "Right: small, fast, event-driven work under 15 minutes is Lambda's sweet spot."
+        },
+        {
+          "t": "An EMR cluster with a step per file",
+          "why": "Wrong: a cluster to run and pay for, far too heavy for a tiny check."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Short event-driven tasks under 15 minutes go to Lambda, not Glue.",
+      "remember": "Glue = serverless Spark for GB-TB ETL. Tiny, fast, event-driven work under 15 minutes → Lambda.",
+      "variants": [
+        "The task runs longer than 15 minutes with plain Python, no Spark → Glue Python shell job.",
+        "The task is a pure SQL reshape of S3 data → Athena CTAS/INSERT.",
+        "Full control of Spark or long-lived clusters → EMR."
+      ]
+    },
+    {
+      "id": "glue-002",
+      "skill": "1.2.4",
+      "source": "1-basics-architecture-and-etl-jobs.md",
+      "q": "A team must run a one-time historical backfill with Glue 5.1. It is not urgent and can start late. They want the lowest DPU price. Which configuration fits?",
+      "options": [
+        {
+          "t": "Flex execution class with G.1X or G.2X workers",
+          "why": "Right: Flex is about $0.29 per DPU-hour vs $0.44 standard, for non-urgent runs on G.1X/G.2X."
+        },
+        {
+          "t": "Flex execution class with G.16X workers",
+          "why": "Wrong: G.12X, G.16X and R types do not support Flex."
+        },
+        {
+          "t": "Standard execution class with R.4X workers",
+          "why": "Wrong: memory-optimized workers cost the standard rate and start slower; nothing here needs them."
+        },
+        {
+          "t": "Standard execution class with the maximum worker count",
+          "why": "Wrong: more workers adds cost without lowering the price per DPU-hour."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Flex trades a slower, less certain start for a lower DPU-hour price.",
+      "remember": "Non-urgent Glue runs (tests, backfills, overnight batch) → Flex on Glue 3.0+ with G.1X or G.2X only.",
+      "variants": [
+        "The run is time-sensitive and must start at once → Standard execution class.",
+        "Data size varies a lot per night → turn on Auto Scaling with a sensible maximum.",
+        "Big types (G.12X/G.16X/R) are needed → Flex is not available for them."
+      ]
+    },
+    {
+      "id": "glue-003",
+      "skill": "3.3.6",
+      "source": "1-basics-architecture-and-etl-jobs.md",
+      "q": "A daily Glue job has job bookmarks set to Enable, yet every run reprocesses files it already handled. Which two script problems can cause this? (Choose 2.)",
+      "options": [
+        {
+          "t": "The job runs with the Flex execution class",
+          "why": "Wrong: execution class does not affect bookmark state."
+        },
+        {
+          "t": "The script never calls `job.commit()`",
+          "why": "Right: without commit the bookmark state is not saved for the next run."
+        },
+        {
+          "t": "The output is written as Parquet",
+          "why": "Wrong: the output format does not affect source tracking."
+        },
+        {
+          "t": "Sources and transforms have no `transformation_ctx`",
+          "why": "Right: bookmarks track only nodes that have a transformation_ctx."
+        }
+      ],
+      "answer": [
+        1,
+        3
+      ],
+      "explain": "Bookmarks need job.init(), job.commit() and a transformation_ctx on each tracked node.",
+      "remember": "Bookmark reprocessing → check job.commit(), transformation_ctx, max concurrency = 1, rewritten source files and non-sequential JDBC keys.",
+      "variants": [
+        "Error 'version mismatch' → concurrent runs of a bookmarked job; keep max concurrency at 1.",
+        "An old S3 file was rewritten → S3 bookmarks use last-modified time, so it is read again.",
+        "Streaming or Python shell jobs → bookmarks do not apply (streaming uses checkpoints)."
+      ]
+    },
+    {
+      "id": "glue-004",
+      "skill": "1.1.11",
+      "source": "1-basics-architecture-and-etl-jobs.md",
+      "q": "After fixing a logic bug, a team must reprocess all S3 input once with a bookmarked Glue batch job, without creating duplicate output. What should they do?",
+      "options": [
+        {
+          "t": "Set the bookmark option to Pause for the next run",
+          "why": "Wrong: Pause reads new data only and does not reread everything."
+        },
+        {
+          "t": "Delete the job's checkpoint folder in S3",
+          "why": "Wrong: checkpoints are for streaming jobs, not batch bookmarks."
+        },
+        {
+          "t": "Raise maximum concurrency to 2 and rerun",
+          "why": "Wrong: concurrent runs break bookmarks with a version mismatch."
+        },
+        {
+          "t": "Reset the bookmark with `reset-job-bookmark` and write to a clean or new target",
+          "why": "Right: reset rereads all sources, and since targets are not cleaned you must avoid duplicates yourself."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Reset or rewind changes only source tracking; target files stay.",
+      "remember": "Reprocess with bookmarks → reset (or rewind) the bookmark, and handle the target yourself because Glue does not clean outputs.",
+      "variants": [
+        "Backfill from a specific earlier run → rewind the bookmark to that run.",
+        "A streaming job must reprocess → delete its checkpoint folder.",
+        "Deleting the job also deletes its bookmark."
+      ]
+    },
+    {
+      "id": "glue-005",
+      "skill": "1.2.7",
+      "source": "1-basics-architecture-and-etl-jobs.md",
+      "q": "A Glue job reads JSON files where the `amount` field is a number in some files and a string in others. A plain Spark DataFrame turns the column into strings. What is the Glue-native fix?",
+      "options": [
+        {
+          "t": "Use ApplyMapping to drop the field",
+          "why": "Wrong: it loses the data instead of resolving the type."
+        },
+        {
+          "t": "Read as a DynamicFrame and resolve the choice type with `resolveChoice` (for example cast)",
+          "why": "Right: DynamicFrames keep mixed types as a choice type you resolve on purpose."
+        },
+        {
+          "t": "Run the crawler again with a new classifier",
+          "why": "Wrong: the files still contain mixed types; the job must resolve them."
+        },
+        {
+          "t": "Convert the input to Avro first",
+          "why": "Wrong: changing format does not resolve conflicting types in the data."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Mixed types become a choice type in a DynamicFrame; resolveChoice settles it.",
+      "remember": "Messy or changing data → DynamicFrame, then resolveChoice (cast, make_cols, make_struct, project, match_catalog).",
+      "variants": [
+        "Keep both types as separate columns → resolveChoice make_cols.",
+        "Cast to the types in the Catalog table → resolveChoice match_catalog.",
+        "Need Spark SQL or joins afterwards → toDF(), then DynamicFrame.fromDF() to come back."
+      ]
+    },
+    {
+      "id": "glue-006",
+      "skill": "1.2.6",
+      "source": "1-basics-architecture-and-etl-jobs.md",
+      "q": "Nested JSON with arrays of line items must be loaded into tables in an RDS PostgreSQL database. Which Glue transform prepares it?",
+      "options": [
+        {
+          "t": "Relationalize",
+          "why": "Right: it turns nested and array data into a set of flat tables linked by keys."
+        },
+        {
+          "t": "Unnest",
+          "why": "Wrong: it flattens nested structs into columns but does not split arrays into related tables."
+        },
+        {
+          "t": "Spigot",
+          "why": "Wrong: it only writes a sample to S3 for checking."
+        },
+        {
+          "t": "ApplyMapping",
+          "why": "Wrong: it renames and casts fields; it does not split arrays into tables."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Relationalize = nested/array data to several flat relational tables.",
+      "remember": "Nested JSON to a relational database → Relationalize; flatten structs into columns only → Unnest.",
+      "variants": [
+        "Only rename and retype columns → ApplyMapping (unlisted fields are dropped).",
+        "Merge staged updates by primary key → mergeDynamicFrame (staging records win).",
+        "Check a sample of output → Spigot."
+      ]
+    },
+    {
+      "id": "glue-007",
+      "skill": "1.3.2",
+      "source": "1-basics-architecture-and-etl-jobs.md",
+      "q": "At month-end, many Glue job runs fail because the account hits its concurrent-run quota. The team wants runs to wait instead of failing. What should they enable?",
+      "options": [
+        {
+          "t": "Retries set to 10 on every job",
+          "why": "Wrong: retries re-bill each attempt and do not wait for capacity in a controlled way."
+        },
+        {
+          "t": "Flex execution class",
+          "why": "Wrong: Flex lowers price; it does not queue runs that exceed a quota."
+        },
+        {
+          "t": "Job run queuing",
+          "why": "Right: runs that cannot start due to quota or temporary capacity wait in a queue."
+        },
+        {
+          "t": "A longer job timeout",
+          "why": "Wrong: the run never started, so the timeout does not help."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Job run queuing makes runs wait (WAITING) instead of failing on quota limits.",
+      "remember": "Hitting the concurrent-run quota in peaks → job run queuing (and ask for a quota raise).",
+      "variants": [
+        "A VPC job runs out of subnet IPs after launch (for executors) → it still fails; queuing does not help.",
+        "Run-level queuing setting overrides the job-level setting.",
+        "Throttling on API calls → retries with backoff or higher quotas."
+      ]
+    },
+    {
+      "id": "glue-008",
+      "skill": "1.2.4",
+      "source": "1-basics-architecture-and-etl-jobs.md",
+      "q": "A Glue 5.1 job was created with a blank timeout. A large backfill run stops after 8 hours with status TIMEOUT and is not retried. What should the team do?",
+      "options": [
+        {
+          "t": "Set retries to 3 so the job restarts after the timeout",
+          "why": "Wrong: jobs that time out are not retried."
+        },
+        {
+          "t": "Switch to Glue 4.0 to get a 48-hour default",
+          "why": "Wrong: downgrading to change a default is the wrong fix; set the value you need."
+        },
+        {
+          "t": "Raise maximum concurrency",
+          "why": "Wrong: concurrency allows parallel runs; it does not extend one run."
+        },
+        {
+          "t": "Set the job timeout explicitly to the expected runtime (up to 7 days)",
+          "why": "Right: the 5.0+ default is 480 minutes; the max is 10,080 minutes."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Blank timeout = 480 min on 5.0+, 2,880 min on 4.0 and older; max 7 days.",
+      "remember": "Set a timeout that matches the expected runtime: defaults differ by version (8 h for 5.0+, 48 h for 4.0 and older), max 7 days, timeouts are not retried.",
+      "variants": [
+        "A job might hang for days → set a tight timeout plus a delay notification threshold.",
+        "A streaming job with blank timeout → it restarts after 7 days (or in the maintenance window).",
+        "Retries: 0 to 10, and each retry is billed."
+      ]
+    },
+    {
+      "id": "glue-009",
+      "skill": "2.2.2",
+      "source": "2-data-catalog-crawlers-and-schema-registry.md",
+      "q": "Athena, Redshift Spectrum and EMR Spark must all query the same S3 data using one shared schema, with the least operational overhead. What should hold the metadata?",
+      "options": [
+        {
+          "t": "SageMaker Catalog",
+          "why": "Wrong: it is the business catalog (glossary, discovery), not the technical metastore engines query."
+        },
+        {
+          "t": "The AWS Glue Data Catalog",
+          "why": "Right: all three engines read it, and it is a drop-in Hive metastore replacement."
+        },
+        {
+          "t": "Glue Schema Registry",
+          "why": "Wrong: it governs streaming message schemas, not tables at rest."
+        },
+        {
+          "t": "A self-managed Hive metastore on EC2",
+          "why": "Wrong: works, but you must run and patch it."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "The Glue Data Catalog is the shared technical metadata store for AWS analytics engines.",
+      "remember": "One schema shared by Athena, Spectrum, EMR, Glue and Lake Formation → Glue Data Catalog (one per account per Region).",
+      "variants": [
+        "Business glossary and data discovery for analysts → SageMaker Catalog.",
+        "Stream schema contracts between producers and consumers → Glue Schema Registry.",
+        "EMR must use it → enable the Glue Catalog as the Hive metastore."
+      ]
+    },
+    {
+      "id": "glue-010",
+      "skill": "2.2.3",
+      "source": "2-data-catalog-crawlers-and-schema-registry.md",
+      "q": "A crawler runs on `s3://lake/events/`, which holds two different JSON schemas in subfolders. Afterwards, Athena returns zero rows from the tables. What is the fix?",
+      "options": [
+        {
+          "t": "Run `MSCK REPAIR TABLE` in Athena",
+          "why": "Wrong: the issue is table grouping, not missing partitions."
+        },
+        {
+          "t": "Set the recrawl policy to crawl new folders only",
+          "why": "Wrong: this limits what is scanned; it does not fix the grouping."
+        },
+        {
+          "t": "Add a custom JSON classifier",
+          "why": "Wrong: format detection is fine; the tables map to the wrong prefixes."
+        },
+        {
+          "t": "Give each schema's root folder its own include path",
+          "why": "Right: Athena maps one table to one prefix, so separate include paths give clean tables."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Mixed schemas under one prefix make the crawler build several tables, and Athena then sees nothing.",
+      "remember": "Athena zero rows after a crawl → crawler split one prefix into several tables; use one include path per table root.",
+      "variants": [
+        "Files under one path are compatible → 'Create a single schema for each include path'.",
+        "Tell the crawler at which folder depth the table starts → table level setting.",
+        "Skip some files or folders → exclude patterns."
+      ]
+    },
+    {
+      "id": "glue-011",
+      "skill": "2.2.4",
+      "source": "2-data-catalog-crawlers-and-schema-registry.md",
+      "q": "A bucket holds millions of objects and new partitions arrive every hour. A crawler that rescans everything is slow and costly. Which crawler setting is best?",
+      "options": [
+        {
+          "t": "Recrawl policy 'Crawl based on events' using S3 event notifications through SQS",
+          "why": "Right: it lists only changed subfolders, the fastest option for big prefixes."
+        },
+        {
+          "t": "Recrawl policy 'Crawl all folders' on an hourly schedule",
+          "why": "Wrong: the default rereads everything each time, the costly behavior."
+        },
+        {
+          "t": "A larger crawler table threshold",
+          "why": "Wrong: it caps how many tables are created; it does not speed scanning."
+        },
+        {
+          "t": "Two crawlers started by one trigger on the same path",
+          "why": "Wrong: duplicate work, and it does not reduce listing."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Event-mode crawls use S3 events to visit only changed folders.",
+      "remember": "Big prefix with steady new data → event-mode crawler (or crawl new folders only); avoid full recrawls on unchanged data.",
+      "variants": [
+        "Only new partitions, no event setup → 'Crawl new folders only' (does not change the existing schema).",
+        "Partitions are fully predictable (dates) and only Athena queries them → Athena partition projection.",
+        "The loading job knows the partition → ALTER TABLE ADD PARTITION or BatchCreatePartition."
+      ]
+    },
+    {
+      "id": "glue-012",
+      "skill": "2.2.4",
+      "source": "2-data-catalog-crawlers-and-schema-registry.md",
+      "q": "A Glue job writes partitioned Parquet output each night. The new partitions must appear in the Data Catalog in the same run, with no crawler. What should the job use?",
+      "options": [
+        {
+          "t": "A `push_down_predicate` on the sink",
+          "why": "Wrong: pushdown predicates filter partitions on read, not on write."
+        },
+        {
+          "t": "Athena partition projection on the source table",
+          "why": "Wrong: projection computes partitions for Athena only and stores none in the Catalog."
+        },
+        {
+          "t": "A Catalog sink with `enableUpdateCatalog=true`, `updateBehavior` and `partitionKeys`",
+          "why": "Right: the job writes the data and updates the Catalog in one run."
+        },
+        {
+          "t": "Job bookmarks set to Enable",
+          "why": "Wrong: bookmarks track input already read; they do not register output partitions."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "enableUpdateCatalog lets an ETL job add partitions as it writes.",
+      "remember": "Job writes new partitions and the Catalog must follow in the same run → enableUpdateCatalog + updateBehavior + partitionKeys.",
+      "variants": [
+        "Partitions still missing after the job → check enableUpdateCatalog is true and the schema matches or updateBehavior is UPDATE_IN_DATABASE.",
+        "Tables with Lake Formation cell-level filters → enableUpdateCatalog is not supported.",
+        "Hive-style folders already exist and you want a one-off fix → Athena MSCK REPAIR TABLE."
+      ]
+    },
+    {
+      "id": "glue-013",
+      "skill": "2.4.5",
+      "source": "2-data-catalog-crawlers-and-schema-registry.md",
+      "q": "A Glue job reads a Catalog table with 5 million date partitions. Planning takes much longer than the read, even with a `push_down_predicate`. What should the team do?",
+      "options": [
+        {
+          "t": "Increase the number of G.2X workers",
+          "why": "Wrong: partition listing happens on the driver side; more workers do not fix it."
+        },
+        {
+          "t": "Add a partition index and use `catalogPartitionPredicate` in `additional_options`",
+          "why": "Right: it prunes partitions on the server using the index instead of listing all of them."
+        },
+        {
+          "t": "Filter with `.filter()` after reading",
+          "why": "Wrong: it reads everything first and saves nothing."
+        },
+        {
+          "t": "Run `MSCK REPAIR TABLE` before each job",
+          "why": "Wrong: it adds partitions; it does not speed lookups."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "push_down_predicate runs after listing all partitions; catalogPartitionPredicate uses indexes server-side.",
+      "remember": "Millions of partitions and slow planning → partition indexes + catalogPartitionPredicate (DynamicFrames) or partition projection for Athena.",
+      "variants": [
+        "Athena must use the index → table property `partition_filtering.enabled = true`.",
+        "Redshift Spectrum, EMR and Glue Spark DataFrames use active indexes automatically.",
+        "Max 3 indexes per table, and the index's first key must appear in the filter."
+      ]
+    },
+    {
+      "id": "glue-014",
+      "skill": "1.1.1",
+      "source": "2-data-catalog-crawlers-and-schema-registry.md",
+      "q": "A Kafka producer on Amazon MSK keeps changing record fields and consumers crash. The team wants bad schema changes rejected before they reach consumers. What should they use?",
+      "options": [
+        {
+          "t": "A Glue crawler on the Kafka topic",
+          "why": "Wrong: crawlers cannot crawl Kinesis or Kafka."
+        },
+        {
+          "t": "Glue Schema Registry with BACKWARD compatibility",
+          "why": "Right: new versions are checked at registration, so incompatible changes are rejected."
+        },
+        {
+          "t": "Glue Schema Registry with compatibility NONE",
+          "why": "Wrong: NONE does no checks; it is for development only."
+        },
+        {
+          "t": "Glue Data Quality rules on the Catalog table",
+          "why": "Wrong: they check data at rest, not schema versions of messages in flight."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Schema Registry enforces stream schema contracts with compatibility modes.",
+      "remember": "Stop producers from breaking consumers on Kafka/Kinesis → Glue Schema Registry with BACKWARD (or FULL) compatibility. It is free.",
+      "variants": [
+        "Consumers on the old schema must read new data → FORWARD.",
+        "Both directions → FULL; check against every earlier version → the _ALL variants.",
+        "Block all new versions → DISABLED."
+      ]
+    },
+    {
+      "id": "glue-015",
+      "skill": "2.4.2",
+      "source": "2-data-catalog-crawlers-and-schema-registry.md",
+      "q": "A schema in Glue Schema Registry uses BACKWARD compatibility. Adding a new Avro field `discount` is rejected. What is the likely cause?",
+      "options": [
+        {
+          "t": "BACKWARD mode does not allow any new fields",
+          "why": "Wrong: BACKWARD allows adding optional fields and deleting fields."
+        },
+        {
+          "t": "The registry has reached 100 schemas",
+          "why": "Wrong: the limits are 100 registries and 10,000 schema versions per Region; that would not give a compatibility error."
+        },
+        {
+          "t": "The new field is required: its type does not include `null`",
+          "why": "Right: adding a required field breaks BACKWARD; make it optional."
+        },
+        {
+          "t": "Avro is not supported by Schema Registry",
+          "why": "Wrong: Avro, JSON Schema and Protobuf are supported."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "In Avro, optional = `null` in the type. Required additions break BACKWARD.",
+      "remember": "BACKWARD: new readers read old data → you may delete fields or add optional ones. Adding a required field breaks it.",
+      "variants": [
+        "Removing a required field is rejected → that breaks FORWARD.",
+        "FULL mode → only add or remove optional fields.",
+        "A streaming job's table uses the schema → stop the job, update the table, restart."
+      ]
+    },
+    {
+      "id": "glue-016",
+      "skill": "4.3.2",
+      "source": "2-data-catalog-crawlers-and-schema-registry.md",
+      "q": "A team turns on Data Catalog metadata encryption with a KMS key. An audit shows older table definitions are still stored unencrypted. What explains this?",
+      "options": [
+        {
+          "t": "Metadata encryption applies only to metadata written after it is turned on",
+          "why": "Right: existing metadata stays unencrypted until it is rewritten."
+        },
+        {
+          "t": "The KMS key is disabled",
+          "why": "Wrong: a disabled key would make Catalog jobs and crawlers fail, not leave old data plain."
+        },
+        {
+          "t": "A Glue security configuration must also be attached to the Catalog",
+          "why": "Wrong: security configurations cover job/crawler output, logs and bookmarks, not Catalog metadata."
+        },
+        {
+          "t": "Connection password encryption was not enabled",
+          "why": "Wrong: that setting covers only passwords stored in connections."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Catalog encryption covers new metadata only.",
+      "remember": "Catalog metadata encryption (KMS) is forward-only; old metadata stays plain until rewritten. Connection password encryption is a separate setting.",
+      "variants": [
+        "Jobs and crawlers fail after the key was disabled or deleted → re-enable the key.",
+        "Encrypt job output, logs and bookmarks → a Glue security configuration.",
+        "Partition indexes cannot be created on encrypted partitions."
+      ]
+    },
+    {
+      "id": "glue-017",
+      "skill": "1.2.6",
+      "source": "3-etl-patterns-formats-streaming-and-performance.md",
+      "q": "Athena queries on raw CSV and JSON logs in S3 are slow and costly. Most queries filter by event date. What should a Glue job produce?",
+      "options": [
+        {
+          "t": "Gzip-compressed CSV files",
+          "why": "Wrong: smaller, but gzip text cannot be split and Athena still scans every column."
+        },
+        {
+          "t": "Parquet files partitioned by `user_id`",
+          "why": "Wrong: high-cardinality partitions create huge metadata and small files."
+        },
+        {
+          "t": "Snappy Parquet files partitioned by date",
+          "why": "Right: columnar reads plus partition pruning cut the data scanned."
+        },
+        {
+          "t": "Avro files with no partitions",
+          "why": "Wrong: row-based and no pruning; Avro fits streaming and schema evolution."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Columnar format plus a moderate-cardinality partition on the filter column.",
+      "remember": "Slow, costly text-format queries → convert to Parquet (snappy) partitioned by the filter column, usually date. Never partition on a high-cardinality column.",
+      "variants": [
+        "Data is streamed with evolving schemas → Avro with Schema Registry.",
+        "Hive/EMR-centric stack → ORC is a similar columnar choice.",
+        "Aim for roughly 128 MB to 1 GB files to avoid the small-files problem."
+      ]
+    },
+    {
+      "id": "glue-018",
+      "skill": "1.2.7",
+      "source": "3-etl-patterns-formats-streaming-and-performance.md",
+      "q": "A Glue job reads 2 million small CSV files from one S3 prefix and spends most of its time on task overhead. What is the simplest fix in the read?",
+      "options": [
+        {
+          "t": "Set `groupFiles` to `inPartition` with a `groupSize`",
+          "why": "Right: grouping packs small files into larger tasks and cuts overhead."
+        },
+        {
+          "t": "Call `repartition(1)` after the read",
+          "why": "Wrong: the read overhead remains, and one partition kills parallelism."
+        },
+        {
+          "t": "Switch the job to a Python shell job",
+          "why": "Wrong: no Spark, and it is far too small for millions of files."
+        },
+        {
+          "t": "Use the `s3a://` URI scheme",
+          "why": "Wrong: s3a can fail with 'Failed to parse XML document' when listing many files; use s3://."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "groupFiles/groupSize reduce tasks for many small text files.",
+      "remember": "Many small CSV/JSON files → groupFiles inPartition + groupSize, or compact them. Grouping is not supported for Parquet, ORC or Avro.",
+      "variants": [
+        "More than 50,000 input files → Glue turns grouping on automatically.",
+        "The small files are Parquet → compaction (for example Iceberg optimization), not groupFiles.",
+        "The driver runs out of memory listing files → group files, partition well, tune bookmarks."
+      ]
+    },
+    {
+      "id": "glue-019",
+      "skill": "1.1.1",
+      "source": "3-etl-patterns-formats-streaming-and-performance.md",
+      "q": "A team builds a Glue streaming job that reads from an Amazon MSK topic and writes Parquet to S3. Which two setup steps are required? (Choose 2.)",
+      "options": [
+        {
+          "t": "Create a Glue Kafka connection using TLS bootstrap servers",
+          "why": "Right: Kafka needs a connection, and plaintext is not supported."
+        },
+        {
+          "t": "Run a crawler on the topic to create the table",
+          "why": "Wrong: crawlers cannot create Kinesis or Kafka tables."
+        },
+        {
+          "t": "Enable job bookmarks to track offsets",
+          "why": "Wrong: streaming jobs use checkpoints, not bookmarks."
+        },
+        {
+          "t": "Create the stream's Data Catalog table manually in the Glue console or API",
+          "why": "Right: stream tables are created by hand, and not through the Lake Formation console."
+        }
+      ],
+      "answer": [
+        0,
+        3
+      ],
+      "explain": "Kafka streams need a TLS connection and a hand-made Catalog table.",
+      "remember": "Glue streaming from Kafka/MSK → TLS Kafka connection (IAM auth on MSK is fine) + manually created Catalog table + Spark streaming job with checkpoints.",
+      "variants": [
+        "The source is Kinesis → no connection needed.",
+        "Kinesis in another account → stream ARN plus an assumed role ARN.",
+        "Job has a VPC connection and reads Kinesis → add a Kinesis interface VPC endpoint."
+      ]
+    },
+    {
+      "id": "glue-020",
+      "skill": "1.2.5",
+      "source": "3-etl-patterns-formats-streaming-and-performance.md",
+      "q": "A fraud team needs sub-second, stateful, windowed analytics on a Kinesis stream. Which service fits best?",
+      "options": [
+        {
+          "t": "A Glue streaming job with a 100-second window",
+          "why": "Wrong: Glue streaming is micro-batch; it is not built for sub-second stateful processing."
+        },
+        {
+          "t": "Glue DataBrew",
+          "why": "Wrong: DataBrew is not for streaming."
+        },
+        {
+          "t": "A Glue batch job with bookmarks every 5 minutes",
+          "why": "Wrong: batch cannot meet sub-second latency."
+        },
+        {
+          "t": "Amazon Managed Service for Apache Flink",
+          "why": "Right: it is designed for low-latency stateful windowed stream processing."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Glue streaming = micro-batch ETL; Flink = sub-second stateful analytics.",
+      "remember": "Continuous ETL from Kinesis/MSK into S3 with no servers → Glue streaming. Sub-second, stateful, windowed analytics → Managed Flink.",
+      "variants": [
+        "Fresher Glue streaming output → smaller window (more small files).",
+        "A stream that only needs a few minutes of work a day → batch with bookmarks or Firehose to S3.",
+        "Plain delivery to S3 with little transformation → Firehose."
+      ]
+    },
+    {
+      "id": "glue-021",
+      "skill": "2.1.7",
+      "source": "3-etl-patterns-formats-streaming-and-performance.md",
+      "q": "DMS writes full-load and CDC files to S3. The lake tables must apply inserts, updates and deletes and support time travel. What should the Glue job write to?",
+      "options": [
+        {
+          "t": "Apache Iceberg tables registered in the Glue Data Catalog",
+          "why": "Right: Iceberg adds ACID row-level changes, snapshots for time travel and schema evolution."
+        },
+        {
+          "t": "Plain Parquet files with job bookmarks",
+          "why": "Wrong: bookmarks only skip old input; plain Parquet has no row-level updates."
+        },
+        {
+          "t": "CSV files partitioned by load date",
+          "why": "Wrong: no transactions, no updates and no time travel."
+        },
+        {
+          "t": "A Glue Schema Registry schema",
+          "why": "Wrong: the registry holds stream schemas, not table data."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Upserts, deletes and time travel on S3 need an open table format such as Iceberg.",
+      "remember": "CDC into the lake with upserts/deletes/time travel → Iceberg on the Glue Catalog (enable with --datalake-formats). Plain Parquet cannot update rows.",
+      "variants": [
+        "Supported source and little transformation → zero-ETL instead of a pipeline.",
+        "Small files pile up in Iceberg → managed compaction in the Catalog.",
+        "Iceberg v2 → v3 upgrade is one-way; keep v2 if another reader cannot read v3."
+      ]
+    },
+    {
+      "id": "glue-022",
+      "skill": "3.3.6",
+      "source": "3-etl-patterns-formats-streaming-and-performance.md",
+      "q": "A Glue job that loads a large dataset into Amazon Redshift fails after about one hour with an 'S3 service token expired' error. What is the cause?",
+      "options": [
+        {
+          "t": "The job timeout is set to 60 minutes",
+          "why": "Wrong: that would end with TIMEOUT, not a token error."
+        },
+        {
+          "t": "Redshift rejected the COPY because of a type mismatch",
+          "why": "Wrong: that gives a load error, not an expired token."
+        },
+        {
+          "t": "The temporary credentials used for the S3 temp path expire after 1 hour",
+          "why": "Right: Glue moves Redshift data through S3 with UNLOAD/COPY, and those credentials last 1 hour."
+        },
+        {
+          "t": "The job role lacks `iam:PassRole`",
+          "why": "Wrong: the job would fail at creation or start, not after an hour."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Glue-Redshift traffic goes through --TempDir in S3 with 1-hour temporary credentials.",
+      "remember": "Glue reads/writes Redshift via an S3 temp path (UNLOAD/COPY). Long jobs can hit 1-hour token expiry → split the work.",
+      "variants": [
+        "The job role or Redshift cannot reach the temp path → grant both access to it.",
+        "Glue created a temp bucket → check S3 Block Public Access.",
+        "Bulk loads without Glue → Redshift COPY from S3."
+      ]
+    },
+    {
+      "id": "glue-023",
+      "skill": "3.4.5",
+      "source": "3-etl-patterns-formats-streaming-and-performance.md",
+      "q": "In the Spark UI, one task in a join stage runs ten times longer than the others, and `glue.driver.skewness.stage` is above 0. Which change helps most?",
+      "options": [
+        {
+          "t": "Add more G.1X workers",
+          "why": "Wrong: the stage still waits for the one slow task."
+        },
+        {
+          "t": "Switch to the Flex execution class",
+          "why": "Wrong: Flex changes price and start time, not task balance."
+        },
+        {
+          "t": "Enable continuous CloudWatch logging",
+          "why": "Wrong: helps watch the job, but does not fix the slow task."
+        },
+        {
+          "t": "Salt the hot key or enable Spark AQE skew-join settings",
+          "why": "Right: spreading the hot key evens out task sizes."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Data skew = one key much bigger than others; fix the key distribution.",
+      "remember": "One long task, skewness metric > 0 (max task > 5× median) → salt keys, filter hot keys, AQE skew join, repartition. More workers do not help.",
+      "variants": [
+        "Many workers idle all job long → too few partitions or over-provisioning; use Auto Scaling.",
+        "Joining a big table to a small one → broadcast the small side.",
+        "Python UDFs are slow → use built-in Spark functions."
+      ]
+    },
+    {
+      "id": "glue-024",
+      "skill": "3.3.4",
+      "source": "3-etl-patterns-formats-streaming-and-performance.md",
+      "q": "A Glue Spark job fails with 'Container killed by YARN for exceeding memory limits' on executors. Which two changes address this? (Choose 2.)",
+      "options": [
+        {
+          "t": "Set retries to 10",
+          "why": "Wrong: each retry hits the same limit and is billed."
+        },
+        {
+          "t": "Use memory-optimized R workers or a bigger G worker",
+          "why": "Right: more memory per executor holds the task's data."
+        },
+        {
+          "t": "Increase the number of partitions so each task is smaller",
+          "why": "Right: smaller tasks need less memory each."
+        },
+        {
+          "t": "Switch to the Flex execution class",
+          "why": "Wrong: Flex uses G.1X/G.2X and does not add memory."
+        },
+        {
+          "t": "Coalesce everything into one partition",
+          "why": "Wrong: one huge task makes memory pressure worse."
+        }
+      ],
+      "answer": [
+        1,
+        2
+      ],
+      "explain": "Executor OOM → more memory per task or smaller tasks (and fix skew).",
+      "remember": "Executor OOM → bigger/R workers, more partitions, fix skew. Driver OOM → too many files listed or collect()/toPandas() on big data.",
+      "variants": [
+        "'No space left on device' → shuffle spill; bigger worker or less shuffle.",
+        "Driver OOM while listing S3 → group files, fewer files per partition.",
+        "Estimate executors needed → numberMaxNeededExecutors in CloudWatch."
+      ]
+    },
+    {
+      "id": "glue-025",
+      "skill": "1.2.5",
+      "source": "3-etl-patterns-formats-streaming-and-performance.md",
+      "q": "A company wants a fresh copy of Salesforce data in its SageMaker lakehouse on S3, with little transformation and no pipeline code. What should it use?",
+      "options": [
+        {
+          "t": "A Glue streaming job reading Salesforce",
+          "why": "Wrong: Salesforce is not a streaming source for Glue streaming."
+        },
+        {
+          "t": "A Glue zero-ETL integration with Salesforce as the source",
+          "why": "Right: managed replication into the lakehouse with no pipeline code."
+        },
+        {
+          "t": "Glue DataBrew recipe jobs",
+          "why": "Wrong: DataBrew is for cleaning data, not managed replication."
+        },
+        {
+          "t": "A Glue crawler on the Salesforce API",
+          "why": "Wrong: crawlers catalog data; they do not copy it."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Zero-ETL = managed replication when you only need a fresh copy.",
+      "remember": "Fresh copy of SaaS (Salesforce, SAP, ServiceNow...) or DynamoDB data, little transformation → Glue zero-ETL. Need to clean, join or mask → a Glue job.",
+      "variants": [
+        "Source is a self-managed MySQL/PostgreSQL/Oracle/SQL Server → zero-ETL target must be Amazon Redshift.",
+        "Aurora to Redshift → Aurora's own zero-ETL integration.",
+        "Zero-ETL billing → no integration fee; pay ingestion volume plus target compute."
+      ]
+    },
+    {
+      "id": "glue-026",
+      "skill": "1.3.1",
+      "source": "4-workflows-data-quality-and-databrew.md",
+      "q": "A pipeline runs a Glue job, then an Athena query, then a Lambda function, then waits for a manager's approval, with retries and error branches. Which orchestrator fits?",
+      "options": [
+        {
+          "t": "A Glue workflow with conditional triggers",
+          "why": "Wrong: Glue workflows chain only Glue jobs and crawlers."
+        },
+        {
+          "t": "A Glue scheduled trigger",
+          "why": "Wrong: it only starts Glue jobs and crawlers on a time."
+        },
+        {
+          "t": "AWS Step Functions",
+          "why": "Right: it calls Glue (startJobRun.sync), Athena and Lambda, with retry/catch, choice and human approval."
+        },
+        {
+          "t": "EventBridge Scheduler alone",
+          "why": "Wrong: it starts things on a schedule but does not manage steps, branches or approvals."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Multi-service pipelines with error handling → Step Functions.",
+      "remember": "Only Glue jobs and crawlers → Glue workflow. Many services, retries, branching, approval → Step Functions. Existing Airflow DAGs → MWAA.",
+      "variants": [
+        "The team already runs Airflow → MWAA (monthly cost even when idle).",
+        "React to an event such as a file landing → EventBridge starts the workflow or state machine.",
+        "Crawler → job → crawler inside Glue only → Glue workflow."
+      ]
+    },
+    {
+      "id": "glue-027",
+      "skill": "1.1.6",
+      "source": "4-workflows-data-quality-and-databrew.md",
+      "q": "Thousands of small files land in S3 each hour. A Glue workflow must start once per 100 files, or after at most 15 minutes if fewer arrive. How should it start?",
+      "options": [
+        {
+          "t": "A scheduled trigger every 15 minutes",
+          "why": "Wrong: runs even when no files arrived and ignores the 100-file count."
+        },
+        {
+          "t": "An EventBridge event start trigger with batch size 100 and batch window 900 seconds",
+          "why": "Right: whichever condition is met first starts the run; 900 s is the maximum window."
+        },
+        {
+          "t": "An EventBridge event start trigger with batch size 100 and batch window 3,600 seconds",
+          "why": "Wrong: the maximum batch window is 900 seconds."
+        },
+        {
+          "t": "S3 Event Notifications to a conditional trigger",
+          "why": "Wrong: conditional triggers watch job and crawler states, not S3 events."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Workflow EventBridge triggers batch events by size or window, whichever comes first.",
+      "remember": "Start a Glue workflow from S3 events → EventBridge event start trigger. Batch size default 1, window max 900 s, starting when the first event arrives.",
+      "variants": [
+        "A run fails → that event batch is not reused; alert on failure so it is not lost.",
+        "Runs over the max concurrent workflow runs → not started and not retried.",
+        "One run per file → leave batch size at 1."
+      ]
+    },
+    {
+      "id": "glue-028",
+      "skill": "3.1.2",
+      "source": "4-workflows-data-quality-and-databrew.md",
+      "q": "A conditional trigger should start job B when job A succeeds. An engineer starts job A by hand from the console; it succeeds, but job B never starts. Why?",
+      "options": [
+        {
+          "t": "Dependent jobs fire only when the watched job was started by a trigger",
+          "why": "Right: the chain must descend from a scheduled or on-demand trigger."
+        },
+        {
+          "t": "Conditional triggers can watch crawlers only",
+          "why": "Wrong: they watch both jobs and crawlers."
+        },
+        {
+          "t": "The trigger must use ANY instead of ALL",
+          "why": "Wrong: with one watched job, ANY and ALL behave the same."
+        },
+        {
+          "t": "SUCCEEDED is not a state a trigger can watch",
+          "why": "Wrong: jobs can be watched for SUCCEEDED, STOPPED, FAILED and TIMEOUT."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "A manual run does not fire conditional triggers.",
+      "remember": "Conditional triggers fire only for jobs started by a trigger; start the chain with a scheduled or on-demand trigger.",
+      "variants": [
+        "Run a cleanup when either of two jobs fails → conditional trigger with ANY and FAILED.",
+        "Run job C after both A and B succeed → ALL with SUCCEEDED.",
+        "Pause a schedule without deleting it → deactivate the trigger."
+      ]
+    },
+    {
+      "id": "glue-029",
+      "skill": "3.4.1",
+      "source": "4-workflows-data-quality-and-databrew.md",
+      "q": "A Glue ETL job must load good rows into the curated zone and send rows that break completeness and range rules to a quarantine prefix. What should the team use?",
+      "options": [
+        {
+          "t": "Data Quality rules run on the Catalog table after the load",
+          "why": "Wrong: the Catalog entry point cannot identify failed rows, and the data has already landed."
+        },
+        {
+          "t": "A DataBrew profile job",
+          "why": "Wrong: it computes statistics; it does not split rows inside the ETL job."
+        },
+        {
+          "t": "Amazon Macie",
+          "why": "Wrong: Macie finds sensitive data in S3, not rule failures."
+        },
+        {
+          "t": "The Evaluate Data Quality transform in the job with row-level outcomes",
+          "why": "Right: in-job DQ marks each row's result so bad rows can be routed away."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Row-level failed-record identification exists only for DQ inside ETL jobs.",
+      "remember": "Quarantine bad rows / stop bad data before it lands → Evaluate Data Quality in the ETL job (row-level outcomes, no extra charge). Check data at rest with rule recommendations → Catalog DQ.",
+      "variants": [
+        "Need suggested rules from a profile of the table → Catalog DQ rule recommendations.",
+        "Thresholds should follow history → dynamic rules or ML anomaly detection.",
+        "Nested or array columns fail DQ → flatten them first."
+      ]
+    },
+    {
+      "id": "glue-030",
+      "skill": "3.1.6",
+      "source": "4-workflows-data-quality-and-databrew.md",
+      "q": "Business analysts who do not write code must clean CSV files, view value distributions and outliers, and save cleaned Parquet to S3 on a daily schedule. Which service fits?",
+      "options": [
+        {
+          "t": "Glue Studio visual ETL with a Spark job",
+          "why": "Wrong: no-code too, but aimed at engineers building production ETL, not analyst profiling and cleaning."
+        },
+        {
+          "t": "Glue streaming ETL",
+          "why": "Wrong: there is no stream here."
+        },
+        {
+          "t": "AWS Glue DataBrew with profile jobs and a scheduled recipe job",
+          "why": "Right: no-code preparation, profiling charts and scheduled jobs that write to S3."
+        },
+        {
+          "t": "Glue Schema Registry",
+          "why": "Wrong: it manages stream schemas, not data cleaning."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "DataBrew = no-code data preparation and profiling for analysts.",
+      "remember": "Analysts + no code + clean/profile data → DataBrew. Engineers building production ETL (joins, streaming, open table formats) → Glue Studio / Spark jobs.",
+      "variants": [
+        "Run it every day → schedule the DataBrew job (or use Step Functions).",
+        "Very custom logic or streaming → Glue ETL, not DataBrew.",
+        "Rules for completeness/uniqueness in a pipeline → Glue Data Quality."
+      ]
+    },
+    {
+      "id": "glue-031",
+      "skill": "4.5.2",
+      "source": "4-workflows-data-quality-and-databrew.md",
+      "q": "A company must find unknown PII across many S3 buckets, and also mask PII columns while a Glue Spark job writes data to a shared analytics zone. Which two services or features meet these needs? (Choose 2.)",
+      "options": [
+        {
+          "t": "Amazon Macie to scan the S3 buckets",
+          "why": "Right: Macie discovers PII stored in S3."
+        },
+        {
+          "t": "Glue Data Quality IsComplete rules",
+          "why": "Wrong: they test completeness, not PII."
+        },
+        {
+          "t": "Glue Schema Registry",
+          "why": "Wrong: it governs stream schemas, not sensitive data."
+        },
+        {
+          "t": "The Glue Detect Sensitive Data transform in the job",
+          "why": "Right: it detects and masks PII during processing."
+        }
+      ],
+      "answer": [
+        0,
+        3
+      ],
+      "explain": "Macie finds PII at rest in S3; Glue's transform masks it in flight.",
+      "remember": "Discover PII in S3 → Macie. Mask PII inside a Glue job → Detect Sensitive Data. Hide columns from users → Lake Formation column/cell permissions.",
+      "variants": [
+        "Analysts must de-identify data without code → DataBrew masking steps.",
+        "Users must not see a sensitive column at query time → Lake Formation column-level permissions.",
+        "Common chain: Macie finds → tag in Lake Formation → Glue masks."
+      ]
+    },
+    {
+      "id": "glue-032",
+      "skill": "4.1.2",
+      "source": "5-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A developer creating a Glue job gets 'the role passed should be given assume role permissions for the Glue service'. What fixes it?",
+      "options": [
+        {
+          "t": "Attach `AWSGlueServiceRole` to the developer's user",
+          "why": "Wrong: that managed policy belongs on the job role, and it does not grant PassRole."
+        },
+        {
+          "t": "Grant the developer `iam:PassRole` on the job role, and ensure the role trusts `glue.amazonaws.com`",
+          "why": "Right: the creator must pass the role, and Glue must be able to assume it."
+        },
+        {
+          "t": "Add a resource policy on the Data Catalog",
+          "why": "Wrong: that controls cross-account Catalog access, not role passing."
+        },
+        {
+          "t": "Add an S3 gateway endpoint",
+          "why": "Wrong: a network fix for a permissions error."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "PassRole for the creator, trust policy for glue.amazonaws.com on the role.",
+      "remember": "Glue role errors → creator needs iam:PassRole; the job role's trust must allow glue.amazonaws.com. AWSGlueServiceRole is a base; add your own S3/KMS/Secrets permissions.",
+      "variants": [
+        "S3 Access Denied in a job → role S3 permission, bucket policy, or Lake Formation grants.",
+        "ec2:Describe* unauthorized errors in a VPC job → add those EC2 read actions to the job role.",
+        "Least privilege → scope the role to the needed S3 prefixes and Catalog databases."
+      ]
+    },
+    {
+      "id": "glue-033",
+      "skill": "4.1.1",
+      "source": "5-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A Glue job with a VPC connection must read a private RDS database and S3 in the same Region. It fails at start-up. Which two network settings are required? (Choose 2.)",
+      "options": [
+        {
+          "t": "An internet gateway route on the job's subnet",
+          "why": "Wrong: Glue workers use private ENIs; S3 is reached via an endpoint or NAT."
+        },
+        {
+          "t": "A security group with a self-referencing rule allowing all inbound TCP from itself",
+          "why": "Right: Glue workers must talk to each other."
+        },
+        {
+          "t": "An S3 gateway VPC endpoint (or NAT gateway) for the subnet",
+          "why": "Right: without it you get 'Could not find S3 endpoint or NAT gateway for subnetId'."
+        },
+        {
+          "t": "A public IP on the RDS instance",
+          "why": "Wrong: the connection exists exactly so the job can reach private resources."
+        }
+      ],
+      "answer": [
+        1,
+        2
+      ],
+      "explain": "VPC Glue jobs need a self-referencing SG and a route to S3.",
+      "remember": "Glue in a VPC → self-referencing SG (all TCP inbound from itself, outbound all), S3 endpoint or NAT, DNS hostnames on, enough subnet IPs, and the DB SG allowing the Glue SG.",
+      "variants": [
+        "'No private DNS for network interface found' → turn on enableDnsHostnames.",
+        "'Resource unavailable' at start → out of ENIs or subnet IPs.",
+        "'Could not find subnet for AZ' → use a subnet in another AZ."
+      ]
+    },
+    {
+      "id": "glue-034",
+      "skill": "4.3.2",
+      "source": "5-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A Glue job in a private subnet has a security configuration that encrypts output with SSE-KMS. It now fails with a 'kms timeout' error. What should be added?",
+      "options": [
+        {
+          "t": "A KMS interface VPC endpoint (or a NAT gateway)",
+          "why": "Right: the job must reach KMS from the subnet."
+        },
+        {
+          "t": "An S3 gateway endpoint",
+          "why": "Wrong: that gives an S3 route, not a KMS route."
+        },
+        {
+          "t": "Catalog metadata encryption",
+          "why": "Wrong: unrelated to reaching KMS from the job."
+        },
+        {
+          "t": "A longer job timeout",
+          "why": "Wrong: the call cannot reach KMS however long it waits."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Security configurations need network access to KMS from the VPC.",
+      "remember": "VPC job/crawler + security configuration → needs a KMS endpoint or NAT. Symptoms: 'kms timeout' (job), 'internal service exception' (crawler).",
+      "variants": [
+        "Glue API privately from the VPC → Glue interface endpoint.",
+        "Secrets Manager or CloudWatch Logs unreachable → interface endpoints or NAT for those too.",
+        "The job role also needs kms:Encrypt, kms:Decrypt and kms:GenerateDataKey on an ENABLED key."
+      ]
+    },
+    {
+      "id": "glue-035",
+      "skill": "4.3.2",
+      "source": "5-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "Compliance requires that a Glue job's S3 output, CloudWatch logs and job bookmarks are all encrypted with a customer managed KMS key. What is the right setup?",
+      "options": [
+        {
+          "t": "Set the job parameter for SSE-S3 encryption",
+          "why": "Wrong: SSE-S3 is not a customer key, and it covers S3 output only."
+        },
+        {
+          "t": "Turn on Data Catalog metadata encryption",
+          "why": "Wrong: it encrypts Catalog metadata, not job output, logs or bookmarks."
+        },
+        {
+          "t": "Rely on S3 bucket default encryption",
+          "why": "Wrong: it covers S3 objects only, not logs or bookmarks."
+        },
+        {
+          "t": "A Glue security configuration with SSE-KMS for S3, KMS for CloudWatch Logs and CSE-KMS for bookmarks",
+          "why": "Right: one security configuration covers all three; the key policy must allow CloudWatch Logs."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "A security configuration encrypts what Glue writes: S3 data, logs and bookmarks.",
+      "remember": "Encrypt job output, logs and bookmarks → Glue security configuration (overrides the SSE-S3 job parameter). Encrypt metadata → Catalog encryption.",
+      "variants": [
+        "Log encryption fails → the KMS key policy must allow logs.<region>.amazonaws.com and the job roles.",
+        "Iceberg tables → set their own S3 SSE as well.",
+        "Encrypt connection passwords → Catalog connection password encryption."
+      ]
+    },
+    {
+      "id": "glue-036",
+      "skill": "3.3.6",
+      "source": "5-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A Glue job in a private subnet with an S3 gateway endpoint reads one bucket fine but gets 'connect timed out' on a bucket in another Region. What is the fix?",
+      "options": [
+        {
+          "t": "Add a second S3 gateway endpoint for the other Region",
+          "why": "Wrong: a gateway endpoint is Regional and only reaches buckets in its own Region."
+        },
+        {
+          "t": "Add a self-referencing security group rule",
+          "why": "Wrong: workers talk fine; the problem is the route to the remote bucket."
+        },
+        {
+          "t": "Route the subnet through a NAT gateway for cross-Region S3 access",
+          "why": "Right: a gateway S3 endpoint only reaches same-Region buckets."
+        },
+        {
+          "t": "Enable job run queuing",
+          "why": "Wrong: the job started; this is a network route problem."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "S3 gateway endpoints are same-Region only.",
+      "remember": "Cross-Region S3 from a private Glue subnet → NAT gateway (watch NAT data charges); same-Region → S3 gateway endpoint.",
+      "variants": [
+        "'Could not find S3 endpoint or NAT gateway' → add an S3 endpoint or NAT.",
+        "S3 Access Denied → IAM, bucket policy or Lake Formation, not routing.",
+        "Unexpected Glue bill → NAT data processing can be a hidden cost."
+      ]
+    },
+    {
+      "id": "glue-037",
+      "skill": "1.2.4",
+      "source": "5-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "CloudWatch shows `glue.driver.workerUtilization` around 20% for most runs of several Glue 5.1 jobs. Data volume varies each night. How should the team cut cost?",
+      "options": [
+        {
+          "t": "Turn on Auto Scaling with a sensible maximum number of workers",
+          "why": "Right: workers are added and removed as stages need them, so idle capacity is not billed."
+        },
+        {
+          "t": "Move to G.4X workers",
+          "why": "Wrong: bigger workers add idle capacity."
+        },
+        {
+          "t": "Increase retries",
+          "why": "Wrong: retries add cost and do not help utilization."
+        },
+        {
+          "t": "Enable continuous logging",
+          "why": "Wrong: useful for watching runs; does not change capacity."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Low worker utilization means over-provisioning; Auto Scaling matches demand.",
+      "remember": "Low workerUtilization or variable data → Auto Scaling (Glue 3.0+) with a sensible max; also right-size, use Flex for non-urgent runs and process less data.",
+      "variants": [
+        "Non-urgent test or backfill → Flex.",
+        "Small stream → G.025X plus Auto Scaling.",
+        "Check real usage after a run → DPUSeconds in get-job-run."
+      ]
+    },
+    {
+      "id": "glue-038",
+      "skill": "4.2.4",
+      "source": "5-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A Glue job reads a Lake Formation table that has cell-level data filters. The team notices job bookmarks and pushdown predicates stopped working. What is going on?",
+      "options": [
+        {
+          "t": "The job role is missing `s3:GetObject`",
+          "why": "Wrong: missing S3 access would fail the read, not just these features."
+        },
+        {
+          "t": "The job must be upgraded to Glue 6.0",
+          "why": "Wrong: the notes list these as limits of cell-filtered tables, not of a version."
+        },
+        {
+          "t": "It is expected: tables with cell-level filters do not support bookmarks, bounded execution or pushdown/catalog partition predicates",
+          "why": "Right: these features are disabled for such tables."
+        },
+        {
+          "t": "The table needs a partition index",
+          "why": "Wrong: catalog partition predicates are also unsupported on these tables."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Lake Formation cell-level filters switch off several Glue read features.",
+      "remember": "Lake Formation cell filters → no bookmarks, bounded execution, pushdown or catalog partition predicates, or enableUpdateCatalog. Job roles also need Lake Formation grants, not only S3.",
+      "variants": [
+        "Another account must read tables with column limits → Lake Formation cross-account grants.",
+        "Grant by tag instead of table by table → LF tag-based access control.",
+        "Glue 5.0+ has built-in fine-grained access control integration."
+      ]
+    },
+    {
+      "id": "glue-039",
+      "skill": "4.2.4",
+      "source": "5-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An analytics account must run Glue jobs on Data Catalog tables owned by a central account, seeing only some columns. Governance must be central. What is the preferred approach?",
+      "options": [
+        {
+          "t": "Copy the tables to the analytics account each night",
+          "why": "Wrong: duplicate data and metadata with no central control."
+        },
+        {
+          "t": "Make the S3 bucket public with a prefix filter",
+          "why": "Wrong: insecure and has no column control."
+        },
+        {
+          "t": "Use IAM users in the central account shared with the analytics team",
+          "why": "Wrong: shared long-term credentials break least privilege."
+        },
+        {
+          "t": "Lake Formation cross-account grants with column-level permissions",
+          "why": "Right: Lake Formation grants database/table/column/row access across accounts with central governance."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Fine-grained cross-account Catalog access → Lake Formation.",
+      "remember": "Cross-account Catalog access → Lake Formation grants (preferred, fine-grained) or Catalog resource policy + RAM. Job roles need the Lake Formation permissions.",
+      "variants": [
+        "Only table-level sharing without fine-grained control → Catalog resource policy + AWS RAM.",
+        "Many tables classified by sensitivity → LF tag-based access control.",
+        "Audit who accessed data → Lake Formation and CloudTrail logs."
+      ]
+    },
+    {
+      "id": "glue-040",
+      "skill": "4.2.2",
+      "source": "5-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A Glue JDBC connection to an RDS database stores the password in plain text, and a job parameter also contains it. What should the team do?",
+      "options": [
+        {
+          "t": "Move the password into a job parameter only",
+          "why": "Wrong: job parameters are visible to anyone who can describe the job."
+        },
+        {
+          "t": "Encrypt the script in S3 and keep the password in it",
+          "why": "Wrong: never hard-code secrets in scripts."
+        },
+        {
+          "t": "Turn on Catalog metadata encryption only",
+          "why": "Wrong: it encrypts new metadata, but the password still sits in the job parameter and the connection."
+        },
+        {
+          "t": "Store it in Secrets Manager, reference the secret in the connection, and grant the job role `secretsmanager:GetSecretValue`",
+          "why": "Right: secrets stay out of code and parameters, and only the role can read them."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Glue credentials belong in Secrets Manager, referenced by the connection.",
+      "remember": "DB credentials for Glue → Secrets Manager referenced in the connection; job role needs secretsmanager:GetSecretValue. Never put secrets in scripts or job parameters.",
+      "variants": [
+        "Passwords must stay in connections → enable Catalog connection password encryption (KMS).",
+        "Data in transit to the DB → enable SSL on the JDBC connection.",
+        "Kafka connection → TLS bootstrap servers only."
+      ]
+    }
+  ]
+}
