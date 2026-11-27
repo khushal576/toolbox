@@ -51,6 +51,15 @@ curl -s -H 'X-Speak-English: 1' http://localhost:8000/tools/learn-english/progre
 **never edit the `hi` text of an existing sentence** (it orphans its tough mark; add a new one). Plain gives ✅ Knew it / 😬 Add to Tough; Tough gives ✅ Got it
 (3 in a row → offer removal) / 😬 Still tough. Every card has an always-visible Add to / Remove from Tough toggle.
 
+## Daily use (owner, 2026-11-26)
+Fixed everyday sentences to remember, not grammar. A **stage is just 50 sentences** (`daily/dNNN.js` + one line in `daily/manifest.js`), never locked, on the
+same practice screen: Hindi → say the English → reveal shows `en`, `mean` (real meaning, in Hindi), `sit` (situation), `bad` (word-for-word mistake, optional).
+**Several ways (owner, 2026-11-26):** 3–4 `ways` marked 👋 friends / 🙂 anyone / 👔 polite plus a 2-line `talk`, ONLY where other ways are really widely used; otherwise one sentence is fine.
+Style reference: "English With Ananya" (one thought → many ways by situation; own sentences, never copied).
+Stage n = practice set `9000+n`. The sidebar has two tabs, **Grammar** and **Daily use** (`UI.mode`, per browser): each has its own home, Quick mix, Hard ones and Everything; they never mix. Neutral international English.
+Built: 1 Quick replies, 2 Starting and ending a chat. Planned: 3 when you don't understand, 4 asking politely, 5 feelings, 6 plans and time, 7 home and family,
+8 work and meetings, 9 phone and messages, 10 shopping/food/travel, 11 agreeing/disagreeing/problems, 12 buying time. Write the next only when the owner asks.
+
 ## Module content rules (from the teacher prompt, unchanged)
 - **One module = one sitting**, one topic, a clear finish line. Flow: hook → the idea (frame = fixed part + swappable slots, why it sounds right, wrong vs right) →
   guided practice (easy → harder, a one-line explanation for **every** wrong option) → build your own (about the owner's life, said out loud) → mistake trap
@@ -67,6 +76,7 @@ curl -s -H 'X-Speak-English: 1' http://localhost:8000/tools/learn-english/progre
 - **Layout rules (owner, 2026-11-24):** Learn AWS look (white cards, blue-grey desk, blue accent, light/night). One place to go anywhere: the sidebar
   (Continue · Practice: Quick mix 20 / Hard ones / Everything — each starts at once, no setup screen · phases as fold-out sections, only the current one open).
   Per-module actions are small line icons shown on hover (cheat sheet, practise, replay). The lesson progress row (← Home · bar · step) lives in the top bar.
+  Lessons have ‹ Previous / Next › in the top bar: `pos` = furthest step (saved), `at` = step on screen; looking back never moves `pos`, nobody can go past it, and the buttons hide during a boss attempt.
   Home = next module + three numbers only (no phase list; the sidebar has it). Lesson screens must fit a ~1355×790 screen without scrolling where the content allows; the last button of a screen is pinned to the bottom when a card is long.
 - **Voice:** a smart, warm, slightly funny friend. Simple words, never childish. **Win early. No guilt** (welcome back + 5-question warm-up, no streak shaming).
   Hide earlier modules inside new examples (spaced repetition). Every few modules a bigger review.

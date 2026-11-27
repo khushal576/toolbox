@@ -39,7 +39,7 @@ def client(tmp_path, monkeypatch):
 def test_page_health_and_content_files(client):
     assert client.get("/").status_code == 200 and "Speak English" in client.get("/").text
     assert client.get("/health").json() == {"ok": True, "tool": "learn-english"}
-    for path in ["/modules/manifest.js", "/modules/m001.js", "/practice/h001.js", "/cheat/c001.js"]:
+    for path in ["/modules/manifest.js", "/modules/m001.js", "/practice/h001.js", "/cheat/c001.js", "/daily/manifest.js", "/daily/d001.js"]:
         r = client.get(path)
         assert r.status_code == 200 and r.headers["content-type"].startswith("text/javascript"), path
 
@@ -117,5 +117,32 @@ def test_course_content_is_valid():
 
 def test_docker_image_carries_the_content():
     d = (REPO / "Dockerfile").read_text()
-    for folder in ("ui", "modules", "practice", "cheat"):
+    for folder in ("ui", "modules", "practice", "cheat", "daily"):
         assert f"COPY learn-english/{folder}/ ./learn_english/{folder}/" in d
+
+
+def test_daily_stages_are_complete():
+    """Every stage: exactly 50 sentences, unique Hindi (hard marks hash it) and English, all required fields."""
+    if not shutil.which("node"):
+        pytest.skip("node not installed")
+    js = """global.window=global;const D={};global.registerDaily=(i,x)=>D[i]=x;require(process.argv[1]+'/daily/manifest.js');
+    for(const d of DAILY)require(process.argv[1]+'/daily/d'+String(d.id).padStart(3,'0')+'.js');console.log(JSON.stringify({DAILY,D}))"""
+    r = subprocess.run(["node", "-e", js, str(TOOL)], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout)
+    assert out["DAILY"]
+    all_en = []
+    for d in out["DAILY"]:
+        items = out["D"][str(d["id"])]
+        assert len(items) == d["n"] == 50, d
+        assert len({x["hi"] for x in items}) == 50
+        for x in items:
+            assert all(x.get(k) for k in ("tag", "hi", "en", "mean", "sit")), x
+            assert re.search("[\u0900-\u097f]", x["hi"]) and re.search("[\u0900-\u097f]", x["mean"]), x
+            assert x.get("bad") != x["en"]
+            if "ways" in x:                          # several ways only where they are widely used; the first is the main one
+                assert 3 <= len(x["ways"]) <= 4 and x["ways"][0][1] == x["en"] and "alt" not in x, x
+                assert all(w[0] in "fap" for w in x["ways"]) and len({w[1] for w in x["ways"]}) == len(x["ways"]), x
+                assert len(x["talk"]) == 2, x
+            all_en.append(x["en"].lower())
+    assert len(all_en) == len(set(all_en))
