@@ -1,0 +1,694 @@
+{
+ "questions": [
+  {
+   "id": "trail-001",
+   "skill": "4.4.1",
+   "source": "1-events-trails-and-delivery.md",
+   "q": "A production S3 bucket was deleted 3 weeks ago. The account never created a trail or a CloudTrail Lake event data store. The security team needs the caller and source IP today. What should they use?",
+   "options": [
+    {
+     "t": "Create a new trail now and search its S3 log files",
+     "why": "Wrong: a new trail only records events from the moment it is created."
+    },
+    {
+     "t": "Enable S3 data events on the remaining buckets",
+     "why": "Wrong: DeleteBucket is a management event, and data events are not retroactive."
+    },
+    {
+     "t": "CloudTrail Event history, filtered by event name DeleteBucket",
+     "why": "Right: Event history is always on and keeps the last 90 days of management events free, including caller and source IP."
+    },
+    {
+     "t": "AWS Config configuration history for the bucket",
+     "why": "Wrong: Config shows resource configuration over time, not who called which API."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Event history covers 90 days of management events with no setup.",
+   "remember": "Recent (under 90 days) management action and no trail → CloudTrail Event history. It is free, per Region, management events only.",
+   "variants": [
+    "The deletion happened 6 months ago with no trail → the event is gone; Event history keeps only 90 days.",
+    "You need to know who read an object, not who deleted a bucket → that needs data events, which Event history never contains.",
+    "You need the bucket's configuration before deletion → AWS Config."
+   ]
+  },
+  {
+   "id": "trail-002",
+   "skill": "4.4.1",
+   "source": "1-events-trails-and-delivery.md",
+   "q": "A data lake bucket holds PII under the prefix `raw/pii/`. Auditors need a reliable record of every `GetObject` on that prefix, including the IAM identity, while keeping CloudTrail cost low. What should the team configure?",
+   "options": [
+    {
+     "t": "A trail with S3 data events limited to the `raw/pii/` ARN prefix using event selectors",
+     "why": "Right: data events are off by default and billed per event, so scoping them to the sensitive prefix records the reads at the lowest cost."
+    },
+    {
+     "t": "Rely on the default management events in Event history",
+     "why": "Wrong: GetObject is a data event, which is not logged by default and never appears in Event history."
+    },
+    {
+     "t": "A trail logging S3 data events for all buckets in the account",
+     "why": "Wrong: it captures the reads but pays for every object call on every bucket."
+    },
+    {
+     "t": "CloudTrail Insights on the trail",
+     "why": "Wrong: Insights flags unusual call or error rates; it does not record each object read."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Object-level reads need data events; scope them to the sensitive prefix.",
+   "remember": "Object-level S3 access (GetObject, PutObject, DeleteObject) → CloudTrail data events, off by default and billed per event, so scope them by bucket or ARN prefix.",
+   "variants": [
+    "Audit every Lambda Invoke → Lambda data events.",
+    "Audit DynamoDB item-level reads → DynamoDB data events (advanced event selectors).",
+    "Only who changed the bucket policy → a management event, logged by default."
+   ]
+  },
+  {
+   "id": "trail-003",
+   "skill": "3.3.1",
+   "source": "1-events-trails-and-delivery.md",
+   "q": "Compliance requires CloudTrail management events to be kept for 7 years at the lowest storage cost. Events are rarely queried after the first year. Which approach fits?",
+   "options": [
+    {
+     "t": "Rely on CloudTrail Event history",
+     "why": "Wrong: Event history keeps only 90 days."
+    },
+    {
+     "t": "Send the trail only to CloudWatch Logs with a long retention",
+     "why": "Wrong: works for searching, but adds delivery and ingestion charges and is not the cheap archive path."
+    },
+    {
+     "t": "Use EventBridge to forward every API call to an SQS queue",
+     "why": "Wrong: a queue is not a long-term audit store."
+    },
+    {
+     "t": "A trail to S3 with a lifecycle rule moving old logs to Glacier and expiring them after 7 years",
+     "why": "Right: S3 storage is cheap, lifecycle handles tiering and expiry, and Athena can query when needed."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Cheap multi-year archive: trail to S3 plus lifecycle.",
+   "remember": "Long retention at low cost → trail to S3 with lifecycle (query with Athena when needed). Event history is only 90 days.",
+   "variants": [
+    "The team wants SQL right away over years of events with no pipeline → CloudTrail Lake.",
+    "High volume and fast managed queries for 7 years → a seven-year retention event data store.",
+    "Only the last 90 days of management events → Event history is enough."
+   ]
+  },
+  {
+   "id": "trail-004",
+   "skill": "4.4.1",
+   "source": "1-events-trails-and-delivery.md",
+   "q": "A company has 100 AWS accounts in AWS Organizations. It needs every account's API activity in one place, and member account admins must not be able to change or delete the logging. What is the best design?",
+   "options": [
+    {
+     "t": "A trail created in each account by its own admins",
+     "why": "Wrong: member admins could stop or delete their own trails, and extra copies cost more to run."
+    },
+    {
+     "t": "An organization trail in the management (or delegated administrator) account, delivering to a bucket in a central log archive account",
+     "why": "Right: it logs all member accounts and members cannot modify or delete it."
+    },
+    {
+     "t": "CloudTrail Event history in each account",
+     "why": "Wrong: it is per account and Region and keeps only 90 days."
+    },
+    {
+     "t": "VPC Flow Logs from every VPC to a central bucket",
+     "why": "Wrong: Flow Logs record network flows, not API calls."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Many accounts plus tamper resistance: organization trail to a central bucket.",
+   "remember": "Multi-account audit that members cannot tamper with → organization trail into a locked-down log archive account.",
+   "variants": [
+    "The Lake equivalent for SQL across all accounts → an organization-level event data store.",
+    "Members' events are missing from the organization trail → check that trusted access for CloudTrail is enabled in Organizations.",
+    "Manage org trails without using the management account → register a delegated administrator."
+   ]
+  },
+  {
+   "id": "trail-005",
+   "skill": "3.3.2",
+   "source": "1-events-trails-and-delivery.md",
+   "q": "Regulators require proof that CloudTrail log files in S3 were not modified, and that they cannot be deleted during the retention period. Which two actions meet this? (Choose 2.)",
+   "options": [
+    {
+     "t": "Enable log file integrity validation on the trail",
+     "why": "Right: CloudTrail writes hourly signed digest files with SHA-256 hashes, and `validate-logs` detects modified or deleted files."
+    },
+    {
+     "t": "Enable S3 Transfer Acceleration on the log bucket",
+     "why": "Wrong: it speeds uploads and does nothing for integrity."
+    },
+    {
+     "t": "Turn on CloudTrail Insights",
+     "why": "Wrong: Insights detects unusual API rates, not tampering with log files."
+    },
+    {
+     "t": "Enable S3 Object Lock (compliance mode) with versioning on the log bucket",
+     "why": "Right: Object Lock makes the log objects immutable, so they cannot be deleted or overwritten."
+    },
+    {
+     "t": "Send the logs to CloudWatch Logs as well",
+     "why": "Wrong: a second copy does not prove the S3 files are unchanged."
+    }
+   ],
+   "answer": [
+    0,
+    3
+   ],
+   "explain": "Validation detects changes; Object Lock prevents them.",
+   "remember": "Tamper-evident → log file validation (signed hourly digests). Tamper-proof → Object Lock, versioning and a separate account. Validation detects changes but cannot recover files.",
+   "variants": [
+    "Logs must be readable only by auditors → SSE-KMS and limit kms:Decrypt separately from S3 read.",
+    "Digest validation fails → files were modified or deleted, a digest is missing, or the wrong time range or Region was checked.",
+    "Want the store itself immutable with SQL → CloudTrail Lake event data store."
+   ]
+  },
+  {
+   "id": "trail-006",
+   "skill": "3.3.5",
+   "source": "3-security-monitoring-troubleshooting-and-scenarios.md",
+   "q": "A trail was created in us-east-1 as a single-Region trail. An investigation finds no events for a Glue job role that ran in eu-west-1. Event selectors include all management events. What is the most likely cause and fix?",
+   "options": [
+    {
+     "t": "Glue API calls are data events; add Glue data events",
+     "why": "Wrong: the role's management calls are already selected; the problem is Region coverage."
+    },
+    {
+     "t": "Log file validation is blocking delivery; disable it",
+     "why": "Wrong: validation only writes digest files and does not block events."
+    },
+    {
+     "t": "The trail does not cover eu-west-1; make it a multi-Region trail",
+     "why": "Right: a single-Region trail only records its own Region, while a multi-Region trail records all Regions, including new ones."
+    },
+    {
+     "t": "The events exceeded 256 KB; increase the event size limit",
+     "why": "Wrong: the 256 KB size is fixed and does not explain a whole Region missing."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Missing Region's events: single-Region trail.",
+   "remember": "Events missing from one Region → the trail is single-Region; use a multi-Region trail (the recommended default).",
+   "variants": [
+    "Events missing for object reads → data events not selected.",
+    "Event is older than 90 days and only in Event history → it has aged out.",
+    "Events missing in CloudWatch Logs only → check the delivery role, the log group, or events over 256 KB."
+   ]
+  },
+  {
+   "id": "trail-007",
+   "skill": "4.4.4",
+   "source": "1-events-trails-and-delivery.md",
+   "q": "A team created an Athena table with partition projection over an organization trail's S3 bucket. Queries run but return no rows, even for yesterday. The trail is logging. What is the most likely cause?",
+   "options": [
+    {
+     "t": "Athena cannot read gzip-compressed JSON files",
+     "why": "Wrong: Athena reads CloudTrail's .json.gz log files with the CloudTrail table DDL."
+    },
+    {
+     "t": "The projected path is missing the organization ID segment in the S3 key",
+     "why": "Right: organization trails write `AWSLogs/<orgId>/<accountId>/CloudTrail/<region>/...`, so a path without the org ID matches nothing."
+    },
+    {
+     "t": "Event history must be enabled before Athena can read trails",
+     "why": "Wrong: Event history is always on and is unrelated to S3 trail files."
+    },
+    {
+     "t": "Log file validation hides log files from Athena",
+     "why": "Wrong: digest files sit under a separate `CloudTrail-Digest/` prefix and do not hide logs."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Org trails add the org ID to the S3 key; the projection path must match.",
+   "remember": "Athena over trail logs returns nothing → check the partition projection path (org ID segment), time range and Region.",
+   "variants": [
+    "You want cheaper scans over years of logs → convert to Parquet with Glue and keep partition projection.",
+    "You want SQL without building tables at all → CloudTrail Lake.",
+    "The bucket is empty → check that the trail is logging and the bucket and KMS policies allow CloudTrail."
+   ]
+  },
+  {
+   "id": "trail-008",
+   "skill": "4.4.3",
+   "source": "2-cloudtrail-lake-and-insights.md",
+   "q": "A security team wants to run SQL over the last 12 months of API activity from every account in the organization. They do not want to build S3 tables, partitions or Glue jobs. What should they use?",
+   "options": [
+    {
+     "t": "A CloudTrail Lake organization event data store",
+     "why": "Right: Lake is managed, stores events in an immutable queryable store and accepts SQL immediately across accounts."
+    },
+    {
+     "t": "CloudTrail Event history with `LookupEvents`",
+     "why": "Wrong: it keeps only 90 days and has a 2 TPS lookup quota and limited filters."
+    },
+    {
+     "t": "An organization trail to S3 queried by Athena",
+     "why": "Wrong: it works and is cheaper at scale, but needs the table and partition setup the team wants to avoid."
+    },
+    {
+     "t": "CloudWatch Logs Insights over each account's log group",
+     "why": "Wrong: needs per-account CloudWatch Logs delivery and is not an org-wide managed audit store."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Managed SQL over org-wide history: CloudTrail Lake.",
+   "remember": "SQL on audit events with no pipeline, many accounts → CloudTrail Lake organization event data store. Cheapest at very large scale → trail to S3 plus Athena.",
+   "variants": [
+    "Huge volume and cost is the main concern → trail to S3 plus Athena (Parquet, partition projection).",
+    "Also need non-AWS audit events in the same store → Lake channels.",
+    "Need to join with other data lake tables → Lake query federation into Athena."
+   ]
+  },
+  {
+   "id": "trail-009",
+   "skill": "4.4.4",
+   "source": "2-cloudtrail-lake-and-insights.md",
+   "q": "A company ingests several hundred TB of CloudTrail data events per year and must analyse them occasionally. Cost matters more than convenience. Which approach fits best?",
+   "options": [
+    {
+     "t": "Ingest all data events into a CloudTrail Lake event data store",
+     "why": "Wrong: Lake charges per GB ingested, which is costly for noisy high-volume data events."
+    },
+    {
+     "t": "Keep them in CloudTrail Event history",
+     "why": "Wrong: Event history has management events only, and only 90 days."
+    },
+    {
+     "t": "Send all events to CloudWatch Logs and use Logs Insights",
+     "why": "Wrong: CloudWatch Logs delivery and ingestion charges add up at this volume."
+    },
+    {
+     "t": "A trail to S3, converted to Parquet, queried with Athena using partition projection",
+     "why": "Right: S3 storage and Athena per-TB scans are cheaper at scale than Lake ingestion."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Big volume plus cost: S3 trail plus Athena.",
+   "remember": "High-volume or noisy data events and low cost → trail to S3 plus Athena (Parquet). Fast managed investigations → Lake. Many teams use both.",
+   "variants": [
+    "Lake bill spiked from data events → move noisy data events to an S3 trail and query with Athena.",
+    "Need fast ad-hoc queries on recent months → add a Lake event data store for those.",
+    "Need queries without any setup → Lake, at higher ingest cost."
+   ]
+  },
+  {
+   "id": "trail-010",
+   "skill": "4.4.3",
+   "source": "2-cloudtrail-lake-and-insights.md",
+   "q": "Security wants AWS API activity and audit events from a SaaS identity provider in one store so they can query both with SQL. Which feature supports this?",
+   "options": [
+    {
+     "t": "An organization trail with advanced event selectors",
+     "why": "Wrong: trails cannot ingest events from outside AWS."
+    },
+    {
+     "t": "CloudTrail Insights",
+     "why": "Wrong: Insights detects unusual API rates; it does not ingest external events."
+    },
+    {
+     "t": "CloudTrail Lake channels feeding an event data store",
+     "why": "Right: channels bring in audit events from partners or custom apps (`PutAuditEvents`) alongside CloudTrail events."
+    },
+    {
+     "t": "S3 server access logs",
+     "why": "Wrong: they record S3 requests only and have nothing from the SaaS app."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "External audit events: Lake channels.",
+   "remember": "Non-AWS audit events in the same SQL store → CloudTrail Lake channels (custom apps call PutAuditEvents, up to 100 events or 1 MB per call).",
+   "variants": [
+    "Only AWS events and lowest cost → trail to S3 plus Athena.",
+    "Join with data lake tables → Lake query federation.",
+    "Ingest pricing for these sources → billed as 'other auditable sources'."
+   ]
+  },
+  {
+   "id": "trail-011",
+   "skill": "4.4.3",
+   "source": "2-cloudtrail-lake-and-insights.md",
+   "q": "Analysts want to join CloudTrail Lake events with business tables already registered in the Glue Data Catalog, using Athena, with access controlled by Lake Formation. What should they enable?",
+   "options": [
+    {
+     "t": "Copy trail events from S3 into the event data store",
+     "why": "Wrong: that imports history into Lake; it does not expose Lake to Athena."
+    },
+    {
+     "t": "CloudTrail Lake query federation",
+     "why": "Right: it registers the event data store in the Glue Data Catalog and Lake Formation so Athena can query and join it."
+    },
+    {
+     "t": "A Glue crawler pointed at the event data store ID",
+     "why": "Wrong: the notes give federation as the way to expose an event data store in the catalog, not crawlers."
+    },
+    {
+     "t": "Lake dashboards with SQL widgets",
+     "why": "Wrong: dashboards visualise Lake queries but do not allow Athena joins."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Lake to Athena: query federation through Glue and Lake Formation.",
+   "remember": "Query CloudTrail Lake from Athena or join with other tables → Lake query federation (Glue Data Catalog + Lake Formation).",
+   "variants": [
+    "Athena cannot see the federated table → federation not enabled or Lake Formation permissions missing.",
+    "Want historical trail data inside Lake → copy trail events from S3 into the event data store.",
+    "Only need SQL inside Lake → query the event data store ID directly."
+   ]
+  },
+  {
+   "id": "trail-012",
+   "skill": "4.4.4",
+   "source": "2-cloudtrail-lake-and-insights.md",
+   "q": "CloudTrail Lake queries that look for `DeleteTable` calls by one role are slow and costly. The query has no time range. What is the best fix?",
+   "options": [
+    {
+     "t": "Add an `eventTime` range and narrow by `eventSource` and `eventName`",
+     "why": "Right: Lake bills per GB scanned, so time and source filters cut data scanned and cost."
+    },
+    {
+     "t": "Raise the concurrent query limit",
+     "why": "Wrong: concurrency does not reduce the data each query scans."
+    },
+    {
+     "t": "Switch the event data store to a customer managed KMS key",
+     "why": "Wrong: encryption does not affect scan size, and the key cannot be changed later anyway."
+    },
+    {
+     "t": "Create a new event data store with seven-year retention",
+     "why": "Wrong: retention class changes ingest pricing, not how much a query scans."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Always filter Lake queries by eventTime.",
+   "remember": "Lake query cost is per GB scanned → always filter by `eventTime`, then narrow by `eventSource` and `eventName`.",
+   "variants": [
+    "Query returns no results → time range outside retention or ingest start, or the event type is not ingested.",
+    "Hitting the concurrent query limit (10) → queue, wait or cancel.",
+    "Same issue in Athena over S3 → use partition projection and filter on partitions."
+   ]
+  },
+  {
+   "id": "trail-013",
+   "skill": "4.4.3",
+   "source": "2-cloudtrail-lake-and-insights.md",
+   "q": "A company must keep CloudTrail events for 7 years in CloudTrail Lake and ingests about 60 TB per month. Which pricing option should the event data store use?",
+   "options": [
+    {
+     "t": "One-year extendable retention",
+     "why": "Wrong: it suits under about 25 TB per month; above that the seven-year option's tiered pricing is cheaper."
+    },
+    {
+     "t": "No event data store; rely on Event history",
+     "why": "Wrong: Event history keeps only 90 days."
+    },
+    {
+     "t": "One-year extendable retention with ingestion stopped after year one",
+     "why": "Wrong: stopping ingestion stops new events from being recorded."
+    },
+    {
+     "t": "Seven-year retention",
+     "why": "Right: it has tiered ingestion pricing that falls with volume and includes 7 years of retention, the recommendation for high volume."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "High monthly volume plus 7 years: seven-year retention pricing.",
+   "remember": "Lake pricing choice → one-year extendable under about 25 TB per month; seven-year retention for high volume.",
+   "variants": [
+    "Small volume, retention may grow later → one-year extendable.",
+    "Cheapest possible multi-year archive → trail to S3 with lifecycle.",
+    "Want to cut Lake cost → ingest only needed event categories and exclude noisy events with advanced selectors."
+   ]
+  },
+  {
+   "id": "trail-014",
+   "skill": "3.3.2",
+   "source": "2-cloudtrail-lake-and-insights.md",
+   "q": "An automation bug suddenly makes thousands of `RunInstances` calls, and another job starts failing with a spike in AccessDenied errors. The team wants CloudTrail to flag such unusual activity automatically. What should they enable?",
+   "options": [
+    {
+     "t": "S3 data events",
+     "why": "Wrong: they record object-level S3 calls, not rate anomalies."
+    },
+    {
+     "t": "Log file integrity validation",
+     "why": "Wrong: it proves logs were not altered; it does not detect anomalies."
+    },
+    {
+     "t": "CloudTrail Insights (API call rate and API error rate)",
+     "why": "Right: Insights compares activity to a baseline and creates Insights events for unusual call or error rates."
+    },
+    {
+     "t": "Network activity events",
+     "why": "Wrong: they record calls through VPC endpoints, not rate anomalies."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Unusual call or error rate: CloudTrail Insights.",
+   "remember": "Detect bursts of API calls or errors → CloudTrail Insights (ApiCallRateInsight, ApiErrorRateInsight). It is off by default, billed per event analysed, and needs a trail logging management events.",
+   "variants": [
+    "Need an alert on a specific API, such as CreateAccessKey → EventBridge rule on CloudTrail API call events.",
+    "Need to know if it is a threat → GuardDuty.",
+    "Insights events land in the trail's S3 bucket under the `CloudTrail-Insight/` prefix."
+   ]
+  },
+  {
+   "id": "trail-015",
+   "skill": "3.3.2",
+   "source": "3-security-monitoring-troubleshooting-and-scenarios.md",
+   "q": "The security team must be alerted in near real time whenever someone calls `CreateAccessKey` or `PutBucketPolicy`. Which is the simplest approach?",
+   "options": [
+    {
+     "t": "A daily Athena query over the trail bucket",
+     "why": "Wrong: a daily batch is not near real time."
+    },
+    {
+     "t": "An EventBridge rule matching `AWS API Call via CloudTrail` events for those event names, targeting SNS",
+     "why": "Right: EventBridge reacts to CloudTrail events as they arrive and routes them to SNS."
+    },
+    {
+     "t": "CloudTrail Insights",
+     "why": "Wrong: Insights flags unusual rates, not each specific call."
+    },
+    {
+     "t": "CloudTrail Event history searches by the on-call engineer",
+     "why": "Wrong: manual searches are not alerting."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Specific sensitive API → EventBridge rule on CloudTrail events.",
+   "remember": "Alert on specific API calls → EventBridge rule on 'AWS API Call via CloudTrail' (or a CloudWatch Logs metric filter plus alarm). Rate anomalies → Insights.",
+   "variants": [
+    "Want CIS-style counts such as unauthorized API calls → CloudWatch Logs metric filter plus alarm.",
+    "Alarm on root logins → match `userIdentity.type = Root`.",
+    "Alert when a trail is deleted → rule on DeleteTrail and StopLogging."
+   ]
+  },
+  {
+   "id": "trail-016",
+   "skill": "4.4.1",
+   "source": "3-security-monitoring-troubleshooting-and-scenarios.md",
+   "q": "A security lead wants to stop anyone except security admins from turning off CloudTrail in member accounts, and to know at once if it is attempted. Which two actions meet this? (Choose 2.)",
+   "options": [
+    {
+     "t": "Enable S3 Transfer Acceleration on the log bucket",
+     "why": "Wrong: it affects upload speed, not who can stop logging."
+    },
+    {
+     "t": "An SCP denying `cloudtrail:StopLogging`, `DeleteTrail`, `UpdateTrail` and `PutEventSelectors` except for security admin roles",
+     "why": "Right: SCPs block the tampering calls across member accounts."
+    },
+    {
+     "t": "An alarm or EventBridge rule on `StopLogging` and `DeleteTrail` events",
+     "why": "Right: those are the tampering calls, so alerting on them detects any attempt."
+    },
+    {
+     "t": "Enable CloudTrail Insights only",
+     "why": "Wrong: Insights flags rate anomalies and is not a control or a targeted alert on tampering."
+    },
+    {
+     "t": "Enable log file validation only",
+     "why": "Wrong: it detects altered log files, not a stopped trail."
+    }
+   ],
+   "answer": [
+    1,
+    2
+   ],
+   "explain": "Prevent with an SCP, detect with an alarm on the tampering calls.",
+   "remember": "Protect the trail → SCP deny on StopLogging, DeleteTrail, UpdateTrail, PutEventSelectors, plus alerts on those calls. Organization trails also cannot be changed by members.",
+   "variants": [
+    "Protect a Lake event data store → also deny DeleteEventDataStore; termination protection is on by default.",
+    "Detect silent delivery failures → check GetTrailStatus `LatestDeliveryTime` on a schedule.",
+    "Protect log files themselves → Object Lock, versioning and MFA delete."
+   ]
+  },
+  {
+   "id": "trail-017",
+   "skill": "4.4.1",
+   "source": "3-security-monitoring-troubleshooting-and-scenarios.md",
+   "q": "A new trail delivers to an S3 bucket encrypted with a customer managed KMS key. Creating or updating the trail fails with `InsufficientEncryptionPolicyException`. What is the fix?",
+   "options": [
+    {
+     "t": "Add `cloudtrail.amazonaws.com` to the S3 bucket policy",
+     "why": "Wrong: that fixes `InsufficientS3BucketPolicyException`, not the encryption error."
+    },
+    {
+     "t": "Switch the bucket to SSE-S3 and enable Object Lock",
+     "why": "Wrong: avoids the key rather than fixing the policy, and loses separate decrypt control."
+    },
+    {
+     "t": "Turn on log file validation",
+     "why": "Wrong: digests do not grant KMS permissions."
+    },
+    {
+     "t": "Update the KMS key policy to allow `cloudtrail.amazonaws.com` `kms:GenerateDataKey*` and `kms:DescribeKey`",
+     "why": "Right: CloudTrail needs those key permissions, scoped with the CloudTrail encryption context, to encrypt the logs."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Encryption policy error: fix the KMS key policy.",
+   "remember": "`InsufficientEncryptionPolicyException` → KMS key policy; `InsufficientS3BucketPolicyException` → bucket policy. Readers of the logs also need kms:Decrypt.",
+   "variants": [
+    "No logs arrive and the bucket policy lacks the CloudTrail principal → add s3:GetBucketAcl and s3:PutObject for cloudtrail.amazonaws.com, limited by aws:SourceArn.",
+    "Auditors cannot read the encrypted logs → grant them kms:Decrypt.",
+    "Trail is stopped → StartLogging."
+   ]
+  },
+  {
+   "id": "trail-018",
+   "skill": "4.4.1",
+   "source": "3-security-monitoring-troubleshooting-and-scenarios.md",
+   "q": "An auditor needs a reliable record of who downloaded objects from one bucket, including the IAM identity, and wants matching events to trigger EventBridge rules. Which source should the team use?",
+   "options": [
+    {
+     "t": "CloudTrail S3 data events for that bucket",
+     "why": "Right: data events are reliable, include the IAM identity and integrate with EventBridge, at a per-event cost."
+    },
+    {
+     "t": "S3 server access logs",
+     "why": "Wrong: they cost only storage but are best-effort and do not integrate with EventBridge."
+    },
+    {
+     "t": "VPC Flow Logs",
+     "why": "Wrong: they show network flows, not which identity read which object."
+    },
+    {
+     "t": "AWS Config",
+     "why": "Wrong: Config records resource configuration, not object reads."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Reliable, identity-rich object access log: CloudTrail data events.",
+   "remember": "S3 request logging: server access logs are cheap but best-effort; CloudTrail data events are reliable, include IAM identity and work with EventBridge, but cost per event.",
+   "variants": [
+    "Cheapest possible logging and occasional gaps are acceptable → S3 server access logs.",
+    "Who changed the bucket's settings → management events (e.g. PutBucketPolicy).",
+    "What the bucket's configuration was last month → AWS Config."
+   ]
+  },
+  {
+   "id": "trail-019",
+   "skill": "4.4.1",
+   "source": "1-events-trails-and-delivery.md",
+   "q": "CloudTrail costs have risen sharply. The account has three trails all logging management events, and one trail logs S3 data events for every bucket. Only two buckets hold sensitive data. What should the team do?",
+   "options": [
+    {
+     "t": "Turn off all trails and rely on Event history",
+     "why": "Wrong: Event history keeps only 90 days of management events and no data events."
+    },
+    {
+     "t": "Add CloudTrail Insights to every trail",
+     "why": "Wrong: Insights adds charges per event analysed."
+    },
+    {
+     "t": "Keep one trail for management events and scope data events to the two sensitive buckets",
+     "why": "Right: only the first copy of management events is free, extra copies are billed, and data events are charged per event."
+    },
+    {
+     "t": "Move all events into a CloudTrail Lake event data store as well",
+     "why": "Wrong: Lake adds per-GB ingest cost on top of the trails."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Cut copies and narrow data events.",
+   "remember": "CloudTrail cost levers → one trail (extra management copies cost about $2.00 per 100,000), data events only for sensitive buckets or prefixes, and lifecycle on old logs.",
+   "variants": [
+    "Many accounts each run their own trail → one organization trail instead.",
+    "Lake bill is high from data events → keep those in an S3 trail with Athena.",
+    "Data event cost on low-risk buckets → exclude read events there."
+   ]
+  },
+  {
+   "id": "trail-020",
+   "skill": "4.4.1",
+   "source": "2-cloudtrail-lake-and-insights.md",
+   "q": "A data perimeter uses VPC endpoint policies. Some calls are failing, and the team needs to see which principals called AWS APIs through a specific VPC endpoint, including calls denied by the endpoint policy. What should they enable?",
+   "options": [
+    {
+     "t": "S3 server access logs",
+     "why": "Wrong: they cover only S3 requests and do not show endpoint policy denials."
+    },
+    {
+     "t": "CloudTrail network activity events for the VPC endpoint",
+     "why": "Right: they record API calls made through the endpoint, including calls denied by the endpoint policy."
+    },
+    {
+     "t": "VPC Flow Logs on the endpoint's subnets",
+     "why": "Wrong: they show IP flows, not the API or identity."
+    },
+    {
+     "t": "CloudTrail Insights",
+     "why": "Wrong: Insights flags unusual rates, not per-endpoint usage."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Who used a VPC endpoint: network activity events.",
+   "remember": "Audit or troubleshoot calls through VPC endpoints (data perimeter) → CloudTrail network activity events, billed about $0.10 per 100,000 events.",
+   "variants": [
+    "Need IP-level traffic data → VPC Flow Logs.",
+    "Need who called an API anywhere in the account → management events.",
+    "Need object-level S3 reads → S3 data events."
+   ]
+  }
+ ]
+}

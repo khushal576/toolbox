@@ -1,0 +1,684 @@
+{
+  "questions": [
+    {
+      "id": "ecs-001",
+      "skill": "1.2.1",
+      "source": "2-ecs-concepts-launch-types-and-services.md",
+      "q": "A data team must run a containerized Python ETL job every night. They want no servers to manage and no Kubernetes. Which design has the least operational overhead?",
+      "options": [
+        {
+          "t": "An EKS cluster with managed node groups and a CronJob",
+          "why": "Wrong: works, but adds a control-plane fee and Kubernetes operations."
+        },
+        {
+          "t": "An ECS task on Fargate triggered by EventBridge Scheduler",
+          "why": "Right: serverless compute plus a cron/rate schedule with an ECS target; nothing to patch."
+        },
+        {
+          "t": "An EC2 Auto Scaling group running the container 24/7",
+          "why": "Wrong: idle instances cost money and need patching."
+        },
+        {
+          "t": "A Lambda function with the container image",
+          "why": "Wrong: Lambda is capped at 15 minutes, which a heavy ETL job may exceed."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Fargate plus EventBridge Scheduler is the simplest serverless nightly container job.",
+      "remember": "Containerized scheduled job with least ops and no K8s skills → ECS Fargate task started by EventBridge Scheduler.",
+      "variants": [
+        "Needs queues, retries and array fan-out → AWS Batch.",
+        "Team already standardised on Kubernetes → EKS CronJob.",
+        "Run time under 15 minutes and event-driven → Lambda."
+      ]
+    },
+    {
+      "id": "ecs-002",
+      "skill": "4.1.4",
+      "source": "2-ecs-concepts-launch-types-and-services.md",
+      "q": "An ECS Fargate task fails to start because it cannot pull its image from ECR and cannot read a Secrets Manager secret at launch. Which IAM role is missing permissions?",
+      "options": [
+        {
+          "t": "The task role",
+          "why": "Wrong: the task role is used by the application code after the task has started."
+        },
+        {
+          "t": "The EC2 container instance role",
+          "why": "Wrong: Fargate has no container instances."
+        },
+        {
+          "t": "The service-linked role of Auto Scaling",
+          "why": "Wrong: unrelated to image pulls and secrets."
+        },
+        {
+          "t": "The task execution role",
+          "why": "Right: ECS uses it to pull from ECR, send logs and fetch secrets at task start."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Platform actions at launch use the execution role.",
+      "remember": "Pull image, write logs, inject secrets at start → task execution role. App calls to S3/DynamoDB → task role.",
+      "variants": [
+        "The app gets AccessDenied reading S3 → fix the task role.",
+        "ECS on EC2 pulling images → container instance role (or execution role).",
+        "EKS pods pulling images → node IAM role."
+      ]
+    },
+    {
+      "id": "ecs-003",
+      "skill": "1.2.7",
+      "source": "2-ecs-concepts-launch-types-and-services.md",
+      "q": "A Secrets Manager database password was rotated, but running ECS tasks still use the old value. What is the correct fix?",
+      "options": [
+        {
+          "t": "Update the task role policy",
+          "why": "Wrong: permissions are not the issue."
+        },
+        {
+          "t": "Wait for the ECS agent to refresh environment variables",
+          "why": "Wrong: secrets are not refreshed while a task runs."
+        },
+        {
+          "t": "Force a new deployment so tasks restart and fetch the secret again",
+          "why": "Right: secrets are injected as environment variables only at task start."
+        },
+        {
+          "t": "Enable ECS Exec on the service",
+          "why": "Wrong: ECS Exec only opens a shell; it does not refresh secrets."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Secrets are read at task start, so tasks must be restarted.",
+      "remember": "ECS injects secrets at start → redeploy (force new deployment) to pick up rotated values.",
+      "variants": [
+        "EKS with Secrets Store CSI driver → rotation can sync to mounted files.",
+        "Secret must never sit in the image → use the task definition secrets field.",
+        "Rotation itself → Secrets Manager."
+      ]
+    },
+    {
+      "id": "ecs-004",
+      "skill": "1.2.7",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "Fargate tasks in private subnets with no NAT gateway fail with CannotPullContainerError. Which change fixes this at the lowest cost and keeps traffic private?",
+      "options": [
+        {
+          "t": "Assign public IPs to the tasks",
+          "why": "Wrong: works but exposes tasks and is not recommended for production."
+        },
+        {
+          "t": "Add a NAT gateway in every AZ",
+          "why": "Wrong: works, but adds hourly and per-GB charges."
+        },
+        {
+          "t": "Copy the images to Docker Hub",
+          "why": "Wrong: adds rate limits and internet dependency."
+        },
+        {
+          "t": "Add ECR api and dkr interface endpoints plus an S3 gateway endpoint",
+          "why": "Right: layers are served from S3, so all three are needed for private pulls."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "ECR needs api, dkr and S3 gateway endpoints for a private pull path.",
+      "remember": "Private-subnet image pulls without internet → com.amazonaws.<r>.ecr.api, ecr.dkr and an S3 gateway endpoint.",
+      "variants": [
+        "Tasks also log to CloudWatch Logs → add a Logs endpoint.",
+        "Secrets fetched at start → Secrets Manager endpoint.",
+        "Heavy pulls through NAT cost per GB → endpoints are cheaper."
+      ]
+    },
+    {
+      "id": "ecs-005",
+      "skill": "1.2.4",
+      "source": "2-ecs-concepts-launch-types-and-services.md",
+      "q": "A batch pipeline uses stateless ECS Fargate workers that tolerate interruption. How can cost be reduced while keeping a minimum of reliable capacity?",
+      "options": [
+        {
+          "t": "Use Fargate Spot only, with base 0",
+          "why": "Wrong: all tasks could be reclaimed at once."
+        },
+        {
+          "t": "Use a capacity provider strategy with a base of FARGATE tasks and the rest weighted to FARGATE_SPOT",
+          "why": "Right: base keeps guaranteed On-Demand tasks; weight shifts the remainder to cheaper Spot."
+        },
+        {
+          "t": "Mix an Auto Scaling group provider and Fargate Spot in one strategy",
+          "why": "Wrong: a strategy can only use one type of provider."
+        },
+        {
+          "t": "Move to EKS with extended support",
+          "why": "Wrong: extended support raises control-plane cost."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Base plus weight blends On-Demand reliability with Spot savings.",
+      "remember": "Cheap but available Fargate → capacity provider strategy: base on FARGATE, weight toward FARGATE_SPOT.",
+      "variants": [
+        "Spot interruption warning → 2 minutes (SIGTERM); handle gracefully.",
+        "EC2 Spot → ASG capacity provider.",
+        "Steady 24/7 load → Compute Savings Plans."
+      ]
+    },
+    {
+      "id": "ecs-006",
+      "skill": "1.3.1",
+      "source": "2-ecs-concepts-launch-types-and-services.md",
+      "q": "A Step Functions workflow must run a container step on ECS and continue only after the container finishes, failing the state if the exit code is non-zero. Which integration fits?",
+      "options": [
+        {
+          "t": "ecs:runTask with the default request-response pattern",
+          "why": "Wrong: it returns immediately after starting the task."
+        },
+        {
+          "t": "ecs:runTask.sync",
+          "why": "Right: runs the task and waits for completion; a non-zero exit code fails the state."
+        },
+        {
+          "t": "ecs:runTask.waitForTaskToken only",
+          "why": "Wrong: needs the container to call back with a token; not required here."
+        },
+        {
+          "t": "An EventBridge rule with a polling Lambda",
+          "why": "Wrong: extra moving parts for a built-in capability."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "The .sync pattern waits for the ECS task to stop.",
+      "remember": "Run a container in a workflow and wait for it → Step Functions ecs:runTask.sync.",
+      "variants": [
+        "Container reports back custom results → .waitForTaskToken.",
+        "Airflow instead of Step Functions → EcsRunTaskOperator in MWAA.",
+        "Run a Batch job and wait → batch:submitJob.sync."
+      ]
+    },
+    {
+      "id": "ecs-007",
+      "skill": "1.2.5",
+      "source": "2-ecs-concepts-launch-types-and-services.md",
+      "q": "Thousands of queued containerized jobs need priorities, automatic retries and array-job fan-out. Which approach is best?",
+      "options": [
+        {
+          "t": "Plain ECS RunTask calls from a script",
+          "why": "Wrong: RunTask has no queue, retries, priorities or array jobs."
+        },
+        {
+          "t": "A Kubernetes Deployment on EKS",
+          "why": "Wrong: a Deployment is for long-running replicas, not job queues."
+        },
+        {
+          "t": "An ECS service with desired count 1000",
+          "why": "Wrong: services keep tasks running; they do not schedule queued jobs."
+        },
+        {
+          "t": "AWS Batch on ECS/Fargate",
+          "why": "Right: Batch adds job queues, priorities, retries and array jobs on top of ECS."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Batch is the scheduler layer above ECS/EKS.",
+      "remember": "Queues, retries, priorities, array jobs → AWS Batch, not raw RunTask.",
+      "variants": [
+        "Simple retry and flow control only → Step Functions.",
+        "Just run one container → ECS RunTask.",
+        "Batch jobs on existing K8s → AWS Batch on EKS."
+      ]
+    },
+    {
+      "id": "ecs-008",
+      "skill": "1.3.2",
+      "source": "2-ecs-concepts-launch-types-and-services.md",
+      "q": "New releases of an ECS service sometimes crash on start. The team wants the deployment to stop and automatically return to the last working version. What should be enabled?",
+      "options": [
+        {
+          "t": "A deployment circuit breaker with rollback",
+          "why": "Right: detects tasks that never reach steady state, stops the deployment and reverts."
+        },
+        {
+          "t": "Task protection",
+          "why": "Wrong: protects tasks from scale-in, not from bad deployments."
+        },
+        {
+          "t": "A DAEMON scheduling strategy",
+          "why": "Wrong: places one task per EC2 instance; unrelated."
+        },
+        {
+          "t": "ECS Exec",
+          "why": "Wrong: a debugging shell, not a rollback tool."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "The circuit breaker with rollback automates recovery from failed rollouts.",
+      "remember": "Bad release keeps failing → ECS deployment circuit breaker with rollback; turn it on for every service.",
+      "variants": [
+        "Test traffic before cutover with bake time → native ECS blue/green with lifecycle hooks.",
+        "Roll back on alarms → CloudWatch alarms in the deployment config.",
+        "Older managed blue/green → CodeDeploy."
+      ]
+    },
+    {
+      "id": "ecs-009",
+      "skill": "1.2.5",
+      "source": "3-eks-kubernetes-on-aws.md",
+      "q": "A company already runs Spark and other apps on Kubernetes and wants AWS to manage the control plane. They also want Spark jobs on the same cluster using the EMR-optimized runtime. What should they use?",
+      "options": [
+        {
+          "t": "ECS on Fargate",
+          "why": "Wrong: not Kubernetes, so existing manifests and operators do not apply."
+        },
+        {
+          "t": "EMR Serverless",
+          "why": "Wrong: no cluster at all, so it does not share the existing EKS cluster."
+        },
+        {
+          "t": "Amazon EKS with EMR on EKS",
+          "why": "Right: managed K8s control plane, and a virtual cluster mapped to a namespace runs Spark with EMR runtime."
+        },
+        {
+          "t": "Self-managed Kubernetes on EC2",
+          "why": "Wrong: you would operate the control plane yourself."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "EMR on EKS runs Spark jobs on an existing EKS cluster.",
+      "remember": "Spark on an existing Kubernetes cluster → EMR on EKS; no cluster wanted → EMR Serverless.",
+      "variants": [
+        "Least ops containers, no K8s skills → ECS Fargate.",
+        "Open-source Spark operator instead of EMR runtime → possible but self-managed.",
+        "Use Karpenter and Spot for executors to cut cost."
+      ]
+    },
+    {
+      "id": "ecs-010",
+      "skill": "4.1.4",
+      "source": "3-eks-kubernetes-on-aws.md",
+      "q": "Pods on EKS must access an S3 bucket. The same IAM role has to be reused across ten clusters without editing its trust policy each time. Which solution fits?",
+      "options": [
+        {
+          "t": "IRSA with one OIDC provider per cluster",
+          "why": "Wrong: each cluster needs its own OIDC provider and trust edits."
+        },
+        {
+          "t": "The node IAM role",
+          "why": "Wrong: every pod on the node would share its permissions."
+        },
+        {
+          "t": "Long-term access keys in Kubernetes Secrets",
+          "why": "Wrong: static keys are insecure and hard to rotate."
+        },
+        {
+          "t": "EKS Pod Identity",
+          "why": "Right: the role trusts pods.eks.amazonaws.com, so it is reusable across clusters."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Pod Identity uses a single service principal in the trust policy.",
+      "remember": "Same role across many clusters, simple setup → EKS Pod Identity (association via the EKS API, trusts pods.eks.amazonaws.com).",
+      "variants": [
+        "Pods on Fargate → IRSA, because Pod Identity is not supported there.",
+        "Windows nodes or EKS Anywhere → not supported by Pod Identity.",
+        "Limit per cluster → 5,000 associations."
+      ]
+    },
+    {
+      "id": "ecs-011",
+      "skill": "4.1.4",
+      "source": "3-eks-kubernetes-on-aws.md",
+      "q": "Pods running on AWS Fargate for EKS need permissions to read DynamoDB. Which approach works?",
+      "options": [
+        {
+          "t": "EKS Pod Identity",
+          "why": "Wrong: not supported on Fargate."
+        },
+        {
+          "t": "IAM roles for service accounts (IRSA)",
+          "why": "Right: IRSA works on Fargate through the cluster OIDC provider."
+        },
+        {
+          "t": "The Fargate node role shared by all pods",
+          "why": "Wrong: there is no node you can give shared credentials to, and it violates least privilege."
+        },
+        {
+          "t": "An EC2 instance profile",
+          "why": "Wrong: Fargate has no EC2 instance you manage."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Pod Identity is Linux EC2 only; Fargate pods use IRSA.",
+      "remember": "Fargate pods needing AWS access → IRSA (Pod Identity unsupported on Fargate, Windows, Outposts).",
+      "variants": [
+        "Linux EC2 nodes, simpler setup → Pod Identity.",
+        "Fargate profile limits → no DaemonSets, GPUs, privileged pods.",
+        "Pod Identity credential endpoint → 169.254.170.23 (add to NO_PROXY)."
+      ]
+    },
+    {
+      "id": "ecs-012",
+      "skill": "3.2.5",
+      "source": "3-eks-kubernetes-on-aws.md",
+      "q": "A platform team finds EKS node patching, add-on upgrades and scaling too much work but wants to stay on Kubernetes with EC2 instance choice. Which option reduces the overhead most?",
+      "options": [
+        {
+          "t": "Self-managed node groups",
+          "why": "Wrong: maximum control means maximum work."
+        },
+        {
+          "t": "EKS Auto Mode",
+          "why": "Right: AWS manages Karpenter-based compute, node OS patching and core add-ons, for an extra per-instance fee."
+        },
+        {
+          "t": "Moving to ECS Anywhere",
+          "why": "Wrong: changes orchestrator and is for on-premises."
+        },
+        {
+          "t": "EKS Anywhere",
+          "why": "Wrong: runs Kubernetes on-prem and increases the work."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Auto Mode is the closest to serverless Kubernetes while keeping EC2.",
+      "remember": "Cut EKS data-plane operations → EKS Auto Mode (extra management fee); some pods only → Fargate profiles.",
+      "variants": [
+        "Avoid Kubernetes entirely → ECS Fargate.",
+        "On-prem machines as nodes of an EKS cluster → EKS Hybrid Nodes.",
+        "Managed node groups handle drain-and-replace updates but you still choose instances."
+      ]
+    },
+    {
+      "id": "ecs-013",
+      "skill": "1.2.4",
+      "source": "3-eks-kubernetes-on-aws.md",
+      "q": "An EKS cluster control-plane cost suddenly became six times higher. The cluster runs an old Kubernetes version. What is the likely cause and fix?",
+      "options": [
+        {
+          "t": "The cluster entered extended support at $0.60/h; upgrade to a standard-support version",
+          "why": "Right: standard is $0.10/h; extended adds $0.50/h after 14 months."
+        },
+        {
+          "t": "Auto Mode was enabled; disable it",
+          "why": "Wrong: Auto Mode adds a per-instance fee, not a 6x control-plane cost."
+        },
+        {
+          "t": "Fargate Spot interruptions; use On-Demand",
+          "why": "Wrong: unrelated to control-plane pricing."
+        },
+        {
+          "t": "The ECS control plane fee changed",
+          "why": "Wrong: ECS has no control-plane fee, and this is EKS."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Each version has 14 months of standard then 12 months of extended support at a higher price.",
+      "remember": "Unexpected EKS bill jump with an old version → extended support ($0.60/h vs $0.10/h); upgrade one minor version at a time.",
+      "variants": [
+        "Many small clusters → consolidate, each costs about $73/month.",
+        "ECS control plane → free.",
+        "Very large clusters → Provisioned Control Plane tiers."
+      ]
+    },
+    {
+      "id": "ecs-014",
+      "skill": "1.2.7",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An EKS pod is stuck with the error \"failed to assign an IP address to container\". Which fix addresses the root cause?",
+      "options": [
+        {
+          "t": "Raise the memory limit of the pod",
+          "why": "Wrong: memory limits cause OOMKilled, not IP errors."
+        },
+        {
+          "t": "Add a liveness probe",
+          "why": "Wrong: probes do not allocate IP addresses."
+        },
+        {
+          "t": "Enable prefix delegation, a secondary CIDR with custom networking, bigger subnets or IPv6",
+          "why": "Right: VPC CNI gives each pod a real VPC IP, so small subnets run out."
+        },
+        {
+          "t": "Replace the node role",
+          "why": "Wrong: the node role does not affect IP allocation."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "The VPC CNI is out of IPs in the subnet.",
+      "remember": "EKS IP assignment failure → subnet IP exhaustion; use prefix delegation, secondary CIDR (100.64.0.0/10), larger subnets or IPv6.",
+      "variants": [
+        "ECS awsvpc tasks cannot scale → bigger or more subnets (one IP per task).",
+        "Pods per node limit → ENIs × IPs per ENI.",
+        "ImagePullBackOff → node role ECR access or endpoints."
+      ]
+    },
+    {
+      "id": "ecs-015",
+      "skill": "1.2.7",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An ECS task stops with exit code 137. What does this indicate and what should be done?",
+      "options": [
+        {
+          "t": "A segmentation fault; rebuild the image",
+          "why": "Wrong: a segfault is exit code 139."
+        },
+        {
+          "t": "It was stopped by SIGTERM during scale-in; nothing is wrong",
+          "why": "Wrong: that is exit code 143."
+        },
+        {
+          "t": "A normal application error; read logs only",
+          "why": "Wrong: generic app errors are usually exit 1 or 2."
+        },
+        {
+          "t": "The container exceeded its memory hard limit (OOM); raise memory or fix the leak",
+          "why": "Right: the container was killed when it went over the hard memory limit."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "137 means killed for exceeding memory (OOM).",
+      "remember": "Exit 137 → OOM, raise memory; 1/2 → app error (check logs); 139 → segfault; 143 → SIGTERM (scale-in, deployment, Spot).",
+      "variants": [
+        "Same condition on EKS → pod OOMKilled; raise limits/requests.",
+        "Handle SIGTERM within stopTimeout.",
+        "Soft memory setting → memoryReservation."
+      ]
+    },
+    {
+      "id": "ecs-016",
+      "skill": "1.2.7",
+      "source": "1-containers-basics-and-ecr.md",
+      "q": "Builds in a pipeline fail randomly because of Docker Hub pull rate limits, and the company wants cached images kept private and scannable. Which feature fits?",
+      "options": [
+        {
+          "t": "ECR cross-Region replication",
+          "why": "Wrong: replicates your own ECR images, not upstream registries."
+        },
+        {
+          "t": "An ECR pull-through cache rule for Docker Hub",
+          "why": "Right: first pull fetches upstream, later pulls come from private ECR; credentials sit in Secrets Manager."
+        },
+        {
+          "t": "Lifecycle policies",
+          "why": "Wrong: delete images; they do not avoid rate limits."
+        },
+        {
+          "t": "Tag immutability",
+          "why": "Wrong: controls overwriting tags only."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Pull-through cache avoids Docker Hub limits and outages.",
+      "remember": "Docker Hub rate limits → ECR pull-through cache (credentials in Secrets Manager with prefix ecr-pullthroughcache/; up to 50 rules).",
+      "variants": [
+        "Images close to compute in several Regions → cross-Region replication.",
+        "Cross-account pulls → repository policy plus IAM permissions.",
+        "Slow start of large images on Fargate → SOCI lazy loading."
+      ]
+    },
+    {
+      "id": "ecs-017",
+      "skill": "4.3.2",
+      "source": "1-containers-basics-and-ecr.md",
+      "q": "Security requires ECR images to be encrypted with a customer managed KMS key, and another account's ECS tasks must pull them. What must be done?",
+      "options": [
+        {
+          "t": "Change the repository encryption to KMS after it is created",
+          "why": "Wrong: encryption is set at repository creation and cannot be changed later."
+        },
+        {
+          "t": "Create the repository with KMS and a customer managed key, add a repository policy, and grant the puller key access",
+          "why": "Right: cross-account pulls need the repository policy, IAM permissions in the pulling account, and KMS key access."
+        },
+        {
+          "t": "Use basic scanning on the repository",
+          "why": "Wrong: scanning does not control encryption."
+        },
+        {
+          "t": "Share the registry authorization token",
+          "why": "Wrong: tokens are temporary (12 hours) and sharing them is not an access model."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Encryption is chosen at creation, and cross-account pulls need policy plus key access.",
+      "remember": "Cross-account ECR pull with CMK → repository policy (or PrincipalOrgID) + IAM pull permissions + KMS key permissions.",
+      "variants": [
+        "Default encryption → AES-256 with S3-managed keys.",
+        "Docker login token lifetime → 12 hours.",
+        "Separate CI push and runtime pull roles."
+      ]
+    },
+    {
+      "id": "ecs-018",
+      "skill": "4.5.4",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "Security wants continuous detection of crypto-mining and reverse shells inside running ECS Fargate and EKS containers. Which service feature fits?",
+      "options": [
+        {
+          "t": "ECR basic scanning",
+          "why": "Wrong: scans images for OS CVEs, not runtime behaviour."
+        },
+        {
+          "t": "AWS Config rule ecs-containers-nonprivileged",
+          "why": "Wrong: checks configuration, not runtime activity."
+        },
+        {
+          "t": "GuardDuty Runtime Monitoring",
+          "why": "Right: an agent detects threats like crypto-mining, reverse shells and privilege escalation on ECS (incl. Fargate), EKS and EC2."
+        },
+        {
+          "t": "CloudTrail data events",
+          "why": "Wrong: audit API calls; they do not see in-container behaviour."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Runtime Monitoring covers running containers.",
+      "remember": "Malicious activity inside running containers → GuardDuty Runtime Monitoring; Kubernetes audit log analysis → GuardDuty EKS Protection.",
+      "variants": [
+        "Continuous CVE scan of OS and Python packages in images → ECR enhanced scanning (Inspector).",
+        "Config drift on EKS → rules like eks-secrets-encrypted.",
+        "EKS audit logs to CloudWatch → enable the audit log type."
+      ]
+    },
+    {
+      "id": "ecs-019",
+      "skill": "1.2.5",
+      "source": "1-containers-basics-and-ecr.md",
+      "q": "A team needs a simple web API running from a container image with an ALB, URL and auto scaling in minutes, and AWS App Runner is no longer available to new customers. What should they choose?",
+      "options": [
+        {
+          "t": "ECS Express Mode",
+          "why": "Right: deploys a web app from just an image and sets up ALB, URL, networking and scaling at no extra charge."
+        },
+        {
+          "t": "EKS Auto Mode",
+          "why": "Wrong: far more setup and a per-cluster fee."
+        },
+        {
+          "t": "ECS Anywhere",
+          "why": "Wrong: is for on-premises servers."
+        },
+        {
+          "t": "AWS Batch",
+          "why": "Wrong: is for batch jobs, not web APIs."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Express Mode is the replacement path for App Runner.",
+      "remember": "Fastest managed web app from an image → ECS Express Mode (up to 25 services share one ALB).",
+      "variants": [
+        "On-prem servers managed from ECS → ECS Anywhere.",
+        "Existing Kubernetes → EKS.",
+        "GPU inference without managing AMIs → ECS Managed Instances."
+      ]
+    },
+    {
+      "id": "ecs-020",
+      "skill": "3.3.4",
+      "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A team needs per-task CPU and memory dashboards for ECS and per-pod metrics for EKS, plus PromQL dashboards for EKS. Which pairing is correct?",
+      "options": [
+        {
+          "t": "CloudWatch Container Insights for utilization; Amazon Managed Service for Prometheus with Managed Grafana for PromQL",
+          "why": "Right: Container Insights covers cluster/task/pod metrics; AMP plus Grafana gives PromQL on EKS."
+        },
+        {
+          "t": "AWS Config for utilization; X-Ray for PromQL",
+          "why": "Wrong: Config tracks configuration and X-Ray traces requests."
+        },
+        {
+          "t": "CloudTrail for utilization; Athena for PromQL",
+          "why": "Wrong: CloudTrail logs API calls."
+        },
+        {
+          "t": "ECR enhanced scanning for utilization; Inspector for PromQL",
+          "why": "Wrong: those are security scans."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Container Insights plus Managed Prometheus and Grafana is the standard stack.",
+      "remember": "Container utilization metrics → Container Insights; PromQL and Grafana on EKS → Managed Service for Prometheus + Managed Grafana; tracing → ADOT with X-Ray.",
+      "variants": [
+        "Alert on ECS task state changes → ECS events to EventBridge.",
+        "Container logs to S3 or Firehose → FireLens (Fluent Bit).",
+        "EKS control plane logs → enable each log type; audit for security."
+      ]
+    }
+  ]
+}

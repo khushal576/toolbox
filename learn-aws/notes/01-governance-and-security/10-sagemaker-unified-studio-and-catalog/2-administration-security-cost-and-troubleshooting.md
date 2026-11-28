@@ -69,12 +69,12 @@ Short notes. Each point is a fact you can be asked about.
 - **4.5.7 Governance framework and data sharing patterns**: sharing governance.
 
 ## I. Scenarios: "If X → Y, because Z"
-- If a new analyst joins a team → **add them to the Identity Center group mapped to the project**, because project access follows membership.
-- If compliance wants an audit of data use → **CloudTrail + subscription history + Lake Formation logs**, because each layer records access.
-- If projects overspend → **restrict compute in project profiles, auto-stop idle resources, budgets per project**, because profiles define allowed tools.
-- If a dataset must be shared widely but controlled → **publish once, approve subscriptions per consumer project**, because access is granted per subscription.
-- If asset metadata is stale → **schedule data source runs**, because metadata is imported, not live.
-- If external vendors supply data → **land via Data Exchange, then catalog and publish internally**, because the Catalog governs internal sharing.
+- **If** a new analyst joins a team, **then** add them to the **AWS IAM Identity Center** (single sign-on) **group** that is mapped to the team's project. **This works because** project access follows **membership**: data access flows through the **project role**, not the user's own identity, so joining the group gives the analyst exactly what the project already has.
+- **If** compliance asks for an audit of who used which data, **then** combine three records. **AWS CloudTrail** logs the domain, project and subscription API calls. **Subscription history** and **lineage** show which projects got which data and how it was used. **AWS Lake Formation**, **Amazon Athena** and **Amazon Redshift** logs show the actual data access. **This works because** each layer records a different part of the access, so together they give the full picture.
+- **If** projects spend too much, **then** **limit compute choices in project profiles**, **auto-stop** idle notebook spaces and clusters, **tag** project resources and set a **budget per project**. A **project profile** is the template that decides which blueprints (tools and compute) a project can get. **This works because** you pay for the **underlying services** each project uses, and profiles define the allowed tools, so fewer and smaller choices mean less spend.
+- **If** a dataset must be shared with many teams but stay controlled, **then** **publish it once** to SageMaker Catalog and **approve a subscription for each consumer project**. **This works because** access is granted **per subscription**, so each project is approved and can be revoked on its own. Sharing through subscriptions or Redshift datashares also avoids making copies, which saves cost.
+- **If** asset metadata in the catalog is out of date, **then** **schedule data source runs** (connectors that import metadata from sources such as the AWS Glue Data Catalog or Amazon Redshift). **This works because** metadata is **imported**, not read live. Run them sparingly, because data source run compute can cost money **(verify)**.
+- **If** outside vendors supply data, **then** bring it in with **AWS Data Exchange** (the service for external data products), then catalog it and **publish** it inside SageMaker Catalog. **This works because** Data Exchange is built for **external** data, while SageMaker Catalog governs **internal** sharing with publish, subscribe and approval.
 
 Verified from AWS docs on 2026-11-04 (SageMaker Unified Studio admin and user guide overview pages).
 Unconfirmed (verify): roles and names, setup order, KMS option, network details, Catalog pricing dimensions, quotas, event names, cross-account fulfilment settings.

@@ -1,0 +1,1214 @@
+{
+ "questions": [
+  {
+   "id": "ddb-001",
+   "skill": "1.1.9",
+   "source": "2-capacity-indexes-and-performance.md",
+   "q": "A provisioned DynamoDB table has 10,000 WCU, and CloudWatch shows only about 25% of it consumed. Writes are still throttled, and `WriteKeyRangeThroughputThrottleEvents` keeps rising. The partition key is `eventDate`. What is the best fix?",
+   "options": [
+    {
+     "t": "Double the table's provisioned WCU.",
+     "why": "Wrong: the table already has spare capacity. The limit being hit is per partition, and more table capacity does not lift it."
+    },
+    {
+     "t": "Put DAX in front of the table.",
+     "why": "Wrong: DAX caches reads. These are throttled writes."
+    },
+    {
+     "t": "Use a high-cardinality partition key, or add a random suffix to the hot key (write sharding).",
+     "why": "Right: a date as the only key sends all of today's traffic to one partition. Spreading writes over many key values removes the hotspot."
+    },
+    {
+     "t": "Switch the table to on-demand capacity.",
+     "why": "Wrong: throughput is still per partition in on-demand, so one hot key is still throttled."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Key-range throttling with spare table capacity means a hot partition, and only a better key fixes it.",
+   "remember": "Throttling while table-level usage is low, with KeyRange throttle events → hot partition. Fix the key or shard the writes; more capacity does not help.",
+   "variants": [
+    "The hot key is read-heavy and eventual consistency is fine → DAX hides the read hotspot.",
+    "ProvisionedThroughput throttle events with consumption near the limit → raise capacity, use auto scaling or switch to on-demand.",
+    "You must find which keys are hot → turn on Contributor Insights."
+   ]
+  },
+  {
+   "id": "ddb-002",
+   "skill": "1.1.9",
+   "source": "2-capacity-indexes-and-performance.md",
+   "q": "An on-demand table's highest traffic so far is 5,000 reads per second. A flash sale will push reads to 30,000 per second within a few minutes of opening. How should the team avoid throttling?",
+   "options": [
+    {
+     "t": "Pre-warm the table (warm throughput) before the sale.",
+     "why": "Right: on-demand only handles up to double the previous peak instantly. A jump past that within 30 minutes can throttle, so raise the table's throughput ahead of time."
+    },
+    {
+     "t": "Do nothing, because on-demand scales instantly to any level.",
+     "why": "Wrong: instant scaling covers up to double the previous peak (10,000 here), not six times."
+    },
+    {
+     "t": "Switch to provisioned mode with auto scaling at a 70% target.",
+     "why": "Wrong: auto scaling reacts after 2 minutes over target and updates take minutes, so a sudden spike still throttles."
+    },
+    {
+     "t": "Set the table's maximum throughput to 30,000 reads per second.",
+     "why": "Wrong: maximum throughput is a cap to limit spend. It does not add capacity."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "On-demand absorbs up to 2x the previous peak instantly; bigger, faster jumps need pre-warming.",
+   "remember": "On-demand handles up to double the previous peak instantly. A bigger jump within 30 minutes → pre-warm (warm throughput) or ramp traffic up over 30+ minutes.",
+   "variants": [
+    "Growth is spread over more than 30 minutes → on-demand keeps up, because each new peak becomes the base.",
+    "You must stop a runaway job from running up the bill → set maximum throughput (traffic over it is throttled).",
+    "The expected peak is above 40,000 request units per second → also request a table quota increase."
+   ]
+  },
+  {
+   "id": "ddb-003",
+   "skill": "2.1.1",
+   "source": "2-capacity-indexes-and-performance.md",
+   "q": "An application needs 500 strongly consistent reads per second of 6 KB items from a provisioned table. How many read capacity units are required?",
+   "options": [
+    {
+     "t": "500 RCU",
+     "why": "Wrong: that assumes each read fits in 4 KB. A 6 KB item needs 2 units."
+    },
+    {
+     "t": "1,000 RCU",
+     "why": "Right: 6 KB rounds up to 8 KB, which is 2 RCU per strongly consistent read. 500 × 2 = 1,000."
+    },
+    {
+     "t": "750 RCU",
+     "why": "Wrong: sizes are rounded up to the next 4 KB, not divided exactly (6 / 4 = 1.5)."
+    },
+    {
+     "t": "3,000 RCU",
+     "why": "Wrong: that charges 1 unit per KB, which is the write rule, not the read rule."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Round 6 KB up to 8 KB: 2 RCU per read, times 500.",
+   "remember": "RCU = reads/s × (item size rounded up to 4 KB) / 4 KB; eventually consistent ×0.5, transactional ×2. WCU = writes/s × size rounded up to 1 KB; transactional ×2.",
+   "variants": [
+    "Eventually consistent reads → 500 RCU.",
+    "Transactional reads → 2,000 RCU.",
+    "500 writes per second of 6 KB items → 3,000 WCU."
+   ]
+  },
+  {
+   "id": "ddb-004",
+   "skill": "2.1.1",
+   "source": "2-capacity-indexes-and-performance.md",
+   "q": "A service performs 20 transactional writes per second (TransactWriteItems), each on an item of 1.5 KB. How many write capacity units does this consume?",
+   "options": [
+    {
+     "t": "20 WCU",
+     "why": "Wrong: it ignores both rounding to 2 KB and the transaction doubling."
+    },
+    {
+     "t": "30 WCU",
+     "why": "Wrong: writes round up to the next 1 KB, so 1.5 KB counts as 2 KB."
+    },
+    {
+     "t": "40 WCU",
+     "why": "Wrong: this rounds correctly but forgets that transactions cost two writes per item (prepare and commit)."
+    },
+    {
+     "t": "80 WCU",
+     "why": "Right: 1.5 KB rounds to 2 KB = 2 WCU, doubled for a transaction = 4 WCU, times 20 per second."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Round up to 1 KB, then double for the transaction.",
+   "remember": "Writes: 1 WCU per 1 KB (rounded up) per second; transactions double it; each GSI that holds the item is billed its own write units on top.",
+   "variants": [
+    "Standard (non-transactional) writes → 40 WCU.",
+    "Items are 0.5 KB with standard writes → 20 WCU.",
+    "The table has 2 GSIs that project the item → each GSI also consumes write units for every write."
+   ]
+  },
+  {
+   "id": "ddb-005",
+   "skill": "2.1.2",
+   "source": "2-capacity-indexes-and-performance.md",
+   "q": "An orders table holds 50 million orders, and 99% of them are closed. A screen lists open orders by reading with a filter `status = 'OPEN'`, and the read bill is very high. What is the most cost-effective fix?",
+   "options": [
+    {
+     "t": "Make the filter expression more selective.",
+     "why": "Wrong: filters run after the read, so every item read is still paid for."
+    },
+    {
+     "t": "Add a projection expression that returns only the order ID.",
+     "why": "Wrong: projections cut network payload, not read capacity."
+    },
+    {
+     "t": "Add a GSI with `status` as its partition key.",
+     "why": "Wrong: a key with only a few values creates a hot partition, and the index still holds all 50 million orders."
+    },
+    {
+     "t": "Add a sparse GSI keyed on an attribute that only open orders have; remove the attribute when an order closes.",
+     "why": "Right: only items with the index key appear in the index, so it stays small and cheap to query."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "A sparse GSI indexes only the small subset you query.",
+   "remember": "Querying a small subset (open, flagged) of a big table → sparse GSI. Filter and projection expressions never reduce read cost.",
+   "variants": [
+    "You only need a few attributes from the index → INCLUDE or KEYS_ONLY projection to cut write and storage cost.",
+    "Items are missing from a GSI → they lack the index key attribute (sparse) or the index is still backfilling.",
+    "You need a table-wide top-N → a separate aggregate design, OpenSearch or an analytics export."
+   ]
+  },
+  {
+   "id": "ddb-006",
+   "skill": "2.1.2",
+   "source": "2-capacity-indexes-and-performance.md",
+   "q": "A new table (not yet created) will use partition key `customerId` and sort key `orderId`. The app must also run strongly consistent queries of one customer's orders sorted by `orderDate`. What should the design include?",
+   "options": [
+    {
+     "t": "A local secondary index with sort key `orderDate`, defined when the table is created.",
+     "why": "Right: an LSI keeps the same partition key with a different sort key and supports strongly consistent reads."
+    },
+    {
+     "t": "A global secondary index on `customerId` + `orderDate`.",
+     "why": "Wrong: GSIs are updated asynchronously and only support eventually consistent reads."
+    },
+    {
+     "t": "DAX in front of the table to serve the sorted reads.",
+     "why": "Wrong: DAX passes strongly consistent reads straight through and adds no new sort order."
+    },
+    {
+     "t": "An LSI added after launch once the need is confirmed.",
+     "why": "Wrong: LSIs can only be created with the table and never added or removed later."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Strong reads on an alternate sort key need an LSI, and only at creation time.",
+   "remember": "Strongly consistent reads on a different sort key → LSI, defined at table creation (max 5). Different partition key, or added later → GSI (eventual only).",
+   "variants": [
+    "The table already exists → add a GSI (eventual) or create a new table with the LSI and migrate.",
+    "One customer's items may exceed 10 GB → avoid an LSI (10 GB item collection limit); use a GSI.",
+    "You need to query by a completely different key, such as email → GSI."
+   ]
+  },
+  {
+   "id": "ddb-007",
+   "skill": "1.1.9",
+   "source": "5-cost-monitoring-limits-and-scenarios.md",
+   "q": "Right after a GSI with low provisioned write capacity was added to a busy provisioned table, writes to the base table start throttling, although the table's own WCU usage is well below its limit. What is the cause?",
+   "options": [
+    {
+     "t": "A hot partition on the base table.",
+     "why": "Wrong: that shows as key-range throttling and is unrelated to the new index."
+    },
+    {
+     "t": "The GSI is under-provisioned for writes, and a throttled GSI applies back-pressure to table writes.",
+     "why": "Right: every table write that touches indexed attributes also writes to the GSI, so the GSI needs enough WCU of its own."
+    },
+    {
+     "t": "Streams on the table limit write throughput.",
+     "why": "Wrong: Streams are asynchronous and do not slow table writes."
+    },
+    {
+     "t": "The LSI item collection limit of 10 GB was reached.",
+     "why": "Wrong: that raises ItemCollectionSizeLimitExceededException and applies to LSIs, not GSIs."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "GSIs have their own capacity; when they throttle, table writes throttle too.",
+   "remember": "Table writes throttle after adding or under-sizing a GSI → raise the GSI's write capacity (or use on-demand). LSIs share the table's capacity; GSIs do not.",
+   "variants": [
+    "A GSI query is missing attributes → they are not projected into the index; add them or fetch from the table.",
+    "You need to track a new GSI's build → `OnlineIndexPercentageProgress`; you can query it only when ACTIVE.",
+    "Write cost jumped after adding indexes → each GSI that holds the item adds write units; delete unused GSIs."
+   ]
+  },
+  {
+   "id": "ddb-008",
+   "skill": "2.1.1",
+   "source": "2-capacity-indexes-and-performance.md",
+   "q": "A product catalog in DynamoDB serves the same popular items millions of times a day. The business wants microsecond reads, accepts eventually consistent data and wants minimal code changes. What fits best?",
+   "options": [
+    {
+     "t": "ElastiCache in a cache-aside pattern.",
+     "why": "Wrong: it works, but the application must implement the cache logic itself."
+    },
+    {
+     "t": "Strongly consistent reads with more provisioned RCU.",
+     "why": "Wrong: this costs more and stays at single-digit milliseconds."
+    },
+    {
+     "t": "DynamoDB Accelerator (DAX) using the DAX client.",
+     "why": "Right: DAX is an API-compatible, write-through in-memory cache with microsecond reads for eventually consistent data."
+    },
+    {
+     "t": "Global table replicas in more Regions.",
+     "why": "Wrong: replicas add cost and serve other Regions; they do not give microsecond reads."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Repeated, eventually consistent reads needing microseconds: DAX.",
+   "remember": "Read-heavy, repeated reads, microseconds, eventual consistency OK → DAX (drop-in client). Strongly consistent reads or write-heavy workloads get no benefit.",
+   "variants": [
+    "Reads must be strongly consistent → DAX passes them through, so it does not help.",
+    "Write-heavy app or few repeated reads → low cache hit rate; DAX is a poor fit.",
+    "A sorted leaderboard of top scores → ElastiCache or MemoryDB sorted set."
+   ]
+  },
+  {
+   "id": "ddb-009",
+   "skill": "1.1.2",
+   "source": "4-security-and-integrations.md",
+   "q": "Analysts run a nightly full Scan of a production table to feed reports, and customer traffic throttles while it runs. They need the data daily in an S3 data lake for Athena. Which approach has no impact on the table?",
+   "options": [
+    {
+     "t": "Run a parallel Scan with more segments so it finishes faster.",
+     "why": "Wrong: it still reads every item from table capacity, only in a shorter, sharper burst."
+    },
+    {
+     "t": "Enable PITR and schedule incremental Export to S3, then catalog with Glue and query with Athena.",
+     "why": "Right: exports use no read capacity and do not affect performance or availability."
+    },
+    {
+     "t": "Use the Athena DynamoDB connector to query the table directly.",
+     "why": "Wrong: federated queries read the live table and consume its capacity."
+    },
+    {
+     "t": "Add a GSI with ALL projection and scan the index instead.",
+     "why": "Wrong: the index scan uses GSI capacity and every table write is now billed again for the index."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Export to S3 moves analytics off the live table entirely.",
+   "remember": "Analytics on a DynamoDB table → Export to S3 (needs PITR) or zero-ETL, never big Scans of the live table.",
+   "variants": [
+    "Near-real-time SQL in Redshift with no pipeline → zero-ETL integration (needs PITR).",
+    "Light, occasional ad hoc reads are acceptable → Athena DynamoDB connector (uses table capacity).",
+    "Changes are needed within seconds → Streams or Kinesis Data Streams for DynamoDB."
+   ]
+  },
+  {
+   "id": "ddb-010",
+   "skill": "1.1.2",
+   "source": "5-cost-monitoring-limits-and-scenarios.md",
+   "q": "A data engineer calls `ExportTableToPointInTime` on a newly created table to start a data lake feed. The request fails before any data is written. What is the most likely cause?",
+   "options": [
+    {
+     "t": "The table uses on-demand capacity.",
+     "why": "Wrong: exports work in either capacity mode."
+    },
+    {
+     "t": "The table does not have enough read capacity for the export.",
+     "why": "Wrong: exports use no read capacity at all."
+    },
+    {
+     "t": "The target S3 bucket is in another account.",
+     "why": "Wrong: exports can write to a bucket in another account and Region."
+    },
+    {
+     "t": "Point-in-time recovery is not enabled on the table.",
+     "why": "Right: Export to S3 requires PITR, which is off by default."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Export to S3 needs PITR, and PITR is off by default.",
+   "remember": "Export to S3 and zero-ETL integrations both require PITR. Export failures are usually PITR off, or missing S3/KMS permissions.",
+   "variants": [
+    "The export fails with access errors → S3 bucket permissions or KMS key access are missing.",
+    "A Redshift or OpenSearch zero-ETL integration is refused → enable PITR on the table.",
+    "You only need changes since the last run → incremental export (15 minutes to 24 hours)."
+   ]
+  },
+  {
+   "id": "ddb-011",
+   "skill": "2.1.4",
+   "source": "3-availability-backup-global-tables-streams-ttl.md",
+   "q": "A team must load 500 GB from an earlier DynamoDB export in S3 into a new table, as cheaply and quickly as possible, without planning write capacity. What should they use?",
+   "options": [
+    {
+     "t": "A Glue job writing with BatchWriteItem into an on-demand table.",
+     "why": "Wrong: it works, but every item consumes paid write units."
+    },
+    {
+     "t": "Import from S3 into the existing production table.",
+     "why": "Wrong: Import from S3 only creates a new table; it cannot load into an existing one."
+    },
+    {
+     "t": "Import from S3, creating a new table.",
+     "why": "Right: import uses no write capacity and is the cheapest, fastest bulk load into a new table."
+    },
+    {
+     "t": "A DMS full-load task.",
+     "why": "Wrong: DMS is for migrating from database sources with mapping rules; for files already in S3, Import is cheaper because it uses no write capacity."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Bulk load into a new table: Import from S3.",
+   "remember": "Bulk load into a NEW table → Import from S3 (no write capacity). Loading into an EXISTING table → batch writers with backoff.",
+   "variants": [
+    "The data must merge into an existing table → parallel BatchWriteItem with retries on on-demand or pre-warmed capacity.",
+    "The import job has more than 50,000 S3 objects → it fails; combine files.",
+    "The source is a live relational database → DMS with object mapping."
+   ]
+  },
+  {
+   "id": "ddb-012",
+   "skill": "1.1.1",
+   "source": "3-availability-backup-global-tables-streams-ttl.md",
+   "q": "Three teams need a table's change feed independently. One team must be able to replay changes from 3 days ago, and another wants to load changes into S3 with Firehose. Which change capture option fits?",
+   "options": [
+    {
+     "t": "Kinesis Data Streams for DynamoDB.",
+     "why": "Right: Kinesis keeps data up to 365 days, supports many consumers with enhanced fan-out, and feeds Firehose and Flink."
+    },
+    {
+     "t": "DynamoDB Streams with a Lambda consumer per team.",
+     "why": "Wrong: Streams keep records only 24 hours, and more than two readers per shard risks throttling."
+    },
+    {
+     "t": "Scheduled full exports to S3.",
+     "why": "Wrong: exports are snapshots, not a change feed consumers can read in real time."
+    },
+    {
+     "t": "CloudTrail data events for the table.",
+     "why": "Wrong: that is an audit log of API calls, not a replayable change stream for pipelines."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Long replay, many consumers or Firehose/Flink: Kinesis Data Streams for DynamoDB.",
+   "remember": "Simple trigger on item change → DynamoDB Streams + Lambda (24 h, ≤2 readers per shard). Replay beyond 24 h, many consumers or Firehose/Flink → Kinesis Data Streams for DynamoDB.",
+   "variants": [
+    "Only one Lambda must react to each change → DynamoDB Streams.",
+    "Kinesis records arrive duplicated or out of order → use `ApproximateCreationDateTime` to order and dedupe.",
+    "You need a filtered route to SQS/SNS without Lambda code → EventBridge Pipes with Streams as the source."
+   ]
+  },
+  {
+   "id": "ddb-013",
+   "skill": "1.1.1",
+   "source": "3-availability-backup-global-tables-streams-ttl.md",
+   "q": "A Lambda function reads a DynamoDB stream. One malformed record makes every invocation fail, and processing of that shard has stopped. Which TWO settings let healthy records keep flowing while keeping the bad record for later?",
+   "options": [
+    {
+     "t": "Increase the batch size.",
+     "why": "Wrong: a bigger batch still contains the failing record and still fails."
+    },
+    {
+     "t": "Set a maximum retry count and enable bisect batch on error.",
+     "why": "Right: bisecting isolates the bad record and the retry limit stops endless retries."
+    },
+    {
+     "t": "Raise the stream retention to 7 days.",
+     "why": "Wrong: DynamoDB Streams retention is fixed at 24 hours."
+    },
+    {
+     "t": "Configure an on-failure destination for records that still fail.",
+     "why": "Right: failed records are sent to the destination for later analysis instead of blocking the shard."
+    },
+    {
+     "t": "Add a third consumer to the same shard.",
+     "why": "Wrong: more than two readers on a shard risks throttling and does nothing for the bad record."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Retry limit + bisect + on-failure destination unblock a shard held by a poison record.",
+   "remember": "A failing batch blocks its shard until it succeeds or expires (24 h). Unblock with retry limits, bisect batch on error and an on-failure destination, then fix the record.",
+   "variants": [
+    "More throughput per shard while keeping per-item order → `ParallelizationFactor` (up to 10).",
+    "Too many invocations for irrelevant changes → event filtering on the event source mapping.",
+    "A Lambda writes back to the item that triggered it and loops → write elsewhere or filter events."
+   ]
+  },
+  {
+   "id": "ddb-014",
+   "skill": "2.3.4",
+   "source": "3-availability-backup-global-tables-streams-ttl.md",
+   "q": "TTL is enabled on attribute `expiresAt`, which stores ISO 8601 date strings. Weeks later no items have been deleted. Why?",
+   "options": [
+    {
+     "t": "TTL deletes need spare provisioned write capacity.",
+     "why": "Wrong: TTL deletes use no write capacity."
+    },
+    {
+     "t": "The TTL attribute must be a Number holding Unix epoch time in seconds; other types are ignored.",
+     "why": "Right: items whose TTL attribute is not a Number in epoch seconds are never expired."
+    },
+    {
+     "t": "TTL deletes run only once every 30 days.",
+     "why": "Wrong: expired items are deleted in the background, typically within a few days."
+    },
+    {
+     "t": "TTL works only when DynamoDB Streams is enabled.",
+     "why": "Wrong: Streams are optional; they only let you see TTL deletes."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "TTL only reads Number values in epoch seconds.",
+   "remember": "TTL attribute = Number, Unix epoch SECONDS. Strings, dates or milliseconds do not expire as intended; items without the attribute never expire.",
+   "variants": [
+    "The value is stored in epoch milliseconds → wrong unit; store seconds.",
+    "Some items have no TTL attribute → they never expire.",
+    "You need to count TTL deletes → `TimeToLiveDeletedItemCount`."
+   ]
+  },
+  {
+   "id": "ddb-015",
+   "skill": "2.3.4",
+   "source": "3-availability-backup-global-tables-streams-ttl.md",
+   "q": "Session items get a TTL of now + 1800 seconds. Users report that sessions expired an hour ago are still returned by queries. What is the right fix?",
+   "options": [
+    {
+     "t": "Set the TTL value lower so items are deleted sooner.",
+     "why": "Wrong: the deletion delay is not tied to the TTL value; it is a background process."
+    },
+    {
+     "t": "Run a scheduled Scan that deletes expired sessions.",
+     "why": "Wrong: it reads the whole table and costs capacity, for a job TTL does for free."
+    },
+    {
+     "t": "Use strongly consistent reads.",
+     "why": "Wrong: the expired items really are still in the table, so consistent reads return them too."
+    },
+    {
+     "t": "Filter on read with a condition such as `ttl > :now`, because TTL deletion typically happens within a few days.",
+     "why": "Right: expired but not yet deleted items still appear in reads, so the app must filter them."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "TTL is eventual cleanup, not exact expiry; filter at read time.",
+   "remember": "TTL deletes are background and typically within a few days → expired items still show in reads; filter on the TTL attribute. Exact-time deletion needs an explicit delete.",
+   "variants": [
+    "An item must be deleted at exactly midnight for compliance → an explicit DeleteItem job, not TTL.",
+    "Expired items must be archived → Streams + Lambda read the TTL (service) delete and write to S3.",
+    "An expired but undeleted item is updated → it can be saved; use a condition to avoid resurrecting it."
+   ]
+  },
+  {
+   "id": "ddb-016",
+   "skill": "2.3.6",
+   "source": "3-availability-backup-global-tables-streams-ttl.md",
+   "q": "A bad deployment 20 minutes ago corrupted thousands of items in a production table. PITR is enabled. How should the team recover with the least data loss?",
+   "options": [
+    {
+     "t": "Restore last week's on-demand backup over the production table.",
+     "why": "Wrong: a week of data would be lost, and restores never overwrite the source table."
+    },
+    {
+     "t": "Run a PITR restore in place to a time before the deployment.",
+     "why": "Wrong: a restore always creates a new table; there is no in-place restore."
+    },
+    {
+     "t": "Run a PITR restore to a new table at a time just before the deployment, then switch the app or copy the good items back.",
+     "why": "Right: PITR restores to any second in the window, into a new table."
+    },
+    {
+     "t": "Fail over to a global table replica in another Region.",
+     "why": "Wrong: replication copied the corruption to every replica."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "PITR to a new table at a second before the bad change.",
+   "remember": "Undo corruption or accidental deletes → PITR restore (any second in 1–35 days) to a NEW table, then switch or copy back. Global tables replicate mistakes.",
+   "variants": [
+    "A snapshot is needed before a schema migration → on-demand backup.",
+    "Backups must be governed centrally across accounts with vault lock → AWS Backup.",
+    "The restore finished but the app fails → the new table has a new name; update app config, alarms, IAM, scaling and TTL."
+   ]
+  },
+  {
+   "id": "ddb-017",
+   "skill": "2.3.6",
+   "source": "3-availability-backup-global-tables-streams-ttl.md",
+   "q": "A global table (multi-Region eventual consistency) has replicas in us-east-1 and eu-central-1. The same item was updated in both Regions at nearly the same moment, and one update vanished. What explains this, and what is the best design fix?",
+   "options": [
+    {
+     "t": "Last-writer-wins resolution by timestamp; route each item's writes to one home Region.",
+     "why": "Right: replication is asynchronous and the later timestamp wins, so the other write is lost. One owning Region per item avoids conflicts."
+    },
+    {
+     "t": "Replication failed because of low WCU; raise capacity in both Regions.",
+     "why": "Wrong: nothing failed; the conflict was resolved as designed."
+    },
+    {
+     "t": "Wrap the update in TransactWriteItems so it is atomic across Regions.",
+     "why": "Wrong: transactions are atomic only within the Region where they run."
+    },
+    {
+     "t": "Use strongly consistent reads before each write.",
+     "why": "Wrong: in this mode strong reads apply only within one Region, so they cannot prevent a cross-Region conflict."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Multi-active writes to one item: last writer wins.",
+   "remember": "Global tables (MREC) = async multi-active replication with last-writer-wins. Avoid conflicts by giving each item one home Region; watch `ReplicationLatency`.",
+   "variants": [
+    "You need zero RPO and strong reads in every Region → MRSC global tables.",
+    "You need to see replication lag → `ReplicationLatency` per receiving Region.",
+    "Many Regions increment one counter → partition counters by Region instead."
+   ]
+  },
+  {
+   "id": "ddb-018",
+   "skill": "2.3.6",
+   "source": "3-availability-backup-global-tables-streams-ttl.md",
+   "q": "A ledger service in one AWS account must lose no committed data if a Region fails, and reads in any Region must return the latest value. Higher write latency is acceptable. What should it use?",
+   "options": [
+    {
+     "t": "Global tables with multi-Region eventual consistency (MREC).",
+     "why": "Wrong: replication is asynchronous, with an RPO of about 1 second and possibly stale reads in other Regions."
+    },
+    {
+     "t": "PITR with cross-Region restore.",
+     "why": "Wrong: RPO is minutes and RTO is hours as the restore grows with table size."
+    },
+    {
+     "t": "AWS Backup copies to a second Region.",
+     "why": "Wrong: same backup-and-restore trade-off: data loss since the last copy and slow recovery."
+    },
+    {
+     "t": "Global tables with multi-Region strong consistency (MRSC).",
+     "why": "Right: MRSC gives zero RPO and strongly consistent reads across Regions, at the cost of write latency, in a same-account setup."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Zero RPO plus strong cross-Region reads: MRSC.",
+   "remember": "Zero data loss and strong reads across Regions → MRSC (same account only, chosen at creation). Low-latency multi-active with ~1 s RPO → MREC. Cheapest DR → backup and restore.",
+   "variants": [
+    "Replicas must live in different accounts → MREC multi-account (MRSC supports same-account only).",
+    "Hours of RTO are fine and cost matters most → backups with cross-Region restore.",
+    "You want to change MREC to MRSC later → not possible; the mode is fixed at creation."
+   ]
+  },
+  {
+   "id": "ddb-019",
+   "skill": "4.2.5",
+   "source": "4-security-and-integrations.md",
+   "q": "A mobile app lets users call DynamoDB directly. The table's partition key is `userId`. Each user must only read and write their own items. What is the right control?",
+   "options": [
+    {
+     "t": "Create one table per user.",
+     "why": "Wrong: millions of tables are unmanageable and far above the default 2,500 tables per Region."
+    },
+    {
+     "t": "Cognito identity pool credentials with an IAM policy using `dynamodb:LeadingKeys` equal to the user's identity ID.",
+     "why": "Right: LeadingKeys restricts each caller to items whose partition key matches their own ID (row-level access)."
+    },
+    {
+     "t": "An IAM condition on `dynamodb:Attributes`.",
+     "why": "Wrong: that restricts which attributes (columns) can be accessed, not which items."
+    },
+    {
+     "t": "A resource-based policy on the table listing each user.",
+     "why": "Wrong: resource policies are for principals such as other accounts and are capped at 20 KB."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Per-user item access: Cognito + `dynamodb:LeadingKeys`.",
+   "remember": "Row-level (per user/tenant) access → `dynamodb:LeadingKeys` on the partition key. Column-level → `dynamodb:Attributes`. Many tables by team → ABAC with tags.",
+   "variants": [
+    "Restrict which attributes a role can read → `dynamodb:Attributes`.",
+    "Hundreds of tables, access by team tag → ABAC with `aws:ResourceTag` / `aws:PrincipalTag`.",
+    "Strong isolation per tenant matters more than cost → table per tenant."
+   ]
+  },
+  {
+   "id": "ddb-020",
+   "skill": "4.1.5",
+   "source": "4-security-and-integrations.md",
+   "q": "EC2 instances and Lambda functions in private subnets reach DynamoDB through a NAT gateway, and NAT data processing charges are high. They must keep working with no internet access. What is the cheapest change?",
+   "options": [
+    {
+     "t": "Create an interface VPC endpoint (PrivateLink) for DynamoDB.",
+     "why": "Wrong: it works, but interface endpoints are billed per hour and per GB."
+    },
+    {
+     "t": "Move to a larger NAT gateway.",
+     "why": "Wrong: the traffic still pays NAT processing charges."
+    },
+    {
+     "t": "Add a gateway VPC endpoint for DynamoDB to the private subnets' route tables.",
+     "why": "Right: gateway endpoints are free and keep DynamoDB traffic on the AWS network without NAT."
+    },
+    {
+     "t": "Put a DAX cluster in the VPC.",
+     "why": "Wrong: DAX caches reads; writes and cache misses still need a path to DynamoDB."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "In-VPC access to DynamoDB at no cost: gateway endpoint.",
+   "remember": "Private in-VPC access to DynamoDB (and S3) → free gateway endpoint in the route tables. On-premises or cross-Region private access → interface endpoint (billed).",
+   "variants": [
+    "On-premises servers over Direct Connect/VPN → interface endpoint.",
+    "Only this VPC may use the table → endpoint policy + `aws:SourceVpce` condition.",
+    "Lambda in a VPC can't reach DynamoDB → it needs a gateway endpoint or NAT."
+   ]
+  },
+  {
+   "id": "ddb-021",
+   "skill": "4.1.5",
+   "source": "4-security-and-integrations.md",
+   "q": "On-premises servers connected through Direct Connect must call DynamoDB over private IPs only. How should this be set up?",
+   "options": [
+    {
+     "t": "Create an interface VPC endpoint and point the client at the endpoint-specific DNS name.",
+     "why": "Right: interface endpoints have private IPs reachable from on-premises, and clients must use the `vpce-...` DNS name."
+    },
+    {
+     "t": "Create a gateway VPC endpoint.",
+     "why": "Wrong: gateway endpoints are route-table targets that on-premises networks cannot use."
+    },
+    {
+     "t": "Send the traffic through a NAT gateway.",
+     "why": "Wrong: NAT reaches the public endpoint over the internet path."
+    },
+    {
+     "t": "Use a private hosted zone to point `dynamodb.<region>.amazonaws.com` at the endpoint.",
+     "why": "Wrong: overriding the public DynamoDB name with private DNS is not supported for interface endpoints."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "On-premises private access needs an interface endpoint with its own DNS name.",
+   "remember": "Interface endpoint = private IPs, reachable from on-premises and peered VPCs, billed, needs the endpoint-specific DNS name. Gateway endpoint = free, in-VPC only.",
+   "variants": [
+    "Apps inside the VPC and on-premises both need access → use both endpoint types in the same VPC.",
+    "A client uses TLS 1.1 → interface endpoints do not support it; upgrade to TLS 1.2+.",
+    "Plan endpoint capacity → each PrivateLink endpoint handles up to 50,000 requests per second."
+   ]
+  },
+  {
+   "id": "ddb-022",
+   "skill": "4.1.5",
+   "source": "4-security-and-integrations.md",
+   "q": "Security requires that table `Payments` is reachable only from one VPC, and that only `GetItem` and `PutItem` on that table may pass through the VPC's endpoint. Which TWO controls meet this?",
+   "options": [
+    {
+     "t": "A VPC endpoint policy that allows only `GetItem` and `PutItem` on the `Payments` table.",
+     "why": "Right: endpoint policies limit which actions and tables can be used through the endpoint."
+    },
+    {
+     "t": "A security group attached to the table.",
+     "why": "Wrong: DynamoDB is reached through an HTTPS API authorised by IAM; tables have no security groups."
+    },
+    {
+     "t": "A policy that denies access unless `aws:SourceVpce` equals the endpoint ID.",
+     "why": "Right: this blocks any request that does not arrive through the approved endpoint."
+    },
+    {
+     "t": "Turn on Block Public Access.",
+     "why": "Wrong: it only stops resource policies that grant public access; it does not tie access to a VPC."
+    },
+    {
+     "t": "Encrypt the table with a customer managed KMS key.",
+     "why": "Wrong: encryption controls key access, not the network path."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Endpoint policy limits what passes; `aws:SourceVpce` forces the path.",
+   "remember": "Limit what goes through an endpoint → endpoint policy. Force access to come only through it → IAM/resource policy condition `aws:SourceVpce` (or `aws:SourceVpc`).",
+   "variants": [
+    "Another account needs access → a resource-based policy on the table, or a cross-account role.",
+    "You need to find external access granted in resource policies → IAM Access Analyzer.",
+    "App roles must never run Scans → deny `dynamodb:Scan` in their policy."
+   ]
+  },
+  {
+   "id": "ddb-023",
+   "skill": "4.3.2",
+   "source": "4-security-and-integrations.md",
+   "q": "Compliance requires DynamoDB encryption keys that the company controls: it must set the key policy, be able to disable the key to cut off access, and audit every use. Which option fits?",
+   "options": [
+    {
+     "t": "The AWS owned key (default).",
+     "why": "Wrong: it is free but not visible in your account and cannot be audited or controlled."
+    },
+    {
+     "t": "The AWS managed key `aws/dynamodb`.",
+     "why": "Wrong: it is visible in KMS and CloudTrail, but you cannot manage its key policy or disable it."
+    },
+    {
+     "t": "Turn on encryption at rest for the table.",
+     "why": "Wrong: encryption at rest is always on and cannot be turned off; the question is which key."
+    },
+    {
+     "t": "A customer managed KMS key.",
+     "why": "Right: you control the key policy, rotation and disabling, and CloudTrail logs its use."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Control, revoke and audit: customer managed key.",
+   "remember": "DynamoDB is always encrypted at rest. Need to control or revoke the key → customer managed KMS key. Even AWS must not see some attributes → client-side encryption.",
+   "variants": [
+    "The CMK is disabled or scheduled for deletion → the table becomes inaccessible; cancel the deletion during the waiting period.",
+    "Some attributes must stay unreadable even to admins → AWS Database Encryption SDK (client-side).",
+    "Principals in another account read the table → they also need KMS permissions on the CMK."
+   ]
+  },
+  {
+   "id": "ddb-024",
+   "skill": "4.3.3",
+   "source": "4-security-and-integrations.md",
+   "q": "An analytics account must read a table in the production account. The table is encrypted with a customer managed KMS key, and the team does not want analysts to assume a role in production. Which TWO steps are required?",
+   "options": [
+    {
+     "t": "Make the analytics account a global table replica of the table.",
+     "why": "Wrong: it duplicates storage and write cost; a simple read grant is enough."
+    },
+    {
+     "t": "Attach a resource-based policy to the table that allows the analytics principals to read it.",
+     "why": "Right: table resource policies give cross-account access without role assumption."
+    },
+    {
+     "t": "Write a resource policy that allows any principal, then filter in the app.",
+     "why": "Wrong: Block Public Access stops policies that grant public access, and it would break least privilege."
+    },
+    {
+     "t": "Create a gateway VPC endpoint in the analytics account.",
+     "why": "Wrong: endpoints give a network path, not authorization."
+    },
+    {
+     "t": "Grant the analytics principals use of the CMK in its key policy.",
+     "why": "Right: with a CMK, cross-account principals also need KMS permissions, or reads fail."
+    }
+   ],
+   "answer": [
+    1,
+    4
+   ],
+   "explain": "Cross-account access to a CMK-encrypted table needs both a table grant and a key grant.",
+   "remember": "Cross-account DynamoDB → resource-based policy on the table (or assume a role) AND, if a CMK is used, KMS permissions for the other account.",
+   "variants": [
+    "The other account will assume a role instead → trust policy on a role in the table account.",
+    "The other account must Scan a secondary index through a resource policy → not supported.",
+    "You need to review which external accounts a table policy exposes → IAM Access Analyzer."
+   ]
+  },
+  {
+   "id": "ddb-025",
+   "skill": "3.3.2",
+   "source": "4-security-and-integrations.md",
+   "q": "An auditor asks the team to prove which IAM principals read specific sensitive items in a DynamoDB table. What must be enabled?",
+   "options": [
+    {
+     "t": "CloudTrail management events.",
+     "why": "Wrong: they log control-plane calls such as CreateTable, not item reads."
+    },
+    {
+     "t": "DynamoDB Streams.",
+     "why": "Wrong: Streams record item changes, not reads, and keep them only 24 hours."
+    },
+    {
+     "t": "CloudTrail data events for the table.",
+     "why": "Right: data events record data-plane calls such as GetItem and Query, with the caller. They are paid and high volume."
+    },
+    {
+     "t": "CloudWatch Contributor Insights.",
+     "why": "Wrong: it shows the most accessed keys, not who accessed them."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Who read an item: CloudTrail data events.",
+   "remember": "Who changed the table setup → CloudTrail management events (default). Who read or wrote items → CloudTrail data events (opt-in, paid). What changed in items → Streams/Kinesis.",
+   "variants": [
+    "You need an audit trail of every item change with before/after images → Streams or Kinesis for DynamoDB into S3.",
+    "You want to know who deleted a table → management events (on by default).",
+    "You need to find hot or abusive keys → Contributor Insights."
+   ]
+  },
+  {
+   "id": "ddb-026",
+   "skill": "1.1.2",
+   "source": "4-security-and-integrations.md",
+   "q": "Analysts want order data from DynamoDB in Redshift within minutes, so they can join it with other warehouse tables. The team does not want to build or run a pipeline. What should they use?",
+   "options": [
+    {
+     "t": "A nightly Redshift `COPY` from the DynamoDB table.",
+     "why": "Wrong: it is a batch load, not near real time, and it reads the table's capacity."
+    },
+    {
+     "t": "The DynamoDB zero-ETL integration with Redshift, with PITR enabled.",
+     "why": "Right: it replicates continuously into Redshift with no pipeline to manage."
+    },
+    {
+     "t": "Streams + Lambda inserting rows into Redshift.",
+     "why": "Wrong: it works, but it is custom code to build and operate."
+    },
+    {
+     "t": "Athena federated queries over the DynamoDB connector.",
+     "why": "Wrong: the data does not land in Redshift, and each query reads the live table's capacity."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Near-real-time DynamoDB data in Redshift with no pipeline: zero-ETL.",
+   "remember": "DynamoDB → Redshift with no pipeline → zero-ETL (needs PITR). DynamoDB → data lake on a schedule → incremental Export to S3. Seconds-level → Streams/Kinesis.",
+   "variants": [
+    "Search over the data is needed → OpenSearch zero-ETL.",
+    "The data lake needs a daily copy → incremental exports to S3.",
+    "Latency must be seconds → Kinesis Data Streams for DynamoDB → Firehose or Flink."
+   ]
+  },
+  {
+   "id": "ddb-027",
+   "skill": "2.1.1",
+   "source": "4-security-and-integrations.md",
+   "q": "A product catalog lives in DynamoDB. Customers now need fuzzy full-text search over product descriptions. What should the team add?",
+   "options": [
+    {
+     "t": "The OpenSearch zero-ETL integration with DynamoDB.",
+     "why": "Right: OpenSearch does text search, and zero-ETL keeps it in sync with the table."
+    },
+    {
+     "t": "A GSI on `description` and queries with `begins_with`.",
+     "why": "Wrong: that only matches prefixes and is not text search."
+    },
+    {
+     "t": "A Scan with a `contains()` filter.",
+     "why": "Wrong: it reads the whole table each time and still is not fuzzy search."
+    },
+    {
+     "t": "A DAX cluster with its query cache.",
+     "why": "Wrong: DAX caches repeated reads; it adds no search features."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Text search on DynamoDB data: OpenSearch zero-ETL.",
+   "remember": "DynamoDB cannot do full-text search. Search → OpenSearch via zero-ETL (or Streams). Analytics → Export/zero-ETL to S3 or Redshift.",
+   "variants": [
+    "The need is SQL joins and reporting → replicate to Redshift (zero-ETL) or Aurora.",
+    "A top-100 leaderboard → ElastiCache/MemoryDB sorted set or an aggregate item.",
+    "Similarity search over embeddings → compare DynamoDB vector indexes, OpenSearch k-NN, Aurora pgvector or MemoryDB."
+   ]
+  },
+  {
+   "id": "ddb-028",
+   "skill": "2.1.1",
+   "source": "1-basics-and-data-model.md",
+   "q": "A new internal app needs ad hoc reporting queries with joins across many related entities. Traffic is moderate and the team knows SQL well. Which database fits best?",
+   "options": [
+    {
+     "t": "DynamoDB with a single-table design.",
+     "why": "Wrong: DynamoDB is designed around known key-based access patterns and has no joins or ad hoc queries."
+    },
+    {
+     "t": "DynamoDB queried through PartiQL.",
+     "why": "Wrong: PartiQL is SQL-style syntax over the same engine, so the key-design rules still apply."
+    },
+    {
+     "t": "Amazon RDS or Aurora.",
+     "why": "Right: relational databases give SQL, joins, ad hoc queries and multi-table transactions."
+    },
+    {
+     "t": "Amazon DocumentDB.",
+     "why": "Wrong: it suits MongoDB apps with flexible document queries, not relational joins."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Joins and ad hoc SQL point to RDS/Aurora, not DynamoDB.",
+   "remember": "DynamoDB → known key lookups at massive scale, serverless, items ≤400 KB. Joins/ad hoc SQL → RDS/Aurora. MongoDB API and 16 MiB documents → DocumentDB.",
+   "variants": [
+    "Known key lookups at millions of requests per second with no ops → DynamoDB on-demand.",
+    "Documents of 5 MB → store them in S3 and keep metadata plus the S3 key in DynamoDB.",
+    "A MongoDB application with rich queries → DocumentDB."
+   ]
+  },
+  {
+   "id": "ddb-029",
+   "skill": "2.1.6",
+   "source": "1-basics-and-data-model.md",
+   "q": "Two workers read an item, change it and write it back. Sometimes one worker's change silently overwrites the other's. What is the simplest, cheapest fix?",
+   "options": [
+    {
+     "t": "Use strongly consistent reads.",
+     "why": "Wrong: both workers can still read the same version and write over each other."
+    },
+    {
+     "t": "Write with BatchWriteItem.",
+     "why": "Wrong: BatchWriteItem supports no conditions or updates."
+    },
+    {
+     "t": "Wrap every update in TransactWriteItems.",
+     "why": "Wrong: transactions cost double and are not needed to protect a single item."
+    },
+    {
+     "t": "Keep a `version` attribute and update with the condition `version = :expected`; on `ConditionalCheckFailedException`, re-read and retry.",
+     "why": "Right: optimistic locking makes a stale write fail instead of overwriting."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Single-item lost updates: optimistic locking with a version condition.",
+   "remember": "Concurrent updates to one item → optimistic locking (version + condition expression). Prevent overwrites on create → `attribute_not_exists(pk)`. Simple counters → `SET n = n + :1`.",
+   "variants": [
+    "A new item must never overwrite an existing one → PutItem with `attribute_not_exists(pk)`.",
+    "Many clients increment one counter → atomic UpdateItem `SET n = n + :one` (not idempotent on retry).",
+    "Lambda retries create duplicates → conditional put of an idempotency key with TTL."
+   ]
+  },
+  {
+   "id": "ddb-030",
+   "skill": "2.1.6",
+   "source": "1-basics-and-data-model.md",
+   "q": "A payment moves money from an account item in table `Accounts` to a merchant item in table `Merchants` (same account and Region). The debit must not happen without the credit, and the balance must not go negative. What should the code use?",
+   "options": [
+    {
+     "t": "TransactWriteItems with an Update on each item and a condition `balance >= :amount` on the debit.",
+     "why": "Right: transactions are all-or-nothing across tables, and the condition guards the balance."
+    },
+    {
+     "t": "BatchWriteItem with both changes.",
+     "why": "Wrong: it supports only puts and deletes, no conditions, and can partly succeed."
+    },
+    {
+     "t": "Two UpdateItem calls with retries.",
+     "why": "Wrong: a failure between the calls leaves a debit without a credit."
+    },
+    {
+     "t": "Global tables so both tables are always in sync.",
+     "why": "Wrong: replication copies tables across Regions; it gives no atomicity between items."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Several items must change together: TransactWriteItems.",
+   "remember": "All-or-nothing changes to up to 100 items across tables (same account and Region) → TransactWriteItems, at double capacity cost. Bulk loads → BatchWriteItem.",
+   "variants": [
+    "The items are in different Regions or accounts → transactions cannot span them.",
+    "You need to load 10,000 items fast with no atomicity → BatchWriteItem (25 per call) with retries.",
+    "`TransactionCanceledException` → read `CancellationReasons`, keep transactions small and retry with backoff."
+   ]
+  },
+  {
+   "id": "ddb-031",
+   "skill": "2.4.1",
+   "source": "1-basics-and-data-model.md",
+   "q": "An app must fetch a customer's profile and all of their orders, newest first, in a single request. What key design supports this?",
+   "options": [
+    {
+     "t": "Two tables, and a Scan of the orders table filtered by customer ID.",
+     "why": "Wrong: a Scan reads every order and costs for all of them."
+    },
+    {
+     "t": "Partition key = order date, sort key = customer ID.",
+     "why": "Wrong: a date partition key sends all of today's traffic to one partition."
+    },
+    {
+     "t": "Partition key `CUSTOMER#<id>`; sort key `PROFILE` for the profile and `ORDER#<date>#<id>` for each order; one Query on the partition key.",
+     "why": "Right: items with the same partition key are stored together and sorted, so one Query returns the profile and orders (`ScanIndexForward=false` for newest first)."
+    },
+    {
+     "t": "Partition key = customer ID, with all orders stored in a list attribute on the profile item.",
+     "why": "Wrong: the item grows toward the 400 KB limit and every read pays for the full item."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Parent and children under one partition key, sorted by a prefixed sort key.",
+   "remember": "Design keys from access patterns: put a parent and its children under one partition key with prefixed sort keys, read them with one Query (`begins_with` to select a type).",
+   "variants": [
+    "Orders must also be fetched by order ID alone → add a GSI keyed on order ID.",
+    "Only the orders are needed → Query with `begins_with(SK, \"ORDER#\")`.",
+    "Entities differ in scaling, security or backup needs → separate tables are fine."
+   ]
+  },
+  {
+   "id": "ddb-032",
+   "skill": "2.1.1",
+   "source": "5-cost-monitoring-limits-and-scenarios.md",
+   "q": "A table serves a steady 2,000 reads per second around the clock, and this will continue for at least three years. Which option gives the lowest throughput cost?",
+   "options": [
+    {
+     "t": "On-demand capacity.",
+     "why": "Wrong: pay-per-request is simplest, but costs more than provisioned for steady, predictable traffic."
+    },
+    {
+     "t": "Provisioned capacity with auto scaling, plus reserved capacity.",
+     "why": "Right: steady load suits provisioned capacity, and a 1- or 3-year reservation lowers the price further."
+    },
+    {
+     "t": "On-demand capacity with reserved capacity.",
+     "why": "Wrong: reserved capacity applies only to provisioned RCU and WCU."
+    },
+    {
+     "t": "The Standard-IA table class.",
+     "why": "Wrong: it lowers storage price but raises request price, so a read-heavy table pays more."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Steady, long-term traffic: provisioned + reserved capacity.",
+   "remember": "Steady, predictable traffic → provisioned + auto scaling (+ reserved capacity for 1 or 3 years). Spiky, unknown or new → on-demand.",
+   "variants": [
+    "Traffic is spiky or the table is new → on-demand.",
+    "Storage is most of the bill and reads are rare → Standard-IA table class.",
+    "Many small, mostly idle tables → on-demand (idle tables cost nothing for throughput)."
+   ]
+  },
+  {
+   "id": "ddb-033",
+   "skill": "2.1.1",
+   "source": "2-capacity-indexes-and-performance.md",
+   "q": "A 10 TB table holds historical orders that are rarely read, and storage is most of the table's bill. What should the team change first to cut cost without changing the app?",
+   "options": [
+    {
+     "t": "Switch the table to on-demand capacity.",
+     "why": "Wrong: capacity mode changes throughput pricing, not storage."
+    },
+    {
+     "t": "Add a DAX cluster.",
+     "why": "Wrong: DAX lowers read load and adds node-hours; it does nothing for storage."
+    },
+    {
+     "t": "Buy reserved capacity.",
+     "why": "Wrong: reserved capacity discounts provisioned throughput, not storage."
+    },
+    {
+     "t": "Change the table class to Standard-IA.",
+     "why": "Right: Standard-IA has a lower storage price and a higher request price, which suits large, rarely read tables. It can be changed any time."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Storage-heavy, rarely read table: Standard-IA table class.",
+   "remember": "Storage dominates the bill → Standard-IA table class (switchable any time, indexes follow). Data not needed at all → TTL (free deletes) or export to S3 and delete.",
+   "variants": [
+    "Old items no longer need to be kept → TTL to delete them for free.",
+    "Cold history must be kept but not online → export to S3, then delete from the table.",
+    "The table is hot and read-heavy → stay on Standard."
+   ]
+  },
+  {
+   "id": "ddb-034",
+   "skill": "2.1.2",
+   "source": "5-cost-monitoring-limits-and-scenarios.md",
+   "q": "A Query for one customer's events returns only part of the expected items, with no error. The items are large. What is the most likely reason, and the fix?",
+   "options": [
+    {
+     "t": "The response hit the 1 MB per-call limit; keep calling with `LastEvaluatedKey` as `ExclusiveStartKey` (or use the SDK paginator).",
+     "why": "Right: Query and Scan return at most 1 MB per call and signal more data with `LastEvaluatedKey`."
+    },
+    {
+     "t": "Eventually consistent reads returned stale data; set `ConsistentRead=true`.",
+     "why": "Wrong: stale reads show old values, not a cut-off result set."
+    },
+    {
+     "t": "The request was throttled silently; add capacity.",
+     "why": "Wrong: throttling raises an exception; it does not return partial results."
+    },
+    {
+     "t": "Query cannot return all items for a key; use Scan.",
+     "why": "Wrong: Scan has the same 1 MB page limit and reads the whole table."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Partial Query results: follow `LastEvaluatedKey`.",
+   "remember": "Query/Scan return at most 1 MB per call. Fewer items than expected → page with `LastEvaluatedKey`, or check `Limit` and filter expressions.",
+   "variants": [
+    "`Limit` is set → it caps items evaluated per page, not total results.",
+    "A filter expression removes most items → redesign keys or indexes; filters do not save capacity.",
+    "A GSI query misses items → items lack the index key or the index is still backfilling."
+   ]
+  },
+  {
+   "id": "ddb-035",
+   "skill": "2.3.6",
+   "source": "4-security-and-integrations.md",
+   "q": "An organisation wants to stop production DynamoDB tables being deleted by mistake, across all of its accounts. Which TWO measures should it use?",
+   "options": [
+    {
+     "t": "Turn on deletion protection for production tables.",
+     "why": "Right: a protected table cannot be deleted until protection is turned off."
+    },
+    {
+     "t": "Enable PITR on every table.",
+     "why": "Wrong: PITR helps recover data but does not stop a DeleteTable call."
+    },
+    {
+     "t": "Encrypt the tables with customer managed KMS keys.",
+     "why": "Wrong: key choice does not prevent deletion."
+    },
+    {
+     "t": "Apply an SCP that denies `dynamodb:DeleteTable` on production tables.",
+     "why": "Right: SCPs cap permissions across accounts, so even admins cannot delete."
+    },
+    {
+     "t": "Enable DynamoDB Streams on the tables.",
+     "why": "Wrong: Streams only record item changes."
+    }
+   ],
+   "answer": [
+    0,
+    3
+   ],
+   "explain": "Deletion protection on the table plus an SCP deny across accounts.",
+   "remember": "Prevent table deletion → deletion protection + SCP/IAM deny of `DeleteTable`. Recover from mistakes → PITR and backups. Detect missing settings → AWS Config rules.",
+   "variants": [
+    "You must detect tables without PITR → AWS Config rule.",
+    "Data must not leave the EU → no replicas outside the EU, SCP deny of other Regions, keep backups and exports in the EU.",
+    "Backups must survive an account compromise → AWS Backup cross-account copies with vault lock."
+   ]
+  }
+ ]
+}

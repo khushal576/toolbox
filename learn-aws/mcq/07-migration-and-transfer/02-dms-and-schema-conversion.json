@@ -1,0 +1,755 @@
+{
+ "questions": [
+  {
+   "id": "dms-001",
+   "skill": "2.1.4",
+   "source": "1-basics-architecture-instances-serverless-and-homogeneous.md",
+   "q": "A company must move an on-premises Oracle database to Aurora PostgreSQL. The application can be offline for only a few minutes at cutover. Which approach fits?",
+   "options": [
+    {
+     "t": "Take an Oracle export, copy it to S3 and import it into Aurora over a weekend",
+     "why": "Wrong: the application would be down for the whole export, copy and import."
+    },
+    {
+     "t": "Use AWS DataSync to copy the Oracle data files to Aurora",
+     "why": "Wrong: DataSync moves files and objects, not database rows, and cannot change the engine."
+    },
+    {
+     "t": "Convert the schema with DMS Schema Conversion, then run a DMS full load + CDC task until cutover",
+     "why": "Right: the schema is converted for the new engine, and CDC keeps the target in sync so cutover takes minutes."
+    },
+    {
+     "t": "Run a DMS full-load-only task, then switch the application",
+     "why": "Wrong: changes made during the load are lost; full load alone does not keep the target in sync."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Engine change + minimal downtime: Schema Conversion, then DMS full load + CDC.",
+   "remember": "Minimal downtime database migration → DMS full load + CDC. If the engine changes, convert the schema first with DMS Schema Conversion (or SCT).",
+   "variants": [
+    "Same engine, want native tools and serverless → DMS homogeneous data migration.",
+    "Downtime is acceptable and only a one-time copy is needed → full load only.",
+    "Aurora to Redshift with continuous freshness → zero-ETL instead of DMS."
+   ]
+  },
+  {
+   "id": "dms-002",
+   "skill": "2.4.3",
+   "source": "1-basics-architecture-instances-serverless-and-homogeneous.md",
+   "q": "After a DMS full load from SQL Server to PostgreSQL, the target has tables and primary keys, but no secondary indexes, foreign keys, triggers or stored procedures. What explains this and what is the fix?",
+   "options": [
+    {
+     "t": "DMS creates only tables and primary keys; use DMS Schema Conversion (or native tools) for the other objects",
+     "why": "Right: DMS moves data and creates basic tables; code objects and secondary objects need schema conversion."
+    },
+    {
+     "t": "The task used Limited LOB mode, which skips objects; switch to Full LOB mode",
+     "why": "Wrong: LOB mode controls large column values, not schema objects."
+    },
+    {
+     "t": "Target table preparation mode was DROP_AND_CREATE; change it to DO_NOTHING",
+     "why": "Wrong: DO_NOTHING creates even less; it only leaves existing tables alone."
+    },
+    {
+     "t": "Data validation was disabled; enable it so DMS recreates missing objects",
+     "why": "Wrong: validation compares rows; it never creates schema objects."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "DMS moves data; Schema Conversion converts schema and code.",
+   "remember": "DMS creates target tables and primary keys only. Secondary indexes, FKs, triggers, procedures, views and users come from DMS Schema Conversion, SCT or native tools.",
+   "variants": [
+    "Schema already created with Schema Conversion → set target table preparation mode to DO_NOTHING or TRUNCATE_BEFORE_LOAD.",
+    "Same engine on both sides → native tools for the schema; Schema Conversion is not needed.",
+    "Only the SQL scripts are wanted → export the converted code to S3."
+   ]
+  },
+  {
+   "id": "dms-003",
+   "skill": "2.1.4",
+   "source": "1-basics-architecture-instances-serverless-and-homogeneous.md",
+   "q": "A team runs a heterogeneous Oracle to PostgreSQL migration on DMS. CloudWatch shows the replication instance CPU near 100% while memory is fine. Which instance family should they choose?",
+   "options": [
+    {
+     "t": "T3 burstable",
+     "why": "Wrong: for tests and small migrations; sustained CPU use runs out of credits and adds charges."
+    },
+    {
+     "t": "R-class (memory optimized)",
+     "why": "Wrong: helps memory-heavy CDC and LOB work, but CPU is the bottleneck here."
+    },
+    {
+     "t": "Keep the class and add more replication storage",
+     "why": "Wrong: storage holds logs and cached changes; it does not add CPU."
+    },
+    {
+     "t": "C-class (compute optimized)",
+     "why": "Right: heterogeneous conversions are CPU-heavy, which is what C-class is for."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "CPU-bound heterogeneous migration: C-class.",
+   "remember": "Match the bottleneck: CPU (heterogeneous conversion) → C-class; memory (busy CDC, many tasks, LOBs) → R-class; tests → T3.",
+   "variants": [
+    "FreeableMemory near zero and SwapUsage rising → R-class or fewer tasks.",
+    "Small test migration → T3.",
+    "Workload unpredictable and you don't want to size anything → DMS Serverless."
+   ]
+  },
+  {
+   "id": "dms-004",
+   "skill": "2.1.4",
+   "source": "1-basics-architecture-instances-serverless-and-homogeneous.md",
+   "q": "A DMS task will replicate changes from a busy production database for several weeks before cutover. An interruption of the replication instance must not stop replication. Which setup fits best?",
+   "options": [
+    {
+     "t": "T3 instance, Single-AZ, default 50 GB storage",
+     "why": "Wrong: T3 is for tests; a single AZ has no standby."
+    },
+    {
+     "t": "R-class instance, Multi-AZ, extra storage for cached changes and logs",
+     "why": "Right: memory for heavy CDC, a synchronous standby with automatic failover, and room for changes that pile up."
+    },
+    {
+     "t": "C-class instance, Single-AZ, debug logging on",
+     "why": "Wrong: no standby, and debug logging grows fast and can fill storage."
+    },
+    {
+     "t": "Two separate full-load tasks on two instances in different AZs",
+     "why": "Wrong: full load does not replicate ongoing changes, and this is not failover."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Long, busy CDC: R-class + Multi-AZ + enough storage.",
+   "remember": "Ongoing replication that must survive failures → Multi-AZ replication instance (automatic failover). Busy CDC is memory-heavy → R-class with enough storage.",
+   "variants": [
+    "One-time full load only → Multi-AZ is not worth it (it costs about twice, and a full load that fails over must be restarted anyway).",
+    "A full-load task failed after a failover → restart it for the tables not completed.",
+    "Serverless is used → turn on its Multi-AZ option for CDC."
+   ]
+  },
+  {
+   "id": "dms-005",
+   "skill": "3.2.5",
+   "source": "1-basics-architecture-instances-serverless-and-homogeneous.md",
+   "q": "A company migrates several databases at different times. The load is intermittent and hard to predict, and the team does not want to size or patch replication instances. Which option fits?",
+   "options": [
+    {
+     "t": "Provisioned R-class instance sized for the biggest peak",
+     "why": "Wrong: it bills every hour it exists and still needs sizing and patching."
+    },
+    {
+     "t": "DMS homogeneous data migration for all sources",
+     "why": "Wrong: only for same-engine moves to RDS/Aurora/DocumentDB; not chosen for being unpredictable."
+    },
+    {
+     "t": "DMS Serverless with a high MaxCapacityUnits and a MinCapacityUnits high enough for sudden spikes",
+     "why": "Right: DMS provisions, scales and deprovisions capacity; you pay for DCUs used, and max only caps spend."
+    },
+    {
+     "t": "A provisioned T3 instance to keep costs low",
+     "why": "Wrong: T3 is for tests; heavy loads exceed its baseline and add credit charges."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Unpredictable, no sizing: DMS Serverless.",
+   "remember": "Unpredictable or intermittent workload with no instance management → DMS Serverless (1 DCU = 2 GB RAM). Set Max high and Min high enough for spikes, since provisioning takes time.",
+   "variants": [
+    "Serverless replication fails out of memory → raise Min DCU and resume.",
+    "Serverless stopped or failed and not resumed within 48 hours → capacity deprovisioned; table metadata and statistics lost.",
+    "Fixed cost and full control wanted → provisioned replication instance."
+   ]
+  },
+  {
+   "id": "dms-006",
+   "skill": "1.1.2",
+   "source": "1-basics-architecture-instances-serverless-and-homogeneous.md",
+   "q": "A team loaded most of a database with native tools and now needs DMS to replicate changes from a specific custom CDC start point. They also need to migrate several views. They were planning to use DMS Serverless. What should they do?",
+   "options": [
+    {
+     "t": "Use a provisioned replication instance and a standard DMS task",
+     "why": "Right: Serverless does not support views or a custom CDC start point; standard DMS does."
+    },
+    {
+     "t": "Use DMS Serverless with a larger MaxCapacityUnits",
+     "why": "Wrong: capacity does not add unsupported features."
+    },
+    {
+     "t": "Use DMS Serverless and enable Multi-AZ",
+     "why": "Wrong: Multi-AZ adds a standby, not views or custom CDC start points."
+    },
+    {
+     "t": "Use a homogeneous data migration with a CDC start point",
+     "why": "Wrong: not offered as described, and homogeneous migrations turn PostgreSQL views into tables."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Serverless limits: no views, no custom CDC start point.",
+   "remember": "DMS Serverless trades control for no sizing: it lacks views, custom CDC start points and some endpoints, and needs VPC endpoints to AWS services. Need those → provisioned DMS.",
+   "variants": [
+    "Need a public IP for management on Serverless → not supported.",
+    "Serverless must write to S3/Kinesis/Redshift → reach them through VPC endpoints.",
+    "Endpoint not in the Serverless list → provisioned DMS."
+   ]
+  },
+  {
+   "id": "dms-007",
+   "skill": "2.1.4",
+   "source": "1-basics-architecture-instances-serverless-and-homogeneous.md",
+   "q": "A company moves a self-managed PostgreSQL database on EC2 to Amazon RDS for PostgreSQL. They want native-tool speed, little setup, and partitions, functions and stored procedures moved too. Which option fits?",
+   "options": [
+    {
+     "t": "DMS Schema Conversion, then a standard DMS full load + CDC task",
+     "why": "Wrong: Schema Conversion is for engine changes; same engine does not need it."
+    },
+    {
+     "t": "DMS homogeneous data migration",
+     "why": "Right: same-engine move to RDS using native tools (pg_dump/pg_restore) that also moves secondary objects, serverless."
+    },
+    {
+     "t": "AWS DataSync from the EC2 volume to RDS",
+     "why": "Wrong: DataSync copies files and objects, not into an RDS database."
+    },
+    {
+     "t": "Application Migration Service (MGN)",
+     "why": "Wrong: MGN moves whole servers, not a database into RDS."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Same engine + native tools + secondary objects: homogeneous data migration.",
+   "remember": "Same engine to RDS/Aurora with native tools and secondary objects → DMS homogeneous data migration. Engine change, non-database targets, validation or transformations → standard DMS.",
+   "variants": [
+    "Target is S3 or Kinesis → standard DMS.",
+    "Built-in data validation is required → standard DMS (homogeneous has none).",
+    "Engine changes → Schema Conversion + standard DMS."
+   ]
+  },
+  {
+   "id": "dms-008",
+   "skill": "2.1.4",
+   "source": "1-basics-architecture-instances-serverless-and-homogeneous.md",
+   "q": "A team plans a DMS homogeneous data migration. Which TWO statements are true limitations they must plan for? (Choose 2)",
+   "options": [
+    {
+     "t": "It has no built-in data validation",
+     "why": "Right: homogeneous data migrations do not include DMS data validation."
+    },
+    {
+     "t": "It cannot copy stored procedures or functions",
+     "why": "Wrong: it moves secondary objects such as functions and stored procedures."
+    },
+    {
+     "t": "It can only run as a full load, never ongoing replication",
+     "why": "Wrong: it supports full load, CDC, and full load + CDC."
+    },
+    {
+     "t": "It cannot migrate from a higher database version to a lower one",
+     "why": "Right: migrating to a lower version is not supported."
+    }
+   ],
+   "answer": [
+    0,
+    3
+   ],
+   "explain": "Homogeneous: no validation, no downgrade.",
+   "remember": "Homogeneous data migrations use native tools and move secondary objects, but have no built-in validation and cannot go to a lower engine version.",
+   "variants": [
+    "PostgreSQL views in a homogeneous migration → they arrive as tables.",
+    "Schema changes captured during CDC → only for MySQL sources.",
+    "Encrypted MySQL tables → arrive unencrypted on RDS MySQL."
+   ]
+  },
+  {
+   "id": "dms-009",
+   "skill": "1.1.2",
+   "source": "2-endpoints-tasks-targets-validation-and-schema-conversion.md",
+   "q": "A team wants an S3 data lake copy of an operational database, kept up to date with ongoing changes and queried by Athena at low cost. Which DMS target setup fits best?",
+   "options": [
+    {
+     "t": "Kinesis Data Streams target with the constant partition key",
+     "why": "Wrong: not a data lake landing; constant forces one shard."
+    },
+    {
+     "t": "S3 target with default CSV and no partitioning",
+     "why": "Wrong: works, but CSV is bigger and slower to query and no partition pruning."
+    },
+    {
+     "t": "Redshift target with batch-optimized apply",
+     "why": "Wrong: a warehouse, not an S3 data lake."
+    },
+    {
+     "t": "S3 target, full load + CDC, DataFormat=parquet, date partitioning enabled",
+     "why": "Right: Parquet is smaller and faster to query, and date folders let Athena prune partitions."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "DB to data lake: DMS to S3, Parquet, date partitions.",
+   "remember": "Land database changes in a data lake → DMS full load + CDC to S3 with Parquet and DatePartitionEnabled; catalog with Glue and query with Athena.",
+   "variants": [
+    "Too many small CDC files → raise CdcMinFileSize / CdcMaxBatchInterval.",
+    "Downstream wants every change as an event → Kinesis or MSK target.",
+    "S3 files must be encrypted with a customer key → EncryptionMode SSE_KMS plus KMS permissions for the DMS role."
+   ]
+  },
+  {
+   "id": "dms-010",
+   "skill": "1.1.2",
+   "source": "2-endpoints-tasks-targets-validation-and-schema-conversion.md",
+   "q": "A DMS task writes full load and CDC files to S3. The downstream job needs one file layout for both, with an operation flag on every row. Which setting achieves this?",
+   "options": [
+    {
+     "t": "CdcInsertsOnly",
+     "why": "Wrong: it drops updates and deletes from CDC; it does not change full-load files."
+    },
+    {
+     "t": "PreserveTransactions with CdcPath",
+     "why": "Wrong: it keeps transaction order across tables, not the column layout."
+    },
+    {
+     "t": "IncludeOpForFullLoad",
+     "why": "Right: it adds the Op column (I) to full-load files so they match CDC files, whose first column is Op (I/U/D)."
+    },
+    {
+     "t": "DatePartitionEnabled",
+     "why": "Wrong: it changes the folder layout by date, not the columns."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Same layout for full load and CDC: IncludeOpForFullLoad.",
+   "remember": "S3 CDC files start with an Op column (I, U, D). IncludeOpForFullLoad adds it to full-load files so both share one layout.",
+   "variants": [
+    "Need transaction order across tables → PreserveTransactions with CdcPath.",
+    "Need only inserts → CdcInsertsOnly; inserts and updates → CdcInsertsAndUpdates.",
+    "Need date folders for Athena → DatePartitionEnabled."
+   ]
+  },
+  {
+   "id": "dms-011",
+   "skill": "2.1.4",
+   "source": "3-security-monitoring-cost-limits-and-scenarios.md",
+   "q": "A migration finished and the application now runs on the new database. The finance team sees DMS charges continuing every hour. What is the most likely cause and fix?",
+   "options": [
+    {
+     "t": "The provisioned replication instance still exists; stop or delete it",
+     "why": "Right: provisioned instances bill hourly for as long as they exist."
+    },
+    {
+     "t": "DMS Schema Conversion is billing per project; delete the project",
+     "why": "Wrong: Schema Conversion is free; you pay only the S3 storage it uses."
+    },
+    {
+     "t": "Inbound data transfer into DMS is billed; move the target to another Region",
+     "why": "Wrong: inbound data transfer into DMS is free."
+    },
+    {
+     "t": "Homogeneous data migrations bill for idle instances; switch to Serverless",
+     "why": "Wrong: homogeneous migrations bill only while the migration runs."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Delete the replication instance after cutover.",
+   "remember": "Provisioned DMS bills hourly per instance (Multi-AZ about twice) while it exists. Serverless bills DCUs used; homogeneous bills only while running; Schema Conversion is free.",
+   "variants": [
+    "One-time full load → avoid Multi-AZ to save cost.",
+    "Intermittent migrations → Serverless.",
+    "Old task logs and Time Travel add cost → delete logs, enable Time Travel only when needed."
+   ]
+  },
+  {
+   "id": "dms-012",
+   "skill": "1.1.1",
+   "source": "2-endpoints-tasks-targets-validation-and-schema-conversion.md",
+   "q": "DMS streams CDC from an orders database to Kinesis Data Streams. A consumer must receive all rows changed in one transaction together, on the same shard. Which partition key option should be used?",
+   "options": [
+    {
+     "t": "primary-key",
+     "why": "Wrong: rows of one transaction with different keys go to different shards."
+    },
+    {
+     "t": "transaction-id",
+     "why": "Right: it keeps the rows of one transaction together."
+    },
+    {
+     "t": "constant",
+     "why": "Wrong: puts everything on one shard for total order, with low throughput; more than needed."
+    },
+    {
+     "t": "schema-table",
+     "why": "Wrong: groups by table; a transaction touching several tables is split."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Keep a transaction together: transaction-id.",
+   "remember": "DMS to Kinesis partition keys: transaction-id keeps a transaction together; constant gives one global order on one shard (low throughput); primary-key or schema-table spread load.",
+   "variants": [
+    "One global order across all tables → constant key, accept limited throughput.",
+    "Records must land in S3 for Athena → JSON_UNFORMATTED into Firehose → S3.",
+    "Consumers see duplicates → DMS does not dedupe; consumers must handle it."
+   ]
+  },
+  {
+   "id": "dms-013",
+   "skill": "3.3.4",
+   "source": "2-endpoints-tasks-targets-validation-and-schema-conversion.md",
+   "q": "A DMS task replicating to Kinesis Data Streams started losing changes and failing after an engineer enabled a setting to speed up CDC. Which setting most likely caused it?",
+   "options": [
+    {
+     "t": "ParallelApplyThreads set to 16",
+     "why": "Wrong: ParallelApply settings are the supported way to speed CDC to Kinesis."
+    },
+    {
+     "t": "JSON_UNFORMATTED message format",
+     "why": "Wrong: it only writes single-line JSON records."
+    },
+    {
+     "t": "IncludeTransactionDetails",
+     "why": "Wrong: it adds transaction details to records; it does not lose data."
+    },
+    {
+     "t": "Batch-optimized apply (BatchApplyEnabled)",
+     "why": "Right: batch apply is not supported for Kinesis targets and causes task failure and data loss."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "No batch apply for Kinesis targets.",
+   "remember": "Batch-optimized apply speeds CDC on database targets (disable FKs) but is not supported for Kinesis; use ParallelApply* settings instead.",
+   "variants": [
+    "Batch apply on a relational target → it breaks referential integrity during apply, so disable FKs.",
+    "Need faster CDC into Kinesis → ParallelApplyThreads (max 32) and queues/buffer settings.",
+    "Strict transaction order on a database target → keep transactional apply (default)."
+   ]
+  },
+  {
+   "id": "dms-014",
+   "skill": "3.3.4",
+   "source": "2-endpoints-tasks-targets-validation-and-schema-conversion.md",
+   "q": "After migrating an Oracle table with CLOB columns, some documents on the target are cut off. The task used default LOB settings. What should the team change?",
+   "options": [
+    {
+     "t": "Turn on batch-optimized apply",
+     "why": "Wrong: it changes how CDC changes are applied, not LOB size."
+    },
+    {
+     "t": "Increase MaxFullLoadSubTasks to 49",
+     "why": "Wrong: it loads more tables in parallel; LOBs are still truncated."
+    },
+    {
+     "t": "Raise Max LOB size above the largest LOB, or use inline LOB mode for mixed sizes",
+     "why": "Right: Limited LOB mode (default) truncates values above Max LOB size, 32 KB by default."
+    },
+    {
+     "t": "Switch the target columns to NOT NULL",
+     "why": "Wrong: DMS writes the row first, then the LOB, so target LOB columns must be nullable."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Default Limited LOB mode truncates above 32 KB.",
+   "remember": "Limited LOB mode is the default and fastest but truncates values above Max LOB size (32 KB default). Set it to the largest LOB, use inline mode for mixed sizes, or full LOB mode (much slower) when needed.",
+   "variants": [
+    "Mostly small LOBs with a few huge ones → inline LOB mode or a separate task for the huge-LOB tables.",
+    "PostgreSQL JSON is truncated → JSON is treated like a LOB; raise Max LOB size.",
+    "Target is Kinesis → no full LOB, max 1 MB."
+   ]
+  },
+  {
+   "id": "dms-015",
+   "skill": "1.1.3",
+   "source": "2-endpoints-tasks-targets-validation-and-schema-conversion.md",
+   "q": "A 2 TB partitioned Oracle table takes too long to full load with DMS. The replication instance has spare CPU and memory. What speeds it up?",
+   "options": [
+    {
+     "t": "Use parallel load in a table-settings rule (for example partitions-auto), or split the table into several tasks with source filter ranges",
+     "why": "Right: both split one large table so parts load at the same time."
+    },
+    {
+     "t": "Switch to Full LOB mode",
+     "why": "Wrong: full LOB mode makes loads much slower."
+    },
+    {
+     "t": "Keep all foreign keys and triggers enabled on the target",
+     "why": "Wrong: constraints and triggers slow the load and cause FK violations."
+    },
+    {
+     "t": "Enable data validation during the load",
+     "why": "Wrong: validation adds queries on both databases and slows things down."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Big table: parallel load or row-filter splits.",
+   "remember": "Slow full load of a large table → parallel load by partitions/ranges or several tasks with source filters; tune MaxFullLoadSubTasks (default 8, max 49) for many tables.",
+   "variants": [
+    "Many small tables load slowly on a big instance → raise MaxFullLoadSubTasks.",
+    "Source is overloaded → fewer tasks; each full load scans tables and each task reads the log.",
+    "Static partitions plus one active partition → full-load tasks for static parts, full load + CDC for the active one."
+   ]
+  },
+  {
+   "id": "dms-016",
+   "skill": "1.1.3",
+   "source": "2-endpoints-tasks-targets-validation-and-schema-conversion.md",
+   "q": "A team runs DMS full load + CDC into an RDS target. Which TWO practices follow DMS best practice? (Choose 2)",
+   "options": [
+    {
+     "t": "Keep target backups, Multi-AZ and logging on during the full load",
+     "why": "Wrong: turning them off during the load and back on at cutover is recommended."
+    },
+    {
+     "t": "Disable foreign keys and triggers on the target during the full load",
+     "why": "Right: constraints and DML triggers slow the load and cause FK violations."
+    },
+    {
+     "t": "Enable triggers on the target at the start of the full load",
+     "why": "Wrong: triggers are enabled right before cutover."
+    },
+    {
+     "t": "Stop the task after full load (StopTaskCachedChangesApplied) to build secondary indexes before CDC",
+     "why": "Right: CDC needs secondary indexes to avoid table scans on the target."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "No FKs/triggers during load; add indexes before CDC.",
+   "remember": "Full load: drop or delay indexes, FKs and triggers. Pause before CDC to add secondary indexes. Enable triggers right before cutover.",
+   "variants": [
+    "CDCLatencyTarget high during CDC → missing indexes or PK on the target.",
+    "Data is small → primary keys may stay in place during the load.",
+    "FK violations in the task log → constraints were on during full load."
+   ]
+  },
+  {
+   "id": "dms-017",
+   "skill": "3.4.1",
+   "source": "2-endpoints-tasks-targets-validation-and-schema-conversion.md",
+   "q": "DMS data validation is enabled on a task. One table shows the state 'No primary key'. What should the team do?",
+   "options": [
+    {
+     "t": "Raise the replication instance class",
+     "why": "Wrong: the state is about the table, not capacity."
+    },
+    {
+     "t": "Add a primary key or unique index to the table, or validate it another way",
+     "why": "Right: validation needs a primary key or unique index to match rows."
+    },
+    {
+     "t": "Switch to batch-optimized apply",
+     "why": "Wrong: apply mode does not affect validation's need for a key."
+    },
+    {
+     "t": "Revalidate the table from the console",
+     "why": "Wrong: revalidation will hit the same missing key."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Validation needs a PK or unique index.",
+   "remember": "DMS data validation compares rows by primary key or unique index; without one the table shows 'No primary key'. Failures go to awsdms_control.awsdms_validation_failures_v1.",
+   "variants": [
+    "Validation stops → more than 10,000 failed or suspended records.",
+    "Rows keep changing → 'Suspended records'.",
+    "Views or several databases consolidated into one → validation is not supported."
+   ]
+  },
+  {
+   "id": "dms-018",
+   "skill": "3.4.1",
+   "source": "2-endpoints-tasks-targets-validation-and-schema-conversion.md",
+   "q": "Before cutover, a team wants a quick count of mismatched rows between source and target, and wants to control when the extra validation load hits the databases, separate from the replication task. What should they use?",
+   "options": [
+    {
+     "t": "A premigration assessment run",
+     "why": "Wrong: it checks the task setup before it runs, not row data after migration."
+    },
+    {
+     "t": "CloudWatch CDCLatencyTarget alarms",
+     "why": "Wrong: latency shows lag, not whether the data matches."
+    },
+    {
+     "t": "A validation-only task (EnableValidation + ValidationOnly)",
+     "why": "Right: full-load validation-only compares all rows once and stops, so timing and load are controlled."
+    },
+    {
+     "t": "DMS Schema Conversion assessment report",
+     "why": "Wrong: it reports what schema objects convert, not row differences."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Quick mismatch count, controlled timing: validation-only task.",
+   "remember": "Prove data is identical → DMS data validation; to isolate its load or control timing, or get a quick mismatch count → a validation-only task.",
+   "variants": [
+    "Need to check data on an ongoing basis → enable validation on the replication task (covers CDC).",
+    "Need to find unsupported data types before running → premigration assessment.",
+    "Mismatches appear → inspect awsdms_validation_failures_v1."
+   ]
+  },
+  {
+   "id": "dms-019",
+   "skill": "2.1.4",
+   "source": "2-endpoints-tasks-targets-validation-and-schema-conversion.md",
+   "q": "Before starting a large DMS task, a team wants to find unsupported data types, mismatched primary keys and missing source prerequisites such as supplemental logging. Which feature should they run?",
+   "options": [
+    {
+     "t": "Premigration assessment",
+     "why": "Right: it evaluates the task before it runs and writes a report to S3."
+    },
+    {
+     "t": "Data validation",
+     "why": "Wrong: it compares rows after data is moved."
+    },
+    {
+     "t": "Time Travel logging",
+     "why": "Wrong: it saves data logs for debugging while a task runs."
+    },
+    {
+     "t": "Endpoint test connection only",
+     "why": "Wrong: it checks connectivity, not data types or task settings."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Find problems before running: premigration assessment.",
+   "remember": "Find issues before a task runs → premigration assessment (report in S3; task shows Testing). Prove data afterwards → data validation.",
+   "variants": [
+    "Check only that DMS can reach the database → endpoint test connection.",
+    "Engine change and need to know which code converts automatically → Schema Conversion assessment report.",
+    "Debug what data a running task read and wrote → Time Travel logs."
+   ]
+  },
+  {
+   "id": "dms-020",
+   "skill": "3.3.4",
+   "source": "3-security-monitoring-cost-limits-and-scenarios.md",
+   "q": "A DMS CDC task falls behind. CloudWatch shows CDCLatencySource low and CDCLatencyTarget high and rising. Where should the team look first?",
+   "options": [
+    {
+     "t": "Source log reading, such as long open transactions",
+     "why": "Wrong: that raises CDCLatencySource, which is low."
+    },
+    {
+     "t": "Source log retention settings",
+     "why": "Wrong: purged logs stop CDC with a log-not-available error, not a target lag."
+    },
+    {
+     "t": "The premigration assessment report",
+     "why": "Wrong: it checks setup before the task runs, not live lag."
+    },
+    {
+     "t": "The target: missing primary keys or indexes, slow IOPS, or an undersized instance",
+     "why": "Right: source reads keep up, so the delay is in applying changes on the target."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Target latency high, source low: fix the target side.",
+   "remember": "Compare CDCLatencySource and CDCLatencyTarget: both high → look at the source first; only target high → target indexes/PK, IOPS, instance size or batch settings.",
+   "variants": [
+    "Both latencies high → source (log reads, large transactions) and network.",
+    "CDCLatencySource keeps growing → often an open uncommitted transaction.",
+    "CDCChangesDiskTarget above 0 → changes spill to disk; memory pressure."
+   ]
+  },
+  {
+   "id": "dms-021",
+   "skill": "4.3.4",
+   "source": "3-security-monitoring-cost-limits-and-scenarios.md",
+   "q": "A regulated company runs DMS from an on-premises database to RDS. Credentials must not be stored in endpoints and data in transit must be encrypted with server identity checked. Which TWO actions meet this? (Choose 2)",
+   "options": [
+    {
+     "t": "Make the replication instance publicly accessible so the source can reach it",
+     "why": "Wrong: private is the secure default; public is only for internet endpoints."
+    },
+    {
+     "t": "Store endpoint credentials in Secrets Manager with an access role for DMS",
+     "why": "Right: DMS reads credentials from Secrets Manager instead of keeping them in the endpoint."
+    },
+    {
+     "t": "Set the endpoint SSL mode to verify-full and import the CA certificate into DMS",
+     "why": "Right: verify-full encrypts traffic and verifies the server."
+    },
+    {
+     "t": "Set SSL mode to require, which also verifies the server certificate",
+     "why": "Wrong: require encrypts but verify-ca / verify-full are the modes that check the certificate."
+    }
+   ],
+   "answer": [
+    1,
+    2
+   ],
+   "explain": "Secrets Manager for credentials; verify-full SSL in transit.",
+   "remember": "DMS security: credentials in Secrets Manager, SSL mode verify-ca/verify-full per endpoint, KMS key for data at rest, private replication instance in your VPC.",
+   "variants": [
+    "Who started or changed a task → CloudTrail.",
+    "Encrypt replication storage → choose a KMS key on the replication instance (default aws/dms).",
+    "No internet route to AWS service targets → VPC endpoints."
+   ]
+  },
+  {
+   "id": "dms-022",
+   "skill": "1.1.8",
+   "source": "3-security-monitoring-cost-limits-and-scenarios.md",
+   "q": "A DMS replication instance in a private subnet must read from an on-premises database reached over Direct Connect. The task fails at start with a connection timeout. The on-premises firewall only allows known IPs. What should the team do?",
+   "options": [
+    {
+     "t": "Make the replication instance public and allow 0.0.0.0/0 on the database port",
+     "why": "Wrong: exposes the database and is not needed over Direct Connect."
+    },
+    {
+     "t": "Allow the replication instance's private IP addresses on the on-premises firewall for the database port",
+     "why": "Right: the source firewall must allow-list the replication instance IPs."
+    },
+    {
+     "t": "Add a NAT gateway so DMS uses an Elastic IP",
+     "why": "Wrong: traffic over Direct Connect does not go through a NAT gateway."
+    },
+    {
+     "t": "Switch to DMS Serverless, which needs no network rules",
+     "why": "Wrong: Serverless also connects from ENIs in your VPC that must be allowed."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Allow-list the replication instance IPs at the source.",
+   "remember": "Task fails at start → check connectivity (security groups, NACLs, routes, DNS, firewall allow-lists), credentials, and source logging. The source firewall must allow the replication instance (or Serverless ENI) IPs.",
+   "variants": [
+    "Source in another VPC → VPC peering or Transit Gateway.",
+    "Open the target database port only to the replication instance's security group.",
+    "Credentials or source logging wrong → test the endpoint and read the task log."
+   ]
+  }
+ ]
+}

@@ -1,0 +1,196 @@
+{
+ "questions": [
+  {
+   "id": "aisvc-001",
+   "skill": "3.1.6",
+   "source": "1-language-vision-document-and-speech-services.md",
+   "q": "A finance team drops 5 million scanned supplier invoices (multi-page PDFs) into S3. They need vendor name, totals and line items as structured data in DynamoDB, with the least custom ML work. Which design fits?",
+   "options": [
+    {
+     "t": "Textract `DetectDocumentText` on each file, then regex parsing in Lambda",
+     "why": "Wrong: it returns only lines and words, so you must build the invoice field logic yourself."
+    },
+    {
+     "t": "Comprehend custom entity recognition trained on invoice samples",
+     "why": "Wrong: it needs training data and an endpoint, and it is a text NLP service, not built for invoice structure."
+    },
+    {
+     "t": "Textract `AnalyzeExpense` as async jobs (S3 input, SNS on completion), with results written to DynamoDB",
+     "why": "Right: `AnalyzeExpense` is built for invoices and receipts (vendor, totals, line items), and async jobs handle multi-page files from S3."
+    },
+    {
+     "t": "Rekognition text detection on each page",
+     "why": "Wrong: it finds text in images but gives no invoice fields or line items."
+    }
+   ],
+   "answer": [2],
+   "explain": "Invoices or receipts at volume, stable format: Textract AnalyzeExpense, async for multi-page files.",
+   "remember": "Invoices/receipts → Textract `AnalyzeExpense`; forms and tables → `AnalyzeDocument`; plain text only → `DetectDocumentText`. Multi-page files go through async jobs (S3 in, SNS when done).",
+   "variants": [
+    "Layouts vary a lot and you need semantic fields → Bedrock Data Automation or LLM extraction (Textract OCR first).",
+    "You only need the raw text for search → `DetectDocumentText`, the cheapest feature set.",
+    "The documents are mortgage packages that need pages classified and routed → Textract Analyze Lending."
+   ]
+  },
+  {
+   "id": "aisvc-002",
+   "skill": "4.3.1",
+   "source": "1-language-vision-document-and-speech-services.md",
+   "q": "Customer-support chat transcripts stored as text in S3 contain names, phone numbers and addresses. Analysts may read the text only after this PII is masked. Which service does the masking with no model training?",
+   "options": [
+    {
+     "t": "Amazon Comprehend PII detection with a redaction job",
+     "why": "Right: Comprehend detects PII entities in text and its redaction jobs mask or replace them, using pre-trained models."
+    },
+    {
+     "t": "Amazon Macie discovery jobs on the bucket",
+     "why": "Wrong: Macie finds sensitive data in S3 but does not redact the text; it pairs with Comprehend, not replaces it."
+    },
+    {
+     "t": "Amazon Textract `AnalyzeDocument` with the FORMS feature",
+     "why": "Wrong: Textract extracts text and structure from documents; it does not detect or mask PII."
+    },
+    {
+     "t": "Amazon Translate with profanity masking",
+     "why": "Wrong: profanity masking hides profane words, not personal data."
+    }
+   ],
+   "answer": [0],
+   "explain": "Mask PII inside text: Comprehend PII redaction; Macie is for discovery in S3.",
+   "remember": "Mask PII inside text → Comprehend (`DetectPiiEntities`, redaction jobs). Find which S3 objects hold PII → Macie. They are often used together.",
+   "variants": [
+    "The PII is spoken in call recordings → Transcribe PII redaction during transcription.",
+    "The goal is only to discover which buckets hold sensitive data → Macie.",
+    "The text is clinical notes with PHI → Comprehend Medical."
+   ]
+  },
+  {
+   "id": "aisvc-003",
+   "skill": "1.2.4",
+   "source": "1-language-vision-document-and-speech-services.md",
+   "q": "A team trained an Amazon Comprehend custom classifier and created a real-time endpoint for a two-week pilot. The pilot ended a month ago, but the Comprehend bill is still high although no requests are sent. What is the cause and fix?",
+   "options": [
+    {
+     "t": "Model storage is billed per request; switch to batch APIs",
+     "why": "Wrong: no requests are being sent, so per-request charges are not the cost."
+    },
+    {
+     "t": "The flywheel keeps billing; delete the flywheel",
+     "why": "Wrong: the flywheel itself is free; only its training and storage iterations cost money."
+    },
+    {
+     "t": "The 3-unit minimum per request is charged hourly; raise the batch size",
+     "why": "Wrong: the unit minimum applies to requests, and there are none."
+    },
+    {
+     "t": "The custom model endpoint bills per inference unit while it exists; delete it and use async jobs for occasional runs",
+     "why": "Right: custom endpoints bill for as long as they exist, whether used or not."
+    }
+   ],
+   "answer": [3],
+   "explain": "Idle custom endpoints (Comprehend custom, Rekognition Custom Labels) still bill; delete or stop them.",
+   "remember": "Custom models on AI services (Comprehend custom endpoints, Rekognition Custom Labels) bill while running, not per request. Stop or delete them when idle.",
+   "variants": [
+    "The idle cost is Rekognition Custom Labels → stop the model, since it bills per inference hour while started.",
+    "The idle cost is a Personalize campaign → lower `minProvisionedTPS` or delete the campaign.",
+    "Usage is pre-trained sentiment only → no endpoint needed; you pay per 100-character unit."
+   ]
+  },
+  {
+   "id": "aisvc-004",
+   "skill": "3.1.6",
+   "source": "1-language-vision-document-and-speech-services.md",
+   "q": "A contact center stores call recordings in S3. The data team needs transcripts with each speaker separated, plus sentiment, talk speed, interruptions and rule-based issue categories, without building any models. Which service fits?",
+   "options": [
+    {
+     "t": "Amazon Polly with speech marks",
+     "why": "Wrong: Polly turns text into speech; it does not transcribe audio."
+    },
+    {
+     "t": "Amazon Transcribe Call Analytics",
+     "why": "Right: it transcribes calls and adds sentiment, talk speed, interruptions, non-talk time and category rules."
+    },
+    {
+     "t": "Amazon Lex with conversation logs",
+     "why": "Wrong: Lex builds chatbots; its logs are not a call analytics engine for recorded calls."
+    },
+    {
+     "t": "Amazon Comprehend targeted sentiment on the raw audio files",
+     "why": "Wrong: Comprehend analyzes text, so the audio must be transcribed first, and it gives no talk speed or interruption metrics."
+    }
+   ],
+   "answer": [1],
+   "explain": "Call recordings plus speaker and conversation metrics: Transcribe Call Analytics.",
+   "remember": "Speech → text is Transcribe; call-center metrics (sentiment, interruptions, categories) are Transcribe Call Analytics. Text → speech is Polly; text NLP is Comprehend, after transcription.",
+   "variants": [
+    "Only plain transcripts with speaker labels are needed → standard Transcribe with speaker diarization.",
+    "The transcripts must also be shown in another language → Transcribe → Translate.",
+    "Domain terms are mis-transcribed → add a custom vocabulary or custom language model."
+   ]
+  },
+  {
+   "id": "aisvc-005",
+   "skill": "4.5.7",
+   "source": "1-language-vision-document-and-speech-services.md",
+   "q": "A company runs Comprehend, Textract and Rekognition in many accounts. Legal says AWS must not store or use the company's content to improve these AI services, across every account. What is the simplest control?",
+   "options": [
+    {
+     "t": "An AWS Organizations AI services opt-out policy",
+     "why": "Right: this Organizations policy stops AWS from using your content to improve many AI services, across the accounts it is attached to."
+    },
+    {
+     "t": "Encrypt all inputs and outputs with customer managed KMS keys",
+     "why": "Wrong: KMS protects data at rest; it does not opt you out of content use."
+    },
+    {
+     "t": "Call the services only through VPC endpoints (PrivateLink)",
+     "why": "Wrong: PrivateLink keeps traffic private but does not change how content may be used."
+    },
+    {
+     "t": "A CloudTrail trail that logs every AI service API call",
+     "why": "Wrong: it records who called what; it does not stop content use."
+    }
+   ],
+   "answer": [0],
+   "explain": "Content use for service improvement is controlled by the Organizations AI services opt-out policy.",
+   "remember": "\"Do not let AWS use our content to improve AI services\" → Organizations AI services opt-out policy. KMS, PrivateLink and CloudTrail cover encryption, private traffic and auditing instead.",
+   "variants": [
+    "Traffic to the services must not use the public internet → VPC endpoints (PrivateLink).",
+    "Async job output must be encrypted with your key → KMS on the output and volume.",
+    "Auditors need a record of who called `DetectPiiEntities` → CloudTrail."
+   ]
+  },
+  {
+   "id": "aisvc-006",
+   "skill": "1.2.10",
+   "source": "3-ml-infrastructure-lifecycle-status-and-which-service-guide.md",
+   "q": "In 2026 a team designs a new pipeline that must group thousands of support tickets into topics and pull out events mentioned in them. An engineer proposes Comprehend Topic Modeling and Event Detection. What should the architect recommend?",
+   "options": [
+    {
+     "t": "Use Comprehend Topic Modeling and Event Detection, because the whole Comprehend service is active",
+     "why": "Wrong: the service is active, but these two features are in maintenance (announced 31 Mar 2026), so they get no new features."
+    },
+    {
+     "t": "Use Amazon Kendra to cluster the tickets",
+     "why": "Wrong: Kendra is a search service and is closed to new customers."
+    },
+    {
+     "t": "Use Amazon Forecast to find topic trends",
+     "why": "Wrong: Forecast is a time-series service and is itself in maintenance."
+    },
+    {
+     "t": "Use LLM-based clustering and extraction with Bedrock, keeping Comprehend for sentiment, entities and PII",
+     "why": "Right: AWS points to LLMs and Bedrock for these needs, while Comprehend core features remain a cheap choice."
+    }
+   ],
+   "answer": [3],
+   "explain": "Comprehend Topic Modeling, Event Detection and Prompt Safety are in maintenance; new builds use LLMs/Bedrock.",
+   "remember": "Maintenance mode = existing users keep it with fixes, no new features, new customers blocked. For new builds, move topic modeling/event detection to LLMs (Bedrock), prompt safety to Bedrock Guardrails.",
+   "variants": [
+    "The need is prompt safety classification → Bedrock Guardrails.",
+    "The need is high-volume sentiment or entities → Comprehend core (still active).",
+    "The need is batch image content moderation in Rekognition → that feature is in maintenance, so use another moderation workflow."
+   ]
+  }
+ ]
+}

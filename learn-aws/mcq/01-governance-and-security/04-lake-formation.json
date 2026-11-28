@@ -1,0 +1,1097 @@
+{
+ "questions": [
+  {
+   "id": "lf-001",
+   "skill": "4.2.4",
+   "source": "1-basics-architecture-and-setup.md",
+   "q": "One customer table in S3 is queried with Athena by three teams. Each team may see a different set of columns. The company wants one copy of the data and the least ongoing work. What should it use?",
+   "options": [
+    {
+     "t": "An S3 bucket policy per team with prefix conditions",
+     "why": "Wrong: a bucket policy works on objects and prefixes; it cannot say \"this user sees only these columns\"."
+    },
+    {
+     "t": "A Glue job that writes a separate copy of the table for each team",
+     "why": "Wrong: copies cost extra storage and go stale; filtering avoids copying."
+    },
+    {
+     "t": "Lake Formation column-level permissions (column filtering or a data filter) on the one table",
+     "why": "Right: one copy serves everyone and the engine returns only the granted columns."
+    },
+    {
+     "t": "An IAM policy that allows `glue:GetTable` only on the table",
+     "why": "Wrong: IAM is coarse; it controls the API call, not which columns come back."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Different column slices of one table without copies: Lake Formation column filtering.",
+   "remember": "Different people need different columns or rows of the same data → Lake Formation fine-grained permissions. Bucket policies and IAM stop at bucket/prefix/API level.",
+   "variants": [
+    "Rows differ per team instead of columns → row-level data filter.",
+    "One team, a few tables, whole-bucket read → IAM + S3 bucket policies are enough.",
+    "Restricting rows inside Redshift tables → Redshift's own row-level security."
+   ]
+  },
+  {
+   "id": "lf-002",
+   "skill": "4.2.4",
+   "source": "1-basics-architecture-and-setup.md",
+   "q": "A data lake admin granted `SELECT` on two columns of table `orders` to an analyst role. The analyst still sees every column, and other roles with no Lake Formation grant can also query the table. What is the most likely cause?",
+   "options": [
+    {
+     "t": "The `IAMAllowedPrincipals` group still holds `Super` on the table, so only IAM decides access",
+     "why": "Right: while IAMAllowedPrincipals has Super on a resource, Lake Formation permissions are not enforced there."
+    },
+    {
+     "t": "The analyst role lacks `lakeformation:GetDataAccess`",
+     "why": "Wrong: a missing GetDataAccess makes queries fail; it does not widen access."
+    },
+    {
+     "t": "The analyst role lacks `DATA_LOCATION_ACCESS` on the table path",
+     "why": "Wrong: data location permission only controls creating or altering catalog entries pointing to a registered path."
+    },
+    {
+     "t": "The grant was made without the grant option",
+     "why": "Wrong: the grant option only controls whether the grantee can pass the permission on."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Grants ignored → IAMAllowedPrincipals still has Super. Revoke it or use hybrid mode.",
+   "remember": "New databases and tables start with Super for IAMAllowedPrincipals (\"Use only IAM access control\" on by default). Until you revoke it, IAM and S3 policies alone decide access.",
+   "variants": [
+    "You want to enforce Lake Formation gradually without breaking IAM users → hybrid access mode and opt in principals.",
+    "The analyst gets access denied instead → check IAM (`GetDataAccess`, Glue reads) and that the location is registered.",
+    "Granting `ALLIAMPrincipals` instead → every IAM principal in the account gets access through Lake Formation plus IAM."
+   ]
+  },
+  {
+   "id": "lf-003",
+   "skill": "4.2.4",
+   "source": "1-basics-architecture-and-setup.md",
+   "q": "A company has dozens of Glue ETL jobs and Athena users that work with IAM-only access to its data lake. It wants one new analytics team to use Lake Formation column permissions now, without disrupting anyone else. What should it do?",
+   "options": [
+    {
+     "t": "Revoke `IAMAllowedPrincipals` from every database and table at once",
+     "why": "Wrong: every existing job and user would then need explicit Lake Formation grants, so things break."
+    },
+    {
+     "t": "Turn off the two \"Use only IAM access control\" defaults in Data Catalog settings",
+     "why": "Wrong: those affect only new databases and tables, and can break automation that creates tables."
+    },
+    {
+     "t": "Copy the data the team needs into a new bucket with its own IAM policy",
+     "why": "Wrong: copies cost money and go stale, and give no column control."
+    },
+    {
+     "t": "Use hybrid access mode: register the location with hybrid access enabled and opt in the new team's principals for the needed tables",
+     "why": "Right: opted-in principals use Lake Formation permissions while all others keep using IAM policies."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Adopt Lake Formation one use case at a time without breaking users: hybrid access mode.",
+   "remember": "\"Migrate to Lake Formation without disrupting existing users\" → hybrid access mode. Only opted-in principals are enforced by Lake Formation; everyone else stays on IAM.",
+   "variants": [
+    "All users are ready to move together → re-create access as Lake Formation grants, then revoke IAMAllowedPrincipals.",
+    "Who can opt in principals? Only data lake administrators.",
+    "Sharing a hybrid-mode resource cross-account → needs cross-account version 4."
+   ]
+  },
+  {
+   "id": "lf-004",
+   "skill": "4.2.4",
+   "source": "1-basics-architecture-and-setup.md",
+   "q": "An analyst has a Lake Formation `SELECT` grant on a table, and `IAMAllowedPrincipals` was revoked. Athena still returns access denied. Which TWO checks address the likely causes? (Choose 2)",
+   "options": [
+    {
+     "t": "Grant the analyst `DATA_LOCATION_ACCESS` on the table's S3 path",
+     "why": "Wrong: data location permission is for creating or altering catalog entries, not for reading data."
+    },
+    {
+     "t": "Add `lakeformation:GetDataAccess` and the Glue read actions (`glue:GetTable`, `glue:GetPartitions`...) to the analyst's IAM policy",
+     "why": "Right: IAM is the first gate; without these the call fails even with a Lake Formation grant."
+    },
+    {
+     "t": "Give the analyst `s3:GetObject` on the bucket",
+     "why": "Wrong: registered data is read with vended credentials; direct S3 access would bypass Lake Formation."
+    },
+    {
+     "t": "Make sure the table's S3 location is registered with Lake Formation",
+     "why": "Right: only registered locations get credential vending and Lake Formation enforcement."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Two gates: IAM must allow (GetDataAccess + Glue reads) and the location must be registered.",
+   "remember": "Every access passes two gates: IAM and Lake Formation. A Lake Formation grant never replaces the IAM actions `lakeformation:GetDataAccess` and Glue reads, and vending only works for registered locations.",
+   "variants": [
+    "The user sees the table but no data in another account → missing IAM `GetDataAccess` or no data permission granted.",
+    "A Glue job or EMR fails the same way → `GetDataAccess` must be on the job's execution role, not the user.",
+    "IAM denies the action → Lake Formation cannot rescue it; Lake Formation is secondary to IAM."
+   ]
+  },
+  {
+   "id": "lf-005",
+   "skill": "4.2.4",
+   "source": "1-basics-architecture-and-setup.md",
+   "q": "A data lake admin is registering S3 locations. Which TWO situations require a custom (user-defined) registration role instead of the service-linked role? (Choose 2)",
+   "options": [
+    {
+     "t": "The bucket is in another AWS account",
+     "why": "Right: the service-linked role cannot be used for a bucket in another account."
+    },
+    {
+     "t": "Athena in the same account will query the data, and the bucket uses SSE-S3",
+     "why": "Wrong: this is the simple case the service-linked role covers."
+    },
+    {
+     "t": "Amazon EMR will process data at that location",
+     "why": "Right: EMR needs a location registered with a custom role; re-register if the SLR was used."
+    },
+    {
+     "t": "A Glue crawler in the same account will crawl the location",
+     "why": "Wrong: nothing here needs more than the service-linked role."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Custom role for: another account's bucket, EMR, CloudWatch logs/metrics, or a registration you want to edit later.",
+   "remember": "Service-linked role = simplest default, but it cannot be edited and does not cover cross-account buckets or EMR. Pick a custom role for those, for Lake Formation CloudWatch logs, or when you may change the registration.",
+   "variants": [
+    "You must change the role of an SLR registration → deregister and register again (custom role registrations use `update-resource`).",
+    "The custom role's trust policy → trust `lakeformation.amazonaws.com` for `sts:AssumeRole` and `sts:SetContext`.",
+    "The admin registering needs → `iam:PassRole` on the custom role."
+   ]
+  },
+  {
+   "id": "lf-006",
+   "skill": "4.2.4",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "A data lake admin who holds only the managed policy `AWSLakeFormationDataAdmin` tries to add a colleague as a second data lake administrator and gets an access error. Why?",
+   "options": [
+    {
+     "t": "Only 1 data lake administrator is allowed per account",
+     "why": "Wrong: the default limit is 30 administrators."
+    },
+    {
+     "t": "`AWSLakeFormationDataAdmin` explicitly denies `lakeformation:PutDataLakeSettings`, so an IAM admin (or a principal allowed that action) must add admins",
+     "why": "Right: the deny stops data lake admins from creating new admins, which keeps the admin list controlled."
+    },
+    {
+     "t": "The colleague must first be made a read-only administrator",
+     "why": "Wrong: read-only admin is a separate view-only role, not a step towards full admin."
+    },
+    {
+     "t": "Admins must be added with `GrantPermissions` on the catalog",
+     "why": "Wrong: admins are set in the data lake settings (`PutDataLakeSettings`), not with a grant."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "AWSLakeFormationDataAdmin denies PutDataLakeSettings, so holders cannot add admins.",
+   "remember": "Keep the admin list small: use a dedicated role with `AWSLakeFormationDataAdmin` (not AdministratorAccess); it cannot create new admins, so only IAM admins control who is a data lake admin.",
+   "variants": [
+    "Auditors need to view permissions and CloudTrail without changes → read-only administrator.",
+    "Delegate only tag management → LF-tag creators.",
+    "A newly added admin cannot read old databases → admins do not get data permissions on existing resources automatically; grant them."
+   ]
+  },
+  {
+   "id": "lf-007",
+   "skill": "4.2.4",
+   "source": "1-basics-architecture-and-setup.md",
+   "q": "A team turned off the \"Use only IAM access control\" defaults. Next night, a Glue ETL job that creates new tables in a registered location starts failing. What should have been done first?",
+   "options": [
+    {
+     "t": "Grant `Super` to `IAMAllowedPrincipals` on the catalog",
+     "why": "Wrong: that switches enforcement back to IAM-only and undoes the goal."
+    },
+    {
+     "t": "Give the job role `s3:PutObject` on the bucket",
+     "why": "Wrong: the failure is about catalog permissions, not S3 writes."
+    },
+    {
+     "t": "Grant the job role the Lake Formation permissions it needs (`CREATE_TABLE` on the database, data location access on the path)",
+     "why": "Right: once defaults change, table creators need explicit Lake Formation permissions."
+    },
+    {
+     "t": "Re-register the location with the service-linked role",
+     "why": "Wrong: the registration role is not the cause of a missing create permission."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Before changing defaults, grant job roles CREATE_TABLE and data location access.",
+   "remember": "Switching off IAM-only defaults means creators need explicit Lake Formation permissions. Grant automation roles first, or the jobs that create tables break.",
+   "variants": [
+    "A crawler fails \"Resource does not exist or requester is not authorized\" → its role lacks `CREATE_TABLE` on the target database.",
+    "A crawler fails `AccessDeniedException` on CreateTable → its role lacks data location permission.",
+    "You want no risk at all during migration → hybrid access mode."
+   ]
+  },
+  {
+   "id": "lf-008",
+   "skill": "4.2.4",
+   "source": "2-permissions-and-fine-grained-access.md",
+   "q": "A data engineer has `CREATE_TABLE` on database `sales`. The database has no location. Creating a table at `s3://lake/raw/orders/` (a registered location) fails with \"Insufficient Lake Formation permissions on s3://lake/raw/orders\". What is the fix?",
+   "options": [
+    {
+     "t": "Grant the engineer `DATA_LOCATION_ACCESS` on that registered path",
+     "why": "Right: on a registered location, CREATE_TABLE needs data location permission too unless the database location is a registered parent prefix."
+    },
+    {
+     "t": "Grant the engineer `SELECT` on the database",
+     "why": "Wrong: SELECT is a table data permission and does not allow pointing tables at storage."
+    },
+    {
+     "t": "Give the engineer `s3:PutObject` on the prefix",
+     "why": "Wrong: the error is a Lake Formation catalog check, not an S3 call."
+    },
+    {
+     "t": "Deregister the location so no extra permission is needed",
+     "why": "Wrong: it would work, but removes Lake Formation enforcement for that data."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Pointing a table at a registered path needs CREATE_TABLE plus DATA_LOCATION_ACCESS.",
+   "remember": "`DATA_LOCATION_ACCESS` decides who may point a table or database at a registered S3 path. It is not needed to read or write data (SELECT/INSERT do that).",
+   "variants": [
+    "The database's location is a registered parent prefix of the table path → CREATE_TABLE alone is enough.",
+    "The location is not registered → CREATE_TABLE is enough.",
+    "Cross-account → the owner grants data location access with the grant option; use the owner's catalog ID."
+   ]
+  },
+  {
+   "id": "lf-009",
+   "skill": "4.2.4",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "An ETL role must create tables only under `s3://lake/curated/` (registered) in database `analytics` (no location set), and nowhere else in the lake. Which TWO grants give least privilege? (Choose 2)",
+   "options": [
+    {
+     "t": "`Super` on the database `analytics`",
+     "why": "Wrong: Super gives every operation; far more than needed."
+    },
+    {
+     "t": "`DATA_LOCATION_ACCESS` on `s3://lake/` (the bucket root)",
+     "why": "Wrong: data location access covers child paths, so this allows the whole lake."
+    },
+    {
+     "t": "`CREATE_TABLE` on the database `analytics`",
+     "why": "Right: needed to create tables in the database."
+    },
+    {
+     "t": "`DATA_LOCATION_ACCESS` on `s3://lake/curated/` only",
+     "why": "Right: restricts where the role may point new tables; it covers child paths of curated only."
+    }
+   ],
+   "answer": [
+    2,
+    3
+   ],
+   "explain": "CREATE_TABLE on the database + DATA_LOCATION_ACCESS on just the allowed prefix.",
+   "remember": "Scope creation by location with `DATA_LOCATION_ACCESS` on the narrowest prefix. A grant on a path covers all child paths, so granting the bucket root opens everything.",
+   "variants": [
+    "The job also writes rows into existing tables → add `INSERT` plus IAM `lakeformation:GetDataAccess`.",
+    "The job creates partitions under the table's registered location → no data location permission needed.",
+    "The role must only read → `SELECT` only."
+   ]
+  },
+  {
+   "id": "lf-010",
+   "skill": "2.4.1",
+   "source": "2-permissions-and-fine-grained-access.md",
+   "q": "In table `claims`, the `diagnosis` column must be hidden from analysts only for rows where `state = 'CA'`. All other rows and columns stay visible. What should the admin create?",
+   "options": [
+    {
+     "t": "A simple column filter that excludes `diagnosis`",
+     "why": "Wrong: it hides the column for every row, not just CA rows."
+    },
+    {
+     "t": "Data filters: one with all columns and row filter `state <> 'CA'`, and one excluding `diagnosis` with row filter `state = 'CA'`, then grant SELECT with both",
+     "why": "Right: a column list plus a row expression is cell-level security; the user gets the union of the rows."
+    },
+    {
+     "t": "A row filter `state <> 'CA'` only",
+     "why": "Wrong: it removes the CA rows completely instead of hiding one column in them."
+    },
+    {
+     "t": "An LF-tag `pii=true` on the `diagnosis` column",
+     "why": "Wrong: tags grant or deny the whole column; they cannot vary it by row."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Column hidden only for some rows: cell-level filtering (column list + row expression).",
+   "remember": "Data filter shapes: all columns + row expression = row-level; column list + all rows = column-level; column list + row expression = cell-level. Grant `SELECT` on the table \"with data filter\".",
+   "variants": [
+    "Hide a column for everyone → simple column filtering (include/exclude list).",
+    "Different managers see different regions → one row filter per group.",
+    "Cell-level on nested columns, views or resource links → not supported."
+   ]
+  },
+  {
+   "id": "lf-011",
+   "skill": "4.2.4",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "A data filter with row filter `country = 'us'` is granted to a team. Athena shows the table but every query returns zero rows. The data stores country codes such as `US` and `DE`. What is the cause?",
+   "options": [
+    {
+     "t": "The team lacks `DESCRIBE` on the table",
+     "why": "Wrong: the team can see the table, so DESCRIBE is not the problem."
+    },
+    {
+     "t": "Row filters cannot use string columns",
+     "why": "Wrong: STRING/CHAR/VARCHAR are supported types."
+    },
+    {
+     "t": "String constants must use double quotes",
+     "why": "Wrong: string constants use single quotes; double quotes are for reserved-word column names."
+    },
+    {
+     "t": "String comparisons in row filters are case-sensitive, so `'us'` matches no rows",
+     "why": "Right: change the expression to `country = 'US'`."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Row filter strings are case-sensitive; `'us'` does not match `US`.",
+   "remember": "Row filter = PartiQL subset like a WHERE clause: column vs constant, single-quoted strings, case-sensitive comparisons and LIKE, no functions, no column-to-column comparison, under 2,048 characters.",
+   "variants": [
+    "Query fails on one column → that column is excluded by the column filter.",
+    "The filter needs `upper(country)` → not allowed, row filters cannot use functions.",
+    "Row filter on an array or map column → not supported."
+   ]
+  },
+  {
+   "id": "lf-012",
+   "skill": "2.4.1",
+   "source": "2-permissions-and-fine-grained-access.md",
+   "q": "A table is partitioned by `region`. Security wants to hide the `region` column from contractors using column filtering. What happens?",
+   "options": [
+    {
+     "t": "It cannot be done: column filtering cannot be applied to partition keys",
+     "why": "Right: partition keys are excluded from column filtering; restructure or use a row/view approach."
+    },
+    {
+     "t": "It works with an exclusion list",
+     "why": "Wrong: no column list, include or exclude, can filter a partition key."
+    },
+    {
+     "t": "It works only in a cell-level data filter with `region IS NOT NULL`",
+     "why": "Wrong: `IS [NOT] NULL` is also not allowed on partition columns."
+    },
+    {
+     "t": "It works after tagging the column with an LF-tag",
+     "why": "Wrong: the partition-key limit still applies; tags do not bypass it."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "No column filtering on partition keys.",
+   "remember": "Design tables with security in mind: partition keys cannot be column-filtered and cannot use `IS [NOT] NULL` in row filters. Hide sensitive values in non-partition columns.",
+   "variants": [
+    "You need to hide only some partitions' rows → a row filter on the partition column (e.g. `region = 'west'`).",
+    "A nested struct field must be hidden → nested column filtering works up to 5 levels.",
+    "A view must carry cell-level security → not supported on views."
+   ]
+  },
+  {
+   "id": "lf-013",
+   "skill": "4.2.4",
+   "source": "2-permissions-and-fine-grained-access.md",
+   "q": "An analyst role had `SELECT` on three columns of `customers`. Later the same role was granted `INSERT` on the table for a load job. Now the analyst sees all columns. Why, and what is the fix?",
+   "options": [
+    {
+     "t": "Permissions are evaluated in grant order; re-grant the column SELECT last",
+     "why": "Wrong: permissions combine; order does not matter."
+    },
+    {
+     "t": "`INSERT` implicitly grants the grant option",
+     "why": "Wrong: the grant option is a separate choice."
+    },
+    {
+     "t": "A principal with ALTER, DROP, DELETE or INSERT has full-table access, so a column-filtered SELECT has no effect; use a separate role for loading",
+     "why": "Right: do not mix partial SELECT with full-access permissions on one principal."
+    },
+    {
+     "t": "Column filters stop working when the table gets new partitions",
+     "why": "Wrong: new data does not remove column filters."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Column-filtered SELECT plus INSERT/ALTER/DROP/DELETE → the filter stops applying.",
+   "remember": "Partial (column) SELECT cannot coexist with ALTER, DROP, DELETE or INSERT on the same table. Keep separate roles for pipelines (write) and analysts (read).",
+   "variants": [
+    "A tag match covers only some columns and the grant is INSERT → no INSERT is given, only DESCRIBE.",
+    "A role needs to read but not change → SELECT only.",
+    "A user is in a group with another grant → permissions add up (union)."
+   ]
+  },
+  {
+   "id": "lf-014",
+   "skill": "4.2.4",
+   "source": "2-permissions-and-fine-grained-access.md",
+   "q": "An admin tries to grant `SELECT` WITH GRANT OPTION on table `hr` to a team lead using an exclusion column list (all columns except `salary`). The grant is rejected. What should the admin do?",
+   "options": [
+    {
+     "t": "Use the same grant without a column list",
+     "why": "Wrong: that would expose `salary`."
+    },
+    {
+     "t": "Use an inclusion list that names every column except `salary`",
+     "why": "Right: column-filtered SELECT with the grant option must use an include list."
+    },
+    {
+     "t": "Grant `DESCRIBE` with the exclusion list instead",
+     "why": "Wrong: you cannot set column lists on a DESCRIBE grant."
+    },
+    {
+     "t": "Grant `Super` and add a deny on `salary`",
+     "why": "Wrong: Lake Formation has no deny grants and Super is full access."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Column-filtered SELECT with grant option → inclusion list only.",
+   "remember": "Grants Lake Formation rejects: column-filtered SELECT with grant option using an exclusion list; DESCRIBE to a principal with partial SELECT; DROP or Super on a database to an external account.",
+   "variants": [
+    "Grant without the grant option → exclusion lists are fine.",
+    "The granter has SELECT with row restrictions → they cannot grant column-filtered SELECT; they need all rows with grant option.",
+    "Cross-account column filtering in Athena/Spectrum → inclusion-only."
+   ]
+  },
+  {
+   "id": "lf-015",
+   "skill": "4.2.5",
+   "source": "2-permissions-and-fine-grained-access.md",
+   "q": "A company has 400 tables in 30 databases and 25 teams. New tables arrive weekly and should be visible to the right teams automatically, with the least administrative effort. Which approach fits?",
+   "options": [
+    {
+     "t": "Named-resource grants on every table for every team",
+     "why": "Wrong: needs about teams × tables grants and new tables need new grants."
+    },
+    {
+     "t": "A data cells filter per table per team",
+     "why": "Wrong: filters are per table and do not cover new tables automatically."
+    },
+    {
+     "t": "S3 object tags with bucket policy conditions",
+     "why": "Wrong: bucket policies cannot control tables or columns in the catalog."
+    },
+    {
+     "t": "LF-tags (LF-TBAC): tag databases, override at table or column where needed, and grant tag expressions to team roles",
+     "why": "Right: grants scale like principals + resources, and tables inherit database tags."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Many tables, many teams, new tables keep coming: LF-TBAC.",
+   "remember": "LF-TBAC is the recommended method at scale: named grants need n(P) × n(R), tags need about n(P) + n(R). Tables inherit tags from the database, columns from the table.",
+   "variants": [
+    "Access should follow the user's IdP department attribute → ABAC with IAM/session tags.",
+    "A handful of tables and two teams → named-resource grants are fine.",
+    "After moving to tags → test, then revoke old named grants."
+   ]
+  },
+  {
+   "id": "lf-016",
+   "skill": "4.2.5",
+   "source": "2-permissions-and-fine-grained-access.md",
+   "q": "An analyst role is granted `SELECT` with the LF-tag expression `department = (sales, marketing) AND classification = public`. Which TWO tables can the role query? (Choose 2)",
+   "options": [
+    {
+     "t": "Table tagged `department=sales`, `classification=restricted`",
+     "why": "Wrong: the classification key does not match, and all keys must match."
+    },
+    {
+     "t": "Table tagged `department=sales`, `classification=public`",
+     "why": "Right: both keys match, sales is one of the allowed values."
+    },
+    {
+     "t": "Table tagged `department=finance`, `classification=public`",
+     "why": "Wrong: finance is not one of the allowed department values."
+    },
+    {
+     "t": "Table tagged `department=marketing`, `classification=public`",
+     "why": "Right: values within one key are OR, and both keys match."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Across keys = AND; values within a key = OR.",
+   "remember": "In an LF-tag grant, several keys combine with AND and several values of one key combine with OR. For \"A or B\" across different keys, make two separate grants.",
+   "variants": [
+    "Grant `module=sales AND region=west`, table has only `module=sales` → no access.",
+    "Need sales-key OR region-key access → two grants.",
+    "A resource tagged with two values for one key → not possible, one value per key."
+   ]
+  },
+  {
+   "id": "lf-017",
+   "skill": "2.4.1",
+   "source": "2-permissions-and-fine-grained-access.md",
+   "q": "Database `finance` is tagged `classification=internal`. One of its tables, `payroll`, must be treated as `classification=restricted`. All other tables should keep the database tag. What is the simplest design?",
+   "options": [
+    {
+     "t": "Tag the `payroll` table `classification=restricted`, which overrides the inherited value",
+     "why": "Right: tables inherit from the database and a lower level can override an inherited value."
+    },
+    {
+     "t": "Tag the table with both `internal` and `restricted`",
+     "why": "Wrong: a resource can hold only one value per key."
+    },
+    {
+     "t": "Move `payroll` to a new database because tags cannot be overridden",
+     "why": "Wrong: overriding inherited tags is supported."
+    },
+    {
+     "t": "Use a wildcard tag `finance.*` except payroll",
+     "why": "Wrong: LF-tags have no wildcards; tag the database to cover all tables."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Tag at database level, override on the exception table.",
+   "remember": "LF-tag inheritance: tables inherit from their database, columns from their table; override at the lower level. No wildcards, one value per key, max 50 tags per resource.",
+   "variants": [
+    "All columns of a table need the tag → tag the table.",
+    "Only one column is sensitive → tag that column (e.g. `pii=true`).",
+    "Tags are stored in lower case and keys/values are max 50 characters."
+   ]
+  },
+  {
+   "id": "lf-018",
+   "skill": "4.3.3",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "A producer account shares a Lake Formation table with a consumer account. The table's data is encrypted with SSE-KMS. Consumer analysts see the table but their queries fail to decrypt the data. What must be in place?",
+   "options": [
+    {
+     "t": "A grant of `Super` on the database to the consumer account",
+     "why": "Wrong: Super on a database cannot go to an external account, and it does not touch KMS."
+    },
+    {
+     "t": "An S3 bucket policy allowing the consumer analysts `s3:GetObject`",
+     "why": "Wrong: that opens direct S3 access that bypasses Lake Formation and still does not grant the key."
+    },
+    {
+     "t": "A customer managed KMS key whose key policy allows the consumer side, plus consumer roles allowed to decrypt with it",
+     "why": "Right: for cross-account encrypted data, both the producer's key policy and the consumer's roles must allow decrypt."
+    },
+    {
+     "t": "Re-register the location with the service-linked role",
+     "why": "Wrong: the service-linked role does not cover cross-account buckets."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Cross-account SSE-KMS: producer key policy + consumer role permissions must both allow decrypt.",
+   "remember": "Encryption crosses accounts only when both sides allow it: the producer's customer managed key policy names the other account, and the consumer's roles get KMS decrypt. The registration role also needs the key permissions.",
+   "variants": [
+    "Granting fails with \"Insufficient encryption key permissions for Glue API\" → the granter needs KMS access to the Data Catalog key.",
+    "Same-account SSE-KMS → the registration role needs `kms:Decrypt` / `kms:GenerateDataKey`.",
+    "Iceberg tables → set their own S3 SSE settings as well."
+   ]
+  },
+  {
+   "id": "lf-019",
+   "skill": "4.2.5",
+   "source": "2-permissions-and-fine-grained-access.md",
+   "q": "Users sign in through a corporate IdP that passes a `department` session tag. New hires must get access to their department's tables without anyone adding grants. Which Lake Formation feature fits best?",
+   "options": [
+    {
+     "t": "LF-tag grants to each individual IAM user",
+     "why": "Wrong: every new hire would still need a grant."
+    },
+    {
+     "t": "Attribute-based access control (ABAC) grants that match the principal's IAM or session tag",
+     "why": "Right: any principal carrying the matching tag value gets access automatically."
+    },
+    {
+     "t": "A data filter per new hire",
+     "why": "Wrong: per-user filters are manual work and still need grants."
+    },
+    {
+     "t": "Granting to `ALLIAMPrincipals`",
+     "why": "Wrong: that gives everyone in the account access, not per department."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Principal attributes drive access → ABAC with IAM/session tags.",
+   "remember": "LF-tags label data resources; ABAC matches tags on the principal (IAM or session tags). Use ABAC when identity attributes already exist; LF-TBAC to scale over many resources. IAM tags are not LF-tags.",
+   "variants": [
+    "Many tables need to be grouped by domain → LF-tags on the resources.",
+    "Grant to an IdP group directly → Identity Center or SAML group principals.",
+    "Someone assumes IAM tags work as LF-tags → they do not; they are separate."
+   ]
+  },
+  {
+   "id": "lf-020",
+   "skill": "4.5.1",
+   "source": "3-sharing-integrations-and-governance.md",
+   "q": "A producer account must give read access to 150 tables to all accounts in one OU of its AWS Organization, with as few grants and as little acceptance work as possible. What should it do?",
+   "options": [
+    {
+     "t": "Grant by LF-tag expression to the OU, with cross-account version 3 or higher",
+     "why": "Right: an OU grant counts as one grant, inside the organization needs no invitation, and LF-TBAC to OUs needs v3+."
+    },
+    {
+     "t": "A named-resource grant per table per account with cross-account version 1",
+     "why": "Wrong: v1 creates one RAM share per grant, which wastes RAM capacity."
+    },
+    {
+     "t": "S3 bucket policies that allow each account's roles to read the prefixes",
+     "why": "Wrong: no table/column control and much manual upkeep."
+    },
+    {
+     "t": "Copy the tables into each account with Glue jobs",
+     "why": "Wrong: copies cost money and go stale; sharing copies no data."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Many tables to an OU in your org: LF-TBAC grant to the OU (v3+).",
+   "remember": "Inside the same organization shares are available immediately; a grant to an org or OU counts as one grant. LF-TBAC sharing to orgs/OUs needs cross-account version 3 or above.",
+   "variants": [
+    "Recipient is outside the organization → its data lake admin must accept a RAM invitation.",
+    "Share directly with one role in another account → direct share, grantor needs v3.",
+    "Hundreds of thousands of tables → version 5 wildcard sharing."
+   ]
+  },
+  {
+   "id": "lf-021",
+   "skill": "4.5.1",
+   "source": "3-sharing-integrations-and-governance.md",
+   "q": "A partner company, outside the producer's AWS Organization, needs only three columns and only the EU rows of a sales table. No data may be copied. What should the producer do?",
+   "options": [
+    {
+     "t": "Create a Redshift datashare from the S3 data",
+     "why": "Wrong: the data is in S3 under Lake Formation, not in Redshift."
+    },
+    {
+     "t": "Use an S3 bucket policy for the partner on the EU prefix",
+     "why": "Wrong: it cannot restrict columns and bypasses Lake Formation."
+    },
+    {
+     "t": "Grant to an OU that includes the partner",
+     "why": "Wrong: the partner is outside the organization, so it is not in an OU."
+    },
+    {
+     "t": "Grant SELECT with a data filter (three columns, row filter for EU) to the partner account; the partner's data lake admin accepts the RAM invitation",
+     "why": "Right: a named-resource grant with a filter limits columns and rows, and outside the org RAM sends an invitation."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "External account + columns/rows: named-resource grant with a data filter, accepted via RAM.",
+   "remember": "Lake Formation sharing copies no data: the consumer reads the producer's registered location via credential vending. Outside the org, the consumer's data lake admin accepts the RAM invitation.",
+   "variants": [
+    "The partner must pay for/licence the data → AWS Data Exchange integration.",
+    "Consumer admin and producer use the same org → no invitation, available immediately.",
+    "External account effective row predicate → intersection of account-level and direct predicates."
+   ]
+  },
+  {
+   "id": "lf-022",
+   "skill": "2.2.1",
+   "source": "3-sharing-integrations-and-governance.md",
+   "q": "In a consumer account, the admin created a resource link `sales_link` to a shared table and granted `DESCRIBE` on the link to an analyst role. The analyst sees `sales_link` in Athena but queries fail. What is missing?",
+   "options": [
+    {
+     "t": "`DROP` on the resource link",
+     "why": "Wrong: DROP only lets the principal delete the link."
+    },
+    {
+     "t": "The link must be recreated in the producer account",
+     "why": "Wrong: links for Athena belong in the consumer account."
+    },
+    {
+     "t": "`SELECT` on the shared target table granted to the analyst role",
+     "why": "Right: a grant on a link is not a grant on the target; grant data permissions on the target."
+    },
+    {
+     "t": "`DATA_LOCATION_ACCESS` on the producer's S3 path",
+     "why": "Wrong: that is only for creating catalog entries pointing at a location."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Grant on the link (DESCRIBE) ≠ grant on the target (SELECT).",
+   "remember": "Athena and Redshift Spectrum query shared tables through a local resource link. Permissions on the link only let you see or drop it; data permissions must be granted on the target.",
+   "variants": [
+    "Glue ETL needs the shared table → can use it without a link, but use the catalog ID or a link to avoid name clashes.",
+    "Access the table from another Region → create a resource link in that Region.",
+    "Dropping the target table → links are not deleted, they dangle."
+   ]
+  },
+  {
+   "id": "lf-023",
+   "skill": "4.5.1",
+   "source": "3-sharing-integrations-and-governance.md",
+   "q": "A consumer account's data lake admin received a shared table and wants to give read access to a third account. The grant fails with \"Not authorized to grant permissions for the resource\". What is the right approach?",
+   "options": [
+    {
+     "t": "Re-grant it with the grant option from the consumer account",
+     "why": "Wrong: a recipient can grant only to principals in its own account."
+    },
+    {
+     "t": "Ask the owner (producer) account to grant to the third account directly",
+     "why": "Right: only the owner can share to other accounts; the recipient cannot re-share."
+    },
+    {
+     "t": "Create a resource link in the third account pointing to the consumer's link",
+     "why": "Wrong: a link carries no permission, and links to links do not help."
+    },
+    {
+     "t": "Grant the table to `IAMAllowedPrincipals` in the consumer account",
+     "why": "Wrong: the consumer admin cannot grant shared resources to IAMAllowedPrincipals."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Recipients cannot re-share outside their account; the owner must grant.",
+   "remember": "A consumer admin can pass shared access only to principals in its own account — not to other accounts, organizations or IAMAllowedPrincipals.",
+   "variants": [
+    "Consumer analysts need access → the consumer admin grants to them in its own account.",
+    "Producer wants data lake admins in the consumer account to see the share first → that is the default.",
+    "Direct share to a principal in another account → only that recipient sees it, and it cannot re-share."
+   ]
+  },
+  {
+   "id": "lf-024",
+   "skill": "4.5.1",
+   "source": "3-sharing-integrations-and-governance.md",
+   "q": "A producer shares thousands of tables with many accounts and is close to its RAM resource share limits. Which TWO actions reduce RAM usage? (Choose 2)",
+   "options": [
+    {
+     "t": "Use the \"All tables\" wildcard for a database instead of granting each table",
+     "why": "Right: the wildcard counts as one grant."
+    },
+    {
+     "t": "Switch to cross-account version 1",
+     "why": "Wrong: v1 creates one RAM share per named-resource grant, the worst use of capacity."
+    },
+    {
+     "t": "Grant each table to each account separately",
+     "why": "Wrong: that multiplies grants and shares."
+    },
+    {
+     "t": "Grant to the organization or OU instead of each account",
+     "why": "Right: an org or OU grant counts as one grant."
+    }
+   ],
+   "answer": [
+    0,
+    3
+   ],
+   "explain": "Save RAM capacity: All tables wildcard, org/OU grants, version 2+ (or 5).",
+   "remember": "RAM capacity helpers: All tables wildcard, organization/OU grants, version 2+ (many grants per share), and version 5 (wildcard patterns, unlimited tables; no downgrade).",
+   "variants": [
+    "Old shares were made under v1 → revoke and re-grant after upgrading to use capacity well.",
+    "Hundreds of thousands of tables → version 5.",
+    "Version change → existing recipient permissions stay as they are."
+   ]
+  },
+  {
+   "id": "lf-025",
+   "skill": "4.5.1",
+   "source": "3-sharing-integrations-and-governance.md",
+   "q": "A producer tries to share a table with another account and gets \"Insufficient Lake Formation permissions: Illegal combination\". What should it do?",
+   "options": [
+    {
+     "t": "Upgrade to cross-account version 5",
+     "why": "Wrong: the version is not the cause of this error."
+    },
+    {
+     "t": "Ask the consumer to accept the RAM invitation",
+     "why": "Wrong: the share has not been created yet; acceptance happens after."
+    },
+    {
+     "t": "Revoke the `IAMAllowedPrincipals` permissions on the table, then share again",
+     "why": "Right: you cannot share a resource while IAMAllowedPrincipals still holds permissions on it."
+    },
+    {
+     "t": "Grant `Super` on the database to the consumer account",
+     "why": "Wrong: Super on a database cannot be granted to an external account."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "\"Illegal combination\" → IAMAllowedPrincipals still on the resource. Revoke it.",
+   "remember": "Before any cross-account share, the producer revokes IAMAllowedPrincipals, holds `AWSLakeFormationCrossAccountManager` (or equivalent RAM/Glue actions), registers the location and grants with the grant option.",
+   "variants": [
+    "\"Association failed because the caller was not authorized\" on acceptance → allow `glue:PutResourcePolicy`.",
+    "\"Organization not found\" → enable RAM sharing with AWS Organizations.",
+    "Using a Glue Catalog resource policy → add the `glue:ShareResource` statement for RAM."
+   ]
+  },
+  {
+   "id": "lf-026",
+   "skill": "4.5.1",
+   "source": "3-sharing-integrations-and-governance.md",
+   "q": "A Spark job on EMR in a consumer account fails on a shared table with \"not authorized to perform glue:GetUserDefinedFunctions\". The Lake Formation grants are correct. What is the fix?",
+   "options": [
+    {
+     "t": "Grant `ALTER` on the table to the EMR role",
+     "why": "Wrong: ALTER changes metadata; it does not fix the missing Glue action in the share."
+    },
+    {
+     "t": "Register the producer location with the service-linked role",
+     "why": "Wrong: EMR needs a custom registration role, and this is a RAM permission issue."
+    },
+    {
+     "t": "Move the job to EMR on EKS",
+     "why": "Wrong: EMR on EKS is not supported with Lake Formation."
+    },
+    {
+     "t": "Update the share's RAM managed permissions to version 3 (or revoke and re-grant)",
+     "why": "Right: older RAM managed permission versions lack `glue:GetUserDefinedFunctions`."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "EMR GetUserDefinedFunctions error on a share → RAM managed permission version 3.",
+   "remember": "Older RAM shares (managed permission v1/v2) miss `glue:GetUserDefinedFunctions`, which Spark needs. Update to managed permission version 3, or revoke and re-grant.",
+   "variants": [
+    "\"Caller is temporarily not authorized\" through a redirected link → use QuerySessionContext or wait about 24 hours.",
+    "ConcurrentModificationException on grants → retry or use batch grant APIs.",
+    "Recipients see the table but cannot read → missing IAM `GetDataAccess` or data permission."
+   ]
+  },
+  {
+   "id": "lf-027",
+   "skill": "4.2.4",
+   "source": "3-sharing-integrations-and-governance.md",
+   "q": "A team needs Spark processing that enforces Lake Formation row-level filters on S3 tables. Which engine supports this?",
+   "options": [
+    {
+     "t": "Spark on EMR Serverless",
+     "why": "Right: it supports table, column and row/cell-level reads with Lake Formation."
+    },
+    {
+     "t": "Athena for Apache Spark",
+     "why": "Wrong: Athena Spark does not support Lake Formation permissions."
+    },
+    {
+     "t": "EMR on EKS",
+     "why": "Wrong: not supported with Lake Formation fine-grained access."
+    },
+    {
+     "t": "A Glue 4.0 job with default settings",
+     "why": "Wrong: fine-grained (column/row/cell) read in Glue arrives with Glue 5.0+."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Row filters in Spark: EMR (EC2 or Serverless) or Glue 5.0+, not Athena Spark or EMR on EKS.",
+   "remember": "Integrated engines apply the filtering themselves. Row/cell-level reads: Athena SQL, Redshift Spectrum, Spark on EMR (EC2 and Serverless), Glue 5.0+. Not supported: Athena Spark, Hive on EMR Serverless, EMR on EKS.",
+   "variants": [
+    "SQL instead of Spark → Athena SQL supports row/cell-level reads.",
+    "An existing Glue 4.0 job needs column security → upgrade to Glue 5.0+.",
+    "Hive on EMR (EC2) → table and column level, but no row/cell level."
+   ]
+  },
+  {
+   "id": "lf-028",
+   "skill": "4.2.4",
+   "source": "3-sharing-integrations-and-governance.md",
+   "q": "A company wants a third-party Spark engine (not an AWS service) to read tables in S3 locations registered with Lake Formation. What must be set up, and what is the risk?",
+   "options": [
+    {
+     "t": "Nothing; any engine with IAM access to S3 automatically gets Lake Formation filtering",
+     "why": "Wrong: Lake Formation never filters for engines that read S3 directly."
+    },
+    {
+     "t": "Opt in under Application integration settings with session tag values and allowed account IDs; the engine receives unfiltered table metadata, so its admin must filter correctly",
+     "why": "Right: external engines are trusted to apply the filters themselves."
+    },
+    {
+     "t": "Register the location with the service-linked role and grant DESCRIBE",
+     "why": "Wrong: DESCRIBE gives no data access and does not enable external engines."
+    },
+    {
+     "t": "Create a resource link for the engine in a separate account",
+     "why": "Wrong: resource links do not grant access or enable external engines."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "External engines: opt in under Application integration settings; the engine does the filtering.",
+   "remember": "Third-party engines need explicit opt-in (session tags + allowed accounts). Lake Formation hands them unfiltered metadata, so you trust their admins to enforce filters. Engines without session tags can use full-table credential vending.",
+   "variants": [
+    "The engine cannot read → not opted in, wrong session tag, or account not allowed.",
+    "Lake Formation filters data via its Storage API for a non-AWS engine → billed per byte scanned.",
+    "An AWS integrated engine (Athena, EMR) → no opt-in needed; it is a trusted caller."
+   ]
+  },
+  {
+   "id": "lf-029",
+   "skill": "4.4.1",
+   "source": "3-sharing-integrations-and-governance.md",
+   "q": "Security asks: \"Which role read table `payments` last week, and which exact S3 objects were read?\" What gives the most complete answer?",
+   "options": [
+    {
+     "t": "CloudTrail `GrantPermissions` events",
+     "why": "Wrong: they show who was given access, not who read data."
+    },
+    {
+     "t": "Amazon S3 request metrics in CloudWatch",
+     "why": "Wrong: metrics count requests; they do not identify who read which object."
+    },
+    {
+     "t": "CloudTrail `GetDataAccess` events, plus S3 data events with source identity tracking (`SET_SOURCE_IDENTITY` and `sts:SetSourceIdentity` on the registration role)",
+     "why": "Right: GetDataAccess shows principal and service; source identity links each `s3:GetObject` to it."
+    },
+    {
+     "t": "Lake Formation `list-permissions` output",
+     "why": "Wrong: it lists current grants, not past reads."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Who read the data: CloudTrail GetDataAccess + S3 data events with source identity.",
+   "remember": "Every credential request for a registered location logs `GetDataAccess` (requesterService, lakeFormationPrincipal). For object-level tracing add S3 data events (extra cost) and source identity. Query with Athena or CloudTrail Lake.",
+   "variants": [
+    "The table is in a Redshift federated catalog → no GetDataAccess; watch `GetTable`/`BatchGetTable`.",
+    "You want to know who can access now → `list-permissions` or the Data permissions page.",
+    "Someone changed admins → look for `PutDataLakeSettings` in CloudTrail."
+   ]
+  },
+  {
+   "id": "lf-030",
+   "skill": "4.5.2",
+   "source": "3-sharing-integrations-and-governance.md",
+   "q": "A data lake holds unknown amounts of personal data across many S3 tables. Only an approved compliance role may see PII columns, and the process should scale. Which pattern fits?",
+   "options": [
+    {
+     "t": "Use Lake Formation to scan S3 for PII",
+     "why": "Wrong: Lake Formation enforces access; it does not discover PII."
+    },
+    {
+     "t": "Encrypt the PII buckets with SSE-KMS and give the key only to compliance",
+     "why": "Wrong: key-level control is all-or-nothing per object, not per column."
+    },
+    {
+     "t": "Copy non-PII columns into a separate clean bucket for everyone else",
+     "why": "Wrong: copies cost storage and go stale."
+    },
+    {
+     "t": "Use Macie to find PII, tag the affected resources (e.g. `pii=true`) in Lake Formation, grant that tag only to the compliance role, and use column/cell filters to hide fields",
+     "why": "Right: Macie finds, LF-tags classify, Lake Formation enforces."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "PII governance: Macie finds → LF-tags classify → grants and filters enforce.",
+   "remember": "Macie discovers sensitive data; Lake Formation does not. Tag the findings with LF-tags, grant PII tags only to approved roles, and hide fields with column/cell filters.",
+   "variants": [
+    "Need a business glossary and request/approval workflow → SageMaker Catalog, with Lake Formation enforcing underneath.",
+    "Hide PII only for some rows → cell-level filter.",
+    "PII inside Redshift tables → Redshift's own masking/row-level security."
+   ]
+  },
+  {
+   "id": "lf-031",
+   "skill": "4.2.4",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "Analysts are correctly limited by Lake Formation column filters in Athena, yet one analyst downloaded full Parquet files with the AWS CLI. What should be fixed?",
+   "options": [
+    {
+     "t": "Add a row filter to the table",
+     "why": "Wrong: filters apply only inside integrated engines, not to direct S3 reads."
+    },
+    {
+     "t": "Remove or deny the analysts' direct S3 permissions in IAM and the bucket policy, keeping Lake Formation grants and `GetDataAccess`",
+     "why": "Right: Lake Formation does not block direct S3 access; queries still work through vended credentials."
+    },
+    {
+     "t": "Revoke `lakeformation:GetDataAccess` from the analysts",
+     "why": "Wrong: that breaks their Athena queries and leaves direct S3 open."
+    },
+    {
+     "t": "Re-register the location with a custom role",
+     "why": "Wrong: the registration role is not the leak; the analysts' own S3 permissions are."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Lake Formation does not block direct S3 access: remove analysts' S3 permissions.",
+   "remember": "Allow direct S3 access only to admins, the registration role and pipelines. Analysts query through Lake Formation credential vending, so they need no S3 permissions.",
+   "variants": [
+    "Keep S3 traffic private too → S3 gateway endpoint and `aws:SourceVpce` bucket policy conditions.",
+    "Separate pipelines from analysts → different roles with matching Lake Formation permissions.",
+    "Track the leak afterwards → CloudTrail S3 data events."
+   ]
+  },
+  {
+   "id": "lf-032",
+   "skill": "4.2.4",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "A company uses a non-AWS engine that reads filtered data through Lake Formation's own Storage API, with no AWS analytics service processing it. Lake Formation charges are rising. What lowers the cost?",
+   "options": [
+    {
+     "t": "Store data as Parquet/ORC and partition it so each scan reads fewer bytes, or move the queries to an integrated AWS engine",
+     "why": "Right: Storage API filtering is billed per byte scanned (rounded up per MB, 10 MB minimum)."
+    },
+    {
+     "t": "Stop using cross-account sharing",
+     "why": "Wrong: Lake Formation permissions and sharing are free."
+    },
+    {
+     "t": "Replace LF-tags with named-resource grants",
+     "why": "Wrong: permissions themselves have no Lake Formation charge."
+    },
+    {
+     "t": "Turn off CloudTrail management events",
+     "why": "Wrong: management event history is not the source of this charge."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Storage API data filtering is billed per byte scanned: scan less or use an integrated engine.",
+   "remember": "Lake Formation permissions and sharing are free; you pay for underlying services. The Storage API (data filtering for non-AWS engines) bills per byte scanned, rounded up to the next MB, 10 MB minimum per scan.",
+   "variants": [
+    "Cost comes from tracing reads → S3 data events in CloudTrail cost extra.",
+    "A custom registration role logging to `/aws-lakeformation-acceleration/*` → CloudWatch Logs charges.",
+    "Teams copy data for security → extra storage and stale data; use filters instead."
+   ]
+  }
+ ]
+}

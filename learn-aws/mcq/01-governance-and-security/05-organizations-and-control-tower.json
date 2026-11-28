@@ -1,0 +1,341 @@
+{
+ "questions": [
+  {
+   "id": "orgs-001",
+   "skill": "4.5.3",
+   "source": "1-organizations.md",
+   "q": "A company must make sure no account in its Production OU can copy backups or snapshots to Regions outside eu-west-1 and eu-central-1, even if an account administrator tries. Which approach fits?",
+   "options": [
+    {
+     "t": "An IAM policy in each account denying other Regions",
+     "why": "Wrong: account admins can change their own IAM policies, and it must be maintained in every account."
+    },
+    {
+     "t": "An SCP on the Production OU denying requests where aws:RequestedRegion is not an approved Region",
+     "why": "Right: SCPs cap the maximum permissions of every principal in the OU, including admins, and inherit to new accounts."
+    },
+    {
+     "t": "A tag policy on the OU",
+     "why": "Wrong: tag policies standardize tag keys and values, they do not block API calls."
+    },
+    {
+     "t": "A backup policy on the OU",
+     "why": "Wrong: a backup policy defines AWS Backup plans, it does not stop other actions in other Regions."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "An SCP deny on aws:RequestedRegion on the OU is the guardrail for Region restriction.",
+   "remember": "Block Regions or services for every account in an OU, admins included \u2192 SCP deny on the OU (aws:RequestedRegion).",
+   "variants": [
+    "Resources (not principals) must be restricted \u2192 resource control policy (RCP).",
+    "The restriction must apply to the management account \u2192 impossible with an SCP, it is not restricted by SCPs.",
+    "You only need to report non-compliance \u2192 AWS Config rule, not an SCP."
+   ]
+  },
+  {
+   "id": "orgs-002",
+   "skill": "4.5.7",
+   "source": "1-organizations.md",
+   "q": "A team found that the SCPs on their organization have no effect on a workload running in one account. That account is the management account. What is the best fix?",
+   "options": [
+    {
+     "t": "Attach a stricter SCP directly to the management account",
+     "why": "Wrong: SCPs and RCPs never restrict the management account."
+    },
+    {
+     "t": "Move the workloads into member accounts and keep the management account free of workloads",
+     "why": "Right: SCPs apply to members only, so workloads belong there and the management account should stay protected."
+    },
+    {
+     "t": "Enable consolidated billing only mode",
+     "why": "Wrong: that mode removes organization-wide features such as SCPs."
+    },
+    {
+     "t": "Raise the SCP size limit",
+     "why": "Wrong: size is irrelevant; the management account is simply exempt."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "The management account is exempt from SCPs, so run no workloads there.",
+   "remember": "SCPs do not affect the management account (nor service-linked roles) \u2192 keep workloads out of it.",
+   "variants": [
+    "Need SCPs at all \u2192 the organization must be in All features mode.",
+    "Need an admin for Security Hub or GuardDuty \u2192 use a delegated administrator, not the management account."
+   ]
+  },
+  {
+   "id": "orgs-003",
+   "skill": "4.5.7",
+   "source": "1-organizations.md",
+   "q": "A data lake bucket must be readable by every account in the company, including accounts that will be created next year, without editing the bucket policy each time. What should the bucket policy use?",
+   "options": [
+    {
+     "t": "List each account ID in the Principal element",
+     "why": "Wrong: new accounts are not covered, so the policy needs constant edits."
+    },
+    {
+     "t": "A condition on aws:PrincipalOrgID equal to the organization ID",
+     "why": "Right: any principal from any account in the organization matches, including future accounts."
+    },
+    {
+     "t": "Principal set to * with no condition",
+     "why": "Wrong: this makes the bucket public."
+    },
+    {
+     "t": "An SCP that grants s3:GetObject",
+     "why": "Wrong: SCPs never grant permissions, they only cap them."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "aws:PrincipalOrgID gives org-wide access that includes new accounts automatically.",
+   "remember": "Share a resource with the whole organization \u2192 aws:PrincipalOrgID in the resource policy.",
+   "variants": [
+    "Only one OU should read it \u2192 aws:PrincipalOrgPaths.",
+    "Sharing Glue catalog tables across accounts \u2192 Lake Formation grants or RAM."
+   ]
+  },
+  {
+   "id": "orgs-004",
+   "skill": "4.4.1",
+   "source": "1-organizations.md",
+   "q": "An auditor needs the API activity of all current and future accounts in one S3 bucket, managed from a single place. Which is the best design?",
+   "options": [
+    {
+     "t": "A trail in each account, configured by hand",
+     "why": "Wrong: it does not cover new accounts automatically and is high effort."
+    },
+    {
+     "t": "A CloudTrail organization trail created from the management (or delegated) account, delivering to a central S3 bucket",
+     "why": "Right: one trail logs all accounts in the organization into a central bucket."
+    },
+    {
+     "t": "AWS Config aggregator",
+     "why": "Wrong: it aggregates configuration and compliance data, not API call history."
+    },
+    {
+     "t": "A tag policy on the root",
+     "why": "Wrong: tag policies do not log anything."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "An organization trail gives central API auditing for every account.",
+   "remember": "Central API audit for all accounts \u2192 CloudTrail organization trail.",
+   "variants": [
+    "Central compliance and config data \u2192 Config aggregator or org rules.",
+    "Central log storage in a Control Tower setup \u2192 the Log Archive account."
+   ]
+  },
+  {
+   "id": "orgs-005",
+   "skill": "4.5.7",
+   "source": "1-organizations.md",
+   "q": "A company wants Security Hub, GuardDuty and Macie findings from all accounts in one place, auto-enabled for new accounts, without using the management account to run security work. What should they do?",
+   "options": [
+    {
+     "t": "Run the services only in the management account",
+     "why": "Wrong: this uses the management account for operations, which should be avoided."
+    },
+    {
+     "t": "Designate a member account as delegated administrator for each service and turn on auto-enable",
+     "why": "Right: the delegated admin sees all findings, and auto-enable covers new accounts, keeping the management account clean."
+    },
+    {
+     "t": "Create an SCP that enables the services",
+     "why": "Wrong: SCPs cannot enable services or grant anything."
+    },
+    {
+     "t": "Invite accounts and rely on OrganizationAccountAccessRole",
+     "why": "Wrong: that role gives admin access, it does not centralize findings."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Delegated administrator plus auto-enable is the standard org-wide security pattern.",
+   "remember": "One place for findings across the org \u2192 delegated administrator with auto-enable, not the management account.",
+   "variants": [
+    "Standard AWS Backup plans for all accounts \u2192 backup policy at the OU.",
+    "Consistent tags \u2192 tag policy (reports) plus an SCP requiring tags (enforces)."
+   ]
+  },
+  {
+   "id": "orgs-006",
+   "skill": "4.5.7",
+   "source": "1-organizations.md",
+   "q": "A company invited an existing account into its organization. The platform team expects to assume OrganizationAccountAccessRole in it but the role is missing. What is the reason and the fix?",
+   "options": [
+    {
+     "t": "The role is only created in accounts created through Organizations; create it manually in the invited account",
+     "why": "Right: invited accounts do not get the role automatically, so you create it yourself, trusting the management account."
+    },
+    {
+     "t": "The handshake expired after 15 days; resend it",
+     "why": "Wrong: an expired invitation would stop the account joining at all."
+    },
+    {
+     "t": "An SCP is blocking the role; detach FullAWSAccess",
+     "why": "Wrong: removing FullAWSAccess would block more, and SCPs would not delete a role."
+    },
+    {
+     "t": "The account needs a 4 day waiting period",
+     "why": "Wrong: the 4 day minimum age is for removing a created account from the organization."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Only created accounts get OrganizationAccountAccessRole.",
+   "remember": "Invited account has no OrganizationAccountAccessRole \u2192 create it by hand; created accounts get it automatically.",
+   "variants": [
+    "Account created via CreateAccount \u2192 role exists, trusting the management account.",
+    "Invitation not accepted for a long time \u2192 it expires after 15 days."
+   ]
+  },
+  {
+   "id": "orgs-007",
+   "skill": "4.5.5",
+   "source": "2-control-tower.md",
+   "q": "A company starting a new multi-account setup needs to meet data sovereignty rules: no resources may be used outside two approved Regions. It wants a managed approach with minimal build effort. Which choice fits?",
+   "options": [
+    {
+     "t": "Control Tower landing zone with only the two governed Regions and the Region deny control",
+     "why": "Right: Region deny is a preventive control (SCP) that blocks API calls in non-governed Regions, and the landing zone is quick to set up."
+    },
+    {
+     "t": "A detective control only",
+     "why": "Wrong: detective controls report after the fact and would not block use of other Regions."
+    },
+    {
+     "t": "A proactive control",
+     "why": "Wrong: proactive controls check CloudFormation templates before deployment, not every API call."
+    },
+    {
+     "t": "Change the home Region later to match",
+     "why": "Wrong: the home Region cannot be changed without decommissioning."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Region deny (preventive, SCP) plus limited governed Regions supports data sovereignty.",
+   "remember": "Data must stay in approved Regions with a managed setup \u2192 Control Tower governed Regions plus Region deny control.",
+   "variants": [
+    "Not using Control Tower \u2192 write the SCP with aws:RequestedRegion yourself.",
+    "Want to lower Config cost too \u2192 fewer governed Regions."
+   ]
+  },
+  {
+   "id": "orgs-008",
+   "skill": "4.5.4",
+   "source": "2-control-tower.md",
+   "q": "A security team wants to be notified when an EBS volume is created without encryption in any enrolled account, but must not block developers. Which Control Tower control type fits?",
+   "options": [
+    {
+     "t": "Preventive control",
+     "why": "Wrong: preventive controls are SCPs that stop the action, which the team does not want."
+    },
+    {
+     "t": "Detective control",
+     "why": "Right: it uses an AWS Config rule, reports non-compliance (In violation) and does not block."
+    },
+    {
+     "t": "Proactive control",
+     "why": "Wrong: it uses CloudFormation Hooks to fail templates before deployment, which is blocking."
+    },
+    {
+     "t": "Mandatory control",
+     "why": "Wrong: mandatory is a behavior guidance level, not a type, and is always on and not optional."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Detective controls report; they do not block.",
+   "remember": "Report only \u2192 detective (Config rule). Block the API call \u2192 preventive (SCP). Block bad CloudFormation templates before deploy \u2192 proactive (Hook).",
+   "variants": [
+    "Stop public S3 reads from being configured at all \u2192 preventive control.",
+    "Fail a CloudFormation stack that would create an unencrypted bucket \u2192 proactive control."
+   ]
+  },
+  {
+   "id": "orgs-009",
+   "skill": "4.5.7",
+   "source": "2-control-tower.md",
+   "q": "A platform team wants every new team to receive an account with a baseline VPC and tags, provisioned from a Git repository using Terraform. Which Control Tower option fits?",
+   "options": [
+    {
+     "t": "Account Factory for Terraform (AFT)",
+     "why": "Right: a GitOps pipeline that provisions and customizes accounts with Terraform."
+    },
+    {
+     "t": "Customizations for AWS Control Tower (CfCT)",
+     "why": "Wrong: CfCT deploys CloudFormation templates and SCPs through a manifest, not Terraform account provisioning."
+    },
+    {
+     "t": "Landing Zone Accelerator",
+     "why": "Wrong: it is a configuration-driven solution for complex compliance landing zones, not the Terraform vending pipeline."
+    },
+    {
+     "t": "A tag policy",
+     "why": "Wrong: it standardizes tag keys, it does not create accounts."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "AFT is the Terraform GitOps way to vend and customize accounts.",
+   "remember": "Terraform and GitOps account vending \u2192 AFT. CloudFormation and SCPs to OUs via manifest \u2192 CfCT.",
+   "variants": [
+    "Console self-service accounts through Service Catalog \u2192 Account Factory.",
+    "Blueprint customization after provisioning \u2192 AFC.",
+    "Heavy compliance, YAML-config landing zone \u2192 Landing Zone Accelerator."
+   ]
+  },
+  {
+   "id": "orgs-010",
+   "skill": "4.4.1",
+   "source": "2-control-tower.md",
+   "q": "An enrollment of an existing account into Control Tower fails. Which two checks are the most likely to find the cause?",
+   "options": [
+    {
+     "t": "Whether the AWSControlTowerExecution role exists in the account and trusts the management account",
+     "why": "Right: the role must exist in the account being enrolled."
+    },
+    {
+     "t": "Whether an existing AWS Config recorder or delivery channel conflicts with Control Tower",
+     "why": "Right: Config recorder and delivery channel conflicts are a common blocker."
+    },
+    {
+     "t": "Whether the home Region matches the account Region",
+     "why": "Wrong: the home Region is a landing zone setting and is not a requirement for an account to match."
+    },
+    {
+     "t": "Whether the account has an S3 bucket in the Log Archive",
+     "why": "Wrong: the Log Archive account holds the log buckets, not the enrolled account."
+    },
+    {
+     "t": "Whether the account has Glue jobs running",
+     "why": "Wrong: data workloads do not block enrollment."
+    }
+   ],
+   "answer": [
+    0,
+    1
+   ],
+   "explain": "Typical enrollment blockers are Config recorder conflicts and a missing AWSControlTowerExecution role.",
+   "remember": "Failed enrollment \u2192 check Config recorder or delivery channel conflicts, AWSControlTowerExecution role, conflicting names, SCPs blocking Control Tower.",
+   "variants": [
+    "Account Factory provisioning fails \u2192 Service Catalog portfolio permissions, unique email, account quota.",
+    "Control stuck \u2192 Config rule deployment, StackSet instance status, SCP limit of 10 per OU."
+   ]
+  }
+ ]
+}

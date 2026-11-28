@@ -1,0 +1,124 @@
+{
+ "questions": [
+  {
+   "id": "cost-001",
+   "skill": "1.2.4",
+   "source": "1-cost-explorer-and-cost-visibility.md",
+   "q": "A data team tagged every Glue job and EMR cluster with `Team=Analytics` two weeks ago. In Cost Explorer, grouping by the `Team` tag still shows no values. The company uses AWS Organizations. What should be done?",
+   "options": [
+    { "t": "Create a Cost Category with a rule for each Glue job name", "why": "Wrong: it can regroup cost, but it works around the real problem instead of making the existing tag usable." },
+    { "t": "Turn on hourly granularity in Cost Management preferences", "why": "Wrong: hourly data changes the time detail, not whether a tag is used for billing." },
+    { "t": "Activate `Team` as a cost allocation tag from the management account, then wait up to 24 hours", "why": "Right: a tag does nothing for billing until it is activated, only the management account can activate it, and it takes up to 24 hours to appear." },
+    { "t": "Re-tag the resources from the member account with the `aws:` prefix", "why": "Wrong: you cannot create `aws:` tags yourself; those are AWS-generated." }
+   ],
+   "answer": [2],
+   "explain": "Tags appear in cost data only after activation as cost allocation tags in the management account.",
+   "remember": "Tag missing in Cost Explorer or a tag-filtered budget shows $0 → activate it as a cost allocation tag (management account), then wait up to 24 hours. Activation is not retroactive by default.",
+   "variants": [
+    "Old months must also show the now-active tag → request a tag backfill (up to 12 months, only where the tag really existed).",
+    "Tagging is messy and cannot be fixed quickly → Cost Categories with rules regroup existing cost.",
+    "Shared costs such as support cannot be tagged → Cost Category split charge rules."
+   ]
+  },
+  {
+   "id": "cost-002",
+   "skill": "1.2.4",
+   "source": "1-cost-explorer-and-cost-visibility.md",
+   "q": "An internal cost dashboard calls the Cost Explorer API every minute, and finance now wants line-item cost joined with the company's own project table. The team wants the lowest ongoing cost. What should they use?",
+   "options": [
+    { "t": "AWS Data Exports (CUR 2.0) in Parquet to S3, queried with Athena", "why": "Right: CUR 2.0 is the most detailed billing data, has no charge itself, can be joined with other data, and Parquet suits Athena." },
+    { "t": "Keep the Cost Explorer API and raise the poll rate for fresher data", "why": "Wrong: each paginated API request costs $0.01, so frequent polling adds up, and the API cannot be joined with your tables." },
+    { "t": "Download Cost Explorer saved reports as CSV each day", "why": "Wrong: a manual CSV export is fine for a one-off, not for automated line-item joins." },
+    { "t": "A CloudWatch billing alarm on `EstimatedCharges`", "why": "Wrong: it watches only the whole-account total and gives no line items." }
+   ],
+   "answer": [0],
+   "explain": "Automated, detailed, joinable cost data → CUR 2.0 + Athena, not the paid API in a loop.",
+   "remember": "Quick look or one-off → Cost Explorer. Automated, line-level, joined with other data or recurring dashboards → Data Exports (CUR 2.0, Parquet) + Athena; the Cost Explorer API costs $0.01 per paginated request.",
+   "variants": [
+    "Finance only asks which service grew most last month → Cost Explorer, group by service, compare periods.",
+    "They want a pre-built cost dashboard → the Data Exports cost and usage dashboard (QuickSight).",
+    "They need a standard cross-cloud column format → the FOCUS export."
+   ]
+  },
+  {
+   "id": "cost-003",
+   "skill": "1.2.4",
+   "source": "2-budgets-alerts-actions-and-scenarios.md",
+   "q": "A company gives data engineers sandbox accounts in a Sandbox OU. When a sandbox account goes over its monthly budget, it must be blocked from creating new resources across the whole account, with no manual work. What should be configured?",
+   "options": [
+    { "t": "A budget action that stops specific EC2 instances in the sandbox account, created from the management account", "why": "Wrong: stop-instance actions work only in the same account and stop only the chosen instances, not new creation." },
+    { "t": "A Cost Anomaly Detection monitor with individual alerts to SNS", "why": "Wrong: Anomaly Detection only finds and reports unusual spend; it does not block anything." },
+    { "t": "A CloudWatch billing alarm in us-east-1 that emails the account owner", "why": "Wrong: it only notifies on the total estimated charge and takes no action." },
+    { "t": "A budget action, from the management account, that applies an SCP denying create actions to the account or OU, in automatic mode", "why": "Right: SCP actions are applied from the management account to an account or OU and block new resource creation account-wide." }
+   ],
+   "answer": [3],
+   "explain": "Account-wide lockdown on overspend → budget action applying an SCP from the management account.",
+   "remember": "Block a whole account/OU → budget action with an SCP (management account only). Block certain users/roles → IAM deny policy action. Stop chosen EC2/RDS → stop-instance action (same account only). None is a hard cap: billing data is delayed and running resources keep billing.",
+   "variants": [
+    "Only one user group must be denied launching instances → budget action applying an IAM deny policy to the group.",
+    "Dev EC2/RDS must stop, but prod needs a human check → stop-instance action with manual approval.",
+    "A stopped instance keeps coming back → it is in an Auto Scaling group; add an action that removes launch permissions."
+   ]
+  },
+  {
+   "id": "cost-004",
+   "skill": "3.3.3",
+   "source": "2-budgets-alerts-actions-and-scenarios.md",
+   "q": "A cost budget sends its 80% actual alert to an SNS topic that feeds a Lambda function and an on-call email list. The budget shows Exceeded, but nothing ever arrives. What is the most likely fix?",
+   "options": [
+    { "t": "Switch the alert from Actual to Forecasted", "why": "Wrong: the trigger type is not the problem; the budget already crossed the threshold." },
+    { "t": "Allow `budgets.amazonaws.com` to `SNS:Publish` in the topic policy and confirm the SNS subscriptions", "why": "Right: Budgets cannot publish without that topic policy, and unconfirmed subscriptions receive nothing, so it fails silently." },
+    { "t": "Send the alert to EventBridge instead of SNS", "why": "Wrong: SNS is the supported notification channel for budget alerts; the fix is its permissions." },
+    { "t": "Move the budget to the Region where the Lambda function runs", "why": "Wrong: the Budgets API is global (us-east-1 control plane); Region is not the cause." }
+   ],
+   "answer": [1],
+   "explain": "Silent SNS failure from Budgets = missing topic policy for budgets.amazonaws.com or an unconfirmed subscription.",
+   "remember": "Budget alert never arrives → check the SNS topic policy allows `budgets.amazonaws.com` to publish, the subscription is confirmed, and email recipients are confirmed and not in spam.",
+   "variants": [
+    "A forecasted alert never fires on a brand-new account → forecasts need about 5 weeks of history; use actual alerts.",
+    "Alerts arrive hours late → expected billing data delay (Budgets update about every 8–12 hours).",
+    "Alerts must reach Slack → SNS topic + Amazon Q Developer in chat applications."
+   ]
+  },
+  {
+   "id": "cost-005",
+   "skill": "1.2.4",
+   "source": "1-cost-explorer-and-cost-visibility.md",
+   "q": "A company has monthly cost budgets for its main services. Last week a rarely used service, which has no budget, suddenly spent ten times its normal daily amount, and nobody noticed. The team wants to catch spend like this without setting a target for every service. What should they use?",
+   "options": [
+    { "t": "A zero-spend budget", "why": "Wrong: it alerts as soon as any spend is above $0.01, so it would fire constantly in an account that already spends." },
+    { "t": "A Cost Explorer saved report reviewed each month", "why": "Wrong: it is manual and monthly, so a spike is found too late." },
+    { "t": "Cost Anomaly Detection with an AWS services monitor and an alert subscription", "why": "Right: ML learns normal spend per service and flags unusual spend without any target, with root cause by service, account, Region and usage type." },
+    { "t": "A Savings Plans coverage budget", "why": "Wrong: coverage budgets alert when commitment coverage drops, not on spend spikes." }
+   ],
+   "answer": [2],
+   "explain": "Surprises with no target → Cost Anomaly Detection; Budgets need your own number.",
+   "remember": "Spot unusual spend without a target → Cost Anomaly Detection (ML, AWS services/account/tag/cost category monitors). Enforce a known limit → Budgets. Use both together.",
+   "variants": [
+    "The spike is in AWS Marketplace charges → cost budget with the billing entity filter, since Anomaly Detection does not cover most Marketplace charges.",
+    "Real-time individual alerts are needed → alert subscription with individual alerts via SNS; daily/weekly summaries go by email.",
+    "Spend must be capped, not just found → Budgets actions/SCPs, because Anomaly Detection only reports."
+   ]
+  },
+  {
+   "id": "cost-006",
+   "skill": "1.2.4",
+   "source": "2-budgets-alerts-actions-and-scenarios.md",
+   "q": "A company bought Compute Savings Plans for its Lambda and Fargate data workloads. Finance wants to be warned the same day if part of the commitment is going unused. Which budget fits?",
+   "options": [
+    { "t": "A daily Savings Plans utilization budget that alerts when utilization falls below a threshold such as 80%", "why": "Right: utilization measures how much of the commitment is used, and utilization budgets alert when it goes below the threshold." },
+    { "t": "A daily Savings Plans coverage budget that alerts when coverage falls below target", "why": "Wrong: coverage shows how much eligible usage is on-demand, not whether the commitment is wasted." },
+    { "t": "A monthly cost budget with an 80% actual alert", "why": "Wrong: it tracks total spend against a dollar target, not use of the commitment." },
+    { "t": "A usage budget on Lambda requests that alerts above a threshold", "why": "Wrong: it tracks a usage amount going up, not unused commitment." }
+   ],
+   "answer": [0],
+   "explain": "Unused commitment = low utilization → Savings Plans utilization budget, alerting below a threshold.",
+   "remember": "Wasted commitment → utilization budget. Too much on-demand → coverage budget. Both alert when the value falls BELOW the threshold; cost and usage budgets alert when you go ABOVE.",
+   "variants": [
+    "Finance wants to know when too much usage runs on-demand → Savings Plans (or RI) coverage budget.",
+    "The question is about Reserved Instances → RI utilization or RI coverage budget.",
+    "They want the true daily cost of the commitment in Cost Explorer → amortized cost, which spreads upfront fees over the term."
+   ]
+  }
+ ]
+}

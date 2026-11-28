@@ -1,0 +1,1095 @@
+{
+  "questions": [
+    {
+      "id": "firehose-001",
+      "skill": "1.1.11",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "Clickstream events are delivered to S3 by a Firehose Direct PUT stream. A new requirement says analysts must be able to re-process last week's raw events after a bug fix. What change meets this with the least operational effort?",
+      "options": [
+        {
+          "t": "Raise the Firehose buffer interval to 900 seconds",
+          "why": "Wrong: buffering only delays delivery by up to 15 minutes; Firehose keeps nothing after delivery."
+        },
+        {
+          "t": "Send events to Kinesis Data Streams with 7+ days retention and make the KDS stream the Firehose source",
+          "why": "Right: KDS stores records for 24 h up to 365 days and lets you replay from a past position, while Firehose keeps delivering."
+        },
+        {
+          "t": "Turn on Firehose replay from the console",
+          "why": "Wrong: Firehose has no replay or consumer API; it is a pipe, not a store."
+        },
+        {
+          "t": "Write events to an SQS queue in front of Firehose",
+          "why": "Wrong: SQS deletes messages after consumption and does not offer stream replay to Firehose."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Firehose cannot replay. Put KDS (or MSK) in front of it for retention and replay.",
+      "remember": "Firehose only delivers; once data is delivered it lives only at the destination. Replay, many readers or ordering → KDS or MSK, often feeding Firehose.",
+      "variants": [
+        "Many independent consumers with sub-second reads → KDS (with EFO) instead of Firehose.",
+        "Kafka producers already exist → MSK as the Firehose source.",
+        "Only a raw copy for re-processing is needed → S3 source record backup keeps untransformed records."
+      ]
+    },
+    {
+      "id": "firehose-002",
+      "skill": "1.3.2",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "A Firehose stream fed by Direct PUT delivers to an HTTP endpoint. The partner says its endpoint may be down for up to 2 days during a migration. How should you avoid losing data?",
+      "options": [
+        {
+          "t": "Use a Kinesis Data Streams source with retention of at least 3 days",
+          "why": "Right: with a KDS source, data is kept per KDS retention, not 24 hours, and Firehose keeps retrying reads."
+        },
+        {
+          "t": "Set the HTTP retry duration to 7,200 seconds",
+          "why": "Wrong: 7,200 s is 2 hours; after that, data goes to the S3 backup but Direct PUT still only holds data 24 h if backup also fails."
+        },
+        {
+          "t": "Enable zero buffering so data leaves Firehose faster",
+          "why": "Wrong: buffering does not help when the destination is unreachable."
+        },
+        {
+          "t": "Raise the Direct PUT throughput quota",
+          "why": "Wrong: throughput limits are unrelated to how long data is held."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Direct PUT keeps undelivered data only 24 hours; a KDS source keeps it for the KDS retention.",
+      "remember": "Data kept when the destination is down: Direct PUT = 24 h, KDS/MSK source = the source's retention. Long outages → put a stream with longer retention in front.",
+      "variants": [
+        "Outage under 2 hours for an HTTP destination → retry duration up to 7,200 s, then failed data goes to the S3 backup bucket.",
+        "Destination is S3 and access is denied → Firehose keeps retrying up to 24 h (Direct PUT), then data is lost.",
+        "You want to pause on purpose → deny writes to the backup bucket and block the destination; make sure source retention covers the pause."
+      ]
+    },
+    {
+      "id": "firehose-003",
+      "skill": "1.1.9",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "An application sends logs with `PutRecordBatch` to a Firehose Direct PUT stream. During peaks some log lines never reach S3, yet the API calls return HTTP 200. What is the most likely cause and fix?",
+      "options": [
+        {
+          "t": "Records over 10 MB are dropped; split records",
+          "why": "Wrong: the Direct PUT record limit is 1,000 KiB, and oversized records fail the call rather than vanish silently."
+        },
+        {
+          "t": "The S3 bucket is throttling; enable S3 Transfer Acceleration",
+          "why": "Wrong: S3 delivery failures are retried by Firehose; they do not show up as a 200 to the producer with data loss."
+        },
+        {
+          "t": "The batch partly failed; check `FailedPutCount` and retry only the failed entries with backoff",
+          "why": "Right: `PutRecordBatch` can partly fail, and the per-record results must be checked and retried."
+        },
+        {
+          "t": "The buffer interval is too short; raise it to 900 seconds",
+          "why": "Wrong: buffering affects delivery timing, not whether records are accepted."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "`PutRecordBatch` returns success even when some entries fail; producers must read `FailedPutCount`.",
+      "remember": "`PutRecordBatch` (500 records or 4 MiB, hard limit) can partly fail. Always check `FailedPutCount`, retry the failed entries with exponential backoff and jitter.",
+      "variants": [
+        "`ThrottledRecords` > 0 on the stream → over the Direct PUT quota: back off, batch, request an increase or use a KDS source.",
+        "Same pattern with KDS `PutRecords` → check `FailedRecordCount` and retry failed records.",
+        "A single record over 1,000 KiB → split it; the size limit is per record before base64."
+      ]
+    },
+    {
+      "id": "firehose-004",
+      "skill": "1.1.1",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "A team creates a Firehose stream that reads from an existing Kinesis Data Streams stream holding 3 days of data. Only events produced after creation appear in S3. Why?",
+      "options": [
+        {
+          "t": "The KDS stream must use enhanced fan-out for Firehose",
+          "why": "Wrong: Firehose reads with `GetRecords` polling; EFO is not required."
+        },
+        {
+          "t": "Firehose skips KPL-aggregated records",
+          "why": "Wrong: Firehose de-aggregates KPL records before delivery."
+        },
+        {
+          "t": "The Firehose buffer was full",
+          "why": "Wrong: buffers delay delivery but do not skip older data."
+        },
+        {
+          "t": "Firehose starts reading a KDS source at the LATEST position",
+          "why": "Right: data already in the stream when the Firehose stream is created is not delivered."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "A KDS source is read from LATEST, so old records are not delivered.",
+      "remember": "Firehose on a KDS source starts at LATEST; existing data is not backfilled. Backfill old data another way (for example a one-off consumer).",
+      "variants": [
+        "Source is MSK and you need old data → set `ReadFromTimestamp` (epoch for earliest).",
+        "MSK default start → the time the Firehose stream became ACTIVE.",
+        "Firehose with a KDS source → Firehose `PutRecord`/`PutRecordBatch` are disabled; producers write to KDS."
+      ]
+    },
+    {
+      "id": "firehose-005",
+      "skill": "1.1.9",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "A Kinesis data stream already has three applications polling with `GetRecords`. After a Firehose stream is added as another reader, all consumers see read throttling. What should you do?",
+      "options": [
+        {
+          "t": "Raise the Firehose Direct PUT quota",
+          "why": "Wrong: Direct PUT quotas do not apply to a KDS source, and the problem is shard read limits."
+        },
+        {
+          "t": "Add shards or move the other applications to enhanced fan-out",
+          "why": "Right: Firehose polls each shard and shares the 5 reads/s and 2 MB/s per-shard limit with other polling consumers."
+        },
+        {
+          "t": "Turn on full S3 source record backup",
+          "why": "Wrong: full backup makes Firehose read each shard twice per second, adding load."
+        },
+        {
+          "t": "Lower the Firehose buffer size",
+          "why": "Wrong: buffer size does not change how often Firehose polls the shards."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Polling consumers, including Firehose, share each shard's read limit.",
+      "remember": "Firehose calls `GetRecords` once per second per shard (twice with full backup) and shares the 5 calls/s, 2 MB/s shard read limit. Throttling → more shards or EFO for the others.",
+      "variants": [
+        "`ThrottledDescribeStream` on a KDS-source stream → add `kinesis:ListShards` to the source role.",
+        "Many shards with low traffic each → many small S3 files, because buffer hints apply per shard.",
+        "Need many independent readers → EFO consumers on KDS."
+      ]
+    },
+    {
+      "id": "firehose-006",
+      "skill": "1.1.3",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "Operations dashboards in OpenSearch must show log events within about 10 seconds. Firehose delivers them with default settings and data arrives minutes late. What is the simplest fix?",
+      "options": [
+        {
+          "t": "Set the buffer interval to 0 (zero buffering)",
+          "why": "Right: zero buffering delivers within a few seconds; the default OpenSearch interval is 300 s."
+        },
+        {
+          "t": "Raise the buffer size to 100 MB",
+          "why": "Wrong: bigger buffers increase latency."
+        },
+        {
+          "t": "Replace Firehose with S3 and an Athena query",
+          "why": "Wrong: adds latency and does not feed OpenSearch."
+        },
+        {
+          "t": "Enable dynamic partitioning",
+          "why": "Wrong: it is S3-only and does not support zero buffering."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Default buffering (5 MB / 300 s) adds minutes; interval 0 cuts it to seconds.",
+      "remember": "Delivery happens when the first of size or time hint is met. Low latency → zero buffering; cheap big files → larger buffers.",
+      "variants": [
+        "Destination is S3 and S3 request cost rises after a short interval → intervals under 60 s use multipart uploads; raise it.",
+        "Dynamic partitioning or the S3 backup bucket → zero buffering is not available.",
+        "Thousands of tiny S3 files → raise buffer hints."
+      ]
+    },
+    {
+      "id": "firehose-007",
+      "skill": "2.4.5",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "Athena queries need S3 folders like `year=2026/month=11/day=27/` based on when data arrived. Firehose currently writes the default `YYYY/MM/dd/HH/` prefix. What is the least-effort change?",
+      "options": [
+        {
+          "t": "Turn on dynamic partitioning with JQ on an event-time field",
+          "why": "Wrong: works but costs more and is needed only when partitioning on a value inside the record; also it can only be enabled at creation."
+        },
+        {
+          "t": "Add a Lambda that renames objects after delivery",
+          "why": "Wrong: extra code and S3 copy cost for something the prefix can do."
+        },
+        {
+          "t": "Set a custom S3 prefix such as `year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/`",
+          "why": "Right: the `timestamp` namespace uses arrival time and literal text makes Hive-style folders."
+        },
+        {
+          "t": "Run a Glue crawler to rename folders",
+          "why": "Wrong: crawlers catalog data; they do not move objects."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Custom prefixes with `!{timestamp:...}` produce Hive-style arrival-time folders.",
+      "remember": "Arrival-time partitions → custom prefix with `!{timestamp:...}`. Event-time or field-based partitions → dynamic partitioning (JQ or Lambda keys).",
+      "variants": [
+        "Prefix uses expressions → `ErrorOutputPrefix` with `!{firehose:error-output-type}` is required.",
+        "Prefix needs local dates → set `CustomTimeZone`; default is UTC.",
+        "Very high request rates on one prefix → put `!{firehose:random-string}` early in the prefix."
+      ]
+    },
+    {
+      "id": "firehose-008",
+      "skill": "1.2.7",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "Athena returns one row per S3 object instead of one per event for JSON data landed by Firehose. Objects show records glued together on one line. What fixes this?",
+      "options": [
+        {
+          "t": "Switch the compression to GZIP",
+          "why": "Wrong: compression does not add separators between records."
+        },
+        {
+          "t": "Use the OpenX JSON SerDe in Athena",
+          "why": "Wrong: the SerDe cannot split records that have no delimiter."
+        },
+        {
+          "t": "Lower the buffer size",
+          "why": "Wrong: smaller files still have records run together."
+        },
+        {
+          "t": "Turn on the newline delimiter in Firehose (or add `\\n` in the producer)",
+          "why": "Right: Firehose concatenates records with no delimiter by default."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Firehose adds no delimiter between records unless told to.",
+      "remember": "S3 objects are buffered records concatenated with no separator by default. Turn on the newline delimiter so Athena and Glue read one record per line.",
+      "variants": [
+        "Multi-record de-aggregation is on → it removes newlines, so also turn on the newline delimiter.",
+        "Splunk destination → Firehose sends bytes as-is; add your own delimiters.",
+        "Producers batch events into one record to save cost → separate them with newlines."
+      ]
+    },
+    {
+      "id": "firehose-009",
+      "skill": "2.3.1",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "A security team will not make a Redshift cluster public, and the cluster uses enhanced VPC routing. Events in Kinesis Data Streams must reach Redshift tables within seconds. Which approach works?",
+      "options": [
+        {
+          "t": "Firehose to Redshift with VPC delivery",
+          "why": "Wrong: Firehose needs a publicly accessible cluster and cannot write to clusters with enhanced VPC routing."
+        },
+        {
+          "t": "Redshift streaming ingestion from the KDS stream",
+          "why": "Right: it reads the stream with a materialized view, works with private clusters and has seconds latency."
+        },
+        {
+          "t": "Firehose to Redshift through an interface VPC endpoint",
+          "why": "Wrong: the endpoint is for producers calling Firehose; it does not make Firehose reach a private cluster."
+        },
+        {
+          "t": "Firehose to an HTTP endpoint inside the VPC that runs COPY",
+          "why": "Wrong: Firehose cannot deliver to private HTTP endpoints in a VPC."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Private Redshift or enhanced VPC routing rules out Firehose → use Redshift streaming ingestion.",
+      "remember": "Firehose → Redshift stages in S3 then COPYs, and needs a public cluster allowing the Firehose CIDR, without enhanced VPC routing. Private-only → streaming ingestion, or S3 + COPY/auto-copy.",
+      "variants": [
+        "Cluster can be public → Firehose with the Region's Firehose CIDR allowed.",
+        "Latency of minutes is fine and you want files too → land in S3 and load with COPY or auto-copy.",
+        "OpenSearch in a VPC → Firehose VPC delivery does work there."
+      ]
+    },
+    {
+      "id": "firehose-010",
+      "skill": "2.3.1",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "A Firehose stream to Redshift could not COPY for 2 hours due to a bad table change. The retry duration is the default. After fixing the table, how do you load the missing data?",
+      "options": [
+        {
+          "t": "Find the manifest files under the `errors/` prefix and run `COPY ... MANIFEST`",
+          "why": "Right: after retries run out Firehose skips the batch and writes a manifest you use to backfill."
+        },
+        {
+          "t": "Firehose replays skipped batches automatically",
+          "why": "Wrong: Firehose has no replay; skipped batches stay skipped."
+        },
+        {
+          "t": "Raise the retry duration and Firehose re-sends the old batches",
+          "why": "Wrong: a new setting does not bring back batches already skipped."
+        },
+        {
+          "t": "Read the `processing-failed/` prefix",
+          "why": "Wrong: that prefix is for Lambda transform failures."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Redshift COPY failures past the retry duration produce manifests in `errors/` for manual backfill.",
+      "remember": "Redshift retry 0–7,200 s (default 3,600 s), COPY retried every 5 min. After that the batch is skipped and a manifest goes to `errors/`; backfill with `COPY ... MANIFEST`.",
+      "variants": [
+        "Why did COPY fail → check `STL_LOAD_ERRORS`; did Firehose connect → `STL_CONNECTION_LOG`.",
+        "Intermediate S3 files keep growing → add a lifecycle rule; Firehose never deletes them.",
+        "COPY fails on Snappy files → only GZIP is allowed; add `GZIP` to COPY options."
+      ]
+    },
+    {
+      "id": "firehose-011",
+      "skill": "1.1.8",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "A new Firehose stream to Amazon Redshift shows connection failures and `STL_CONNECTION_LOG` has no Firehose entries. The cluster is publicly accessible. What is the most likely fix?",
+      "options": [
+        {
+          "t": "Add `redshift:GetClusterCredentials` to the Firehose role",
+          "why": "Wrong: Firehose uses a database user/password or a Secrets Manager secret, and the symptom is network."
+        },
+        {
+          "t": "Create an interface VPC endpoint for Firehose",
+          "why": "Wrong: that helps producers call Firehose privately, not Firehose reach Redshift."
+        },
+        {
+          "t": "Allow the Firehose CIDR block for the Region in the cluster's security group",
+          "why": "Right: Firehose connects from a published per-Region CIDR (for example `52.70.63.192/27` in us-east-1) that must be allowed."
+        },
+        {
+          "t": "Turn on enhanced VPC routing",
+          "why": "Wrong: Firehose cannot write to clusters that use enhanced VPC routing."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Firehose reaches Redshift over the internet from a per-Region CIDR that must be allowlisted.",
+      "remember": "Firehose → Redshift or Splunk: target must be publicly reachable and allow the Firehose CIDR for the Region. HTTP endpoints and public Snowflake: no Firehose-only range; allow all AWS IP ranges.",
+      "variants": [
+        "Splunk destination → allow Splunk's own Firehose CIDR list.",
+        "Snowflake private → PrivateLink with an `AwsVpceIds` network rule, not IP allowlists.",
+        "OpenSearch in a VPC → ENIs in your subnets and a security group allowing 443."
+      ]
+    },
+    {
+      "id": "firehose-012",
+      "skill": "4.1.2",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "Firehose delivery to an OpenSearch Service domain in a private VPC has degraded. Which two causes should you check? (Choose 2.)",
+      "options": [
+        {
+          "t": "The subnets have run out of free IP addresses for Firehose ENIs",
+          "why": "Right: Firehose creates ENIs in your subnets; without free IPs delivery degrades."
+        },
+        {
+          "t": "The domain is not publicly accessible",
+          "why": "Wrong: Firehose supports VPC delivery to OpenSearch; public access is not needed."
+        },
+        {
+          "t": "The Firehose stream uses Direct PUT instead of KDS",
+          "why": "Wrong: the source type does not affect VPC delivery."
+        },
+        {
+          "t": "EC2 network interface permissions were removed from the Firehose role, or the security group blocks HTTPS 443",
+          "why": "Right: Firehose needs `ec2:CreateNetworkInterface` and related permissions, and 443 from its ENIs to the domain."
+        }
+      ],
+      "answer": [
+        0,
+        3
+      ],
+      "explain": "VPC delivery depends on free subnet IPs, ENI permissions and a security group that allows 443.",
+      "remember": "OpenSearch in a VPC → Firehose VPC delivery: give subnets and security groups, keep free IPs, allow 443, never remove the role's EC2 ENI permissions.",
+      "variants": [
+        "OpenSearch Serverless → also needs a data access policy for the Firehose role.",
+        "Domain in another account → domain policy + `ClusterEndpoint`, set up with CLI/API only.",
+        "CloudWatch Logs to OpenSearch → use a CloudWatch Logs subscription, not Firehose."
+      ]
+    },
+    {
+      "id": "firehose-013",
+      "skill": "1.3.2",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "A Firehose stream delivers to a custom HTTP endpoint. Some batches fail with HTTP 413 and cannot be found in the S3 backup bucket. What should you do?",
+      "options": [
+        {
+          "t": "Raise the retry duration to 7,200 seconds",
+          "why": "Wrong: 413 is a permanent failure and is not retried or backed up."
+        },
+        {
+          "t": "Lower the buffer size so requests are smaller",
+          "why": "Right: 413 means the payload is too large; smaller buffers send smaller requests."
+        },
+        {
+          "t": "Raise the buffer size so fewer requests are sent",
+          "why": "Wrong: that is the fix for 429 (endpoint overloaded), and it makes 413 worse."
+        },
+        {
+          "t": "Switch the backup mode to AllData",
+          "why": "Wrong: the batch still fails permanently; the fix is the request size."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "HTTP 413 is permanent, not backed up; fix it by lowering the buffer size.",
+      "remember": "HTTP endpoint errors: 413 → lower buffer size (permanent, not backed up); 429 → raise buffering; 401/403 → wrong key; 5xx → endpoint problem; a 200 needs a JSON body echoing `requestId` and `timestamp`.",
+      "variants": [
+        "HTTP 200 but still counted as failure → fix the response body and content type.",
+        "Endpoint is inside a private VPC → not supported; it must be public on port 443.",
+        "Endpoint has 3 minutes to answer; slower → timeout and retry."
+      ]
+    },
+    {
+      "id": "firehose-014",
+      "skill": "1.1.1",
+      "source": "1-sources-destinations-buffering-and-delivery.md",
+      "q": "A Firehose stream reads an MSK topic that has 14 days of retained data. The team wants all of it in S3, not only new messages. What should they set?",
+      "options": [
+        {
+          "t": "`ReadFromTimestamp` set to the epoch (1970-01-01T00:00:00Z)",
+          "why": "Right: the default start is when the stream became ACTIVE; epoch means earliest."
+        },
+        {
+          "t": "The start position TRIM_HORIZON on the Kafka topic",
+          "why": "Wrong: TRIM_HORIZON is a KDS iterator type, not a Firehose MSK setting."
+        },
+        {
+          "t": "A new Kafka topic, then change the Firehose topic",
+          "why": "Wrong: the MSK topic cannot be changed after the stream is created."
+        },
+        {
+          "t": "S3 source record backup",
+          "why": "Wrong: source record backup is not supported for MSK sources and does not change the start point."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "MSK source starts at stream activation by default; use `ReadFromTimestamp` for older data.",
+      "remember": "MSK source: one topic, fixed at creation; start = ACTIVE time unless `ReadFromTimestamp` (epoch = earliest). Topic deleted and re-created → re-create the Firehose stream.",
+      "variants": [
+        "Stream shows SUSPENDED → cluster not active or topic deleted.",
+        "Need MSK into Iceberg → MSK provisioned only; MSK Serverless is not supported.",
+        "Freshness measured wrongly → set the topic to `message.timestamp.type=LogAppendTime`."
+      ]
+    },
+    {
+      "id": "firehose-015",
+      "skill": "1.2.6",
+      "source": "2-transformations-format-conversion-partitioning-and-tables.md",
+      "q": "IoT devices send CSV lines to Firehose. The data lake team wants Parquet files in S3 with the least custom code. What is the right design?",
+      "options": [
+        {
+          "t": "Turn on record format conversion with the CSV deserializer",
+          "why": "Wrong: format conversion accepts JSON input only."
+        },
+        {
+          "t": "A Lambda transform that turns CSV into JSON, plus record format conversion to Parquet using a Glue table schema",
+          "why": "Right: Lambda output feeds conversion, which needs JSON and a Glue schema."
+        },
+        {
+          "t": "Deliver CSV to Redshift and UNLOAD as Parquet nightly",
+          "why": "Wrong: more moving parts and not streaming."
+        },
+        {
+          "t": "Set S3 compression to Snappy",
+          "why": "Wrong: compression does not change the file format."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Conversion reads JSON only; non-JSON input needs a Lambda to JSON first.",
+      "remember": "Firehose converts JSON → Parquet/ORC using a Glue table schema, S3 destination only. Other inputs → Lambda to JSON first.",
+      "variants": [
+        "Input is already JSON → only format conversion, no Lambda.",
+        "Destination is Redshift and Parquet is wanted → not possible in one stream; conversion is S3-only.",
+        "Custom timestamp format in the JSON → Hive JSON SerDe with a Joda pattern."
+      ]
+    },
+    {
+      "id": "firehose-016",
+      "skill": "1.2.6",
+      "source": "2-transformations-format-conversion-partitioning-and-tables.md",
+      "q": "A team tries to turn on Parquet conversion on a Firehose stream to S3 that currently uses GZIP compression and a 5 MiB buffer. The configuration is rejected. Which two changes are needed? (Choose 2.)",
+      "options": [
+        {
+          "t": "Switch the destination to Redshift",
+          "why": "Wrong: conversion only works with the S3 destination."
+        },
+        {
+          "t": "Set the stream compression to UNCOMPRESSED",
+          "why": "Right: compression is done inside the Parquet serializer, so stream compression must be off."
+        },
+        {
+          "t": "Raise the S3 buffer size to at least 64 MiB",
+          "why": "Right: conversion needs at least 64 MiB (default 128 MiB)."
+        },
+        {
+          "t": "Turn on zero buffering",
+          "why": "Wrong: it does not satisfy the buffer size requirement."
+        }
+      ],
+      "answer": [
+        1,
+        2
+      ],
+      "explain": "Conversion requires UNCOMPRESSED stream compression and a buffer of 64 MiB or more.",
+      "remember": "Format conversion: S3 only, stream compression UNCOMPRESSED (Parquet uses SNAPPY by default inside), buffer ≥ 64 MiB (default 128 MiB).",
+      "variants": [
+        "Want smaller Parquet files → pick GZIP in the Parquet SerDe, not in the stream.",
+        "ORC output → ORC SerDe with SNAPPY (default), ZLIB or NONE.",
+        "Athena reading Snappy from conversion → fine, it uses Hadoop-compatible framing."
+      ]
+    },
+    {
+      "id": "firehose-017",
+      "skill": "2.4.2",
+      "source": "2-transformations-format-conversion-partitioning-and-tables.md",
+      "q": "Producers add a new JSON field `device_model`. Firehose keeps writing Parquet, but the new field never appears in the files and no errors are logged. What is the cause and fix?",
+      "options": [
+        {
+          "t": "The OpenX SerDe lowercases keys; switch to Hive SerDe",
+          "why": "Wrong: case handling is not the problem; the column does not exist."
+        },
+        {
+          "t": "Parquet cannot store strings; use ORC",
+          "why": "Wrong: Parquet stores strings fine."
+        },
+        {
+          "t": "The record exceeded 1,000 KiB",
+          "why": "Wrong: oversized records fail; they do not lose one field."
+        },
+        {
+          "t": "Fields not in the Glue table are dropped silently; add the column to the table (with VersionId LATEST)",
+          "why": "Right: the schema comes from the Glue table and LATEST picks up changes automatically."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Conversion uses the Glue schema; unknown fields are dropped silently.",
+      "remember": "Format conversion writes only the columns in the Glue table. Keep the table in sync; `VersionId` LATEST makes Firehose pick up table changes.",
+      "variants": [
+        "Iceberg destination with an extra field → also skipped; column names and types must match the table.",
+        "A JSON key like `a.b` → `ConvertDotsInJsonKeysToUnderscores`.",
+        "DynamoDB-crawled `SET<>` columns fail → change them to `ARRAY<>`."
+      ]
+    },
+    {
+      "id": "firehose-018",
+      "skill": "2.4.5",
+      "source": "2-transformations-format-conversion-partitioning-and-tables.md",
+      "q": "A Firehose stream with dynamic partitioning on `user_id` starts writing many records to the error prefix with `activePartitionExceeded`. What is the best fix?",
+      "options": [
+        {
+          "t": "Partition on a lower-cardinality key such as tenant or date",
+          "why": "Right: each distinct prefix is an active partition; the default limit is 500 per stream."
+        },
+        {
+          "t": "Lower the buffer interval to 0",
+          "why": "Wrong: zero buffering is not available with dynamic partitioning."
+        },
+        {
+          "t": "Turn off dynamic partitioning on the stream",
+          "why": "Wrong: it cannot be turned off once enabled."
+        },
+        {
+          "t": "Increase the S3 buffer size to 128 MiB",
+          "why": "Wrong: bigger buffers do not reduce the number of distinct partitions."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "High-cardinality keys blow through the 500 active-partition limit.",
+      "remember": "Dynamic partitioning: one buffer per active partition, default 500 (up to 2,500 on request). Use low/medium cardinality keys; beyond that, split across streams.",
+      "variants": [
+        "Need a bit more headroom → request up to 2,500 active partitions.",
+        "Need far more → split traffic across several Firehose streams.",
+        "Many tiny objects and a high bill → coarser keys and longer buffers; each 1,000 objects is billed."
+      ]
+    },
+    {
+      "id": "firehose-019",
+      "skill": "2.4.5",
+      "source": "2-transformations-format-conversion-partitioning-and-tables.md",
+      "q": "A Firehose stream to S3 has run for months. The team now needs records partitioned by `customer_id` from inside the data. What must they do?",
+      "options": [
+        {
+          "t": "Edit the stream and turn on dynamic partitioning",
+          "why": "Wrong: dynamic partitioning can only be enabled when the stream is created."
+        },
+        {
+          "t": "Add `!{timestamp:customer_id}` to the prefix",
+          "why": "Wrong: the timestamp namespace formats arrival time; it cannot read record fields."
+        },
+        {
+          "t": "Create a new stream with dynamic partitioning on and move producers to it",
+          "why": "Right: it must be set at creation and cannot be added later."
+        },
+        {
+          "t": "Run a Glue crawler to create the partitions",
+          "why": "Wrong: crawlers catalog existing prefixes; they do not split data."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Dynamic partitioning is a creation-time choice.",
+      "remember": "Fixed at creation: source type, MSK topic, and turning on dynamic partitioning (which also cannot be turned off). Keys and prefix expressions can be changed later.",
+      "variants": [
+        "Change partition keys on a DP stream → allowed; new values apply to new data.",
+        "Partition key is inside compressed or encrypted data → Lambda returns `partitionKeys`.",
+        "Producers pack many JSON events in one record → turn on multi-record de-aggregation first."
+      ]
+    },
+    {
+      "id": "firehose-020",
+      "skill": "2.4.5",
+      "source": "2-transformations-format-conversion-partitioning-and-tables.md",
+      "q": "Events carry an epoch `event_timestamp`. Late events arrive hours later, and Athena must find them under the correct event-date folder in S3. What should Firehose use?",
+      "options": [
+        {
+          "t": "The default `YYYY/MM/dd/HH/` prefix",
+          "why": "Wrong: it is based on arrival time, so late events land in the wrong folder."
+        },
+        {
+          "t": "Dynamic partitioning with a JQ key such as `.event_timestamp | strftime(\"%Y\")`",
+          "why": "Right: inline JQ reads the event time inside the record and builds the prefix."
+        },
+        {
+          "t": "A custom prefix with `!{timestamp:yyyy-MM-dd}`",
+          "why": "Wrong: the timestamp namespace is the arrival time of the oldest record in the object."
+        },
+        {
+          "t": "Set `CustomTimeZone` to the producer's zone",
+          "why": "Wrong: changes the time zone, not which time is used."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Event-time partitions need dynamic partitioning; prefix timestamps are arrival time.",
+      "remember": "`!{timestamp:...}` = approximate arrival time. Partitioning by a value in the data (event time, tenant) → dynamic partitioning with JQ (`partitionKeyFromQuery`) or Lambda (`partitionKeyFromLambda`).",
+      "variants": [
+        "Keys need logic JQ cannot express → Lambda returns `metadata.partitionKeys`.",
+        "New partitions must be visible in Athena → partition projection, a crawler or `ALTER TABLE ADD PARTITION`.",
+        "JQ is billed per JQ hour; heavy JQ adds cost and latency."
+      ]
+    },
+    {
+      "id": "firehose-021",
+      "skill": "1.2.7",
+      "source": "2-transformations-format-conversion-partitioning-and-tables.md",
+      "q": "A Firehose Lambda transform runs without errors, but every record ends up under `processing-failed/`. The function returns each record's transformed JSON as a plain string in `data` and generates a new UUID for `recordId`. What must change?",
+      "options": [
+        {
+          "t": "Return `result` as `Success`",
+          "why": "Wrong: valid values are `Ok`, `Dropped` and `ProcessingFailed`; this is not the cause described."
+        },
+        {
+          "t": "Invoke the function asynchronously",
+          "why": "Wrong: Firehose always invokes it synchronously."
+        },
+        {
+          "t": "Raise the Lambda timeout to 15 minutes",
+          "why": "Wrong: Firehose waits at most 5 minutes, and the function is not timing out."
+        },
+        {
+          "t": "Return the input `recordId` unchanged and base64-encode `data`",
+          "why": "Right: a `recordId` mismatch counts as a transformation failure, and `data` must be base64."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Lambda output needs the same `recordId`, a valid `result` and base64 `data`.",
+      "remember": "Firehose Lambda contract: one output per input with the same `recordId`, `result` = `Ok`/`Dropped`/`ProcessingFailed`, `data` base64 (`kafkaRecordValue` for MSK).",
+      "variants": [
+        "Records should be filtered out → return `Dropped`; it counts as success.",
+        "Function fails on large batches → request/response over 6 MB; lower the Lambda buffer size.",
+        "Function times out → speed up code or shrink batches; the cap is 5 minutes."
+      ]
+    },
+    {
+      "id": "firehose-022",
+      "skill": "2.1.7",
+      "source": "2-transformations-format-conversion-partitioning-and-tables.md",
+      "q": "Change data capture events must update and delete rows in an S3 data lake table in near real time with no servers to manage. What should you use?",
+      "options": [
+        {
+          "t": "Firehose to S3 with Parquet conversion",
+          "why": "Wrong: plain S3 files cannot do row-level updates or deletes."
+        },
+        {
+          "t": "Firehose to S3 with dynamic partitioning on the primary key",
+          "why": "Wrong: partitioning groups files; it does not change existing rows."
+        },
+        {
+          "t": "Firehose to Apache Iceberg Tables with `update`/`delete` operations and unique keys defined",
+          "why": "Right: Iceberg supports row-level changes; update and delete need unique keys."
+        },
+        {
+          "t": "Firehose to Redshift with JSON 'auto'",
+          "why": "Wrong: Redshift is not the S3 data lake table, and COPY only inserts."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Upserts and deletes on S3 need the Iceberg destination with unique keys.",
+      "remember": "Iceberg destination: `insert` (default), `update` (upsert), `delete`. Update/delete need `UniqueKeys` in the stream or `identifier-field-ids` on the table; tables must be V2.",
+      "variants": [
+        "Update records fail to the error bucket → define unique keys.",
+        "No compaction work wanted → use Amazon S3 Tables as the Iceberg target.",
+        "Append-only and high throughput → `AppendOnly = true` at creation."
+      ]
+    },
+    {
+      "id": "firehose-023",
+      "skill": "2.1.7",
+      "source": "2-transformations-format-conversion-partitioning-and-tables.md",
+      "q": "Two teams each create a Firehose stream that writes to the same Iceberg table. Many records end up in the error prefix after retries. What is the cause and fix?",
+      "options": [
+        {
+          "t": "The table is V2; convert it to V1",
+          "why": "Wrong: Firehose supports only V2 tables."
+        },
+        {
+          "t": "Concurrent commits conflict; use one Firehose stream per table",
+          "why": "Right: Iceberg optimistic concurrency lets one commit win, and the others retry then fail."
+        },
+        {
+          "t": "The streams need dynamic partitioning",
+          "why": "Wrong: dynamic partitioning is for the S3 destination, not Iceberg commits."
+        },
+        {
+          "t": "Raise the retry duration to 7,200 seconds",
+          "why": "Wrong: conflicts continue while two writers compete."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Several Firehose streams on one Iceberg table cause commit conflicts.",
+      "remember": "Point only one Firehose stream at each Iceberg table. Several sources → feed one stream (for example via one KDS stream), or route many tables from one stream.",
+      "variants": [
+        "Writes fail with `Iceberg.NoSuchTable` → V1 table, wrong name, or a hyphen in the name.",
+        "One stream, many tables → JQ routing on a record field, or Lambda `otfMetadata`.",
+        "Queries slow over time → compaction (Glue automatic compaction, Athena OPTIMIZE) or S3 Tables."
+      ]
+    },
+    {
+      "id": "firehose-024",
+      "skill": "3.3.7",
+      "source": "2-transformations-format-conversion-partitioning-and-tables.md",
+      "q": "CloudWatch Logs subscription filters from many log groups send to a Firehose stream that writes to S3. The objects are unreadable gzip blobs with envelope fields. The team wants plain log messages, one per line, with no code. What should they do?",
+      "options": [
+        {
+          "t": "Use the CloudWatch Logs Lambda blueprint",
+          "why": "Wrong: that blueprint is deprecated and adds code and cost."
+        },
+        {
+          "t": "Turn on S3 GZIP compression",
+          "why": "Wrong: the data is already gzip; this does not unpack it."
+        },
+        {
+          "t": "Turn on record format conversion",
+          "why": "Wrong: conversion needs decompressed JSON first and does not strip the envelope."
+        },
+        {
+          "t": "Turn on built-in decompression and message extraction",
+          "why": "Right: decompression delivers JSON and message extraction keeps only each `message`."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Built-in decompression plus message extraction turns CloudWatch Logs subscription data into plain lines.",
+      "remember": "CloudWatch Logs subscriptions arrive gzip with many events and an envelope. Turn on decompression (and message extraction). Needed before conversion or dynamic partitioning.",
+      "variants": [
+        "Vended logs share the stream → they fail with decompression on; use a separate stream.",
+        "Destination is Splunk → turn on decompression and message extraction.",
+        "Destination is OpenSearch → use a CloudWatch Logs subscription to OpenSearch instead of Firehose."
+      ]
+    },
+    {
+      "id": "firehose-025",
+      "skill": "4.3.2",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A Firehose stream reads from a Kinesis data stream. Auditors require encryption at rest with a customer managed KMS key for the pipeline. `StartDeliveryStreamEncryption` fails. What should you do?",
+      "options": [
+        {
+          "t": "Use an asymmetric KMS key",
+          "why": "Wrong: only symmetric keys are supported, and the problem is the source type."
+        },
+        {
+          "t": "Switch the stream to `AWS_OWNED_CMK`",
+          "why": "Wrong: Firehose SSE is not available at all for a KDS-source stream."
+        },
+        {
+          "t": "Enable server-side encryption on the KDS stream with the customer managed key",
+          "why": "Right: KDS handles encryption; it decrypts on read and Firehose delivers without storing plaintext at rest."
+        },
+        {
+          "t": "Encrypt the S3 bucket only",
+          "why": "Wrong: protects the destination, but auditors asked about the stream; encrypt the KDS stream."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Firehose SSE is for Direct PUT; with a KDS source, encrypt the KDS stream.",
+      "remember": "Direct PUT → Firehose SSE (`AWS_OWNED_CMK` or symmetric `CUSTOMER_MANAGED_CMK`). KDS source → encrypt KDS. Destination encryption (S3 SSE-KMS, S3 Tables bucket) is set separately.",
+      "variants": [
+        "Producers get AccessDenied after enabling a customer managed key → add `kms:GenerateDataKey` and `kms:Decrypt` to callers and key policy.",
+        "Objects must use a specific key in S3 → set SSE-KMS in the S3 destination settings.",
+        "S3 Tables destination → set KMS on the table bucket."
+      ]
+    },
+    {
+      "id": "firehose-026",
+      "skill": "4.1.2",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "Producers in private subnets with no NAT gateway time out when calling `PutRecordBatch`. Traffic must stay on the AWS network. What should you add?",
+      "options": [
+        {
+          "t": "A gateway VPC endpoint for Firehose",
+          "why": "Wrong: gateway endpoints exist only for S3 and DynamoDB."
+        },
+        {
+          "t": "An interface VPC endpoint for `com.amazonaws.<region>.kinesis-firehose`",
+          "why": "Right: PrivateLink lets private producers reach Firehose without an internet gateway or NAT."
+        },
+        {
+          "t": "Firehose VPC delivery with ENIs",
+          "why": "Wrong: VPC delivery is for reaching a destination such as OpenSearch in your VPC, not for producers."
+        },
+        {
+          "t": "A Firehose CIDR allowlist on the subnet NACL",
+          "why": "Wrong: there is still no route to the Firehose API."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Private producers reach Firehose through an interface VPC endpoint.",
+      "remember": "Producers → Firehose privately: interface endpoint (PrivateLink); limit it with an endpoint policy and force use with `aws:SourceVpce` Deny. Firehose → private OpenSearch: VPC delivery.",
+      "variants": [
+        "Only one endpoint may be used → IAM Deny unless `aws:SourceVpce` matches.",
+        "Limit which streams are reachable via the endpoint → endpoint policy.",
+        "Firehose to a private HTTP endpoint → not supported."
+      ]
+    },
+    {
+      "id": "firehose-027",
+      "skill": "1.2.4",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "Sensors send 1 KB events to Firehose Direct PUT as individual records. The ingestion bill is about 5× what the data volume suggests. What is the most cost-effective fix?",
+      "options": [
+        {
+          "t": "Turn on GZIP compression to S3",
+          "why": "Wrong: compression lowers S3 storage, not Firehose ingestion billing."
+        },
+        {
+          "t": "Switch to an MSK source",
+          "why": "Wrong: MSK-source billing has no rounding but costs more per GB and needs a Kafka cluster."
+        },
+        {
+          "t": "Raise the buffer size to 128 MB",
+          "why": "Wrong: buffering does not change how ingested records are billed."
+        },
+        {
+          "t": "Batch several events, newline-separated, into records of 5 KB or more",
+          "why": "Right: each Direct PUT/KDS record is rounded up to 5 KB for billing."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Ingestion rounds each record up to 5 KB; batch small events.",
+      "remember": "Direct PUT and KDS source ingestion is $0.029/GB (US East, first tier) with each record rounded up to 5 KB. Pack small events into bigger records.",
+      "variants": [
+        "Source is MSK → no 5 KB rounding, but $0.055/GB.",
+        "Need per-event partitioning after batching → multi-record de-aggregation.",
+        "Dynamic partitioning bill high → coarser keys and larger buffers; objects are billed per 1,000."
+      ]
+    },
+    {
+      "id": "firehose-028",
+      "skill": "3.3.2",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An operations team wants an early warning when a Firehose stream to S3 falls behind, before data loss. Which CloudWatch alarm is the best signal?",
+      "options": [
+        {
+          "t": "`IncomingRecords` drops to 0",
+          "why": "Wrong: shows producers stopped, not delivery falling behind."
+        },
+        {
+          "t": "`DeliveryToS3.Success` average below 1 for one datapoint",
+          "why": "Wrong: small dips are retries and are not data loss."
+        },
+        {
+          "t": "`DeliveryToS3.DataFreshness` above the buffering interval",
+          "why": "Right: it is the age of the oldest undelivered record; rising means delivery is behind."
+        },
+        {
+          "t": "`ThrottledRecords` > 0",
+          "why": "Wrong: useful for ingest throttling, but it does not measure delivery lag."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "DataFreshness is the key Firehose delivery health metric.",
+      "remember": "Alarm on `DeliveryTo<Dest>.DataFreshness` above the buffer limit; also `ThrottledRecords` > 0 and `IncomingBytes`/300 vs `BytesPerSecondLimit`. Metrics are free, every minute.",
+      "variants": [
+        "Direct PUT nearing its limit → metric math `IncomingBytes`/300 vs `BytesPerSecondLimit`.",
+        "Need error details → turn on error logging (`/aws/kinesisfirehose/<stream>`); logs are sampled under heavy failure.",
+        "KMS problems → alarm on `KMSKeyAccessDenied`, `KMSKeyDisabled` and related metrics."
+      ]
+    },
+    {
+      "id": "firehose-029",
+      "skill": "1.2.5",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A stream of payments must be joined with a reference stream and aggregated in 5-minute windows with exactly-once results, then written to S3. Which service fits best?",
+      "options": [
+        {
+          "t": "Amazon Data Firehose with a Lambda transform",
+          "why": "Wrong: Firehose Lambda is stateless per batch; Firehose cannot keep state for joins or windows."
+        },
+        {
+          "t": "Amazon Managed Service for Apache Flink",
+          "why": "Right: Flink is built for stateful, windowed, exactly-once stream processing."
+        },
+        {
+          "t": "Kinesis Data Streams data delivery to S3",
+          "why": "Wrong: it lands data in its original format with no transform."
+        },
+        {
+          "t": "Firehose with dynamic partitioning",
+          "why": "Wrong: partitioning groups output files; it does not join or aggregate."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Stateful joins and windows → Managed Service for Apache Flink (or Glue streaming), not Firehose.",
+      "remember": "Firehose = no-code managed delivery with simple per-record transforms. State, joins, windows → Flink; full Spark logic → Glue streaming; replay and many readers → KDS/MSK.",
+      "variants": [
+        "Only land raw KDS data in S3 in its original format at the least cost → KDS data delivery.",
+        "Land data as Parquet with no code → Firehose with format conversion.",
+        "Sub-minute Redshift queries from KDS → Redshift streaming ingestion."
+      ]
+    },
+    {
+      "id": "firehose-030",
+      "skill": "4.3.2",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A customer managed KMS key used for Firehose SSE was disabled by mistake on Friday and re-enabled on Monday. Records from Friday are missing at the destination. What explains this, and what prevents it next time?",
+      "options": [
+        {
+          "t": "Firehose buffered the data in S3; replay it from the backup bucket",
+          "why": "Wrong: Firehose had no way to decrypt the records to back them up."
+        },
+        {
+          "t": "Firehose deletes records whenever the key is rotated; stop rotation",
+          "why": "Wrong: rotation is not the cause."
+        },
+        {
+          "t": "Records over 1,000 KiB were dropped; split records",
+          "why": "Wrong: unrelated to the key event."
+        },
+        {
+          "t": "Firehose waits up to 24 hours for an unusable key, then discards records; alarm on the `KMSKey*` metrics",
+          "why": "Right: after 24 h undecryptable records are discarded, so alert early on key problems."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Unusable KMS key for more than 24 hours = discarded data.",
+      "remember": "If the Firehose SSE key becomes unusable (disabled, deleted, access denied), Firehose waits up to 24 h then discards records. Alarm on `KMSKeyDisabled`, `KMSKeyAccessDenied`, `KMSKeyInvalidState`, `KMSKeyNotFound`.",
+      "variants": [
+        "Many streams on one key fail to create → one key serves up to 500 streams; use another key.",
+        "Changing the key with `StartDeliveryStreamEncryption` → the old key's grant is retired.",
+        "Who disabled the key → CloudTrail KMS events."
+      ]
+    },
+    {
+      "id": "firehose-031",
+      "skill": "4.3.3",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A Firehose stream in account A delivers to an S3 bucket in account B. Objects arrive, but the bucket owner in account B cannot read them. Which two settings are required for this pattern? (Choose 2.)",
+      "options": [
+        {
+          "t": "A bucket policy in account B that allows the Firehose role from account A to write",
+          "why": "Right: cross-account S3 delivery needs the role in A plus a bucket policy in B."
+        },
+        {
+          "t": "An interface VPC endpoint in account B",
+          "why": "Wrong: not needed for cross-account S3 delivery."
+        },
+        {
+          "t": "`s3:PutObjectAcl` on the Firehose role so Firehose can set bucket-owner-full-control",
+          "why": "Right: without it, the bucket owner cannot read the objects."
+        },
+        {
+          "t": "A Lake Formation grant on the bucket",
+          "why": "Wrong: Lake Formation governs catalog tables, not raw object ownership here."
+        }
+      ],
+      "answer": [
+        0,
+        2
+      ],
+      "explain": "Cross-account S3 delivery = role in A + bucket policy in B + `s3:PutObjectAcl`.",
+      "remember": "Cross-account S3: Firehose role (account A) + bucket policy (account B) + `s3:PutObjectAcl` so objects get bucket-owner-full-control. Set it up with CLI/API.",
+      "variants": [
+        "OpenSearch in another account → domain policy + `ClusterEndpoint`, CLI/API only.",
+        "Secret in another account → must use a customer managed KMS key.",
+        "Format conversion Glue role → must be in the same account as the stream."
+      ]
+    },
+    {
+      "id": "firehose-032",
+      "skill": "4.2.2",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "Splunk HEC tokens must rotate every 30 days without editing the Firehose stream. Which approach fits?",
+      "options": [
+        {
+          "t": "Store the token in AWS Secrets Manager and reference the secret in the Splunk destination",
+          "why": "Right: Firehose reads the secret and refreshes it every 10 minutes."
+        },
+        {
+          "t": "Put the token in an IAM role trust policy",
+          "why": "Wrong: Splunk uses an HEC token, not IAM."
+        },
+        {
+          "t": "Call `UpdateDestination` with the new token each month",
+          "why": "Wrong: works, but it is the manual change the requirement wants to avoid."
+        },
+        {
+          "t": "Store the token in a Lambda environment variable",
+          "why": "Wrong: Firehose does not read Splunk credentials from Lambda."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Secrets Manager lets credentials rotate without stream changes.",
+      "remember": "Destinations with credentials (Redshift, Splunk, Snowflake, HTTP and partners) can read them from Secrets Manager; Firehose refreshes every 10 minutes. Role needs `secretsmanager:GetSecretValue` (+ `kms:Decrypt` for a customer managed key).",
+      "variants": [
+        "Secret in another account → encrypt it with a customer managed key.",
+        "HTTP endpoint secret → JSON like `{\"api_key\": \"...\"}`.",
+        "401/403 from Splunk or HTTP → wrong token/key or wrong secret format."
+      ]
+    }
+  ]
+}

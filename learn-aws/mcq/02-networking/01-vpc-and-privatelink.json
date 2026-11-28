@@ -1,0 +1,400 @@
+{
+ "questions": [
+  {
+   "id": "vpc-001",
+   "skill": "1.2.4",
+   "source": "2-peering-transit-gateway-endpoints-and-privatelink.md",
+   "q": "EMR clusters in private subnets read terabytes from S3 every day through a NAT gateway, and NAT data processing dominates the network bill. What is the cheapest fix?",
+   "options": [
+    {
+     "t": "Add an S3 interface endpoint in each subnet",
+     "why": "Wrong: it works, but interface endpoints cost per AZ-hour and per GB, so it is not the cheapest."
+    },
+    {
+     "t": "Add an S3 gateway endpoint and a route to it in the subnet route tables",
+     "why": "Right: it is free and sends S3 traffic around the NAT gateway."
+    },
+    {
+     "t": "Replace the NAT gateway with a Transit Gateway",
+     "why": "Wrong: TGW adds per-attachment and per-GB fees and gives no private path to S3."
+    },
+    {
+     "t": "Move the cluster to a public subnet",
+     "why": "Wrong: this exposes the cluster and does not address the design requirement of private subnets."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Gateway endpoints for S3 and DynamoDB are free and remove NAT data charges.",
+   "remember": "NAT cost caused by S3 or DynamoDB traffic from inside the VPC → gateway endpoint (free, route-table based).",
+   "variants": [
+    "The same traffic comes from on-premises → S3 interface endpoint, because gateway endpoints are not reachable from on-prem.",
+    "The traffic goes to Kinesis or SQS → interface endpoint (gateway type exists only for S3 and DynamoDB)."
+   ]
+  },
+  {
+   "id": "vpc-002",
+   "skill": "4.1.5",
+   "source": "2-peering-transit-gateway-endpoints-and-privatelink.md",
+   "q": "An on-premises ETL job must read S3 over Direct Connect without using the internet. A gateway endpoint already exists in the VPC. What should the team add?",
+   "options": [
+    {
+     "t": "A second S3 gateway endpoint in another subnet",
+     "why": "Wrong: gateway endpoints are route entries inside the VPC and cannot be reached from on-premises."
+    },
+    {
+     "t": "An S3 interface endpoint (PrivateLink) reached over the private VIF",
+     "why": "Right: interface endpoints are ENIs with private IPs that on-premises can reach over VPN or DX."
+    },
+    {
+     "t": "VPC peering to the on-premises network",
+     "why": "Wrong: peering connects only VPCs, not on-premises networks."
+    },
+    {
+     "t": "An egress-only internet gateway",
+     "why": "Wrong: it provides IPv6 outbound internet access, not private S3 access."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Hybrid access to S3 needs an interface endpoint; gateway endpoints are in-VPC only.",
+   "remember": "On-premises, peered VPC or TGW access to S3 privately → interface endpoint. In-VPC workloads → free gateway endpoint.",
+   "variants": [
+    "Only workloads inside the same VPC and Region need S3 → gateway endpoint.",
+    "On-prem uses a public VIF instead → it can reach S3 public IPs without any endpoint."
+   ]
+  },
+  {
+   "id": "vpc-003",
+   "skill": "4.1.1",
+   "source": "1-vpc-fundamentals-subnets-routing-and-security.md",
+   "q": "A custom NACL was added to a subnet and now clients connect but responses never return. Inbound rules allow port 443. What is the likely cause?",
+   "options": [
+    {
+     "t": "Security groups are stateless and block the reply",
+     "why": "Wrong: security groups are stateful and allow return traffic automatically."
+    },
+    {
+     "t": "NACLs are stateless, so outbound ephemeral ports 1024-65535 must also be allowed",
+     "why": "Right: the reply goes out on an ephemeral port and the NACL evaluates each direction separately."
+    },
+    {
+     "t": "The VPC local route was removed",
+     "why": "Wrong: the local route always exists and cannot be removed."
+    },
+    {
+     "t": "The internet gateway is not attached",
+     "why": "Wrong: an IGW is free and always attached to at most one VPC; it does not filter return traffic."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "NACLs are stateless; you must allow both directions including ephemeral ports.",
+   "remember": "Return traffic fails after NACL changes → allow ephemeral ports 1024-65535, because NACLs are stateless; SGs are stateful.",
+   "variants": [
+    "Need to block one IP range → NACL deny rule, since SGs only allow.",
+    "A custom NACL with no rules → denies all until rules are added; the default NACL allows all."
+   ]
+  },
+  {
+   "id": "vpc-004",
+   "skill": "4.1.1",
+   "source": "1-vpc-fundamentals-subnets-routing-and-security.md",
+   "q": "A security team must block one malicious IP range from reaching every instance in a subnet. Which control does this?",
+   "options": [
+    {
+     "t": "A security group deny rule",
+     "why": "Wrong: security groups have allow rules only."
+    },
+    {
+     "t": "A NACL deny rule with a low rule number",
+     "why": "Right: NACLs support deny, apply at subnet level and use the first matching rule by number."
+    },
+    {
+     "t": "A route table entry to a NAT gateway",
+     "why": "Wrong: routes do not filter by source for inbound traffic."
+    },
+    {
+     "t": "A VPC endpoint policy",
+     "why": "Wrong: endpoint policies filter requests to AWS services, not internet sources."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Only NACLs can explicitly deny; rule order decides.",
+   "remember": "Explicit deny of an IP range → NACL (subnet level, ordered rules). Fine-grained least privilege → security groups.",
+   "variants": [
+    "Allow DB access only from the app tier → security group referencing the app SG.",
+    "Need deep inspection or domain filtering → AWS Network Firewall."
+   ]
+  },
+  {
+   "id": "vpc-005",
+   "skill": "4.1.1",
+   "source": "1-vpc-fundamentals-subnets-routing-and-security.md",
+   "q": "A Glue job attached to a VPC through a network connection fails because its worker ENIs cannot talk to each other. Which change is required?",
+   "options": [
+    {
+     "t": "Add a self-referencing inbound rule on the security group",
+     "why": "Right: job ENIs share the SG and need to communicate with each other."
+    },
+    {
+     "t": "Attach an internet gateway to the VPC",
+     "why": "Wrong: the ENIs would still need public IPs and it does not fix SG isolation."
+    },
+    {
+     "t": "Create a VPC peering connection to itself",
+     "why": "Wrong: a VPC cannot peer with itself."
+    },
+    {
+     "t": "Replace the NACL with a security group",
+     "why": "Wrong: both can exist; SGs do not replace NACLs."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Cluster-style services need a self-referencing security group rule.",
+   "remember": "Glue, EMR, Redshift, MWAA and MSK nodes talking to each other → security group with a self-referencing rule.",
+   "variants": [
+    "The job also cannot reach S3 → add an S3 gateway endpoint or NAT.",
+    "Database access from the app tier → SG rule referencing the app SG."
+   ]
+  },
+  {
+   "id": "vpc-006",
+   "skill": "4.1.5",
+   "source": "2-peering-transit-gateway-endpoints-and-privatelink.md",
+   "q": "Security wants a bucket reachable only from the company VPC through its S3 gateway endpoint, and nothing else. Which design achieves it?",
+   "options": [
+    {
+     "t": "A bucket policy that denies requests when `aws:SourceVpce` is not that endpoint ID",
+     "why": "Right: the Deny blocks every other network path."
+    },
+    {
+     "t": "An SG on the bucket allowing the VPC CIDR",
+     "why": "Wrong: S3 buckets do not have security groups."
+    },
+    {
+     "t": "A NACL on the subnet allowing S3",
+     "why": "Wrong: NACLs cannot restrict who reaches a bucket from elsewhere."
+    },
+    {
+     "t": "Peering the VPC to the S3 service VPC",
+     "why": "Wrong: AWS services cannot be peered and S3 is not in a peerable VPC."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Use a bucket policy condition on the endpoint plus an endpoint policy.",
+   "remember": "Restrict a bucket to your network → bucket policy Deny unless `aws:SourceVpce` matches; use endpoint policies to limit which buckets the VPC can reach.",
+   "variants": [
+    "Limit which buckets workloads in the VPC may reach → gateway endpoint policy with bucket ARNs.",
+    "Restrict by trusted identities → SCP or RCP in the data perimeter."
+   ]
+  },
+  {
+   "id": "vpc-007",
+   "skill": "4.1.5",
+   "source": "2-peering-transit-gateway-endpoints-and-privatelink.md",
+   "q": "A SaaS vendor and your company have overlapping CIDR ranges, but the vendor must call one internal API privately. What should you use?",
+   "options": [
+    {
+     "t": "VPC peering",
+     "why": "Wrong: peering cannot route overlapping CIDRs."
+    },
+    {
+     "t": "Transit Gateway",
+     "why": "Wrong: TGW also requires non-overlapping CIDRs."
+    },
+    {
+     "t": "PrivateLink: expose the API behind an NLB as an endpoint service",
+     "why": "Right: it does not route networks, allows overlapping CIDRs and exposes only that service."
+    },
+    {
+     "t": "Site-to-Site VPN",
+     "why": "Wrong: VPN also needs non-overlapping ranges."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "PrivateLink exposes one service, one-way, without routing networks.",
+   "remember": "Overlapping CIDRs or exposing only one service → PrivateLink (NLB endpoint service). Few VPCs full access → peering; many VPCs plus on-prem → TGW.",
+   "variants": [
+    "30 VPCs plus on-prem must talk to each other → Transit Gateway.",
+    "Two VPCs, full access, no overlap → VPC peering."
+   ]
+  },
+  {
+   "id": "vpc-008",
+   "skill": "3.3.4",
+   "source": "2-peering-transit-gateway-endpoints-and-privatelink.md",
+   "q": "VPC A is peered with B, and B is peered with C. Instances in A cannot reach C. Routes and SGs for A-B and B-C are correct. Why?",
+   "options": [
+    {
+     "t": "Peering is not transitive; A and C need their own peering or a Transit Gateway",
+     "why": "Right: peering never forwards traffic through B."
+    },
+    {
+     "t": "Peering supports only one connection per account",
+     "why": "Wrong: a VPC can have many peerings."
+    },
+    {
+     "t": "The CIDRs must be advertised with BGP",
+     "why": "Wrong: peering uses static route table entries, not BGP."
+    },
+    {
+     "t": "Security groups cannot be used across peering",
+     "why": "Wrong: SG references work for same-Region peering, and this is not the issue."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "No transitive routing over VPC peering.",
+   "remember": "A-B and B-C peering does not give A-C. Fix with a direct peering or Transit Gateway.",
+   "variants": [
+    "Many VPCs are needed → Transit Gateway.",
+    "Peer's NAT or IGW needed through peering → not allowed (no edge-to-edge routing)."
+   ]
+  },
+  {
+   "id": "vpc-009",
+   "skill": "1.1.8",
+   "source": "3-hybrid-connectivity-vpn-direct-connect-and-client-vpn.md",
+   "q": "A team must set up a link to on-premises this week for a data migration, with encryption. Direct Connect would take weeks. What fits?",
+   "options": [
+    {
+     "t": "Site-to-Site VPN",
+     "why": "Right: it is IPsec-encrypted over the internet and ready in minutes."
+    },
+    {
+     "t": "Direct Connect dedicated 10 Gbps",
+     "why": "Wrong: it needs weeks of provisioning for the cross-connect."
+    },
+    {
+     "t": "Client VPN",
+     "why": "Wrong: it connects individual remote users, not a site."
+    },
+    {
+     "t": "VPC peering",
+     "why": "Wrong: it connects VPCs, not on-premises networks."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "VPN is the quick encrypted option; DX is slow to provision.",
+   "remember": "Fast link up in days → Site-to-Site VPN. Consistent high throughput → Direct Connect. DX is private but not encrypted by default.",
+   "variants": [
+    "The VPN needs more than 1.25 Gbps → Transit Gateway with multiple tunnels and ECMP (BGP).",
+    "DX traffic must be encrypted → MACsec or IPsec VPN over DX."
+   ]
+  },
+  {
+   "id": "vpc-010",
+   "skill": "3.3.8",
+   "source": "1-vpc-fundamentals-subnets-routing-and-security.md",
+   "q": "Auditors want evidence of which flows were accepted and rejected in a VPC, queried cheaply with SQL over months of data. What is the standard pattern?",
+   "options": [
+    {
+     "t": "VPC Flow Logs to S3 in Parquet, queried with Athena",
+     "why": "Right: Flow Logs record accepted and rejected flows, and Parquet cuts Athena scan cost."
+    },
+    {
+     "t": "Traffic Mirroring to CloudWatch Logs",
+     "why": "Wrong: mirroring copies packets to an appliance, which is heavier and costlier."
+    },
+    {
+     "t": "Reachability Analyzer on a schedule",
+     "why": "Wrong: it analyses a configured path, not historical flows."
+    },
+    {
+     "t": "Route table association history",
+     "why": "Wrong: it shows config, not traffic."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Flow Logs plus S3 plus Athena.",
+   "remember": "Who talks to whom, ACCEPT or REJECT, cost top talkers → VPC Flow Logs to S3 with Athena (they hold metadata, not payload).",
+   "variants": [
+    "Need to know which component blocks one path right now → Reachability Analyzer.",
+    "Find unintended exposure paths → Network Access Analyzer."
+   ]
+  },
+  {
+   "id": "vpc-011",
+   "skill": "3.3.4",
+   "source": "4-cost-monitoring-troubleshooting-limits-and-scenarios.md",
+   "q": "Pipeline jobs in a private subnet time out intermittently calling AWS APIs through a NAT gateway. Which CloudWatch metric confirms the likely cause?",
+   "options": [
+    {
+     "t": "`ErrorPortAllocation` greater than 0 on the NAT gateway",
+     "why": "Right: it shows the NAT ran out of ports, which causes intermittent timeouts."
+    },
+    {
+     "t": "`TunnelState` of the VPN",
+     "why": "Wrong: it concerns VPN tunnels, not NAT."
+    },
+    {
+     "t": "`ConnectionState` of Direct Connect",
+     "why": "Wrong: it concerns a DX link, not NAT."
+    },
+    {
+     "t": "`PacketDropCountNoRoute` of the TGW",
+     "why": "Wrong: it concerns Transit Gateway routing."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "NAT port exhaustion shows as ErrorPortAllocation.",
+   "remember": "Intermittent timeouts through NAT → check ErrorPortAllocation; fix with interface or gateway endpoints and more NAT gateways.",
+   "variants": [
+    "VPN tunnel down → TunnelState below 1.",
+    "Many small S3 or DynamoDB requests through NAT → move to gateway endpoints."
+   ]
+  },
+  {
+   "id": "vpc-012",
+   "skill": "1.4.1",
+   "source": "4-cost-monitoring-troubleshooting-limits-and-scenarios.md",
+   "q": "A Lambda function in a VPC needs to call Kinesis and has no internet access since joining the VPC. What is the best fix with no public exposure?",
+   "options": [
+    {
+     "t": "Add a `kinesis-streams` interface endpoint (or a NAT gateway)",
+     "why": "Right: this gives the VPC a private path to the API."
+    },
+    {
+     "t": "Add an S3 gateway endpoint",
+     "why": "Wrong: gateway endpoints exist only for S3 and DynamoDB, so it does not help with Kinesis."
+    },
+    {
+     "t": "Assign an Elastic IP to the function",
+     "why": "Wrong: Lambda ENIs cannot get public internet access this way."
+    },
+    {
+     "t": "Attach a second route table to the function",
+     "why": "Wrong: routes alone do not give an internet or service path."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "VPC-attached Lambdas need NAT or interface endpoints for AWS APIs.",
+   "remember": "VPC Lambda calling an AWS API → interface endpoint for that service (or NAT). S3 and DynamoDB → gateway endpoint.",
+   "variants": [
+    "The function only reads S3 → S3 gateway endpoint is enough.",
+    "Endpoint exists but DNS resolves public IPs → enable private DNS, `enableDnsSupport` and `enableDnsHostnames`."
+   ]
+  }
+ ]
+}

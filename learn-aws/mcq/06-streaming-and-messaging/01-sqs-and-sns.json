@@ -1,0 +1,1107 @@
+{
+ "questions": [
+  {
+   "id": "sqs-001",
+   "skill": "1.1.10",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "An orders service writes each new order to one SQS queue. Three teams (billing, analytics, shipping) each need to process every order at their own pace, and more teams may join later. What should the architect do?",
+   "options": [
+    {
+     "t": "Let all three teams poll the same standard queue",
+     "why": "Wrong: one SQS message goes to one consumer; once deleted it is gone for the others."
+    },
+    {
+     "t": "Switch the queue to FIFO so each team receives messages in order",
+     "why": "Wrong: FIFO adds ordering and dedupe, not multiple independent readers."
+    },
+    {
+     "t": "Publish to an SNS topic and subscribe one SQS queue per team",
+     "why": "Right: SNS pushes a copy to every subscribed queue; each queue keeps its own backlog, retries and DLQ, and new teams just add a subscription."
+    },
+    {
+     "t": "Copy each message into three queues from the producer code",
+     "why": "Wrong: works, but the producer must change every time a team is added; SNS fan-out removes that coupling."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Many independent readers of each message: SNS fan-out to one SQS queue per consumer.",
+   "remember": "SQS = one message, one consumer. Several consumers that each need every message → SNS topic fanning out to one SQS queue per consumer.",
+   "variants": [
+    "Consumers also need replay of history → Kinesis Data Streams with multiple consumers.",
+    "Routing by event content across many AWS targets → EventBridge rules.",
+    "Only one worker fleet shares the load → a single SQS queue."
+   ]
+  },
+  {
+   "id": "sqs-002",
+   "skill": "1.1.12",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "A payment worker reads from an SQS standard queue. Occasionally the same payment is charged twice, even though the visibility timeout is far longer than processing time. What is the most appropriate fix?",
+   "options": [
+    {
+     "t": "Make the charge operation idempotent (for example, keyed by payment ID)",
+     "why": "Right: standard queues deliver at least once, so a rare duplicate is possible even inside the visibility timeout; idempotent processing makes it harmless."
+    },
+    {
+     "t": "Lower the visibility timeout to 5 seconds",
+     "why": "Wrong: a shorter timeout makes messages reappear while still processing, causing more duplicates."
+    },
+    {
+     "t": "Enable long polling",
+     "why": "Wrong: long polling reduces empty receives and cost, it does not prevent duplicate delivery."
+    },
+    {
+     "t": "Set maxReceiveCount to 1 on the redrive policy",
+     "why": "Wrong: that sends messages to the DLQ after one failed receive; it does not stop duplicate deliveries."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Standard queues are at-least-once: design consumers to be idempotent.",
+   "remember": "Standard SQS = at-least-once and best-effort order. Duplicates must be handled by idempotent consumers (or move to FIFO with dedupe IDs).",
+   "variants": [
+    "Duplicates appear because processing takes longer than the visibility timeout → raise the timeout or heartbeat with ChangeMessageVisibility.",
+    "No duplicates may be added to the queue at all → FIFO queue with deduplication IDs (5-minute window).",
+    "FIFO consumer crashes after work but before delete → still make side effects idempotent; exactly-once is about the queue, not your code."
+   ]
+  },
+  {
+   "id": "sqs-003",
+   "skill": "1.1.12",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "Events for each customer must be processed strictly in order, but events of different customers should be processed in parallel by many consumers. Which design meets this?",
+   "options": [
+    {
+     "t": "Standard queue with a message timer per customer",
+     "why": "Wrong: standard queues give only best-effort ordering; timers just delay delivery."
+    },
+    {
+     "t": "FIFO queue with the same MessageGroupId for every message",
+     "why": "Wrong: one group is processed one batch at a time, so there is no parallelism across customers."
+    },
+    {
+     "t": "Standard queue with fair queues enabled using the customer ID",
+     "why": "Wrong: on standard queues MessageGroupId is only a tenant label for fairness; it gives no ordering."
+    },
+    {
+     "t": "FIFO queue with MessageGroupId set to the customer ID",
+     "why": "Right: FIFO order is per message group; different groups are handed to different consumers in parallel."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Order per entity, parallel across entities: FIFO with group ID = entity ID.",
+   "remember": "FIFO ordering is per message group, not per queue. Group ID = the entity that needs order (customer, order, device); many groups = parallelism.",
+   "variants": [
+    "Every single message must be in one global order → one group ID for all (throughput is one batch at a time).",
+    "One customer has most of the traffic → that group is a serial bottleneck; spread keys where possible.",
+    "Multi-tenant fairness without ordering → standard queue with MessageGroupId (fair queues)."
+   ]
+  },
+  {
+   "id": "sqs-004",
+   "skill": "1.1.9",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "A FIFO queue tops out near 300 messages per second. Producers send one message per SendMessage call and use thousands of distinct message group IDs. Which TWO changes raise throughput the most?",
+   "options": [
+    {
+     "t": "Increase the visibility timeout",
+     "why": "Wrong: visibility affects redelivery timing, not the send/receive rate limit."
+    },
+    {
+     "t": "Send with SendMessageBatch, 10 messages per call",
+     "why": "Right: the limit is 300 transactions per second per API action; batching 10 per call gives up to 3,000 messages per second."
+    },
+    {
+     "t": "Convert the queue to a standard queue in place",
+     "why": "Wrong: queue type is chosen at creation and cannot be converted; it would also lose ordering."
+    },
+    {
+     "t": "Enable high-throughput mode: deduplication scope = message group and throughput limit = per message group ID",
+     "why": "Right: high-throughput FIFO raises the per-Region limit far above 300 TPS (up to 70,000 TPS in the largest Regions)."
+    },
+    {
+     "t": "Switch to content-based deduplication",
+     "why": "Wrong: changes how dedupe IDs are made, not throughput."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "FIFO limits are per API request: batch 10 per call and turn on high-throughput mode.",
+   "remember": "FIFO normal mode = 300 TPS per action (3,000 msg/s batched). Beyond that → high-throughput mode (both settings) plus many distinct group IDs.",
+   "variants": [
+    "High-throughput FIFO still throttles with few group IDs → use more distinct group IDs; hot groups hash to few partitions (300 ops/s each).",
+    "Order is not needed at all → a standard queue has nearly unlimited throughput.",
+    "Either high-throughput setting is changed back → the queue returns to normal FIFO limits."
+   ]
+  },
+  {
+   "id": "sqs-005",
+   "skill": "1.2.7",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "Workers take about 20 minutes per message from an SQS queue with default settings. Messages are processed two or three times, and some land in the DLQ. What is the best fix?",
+   "options": [
+    {
+     "t": "Enable long polling with a 20-second wait",
+     "why": "Wrong: long polling cuts empty receives; it does not keep in-flight messages hidden longer."
+    },
+    {
+     "t": "Raise the visibility timeout above the processing time, or extend it with ChangeMessageVisibility while working",
+     "why": "Right: the default 30-second timeout lets the message reappear mid-processing; a longer timeout or a heartbeat keeps it hidden."
+    },
+    {
+     "t": "Add a 15-minute delay queue",
+     "why": "Wrong: delay hides new messages before first delivery, not during processing."
+    },
+    {
+     "t": "Lower maxReceiveCount to 1",
+     "why": "Wrong: that pushes even more messages into the DLQ."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Visibility timeout shorter than processing time causes duplicates and false DLQ moves.",
+   "remember": "Visibility timeout (default 30 s, max 12 h) must cover processing time; for long or variable jobs, heartbeat with ChangeMessageVisibility.",
+   "variants": [
+    "The job may take 15 hours → Step Functions or split the job; 12 hours counts from first receive and extending does not reset it.",
+    "A crashed consumer's message waits too long before retry → the timeout is too long; shorten it.",
+    "Release a message immediately for another consumer → ChangeMessageVisibility to 0."
+   ]
+  },
+  {
+   "id": "sqs-006",
+   "skill": "1.2.4",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "An idle-most-of-the-day pipeline shows millions of SQS requests a month and a high NumberOfEmptyReceives metric. Consumers call ReceiveMessage in a tight loop. What reduces cost with the least effort?",
+   "options": [
+    {
+     "t": "Set ReceiveMessageWaitTimeSeconds to 20 (long polling)",
+     "why": "Right: long polling waits up to 20 seconds for a message and queries all servers, cutting empty (billed) receives."
+    },
+    {
+     "t": "Switch to a FIFO queue",
+     "why": "Wrong: FIFO costs more per request and does not reduce empty receives."
+    },
+    {
+     "t": "Increase message retention to 14 days",
+     "why": "Wrong: retention controls how long messages live, not the number of receive calls."
+    },
+    {
+     "t": "Add a delay queue of 15 minutes",
+     "why": "Wrong: delays messages; consumers keep polling and still get empty responses."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Many empty receives = short polling; switch to long polling.",
+   "remember": "Every SQS call is billed, empty receives too. Long polling (WaitTimeSeconds up to 20) plus batching (10 per call) are the main cost levers.",
+   "variants": [
+    "Consumers get empty responses although messages exist → also long polling; short polling samples only a subset of servers.",
+    "Sends and deletes dominate the bill → batch APIs (10 per call).",
+    "One thread must poll many queues and cannot block → short polling is the exception."
+   ]
+  },
+  {
+   "id": "sqs-007",
+   "skill": "1.1.5",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "An application must remind a user 3 days after sign-up. A developer proposes putting the reminder in SQS with a delay. What should the data engineer recommend?",
+   "options": [
+    {
+     "t": "SQS delay queue with DelaySeconds set to 3 days",
+     "why": "Wrong: SQS delay (queue or message timer) maxes at 15 minutes."
+    },
+    {
+     "t": "SQS message timer on each message",
+     "why": "Wrong: message timers also max at 15 minutes and are not supported on FIFO."
+    },
+    {
+     "t": "A long visibility timeout of 72 hours",
+     "why": "Wrong: the visibility timeout maximum is 12 hours, and it only applies after a receive."
+    },
+    {
+     "t": "EventBridge Scheduler one-time schedule",
+     "why": "Right: delays longer than 15 minutes belong to EventBridge Scheduler (or a Step Functions wait)."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "SQS can delay at most 15 minutes; longer delays need a scheduler.",
+   "remember": "SQS delay queue / message timer = 0–15 minutes. Anything longer → EventBridge Scheduler or a Step Functions Wait state.",
+   "variants": [
+    "Process a message 10 minutes after it is sent → message timer or delay queue.",
+    "Per-message delay on a FIFO queue → not supported; only queue-level delay.",
+    "Changing the queue delay on a standard queue → not retroactive for messages already waiting."
+   ]
+  },
+  {
+   "id": "sqs-008",
+   "skill": "1.1.6",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "Every upload to an S3 bucket must be processed in strict order per customer, using an SQS FIFO queue with group ID = customer ID. S3 event notifications to the FIFO queue fail to configure. What is the fix?",
+   "options": [
+    {
+     "t": "Grant s3.amazonaws.com sqs:SendMessage in the FIFO queue policy",
+     "why": "Wrong: permissions are not the issue; S3 event notifications cannot target FIFO queues at all."
+    },
+    {
+     "t": "Send S3 events to EventBridge and use a rule that targets the SQS FIFO queue",
+     "why": "Right: S3 notifications support only standard queues; EventBridge can deliver to a FIFO queue with a group ID."
+    },
+    {
+     "t": "Send S3 events to an SNS FIFO topic subscribed by the queue",
+     "why": "Wrong: S3 event notifications support only standard SNS topics, not FIFO topics."
+    },
+    {
+     "t": "Enable content-based deduplication on the queue",
+     "why": "Wrong: dedupe settings do not make a FIFO queue a valid S3 notification target."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "S3 → FIFO queue goes through EventBridge.",
+   "remember": "S3 event notifications can target standard SQS queues and standard SNS topics only. For a FIFO target, route S3 → EventBridge → SQS FIFO.",
+   "variants": [
+    "Order does not matter → S3 event notification straight to a standard queue (keep MaximumMessageSize ≥ 64 KB).",
+    "Two processors need the same prefix → S3 → SNS → two queues, or EventBridge.",
+    "The standard queue is encrypted → CMK whose key policy allows s3.amazonaws.com."
+   ]
+  },
+  {
+   "id": "sqs-009",
+   "skill": "1.3.2",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "Failed messages move from a standard queue (retention 4 days) to a DLQ (retention 4 days). Engineers notice that some messages vanish from the DLQ after only a day. Why, and what is the fix?",
+   "options": [
+    {
+     "t": "The DLQ keeps the original enqueue time; set DLQ retention longer than the source, such as 14 days",
+     "why": "Right: on standard queues expiry uses the original enqueue timestamp, so time spent in the source counts against DLQ retention."
+    },
+    {
+     "t": "A redrive task is deleting them; cancel it with CancelMessageMoveTask",
+     "why": "Wrong: redrive moves messages back as new messages; it is not why they expire early."
+    },
+    {
+     "t": "The DLQ's maxReceiveCount is too low",
+     "why": "Wrong: maxReceiveCount is a setting on the source queue's redrive policy and controls moves, not expiry."
+    },
+    {
+     "t": "PurgeQueue runs automatically on DLQs every 24 hours",
+     "why": "Wrong: there is no automatic purge; messages expire at the end of retention."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Standard DLQ messages keep their original enqueue time, so give the DLQ longer retention.",
+   "remember": "DLQ retention should be longer than the source queue's (often 14 days), because standard queues keep the original enqueue timestamp.",
+   "variants": [
+    "FIFO source queue → the enqueue timestamp resets when moved to the DLQ.",
+    "Messages vanish from a normal queue after an outage → retention expired; raise it (max 14 days) and alarm on ApproximateAgeOfOldestMessage.",
+    "Messages vanish and someone may have deleted them → check CloudTrail for PurgeQueue."
+   ]
+  },
+  {
+   "id": "sqs-010",
+   "skill": "3.1.8",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "A Lambda function processes SQS batches of 10. When one record fails, the whole batch is retried, and already-processed records are written again. What is the best fix?",
+   "options": [
+    {
+     "t": "Set the batch size to 1",
+     "why": "Wrong: it works but multiplies invocations and cost; partial batch response solves it without losing batching."
+    },
+    {
+     "t": "Configure an on-failure destination on the function",
+     "why": "Wrong: Lambda destinations and function DLQs are for async invokes, not SQS event source mappings."
+    },
+    {
+     "t": "Enable ReportBatchItemFailures and return the failed message IDs in batchItemFailures",
+     "why": "Right: only the listed messages return to the queue; the rest of the batch is deleted."
+    },
+    {
+     "t": "Catch the error and return success so the batch is deleted",
+     "why": "Wrong: the failed record is silently lost."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Partial batch response returns only failed records to the queue.",
+   "remember": "Lambda + SQS: a function error returns the whole batch. ReportBatchItemFailures with {batchItemFailures:[{itemIdentifier}]} retries only failed messages.",
+   "variants": [
+    "NumberOfMessagesDeleted drops to 0 after enabling it → bad response format (empty or unknown itemIdentifier) = whole batch fails.",
+    "FIFO queue → stop at the first failure and return that message and all later ones.",
+    "Failed messages need a parking place → redrive policy DLQ on the source queue."
+   ]
+  },
+  {
+   "id": "sqs-011",
+   "skill": "1.4.2",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "During a traffic spike, a Lambda function consuming an SQS queue is throttled, and valid messages start landing in the DLQ. The redrive policy has maxReceiveCount = 1 and the visibility timeout equals the function timeout. Which TWO changes fix this?",
+   "options": [
+    {
+     "t": "Raise maxReceiveCount to at least 5",
+     "why": "Right: throttled batches return to the queue and each receive counts; 5 or more gives room for retries."
+    },
+    {
+     "t": "Reduce the ESM batch size to 1",
+     "why": "Wrong: smaller batches mean more invocations and more throttling, not fewer DLQ moves."
+    },
+    {
+     "t": "Set the visibility timeout to at least 6 times the function timeout",
+     "why": "Right: AWS guidance; it leaves time for throttling retries before the message reappears."
+    },
+    {
+     "t": "Remove the DLQ",
+     "why": "Wrong: poison messages would then be retried until retention expires."
+    },
+    {
+     "t": "Switch the queue to FIFO",
+     "why": "Wrong: does nothing for throttling and lowers ESM batch size to 10 max."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Throttles count as receives: raise maxReceiveCount (≥ 5) and visibility (≥ 6x function timeout).",
+   "remember": "Lambda ESM on SQS: visibility timeout ≥ 6x function timeout and maxReceiveCount ≥ 5, otherwise throttling pushes good messages to the DLQ.",
+   "variants": [
+    "Mapping creation fails → the function timeout is longer than the queue visibility timeout.",
+    "Throttling persists → make reserved concurrency ≥ the ESM maximum concurrency.",
+    "A real poison message keeps failing → that is what the DLQ is for."
+   ]
+  },
+  {
+   "id": "sqs-012",
+   "skill": "1.4.2",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "A Lambda function is triggered by three SQS queues. A burst on one queue consumes all of the function's concurrency, so the other queues back up. What is the most targeted fix?",
+   "options": [
+    {
+     "t": "Enable long polling on the busy queue",
+     "why": "Wrong: Lambda already long-polls; this does not cap concurrency."
+    },
+    {
+     "t": "Lower the account concurrency limit",
+     "why": "Wrong: it would hurt every function and still not share capacity between queues."
+    },
+    {
+     "t": "Increase the batching window on all three mappings",
+     "why": "Wrong: changes batch size and latency, not how much concurrency one queue can take."
+    },
+    {
+     "t": "Set maximum concurrency on the busy queue's event source mapping",
+     "why": "Right: maximum concurrency (2–1,000) caps concurrent invokes for that one ESM."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Maximum concurrency caps one SQS event source mapping.",
+   "remember": "ESM maximum concurrency limits one queue's share. Keep reserved concurrency ≥ the sum of max concurrency across the function's ESMs, or messages get throttled.",
+   "variants": [
+    "A queue needs more than 1,250 concurrent invokes → ESM provisioned mode (up to 100,000).",
+    "Provisioned mode and maximum concurrency → cannot be used together.",
+    "Lambda on FIFO never scales past N → there are only N active message groups."
+   ]
+  },
+  {
+   "id": "sqs-013",
+   "skill": "1.1.12",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "A FIFO queue uses content-based deduplication. Two separate sensor readings with identical JSON bodies arrive within a minute, but only one is processed. What should be changed?",
+   "options": [
+    {
+     "t": "Send an explicit MessageDeduplicationId per event, or add a unique field such as an event ID to the body",
+     "why": "Right: content-based dedupe hashes only the body, so identical bodies inside 5 minutes collapse into one."
+    },
+    {
+     "t": "Add a unique message attribute to each message",
+     "why": "Wrong: message attributes are not part of the content-based hash."
+    },
+    {
+     "t": "Raise the deduplication interval to 1 minute",
+     "why": "Wrong: the interval is fixed at 5 minutes and cannot be changed."
+    },
+    {
+     "t": "Use the same MessageGroupId for all messages",
+     "why": "Wrong: group IDs control ordering; dedupe still drops identical bodies."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Content-based dedupe = SHA-256 of the body only; distinct events need distinct bodies or explicit IDs.",
+   "remember": "FIFO dedupe window is a fixed 5 minutes. Content-based dedupe hashes the body only; an explicit MessageDeduplicationId overrides it.",
+   "variants": [
+    "A producer retries after a timeout → reuse the same dedupe ID so the retry is dropped.",
+    "Resend after more than 5 minutes → it becomes a duplicate.",
+    "Dedupe scope = messageGroup → the same dedupe ID in two groups counts as two messages."
+   ]
+  },
+  {
+   "id": "sqs-014",
+   "skill": "1.3.2",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "A producer must pass 5 MB scan results to consumers through SQS. What is the recommended approach?",
+   "options": [
+    {
+     "t": "Raise the queue MaximumMessageSize to 5 MB",
+     "why": "Wrong: the SQS hard maximum is 1 MiB."
+    },
+    {
+     "t": "Split each result into 1 MiB messages on a standard queue",
+     "why": "Wrong: standard queues do not guarantee order, so reassembly is fragile and costly."
+    },
+    {
+     "t": "Store the payload in S3 and send a pointer, for example with the SQS Extended Client Library",
+     "why": "Right: the claim-check pattern; the Extended Client supports payloads up to 2 GB via S3."
+    },
+    {
+     "t": "Use a FIFO queue, which allows larger messages",
+     "why": "Wrong: FIFO has the same 1 MiB limit."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Payloads over 1 MiB go to S3 with a pointer in the message.",
+   "remember": "SQS message max is 1 MiB (older material says 256 KB). Bigger → S3 + pointer (Extended Client Library, up to 2 GB; both producer and consumer must use it).",
+   "variants": [
+    "SNS payload over 1 MiB → SNS Extended Client Library with S3.",
+    "A 700 KB message on SQS → fits under 1 MiB; check the queue's MaximumMessageSize attribute.",
+    "Cost concern → each 64 KB chunk is billed as one request, and S3 storage is extra."
+   ]
+  },
+  {
+   "id": "sqs-015",
+   "skill": "1.1.11",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "A bug caused 50,000 messages to land in a DLQ. The bug is now fixed. How should the team reprocess the messages with the least effort?",
+   "options": [
+    {
+     "t": "Write a script that receives from the DLQ and sends to the source queue",
+     "why": "Wrong: works, but DLQ redrive does this as a managed task."
+    },
+    {
+     "t": "Change the source queue retention to 14 days",
+     "why": "Wrong: retention does not move messages back."
+    },
+    {
+     "t": "Purge the DLQ and ask producers to resend",
+     "why": "Wrong: purge deletes messages permanently."
+    },
+    {
+     "t": "Start a DLQ redrive (StartMessageMoveTask) back to the source queue",
+     "why": "Right: redrive moves messages from the DLQ to the source (or another same-type queue) as new messages."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "DLQ redrive moves fixed messages back to the source queue.",
+   "remember": "DLQ redrive = StartMessageMoveTask: managed, up to 500 msg/s custom velocity, new message IDs and enqueue times. It cannot filter or edit messages, so fix the bug first.",
+   "variants": [
+    "Only team A's queues may use this DLQ → redrive allow policy byQueue (up to 10 source queues).",
+    "Queue policy denies non-VPC access → add an exception for aws:CalledViaLast = sqs.amazonaws.com.",
+    "FIFO order must never break → do not attach a DLQ at all."
+   ]
+  },
+  {
+   "id": "sqs-016",
+   "skill": "1.1.9",
+   "source": "1-sqs-queues-fifo-visibility-and-dlq.md",
+   "q": "A multi-tenant SaaS uses one SQS standard queue. When one tenant uploads a huge batch, other tenants' messages wait a long time. The team wants quiet tenants to keep low latency without changing consumers. What should they do?",
+   "options": [
+    {
+     "t": "Create a FIFO queue with tenant ID as the group ID",
+     "why": "Wrong: adds ordering and FIFO throughput limits that are not needed, and needs a migration."
+    },
+    {
+     "t": "Set MessageGroupId to the tenant ID on the standard queue (fair queues)",
+     "why": "Right: SQS then prefers returning other tenants' messages when one tenant has many in flight; throughput stays unlimited."
+    },
+    {
+     "t": "Use a delay queue for the noisy tenant",
+     "why": "Wrong: delays all its messages but does not detect noisy tenants dynamically."
+    },
+    {
+     "t": "Lower the visibility timeout",
+     "why": "Wrong: causes redeliveries; does not help fairness."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Noisy neighbor on a standard queue: fair queues via MessageGroupId.",
+   "remember": "Fair queues: add MessageGroupId as a tenant label on a standard queue; no queue setting or consumer change. It does not cap any tenant and gives no ordering.",
+   "variants": [
+    "Urgent vs normal jobs → two queues and poll the urgent one first; SQS has no priority.",
+    "Order per tenant is required → FIFO with group ID = tenant ID.",
+    "Cost → calls involving group IDs on standard queues are billed at an extra fair-queue rate."
+   ]
+  },
+  {
+   "id": "sqs-017",
+   "skill": "1.1.6",
+   "source": "2-sns-topics-filtering-fanout-and-amazon-mq.md",
+   "q": "Uploads under the `raw/` prefix of an S3 bucket must trigger both an ETL loader and a search indexer, each with its own retry pace. What should the engineer configure?",
+   "options": [
+    {
+     "t": "S3 event notification to an SNS topic, with one SQS queue per consumer subscribed",
+     "why": "Right: S3 cannot send the same event type and prefix to two destinations; SNS fans out to two durable queues."
+    },
+    {
+     "t": "Two S3 event notifications on the same prefix, one per queue",
+     "why": "Wrong: overlapping notifications for the same event and prefix to two destinations are not allowed."
+    },
+    {
+     "t": "One SQS queue polled by both consumers",
+     "why": "Wrong: each message goes to one consumer only."
+    },
+    {
+     "t": "S3 event notification to an SNS FIFO topic",
+     "why": "Wrong: S3 notifications support only standard SNS topics."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Same S3 prefix to several consumers: S3 → SNS → one queue per consumer.",
+   "remember": "S3 sends a given event type/prefix to one destination. Fan out through SNS (or EventBridge); give each consumer its own SQS queue.",
+   "variants": [
+    "The consumers need content filtering on many AWS targets → S3 → EventBridge rules.",
+    "Each queue only needs some events → subscription filter policies.",
+    "The queues are encrypted → CMK whose key policy allows sns.amazonaws.com."
+   ]
+  },
+  {
+   "id": "sqs-018",
+   "skill": "1.1.10",
+   "source": "2-sns-topics-filtering-fanout-and-amazon-mq.md",
+   "q": "An SNS topic receives order events as JSON. A refund service needs only messages whose body has `\"order_type\": \"refund\"`. Publishers do not set message attributes. What is the best option?",
+   "options": [
+    {
+     "t": "Have the refund service discard non-refund messages",
+     "why": "Wrong: works, but every message is delivered and processed for nothing."
+    },
+    {
+     "t": "Create a separate topic for refunds",
+     "why": "Wrong: publishers must change, losing decoupling."
+    },
+    {
+     "t": "Attribute-based filter policy on order_type",
+     "why": "Wrong: attribute policies only see message attributes; messages without attributes are dropped."
+    },
+    {
+     "t": "Subscription filter policy with FilterPolicyScope = MessageBody",
+     "why": "Right: payload-based filtering matches properties inside the JSON body."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Filter on the JSON body: FilterPolicyScope = MessageBody.",
+   "remember": "Filter policies sit on the subscription. Scope MessageAttributes (default, free) or MessageBody (valid JSON, nested allowed, billed by data scanned).",
+   "variants": [
+    "Messages without attributes never arrive on an attribute-filtered subscription → add attributes or use payload filtering.",
+    "A new filter seems ignored → wait up to 15 minutes; changes are eventually consistent.",
+    "Filtered messages look 'missing' → check NumberOfNotificationsFilteredOut, not NumberOfNotificationsFailed."
+   ]
+  },
+  {
+   "id": "sqs-019",
+   "skill": "1.3.2",
+   "source": "2-sns-topics-filtering-fanout-and-amazon-mq.md",
+   "q": "An SNS subscription points to a Lambda function that was deleted by mistake. Messages published during the next hour are gone. What should have been configured?",
+   "options": [
+    {
+     "t": "A longer HTTP/S delivery policy",
+     "why": "Wrong: only HTTP/S policies are customizable, and client errors are not retried anyway."
+    },
+    {
+     "t": "A dead-letter queue (SQS) on the subscription",
+     "why": "Right: client-side errors go to the subscription DLQ immediately; without one, SNS discards the message."
+    },
+    {
+     "t": "Raw message delivery",
+     "why": "Wrong: only removes the JSON envelope."
+    },
+    {
+     "t": "Archive policy on the standard topic",
+     "why": "Wrong: archiving and replay exist only for FIFO topics."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Failed SNS deliveries are lost without a subscription DLQ.",
+   "remember": "SNS retries only server-side errors; client-side errors (deleted endpoint, denied policy) are not retried. A per-subscription SQS DLQ keeps failed messages.",
+   "variants": [
+    "Endpoint was down (5xx) → retried (AWS endpoints up to 100,015 attempts over 23 days), then DLQ.",
+    "The DLQ is encrypted → CMK that allows the SNS service principal.",
+    "Alert on failures → alarm on NumberOfNotificationsFailed."
+   ]
+  },
+  {
+   "id": "sqs-020",
+   "skill": "1.1.12",
+   "source": "2-sns-topics-filtering-fanout-and-amazon-mq.md",
+   "q": "Price updates must reach an inventory app and a pricing app, each in strict order per product, with no duplicates. Which design fits?",
+   "options": [
+    {
+     "t": "SNS FIFO topic with SQS FIFO queues subscribed, MessageGroupId = product ID",
+     "why": "Right: SNS FIFO plus SQS FIFO keeps per-group order and dedupe in every queue."
+    },
+    {
+     "t": "SNS standard topic with SQS FIFO queues subscribed",
+     "why": "Wrong: a standard topic gives best-effort ordering and at-least-once, so order is already lost."
+    },
+    {
+     "t": "SNS FIFO topic with the two Lambda functions subscribed directly",
+     "why": "Wrong: FIFO topics deliver only to SQS queues; use SQS FIFO → Lambda."
+    },
+    {
+     "t": "One SQS FIFO queue shared by both apps",
+     "why": "Wrong: each message goes to one consumer only."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Ordered fan-out: SNS FIFO → SQS FIFO queues, group ID = entity ID.",
+   "remember": "FIFO topics deliver only to SQS (FIFO or standard), up to 100 subscriptions; order is per message group.",
+   "variants": [
+    "A cheap analytics consumer does not need order → subscribe a standard SQS queue to the FIFO topic.",
+    "Lambda behind a FIFO topic → SNS FIFO → SQS FIFO → Lambda ESM.",
+    "Email or HTTP/S subscribers needed → standard topic only."
+   ]
+  },
+  {
+   "id": "sqs-021",
+   "skill": "1.1.11",
+   "source": "2-sns-topics-filtering-fanout-and-amazon-mq.md",
+   "q": "A new consumer of an SNS FIFO topic must reprocess the last 30 days of messages to build its state. What makes this possible?",
+   "options": [
+    {
+     "t": "Firehose subscription to S3, then read back",
+     "why": "Wrong: FIFO topics cannot have Firehose subscriptions."
+    },
+    {
+     "t": "SQS retention of 30 days on the new queue",
+     "why": "Wrong: SQS retention maxes at 14 days and only covers messages after subscription."
+    },
+    {
+     "t": "An archive policy on the topic and a replay policy on the new subscription",
+     "why": "Right: FIFO topics can archive 1–365 days and replay to a single subscription."
+    },
+    {
+     "t": "DLQ redrive on the subscription",
+     "why": "Wrong: redrive only moves failed messages that are in a DLQ."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "FIFO topic history: archive policy (topic) + replay policy (subscription).",
+   "remember": "Only FIFO topics archive (1–365 days). The owner sets the archive; a subscriber sets a replay policy with start/end time. Standard topic history → Firehose to S3 or EventBridge archive.",
+   "variants": [
+    "Standard topic must keep every message → Firehose subscription with raw delivery to S3.",
+    "Cannot delete the FIFO topic → disable the archive first (that deletes the archive).",
+    "Encrypted topic replay fails → key policy must let sns.amazonaws.com decrypt."
+   ]
+  },
+  {
+   "id": "sqs-022",
+   "skill": "1.1.10",
+   "source": "2-sns-topics-filtering-fanout-and-amazon-mq.md",
+   "q": "Every message published to a standard SNS topic must be kept in S3 for audit, as clean records without the SNS JSON wrapper, with minimal code. What should be done?",
+   "options": [
+    {
+     "t": "Subscribe an SQS queue and run a worker that writes to S3",
+     "why": "Wrong: works, but needs custom code and servers."
+    },
+    {
+     "t": "Enable an archive policy on the topic",
+     "why": "Wrong: archiving is for FIFO topics only."
+    },
+    {
+     "t": "Enable delivery status logging",
+     "why": "Wrong: logs delivery outcomes to CloudWatch Logs, not message payloads to S3."
+    },
+    {
+     "t": "Subscribe a Firehose stream with raw message delivery, writing to S3",
+     "why": "Right: Firehose lands every message in S3, and raw delivery strips the envelope."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Archive standard-topic messages: Firehose subscription with raw delivery.",
+   "remember": "Standard SNS topics store nothing. SNS → Firehose (raw delivery, needs a subscription role) → S3 is the no-code archive path.",
+   "variants": [
+    "SQS consumer must not parse the envelope → raw delivery on the SQS subscription (max 10 attributes).",
+    "Publish rate exceeds Firehose quota → raise Firehose quotas; deliveries back up.",
+    "FIFO topic → no Firehose; use archive/replay or route through SQS."
+   ]
+  },
+  {
+   "id": "sqs-023",
+   "skill": "3.3.3",
+   "source": "2-sns-topics-filtering-fanout-and-amazon-mq.md",
+   "q": "A CloudWatch alarm publishes Glue job failures to an SNS topic with an email subscription. NumberOfMessagesPublished rises, but the on-call engineer receives nothing. What is the most likely cause?",
+   "options": [
+    {
+     "t": "Email is not supported on standard topics",
+     "why": "Wrong: email is a standard topic protocol (FIFO topics cannot use it)."
+    },
+    {
+     "t": "The email subscription is still pending confirmation",
+     "why": "Right: email subscriptions must be confirmed before they get messages."
+    },
+    {
+     "t": "The SMS spend limit was reached",
+     "why": "Wrong: the SMS limit only affects SMS deliveries."
+    },
+    {
+     "t": "The topic has no filter policy",
+     "why": "Wrong: no filter policy means the subscription gets every message."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Email and HTTP/S subscribers get nothing until confirmed.",
+   "remember": "HTTP/S, email and cross-account subscriptions must be confirmed (SubscribeURL or ConfirmSubscription). Pending subscriptions get no messages.",
+   "variants": [
+    "SMS alerts stop mid-month → default SMS spend limit is 1 USD per month; raise it.",
+    "The alarm cannot publish to an encrypted topic → CMK allowing cloudwatch.amazonaws.com.",
+    "Prevent unsubscribe by anyone with the email link → AuthenticateOnUnsubscribe=true."
+   ]
+  },
+  {
+   "id": "sqs-024",
+   "skill": "1.3.2",
+   "source": "2-sns-topics-filtering-fanout-and-amazon-mq.md",
+   "q": "An on-premises order system uses JMS with Apache ActiveMQ. It must move to AWS quickly without code changes and survive the loss of an Availability Zone. What should be used?",
+   "options": [
+    {
+     "t": "Amazon SQS FIFO queues",
+     "why": "Wrong: SQS uses its own API, so the JMS app would need rewriting."
+    },
+    {
+     "t": "Amazon MSK",
+     "why": "Wrong: Kafka is a log-based streaming platform, not a JMS broker."
+    },
+    {
+     "t": "Amazon MQ for ActiveMQ in active/standby deployment",
+     "why": "Right: keeps JMS/OpenWire; active/standby runs across two AZs with shared EFS storage and automatic failover."
+    },
+    {
+     "t": "Amazon MQ for ActiveMQ single-instance with EBS storage",
+     "why": "Wrong: single-instance runs in one AZ, and EBS storage is not supported with active/standby."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Lift-and-shift JMS with AZ resilience: Amazon MQ ActiveMQ active/standby.",
+   "remember": "Amazon MQ = managed ActiveMQ/RabbitMQ for existing protocol-based apps. It is not serverless; new cloud-native designs should use SQS/SNS.",
+   "variants": [
+    "New serverless pipeline needs a queue → SQS, not Amazon MQ.",
+    "Maximum ActiveMQ throughput, single-AZ acceptable → EBS storage on mq.m5.",
+    "RabbitMQ with AZ resilience → cluster deployment (3 nodes across 3 AZs)."
+   ]
+  },
+  {
+   "id": "sqs-025",
+   "skill": "1.1.9",
+   "source": "2-sns-topics-filtering-fanout-and-amazon-mq.md",
+   "q": "Publishing a 700 KB message to a standard SNS topic that delivers to SQS fails with InvalidParameter. What is the simplest fix?",
+   "options": [
+    {
+     "t": "Raise the subscribed queue's MaximumMessageSize",
+     "why": "Wrong: for SNS deliveries the topic's MaximumMessageSize is the effective limit, not the queue's."
+    },
+    {
+     "t": "Use PublishBatch instead of Publish",
+     "why": "Wrong: batching does not raise the per-message size limit."
+    },
+    {
+     "t": "Switch to a FIFO topic",
+     "why": "Wrong: does not change the size limit."
+    },
+    {
+     "t": "Raise the topic's MaximumMessageSize attribute to up to 1 MiB",
+     "why": "Right: the default is 256 KiB; it can be set up to 1 MiB (subscriptions then limited to SQS, Lambda and Firehose, max 100)."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "SNS default 256 KiB; raise topic MaximumMessageSize to 1 MiB.",
+   "remember": "SNS messages: 256 KiB default, up to 1 MiB with the topic MaximumMessageSize attribute, 2 GB via the Extended Client and S3.",
+   "variants": [
+    "50 MB payload → SNS Extended Client Library with S3.",
+    "Topic over 256 KiB needs email subscribers → not supported; only Firehose, SQS and Lambda.",
+    "Firehose subscriber → keep messages below its 1,000 KiB record limit."
+   ]
+  },
+  {
+   "id": "sqs-026",
+   "skill": "4.3.3",
+   "source": "3-security-cost-limits-troubleshooting-and-scenarios.md",
+   "q": "An SNS topic fans out to an SQS queue encrypted with the AWS managed key `aws/sqs`. Deliveries fail with KMS access denied. What is the fix?",
+   "options": [
+    {
+     "t": "Grant sns.amazonaws.com access in the aws/sqs key policy",
+     "why": "Wrong: AWS managed key policies cannot be edited."
+    },
+    {
+     "t": "Turn on raw message delivery",
+     "why": "Wrong: unrelated to encryption."
+    },
+    {
+     "t": "Add sqs:SendMessage for the topic in the queue policy",
+     "why": "Wrong: still needed, but the error is KMS; SNS must also be able to use the key."
+    },
+    {
+     "t": "Use a customer managed key whose policy allows sns.amazonaws.com kms:GenerateDataKey and kms:Decrypt",
+     "why": "Right: AWS service producers need a CMK because only its key policy can grant service principals."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "AWS service writing to an encrypted queue/topic needs a CMK grant.",
+   "remember": "aws/sqs and aws/sns cannot grant service principals. SNS, S3, EventBridge or CloudWatch writing to encrypted targets → CMK with the service principal in the key policy.",
+   "variants": [
+    "S3 notifications to an encrypted queue stop → CMK allowing s3.amazonaws.com.",
+    "CloudWatch alarm to an encrypted topic → CMK allowing cloudwatch.amazonaws.com.",
+    "Cross-account Lambda trigger on an aws/sqs queue fails → switch to a CMK."
+   ]
+  },
+  {
+   "id": "sqs-027",
+   "skill": "4.1.5",
+   "source": "3-security-cost-limits-troubleshooting-and-scenarios.md",
+   "q": "S3 must send event notifications to an SQS queue. Which queue policy statement is the most secure correct grant?",
+   "options": [
+    {
+     "t": "Allow principal s3.amazonaws.com sqs:SendMessage with conditions aws:SourceArn = bucket ARN and aws:SourceAccount = bucket owner account",
+     "why": "Right: SourceArn limits the bucket; SourceAccount is needed because bucket ARNs have no account ID; both block the confused deputy."
+    },
+    {
+     "t": "Allow principal \"*\" sqs:SendMessage with no conditions",
+     "why": "Wrong: anyone could send to the queue."
+    },
+    {
+     "t": "Allow principal s3.amazonaws.com sqs:SendMessage with no conditions",
+     "why": "Wrong: any bucket in any account could send to the queue."
+    },
+    {
+     "t": "Allow the bucket's IAM role sqs:SendMessage",
+     "why": "Wrong: S3 notifications use the service principal, not a role you own."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "S3 → SQS: service principal plus aws:SourceArn and aws:SourceAccount.",
+   "remember": "Resource policies for service senders need aws:SourceArn (and for S3 also aws:SourceAccount) to avoid the confused deputy problem.",
+   "variants": [
+    "SNS → SQS → allow sns.amazonaws.com with aws:SourceArn = topic ARN.",
+    "Partner account sends to your queue → queue policy allows their account and their IAM allows send.",
+    "Queue is encrypted → CMK key policy also grants s3.amazonaws.com."
+   ]
+  },
+  {
+   "id": "sqs-028",
+   "skill": "4.1.2",
+   "source": "3-security-cost-limits-troubleshooting-and-scenarios.md",
+   "q": "Workers in private subnets with no NAT gateway must read from SQS and publish to SNS. Which solution allows this privately?",
+   "options": [
+    {
+     "t": "Gateway VPC endpoints for SQS and SNS",
+     "why": "Wrong: SQS and SNS have no gateway endpoints (only S3 and DynamoDB do)."
+    },
+    {
+     "t": "An internet gateway route from the private subnets",
+     "why": "Wrong: that makes them public subnets and uses the internet."
+    },
+    {
+     "t": "Interface VPC endpoints (PrivateLink) for SQS and SNS with private DNS",
+     "why": "Right: SDK calls reach SQS and SNS without NAT or internet."
+    },
+    {
+     "t": "A VPC peering connection to the SQS service VPC",
+     "why": "Wrong: AWS services are not reached by peering."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "SQS/SNS privately from a VPC: interface endpoints.",
+   "remember": "SQS and SNS support only interface VPC endpoints. Add a queue/topic policy Deny on aws:SourceVpce to force access through the endpoint.",
+   "variants": [
+    "Only your endpoint may use the queue → Deny when aws:SourceVpce is not your endpoint (add service exceptions).",
+    "SNS to a private HTTP server in the VPC → not possible; deliver to SQS or Lambda instead.",
+    "Enforce TLS → Deny aws:SecureTransport = false."
+   ]
+  },
+  {
+   "id": "sqs-029",
+   "skill": "4.4.1",
+   "source": "3-security-cost-limits-troubleshooting-and-scenarios.md",
+   "q": "Auditors ask two questions: who purged a production queue last week, and which principals have been reading its messages. Logging today is the default CloudTrail setup. What is true?",
+   "options": [
+    {
+     "t": "Both are already in CloudTrail Event history",
+     "why": "Wrong: receive and delete are data events, which are off by default and never shown in Event history."
+    },
+    {
+     "t": "PurgeQueue is a management event already logged; reads need SQS data events enabled on a trail or event data store",
+     "why": "Right: management events are logged by default; ReceiveMessage/DeleteMessage are opt-in data events."
+    },
+    {
+     "t": "Neither is logged; enable CloudWatch metrics",
+     "why": "Wrong: PurgeQueue is logged by default, and metrics do not show who called."
+    },
+    {
+     "t": "Enable SNS delivery status logging",
+     "why": "Wrong: it logs SNS deliveries, not SQS API callers."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Purge = management event (default); receive/delete = data events (opt-in).",
+   "remember": "CloudTrail logs SQS management calls by default. SendMessage/ReceiveMessage/DeleteMessage are data events: enable them (extra cost); the body is hidden in records.",
+   "variants": [
+    "Who changed the queue policy → SetQueueAttributes management event.",
+    "Who created an SNS subscription → Subscribe management event.",
+    "Need the message content → not in CloudTrail (HIDDEN_DUE_TO_SECURITY_REASONS)."
+   ]
+  },
+  {
+   "id": "sqs-030",
+   "skill": "4.3.2",
+   "source": "3-security-cost-limits-troubleshooting-and-scenarios.md",
+   "q": "A queue uses SSE-KMS. A developer puts customer account numbers in message attributes so consumers can route without parsing the body. What is the concern and fix?",
+   "options": [
+    {
+     "t": "No concern: SSE-KMS encrypts the whole message",
+     "why": "Wrong: SSE encrypts only the body."
+    },
+    {
+     "t": "Switch to SSE-SQS so attributes are encrypted",
+     "why": "Wrong: neither SSE option encrypts attributes."
+    },
+    {
+     "t": "Enable long polling",
+     "why": "Wrong: unrelated to encryption."
+    },
+    {
+     "t": "Attributes are not encrypted at rest; move the sensitive data into the body",
+     "why": "Right: SSE leaves attributes, IDs and timestamps unencrypted, so secrets belong in the body (or client-side encryption)."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "SSE covers the message body only.",
+   "remember": "SQS and SNS SSE encrypt only the body; attributes, IDs, timestamps and metrics are not encrypted. Keep secrets in the body or encrypt client-side.",
+   "variants": [
+    "Protect data even from people with queue access → client-side encryption before send.",
+    "Enable SSE on a queue with backlog → only new messages are encrypted.",
+    "Rotate to a new queue key → keep the old key enabled until old messages drain."
+   ]
+  },
+  {
+   "id": "sqs-031",
+   "skill": "3.3.3",
+   "source": "3-security-cost-limits-troubleshooting-and-scenarios.md",
+   "q": "A team alarms on the DLQ's NumberOfMessagesSent > 0, but the alarm never fires, even though messages are failing and moving to the DLQ. What should they alarm on?",
+   "options": [
+    {
+     "t": "NumberOfEmptyReceives on the source queue",
+     "why": "Wrong: that measures empty polls, not failures."
+    },
+    {
+     "t": "NumberOfMessagesDeleted on the DLQ",
+     "why": "Wrong: counts deletes, not new arrivals."
+    },
+    {
+     "t": "ApproximateNumberOfMessagesVisible on the DLQ (≥ 1)",
+     "why": "Right: automatic DLQ moves are not counted in NumberOfMessagesSent, but they raise the DLQ backlog."
+    },
+    {
+     "t": "SentMessageSize on the DLQ",
+     "why": "Wrong: also only reflects send calls."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "DLQ alarm = ApproximateNumberOfMessagesVisible ≥ 1.",
+   "remember": "NumberOfMessagesSent ignores automatic DLQ moves. Alarm on DLQ ApproximateNumberOfMessagesVisible, and on source ApproximateAgeOfOldestMessage for lag.",
+   "variants": [
+    "Consumers are falling behind an SLA → ApproximateAgeOfOldestMessage on the source queue.",
+    "SNS delivery failures → NumberOfNotificationsFailed plus a subscription DLQ.",
+    "Scale workers on load → backlog per instance (ApproximateNumberOfMessagesVisible / instances)."
+   ]
+  },
+  {
+   "id": "sqs-032",
+   "skill": "1.2.4",
+   "source": "3-security-cost-limits-troubleshooting-and-scenarios.md",
+   "q": "A busy SSE-KMS queue with many producers and consumers generates a large KMS bill. Security says encryption at rest must stay on. Which TWO actions reduce KMS cost?",
+   "options": [
+    {
+     "t": "Disable SSE and encrypt nothing",
+     "why": "Wrong: violates the requirement."
+    },
+    {
+     "t": "Raise the data key reuse period (up to 24 hours)",
+     "why": "Right: fewer data keys mean fewer KMS calls; the default is 5 minutes."
+    },
+    {
+     "t": "Move all attributes into the body",
+     "why": "Wrong: does not change the number of KMS calls."
+    },
+    {
+     "t": "Switch to SSE-SQS (SQS-managed keys)",
+     "why": "Right: SSE-SQS has no KMS charges, if a customer-controlled key is not required."
+    },
+    {
+     "t": "Use more distinct IAM principals",
+     "why": "Wrong: data keys are not shared between principals, so this increases KMS calls."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Cut KMS cost: longer data key reuse period, or SSE-SQS.",
+   "remember": "KMS calls per queue ≈ (seconds / reuse period) × (2 × producers + consumers). Longer reuse (60 s–24 h) or SSE-SQS lowers cost.",
+   "variants": [
+    "Compliance requires a key you control and audit → SSE-KMS with a customer managed key.",
+    "Encryption at no extra cost → SSE-SQS.",
+    "Messages around 200 KB cost 4x → 64 KB chunk billing; compress or use S3."
+   ]
+  }
+ ]
+}

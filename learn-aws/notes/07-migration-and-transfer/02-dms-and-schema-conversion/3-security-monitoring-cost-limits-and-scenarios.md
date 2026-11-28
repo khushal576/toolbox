@@ -143,16 +143,16 @@ Short notes. Each point is a fact you can be asked about.
 - "Offline petabytes" → Snow Family (see snow-family) or Data Transfer Terminal; "files" → DataSync.
 
 ## Scenarios (if → then, because)
-- If CDCLatencyTarget is high but CDCLatencySource is low → check target indexes/IOPS and instance size, because the delay is applying changes.
-- If both latencies are high → investigate the source (log reads, long transactions) and network first.
-- If migration of Oracle with LOBs truncates data → increase Max LOB size or use inline mode.
-- If the replication instance runs out of disk → reduce log level, delete task logs, add storage.
-- If a partner needs only the changes as files → S3 target with CDC and `IncludeOpForFullLoad`.
-- If the project must stay inside private networks → private replication instance, VPC endpoints, KMS key, SSL verify-full, Secrets Manager.
-- If you must migrate sensitive columns masked for QA → transformation rule masking.
-- If DMS needs access to an S3 bucket in the same account → role with S3 permissions and DMS trust; add KMS permissions for SSE-KMS.
-- If you want an audit of who started a task → CloudTrail.
-- If cutover day: stop writes on source → let CDC drain (latency near zero) → validate → enable triggers/constraints → switch app → stop task → delete instance.
+- **If** the **`CDCLatencyTarget`** metric is high but **`CDCLatencySource`** is low, **then** check the target: **missing primary keys or indexes**, slow **IOPS** (disk speed), and the replication instance size. **This works because** low source latency means DMS reads changes fine; the delay is in **applying** them to the target.
+- **If** both **`CDCLatencySource`** and **`CDCLatencyTarget`** are high, **then** investigate the **source** first (log reading, source load, long or large transactions) and the network. **This works because** a slow source delays everything after it, so target latency rises too.
+- **If** an Oracle migration with **large objects (LOBs)** truncates data, **then** raise the **Max LOB size** or use **inline LOB mode**. **This works because** **Limited LOB mode** (default **32 KB**) cuts off larger values, and truncation warnings appear only in the task log.
+- **If** the replication instance runs out of disk (`storage-full`), **then** lower the log level, delete old task logs, and add storage. **This works because** verbose (debug) logs and cached changes fill the instance's storage.
+- **If** a partner needs only the **changes** as files, **then** run a **CDC-only** DMS task to an **Amazon S3** target. **This works because** every CDC file has a first column **`Op`** (`I`, `U`, `D`) showing the change type. If you also send a full load, add **`IncludeOpForFullLoad`** so full-load files get the same `Op` layout as CDC files.
+- **If** the project must stay inside private networks, **then** use a **private** replication instance (no public IP), **VPC endpoints** for AWS services like S3 and Kinesis, an **AWS Key Management Service (KMS)** key for data at rest, **SSL mode `verify-full`** on endpoints for data in transit, and **AWS Secrets Manager** for database passwords. **This works because** traffic never needs the internet, stored data and connection info are encrypted, connections are checked against the imported CA certificate, and no passwords sit in plain text.
+- **If** sensitive columns must arrive **masked** for a QA copy, **then** use **masking transformation rules** in the task's table mappings (verify types). **This works because** columns are masked during migration, so real data never reaches the non-prod target. Validation skips masked columns.
+- **If** DMS needs access to an **Amazon S3** bucket in the same account, **then** create an **Identity and Access Management (IAM)** role that trusts DMS and grants only the needed S3 actions, and add **AWS Key Management Service (KMS)** permissions if the bucket uses **SSE-KMS** encryption. **This works because** DMS writes to S3 by taking on this role, and it can't encrypt with a KMS key without permission on it.
+- **If** you want an audit of who started a task, **then** use **AWS CloudTrail**. **This works because** CloudTrail logs every DMS API call, such as `StartReplicationTask`.
+- **If** it is **cutover day**, **then** stop writes on the source, let **change data capture (CDC)** drain until latency is near zero, run **validation**, enable triggers and constraints on the target, switch the application to the target, stop the task, and **delete the replication instance**. **This works because** draining and validating make sure the target has every change before apps use it,; triggers and constraints stay off during the load and are enabled just before cutover. The instance bills while it exists, so delete it afterwards.
 
 ## Verified from AWS docs on 2026-10-09
 Read: security page (summary), monitoring page, best practices page, pricing summary, Serverless pages. Not confirmed (verify): `dms-access-for-endpoint` role details, masking transformation types, resource quota numbers, EventBridge integration, T3 credit rules, data resync availability, CloudWatch/CloudTrail minor details.

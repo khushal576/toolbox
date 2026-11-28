@@ -1,0 +1,685 @@
+{
+  "questions": [
+    {
+      "id": "ec2-001",
+      "skill": "1.2.4",
+      "source": "1-basics-instance-types-and-purchase-options.md",
+      "q": "A nightly Spark job must finish as cheaply as possible and can safely retry failed tasks. Which EC2 purchase approach fits best?",
+      "options": [
+        {
+          "t": "On-Demand Instances in one instance type",
+          "why": "Wrong: no discount; fine for uninterruptible work but the most expensive here."
+        },
+        {
+          "t": "A 3-year EC2 Instance Savings Plan",
+          "why": "Wrong: commitment suits a steady 24/7 baseline, not a nightly job."
+        },
+        {
+          "t": "Spot Instances across many instance types and AZs with price-capacity-optimized",
+          "why": "Right: deep discount, interruptions only slow a retryable job, and more capacity pools mean fewer interruptions."
+        },
+        {
+          "t": "A Zonal Reserved Instance",
+          "why": "Wrong: a 1-3 year commitment pinned to one AZ is wasteful for a nightly job."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Fault-tolerant batch is the Spot use case.",
+      "remember": "Retryable or checkpointed batch work → Spot with many types/AZs and price-capacity-optimized. Never use Spot for databases or EMR primary/core nodes.",
+      "variants": [
+        "Single long job with no checkpoint and a deadline → On-Demand (or Spot with fallback).",
+        "Steady 24/7 baseline → Savings Plans, not Spot.",
+        "Spot allocation strategy to avoid: lowest-price (highest interruption risk)."
+      ]
+    },
+    {
+      "id": "ec2-002",
+      "skill": "1.2.4",
+      "source": "1-basics-instance-types-and-purchase-options.md",
+      "q": "A data platform has a steady 24/7 EC2 baseline for 3 years. The team may move some work to Fargate and Lambda, and may change Regions and instance families. Which commitment is best?",
+      "options": [
+        {
+          "t": "Compute Savings Plan",
+          "why": "Right: applies to EC2 in any family, size, Region, OS and tenancy, and also to Fargate and Lambda."
+        },
+        {
+          "t": "EC2 Instance Savings Plan",
+          "why": "Wrong: locked to one instance family in one Region, so it does not follow the move."
+        },
+        {
+          "t": "Standard Zonal Reserved Instance",
+          "why": "Wrong: tied to exact type and AZ, the least flexible."
+        },
+        {
+          "t": "Database Savings Plan",
+          "why": "Wrong: covers database services, not EC2."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Flexibility across services and Regions points to the Compute Savings Plan.",
+      "remember": "Need flexibility (Region, family, Fargate/Lambda) → Compute Savings Plan (up to 66%). Fixed family and Region → EC2 Instance Savings Plan (up to 72%).",
+      "variants": [
+        "Baseline fixed on one family in one Region → EC2 Instance Savings Plan.",
+        "Need a capacity guarantee as well → add an On-Demand Capacity Reservation, because Savings Plans do not reserve capacity.",
+        "Discounts for RDS/DynamoDB → Database Savings Plans."
+      ]
+    },
+    {
+      "id": "ec2-003",
+      "skill": "1.3.2",
+      "source": "1-basics-instance-types-and-purchase-options.md",
+      "q": "A company must be sure that 50 instances can launch in one specific AZ for a 3-day migration window next month. It does not want a 1-3 year commitment. What should it use?",
+      "options": [
+        {
+          "t": "A Compute Savings Plan",
+          "why": "Wrong: gives a discount but does not reserve capacity."
+        },
+        {
+          "t": "A Regional Reserved Instance",
+          "why": "Wrong: Regional RIs give a discount but no capacity reservation."
+        },
+        {
+          "t": "Spot Instances with capacity-optimized",
+          "why": "Wrong: Spot can be interrupted and capacity is never guaranteed."
+        },
+        {
+          "t": "An On-Demand Capacity Reservation",
+          "why": "Right: reserves capacity for a type, platform and AZ for any duration, with no term."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Only a Capacity Reservation guarantees capacity without a long term.",
+      "remember": "Guaranteed capacity in an AZ without a long commitment → On-Demand Capacity Reservation (billed whether or not it is used). Add Savings Plans for the discount.",
+      "variants": [
+        "Guaranteed GPU capacity for a fixed future window for ML → Capacity Blocks for ML.",
+        "Capacity plus discount for steady load → Capacity Reservation plus Savings Plan or Regional RI.",
+        "Zonal RI also reserves capacity but needs a 1-3 year term."
+      ]
+    },
+    {
+      "id": "ec2-004",
+      "skill": "1.2.7",
+      "source": "1-basics-instance-types-and-purchase-options.md",
+      "q": "A team's EC2 bill rose unexpectedly after moving a steady, CPU-heavy workload to t3 instances. CPU stays above baseline for hours every day. What is the likely cause and fix?",
+      "options": [
+        {
+          "t": "Standard mode throttling; switch to Unlimited",
+          "why": "Wrong: Standard mode only slows the CPU to baseline and adds no charge; T3 also launches as Unlimited by default."
+        },
+        {
+          "t": "Unlimited mode surplus credit charges; move the steady load to M or C instances",
+          "why": "Right: bursting above baseline in Unlimited mode costs a flat rate per vCPU-hour (see CPUSurplusCreditsCharged)."
+        },
+        {
+          "t": "Launch credits expired; buy more credits",
+          "why": "Wrong: T3 has no launch credits and credits cannot be bought."
+        },
+        {
+          "t": "Cross-AZ data transfer charges",
+          "why": "Wrong: unrelated to CPU burst behaviour."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Sustained CPU above baseline on a T instance in Unlimited mode costs extra.",
+      "remember": "T instance: Standard mode = slows down at no extra cost; Unlimited mode = keeps speed but pays surplus. Steady high CPU → M/C family instead.",
+      "variants": [
+        "Job on a T2 (Standard) slows every night → credits exhausted; use Unlimited or a larger or fixed-performance type.",
+        "Metric to watch for surplus charges → CPUSurplusCreditsCharged.",
+        "T instances cannot be used in cluster placement groups."
+      ]
+    },
+    {
+      "id": "ec2-005",
+      "skill": "1.2.4",
+      "source": "2-storage-networking-scaling-and-availability.md",
+      "q": "ETL instances in a private subnet read terabytes from S3 through a NAT gateway, and the NAT processing charges are very high. What is the best fix?",
+      "options": [
+        {
+          "t": "Add a second NAT gateway in another AZ",
+          "why": "Wrong: adds an hourly fee and the per-GB processing still applies."
+        },
+        {
+          "t": "Move the instances to a public subnet with Elastic IPs",
+          "why": "Wrong: adds public IPv4 cost and exposure, and does not remove the need for a clean design."
+        },
+        {
+          "t": "Add an S3 gateway VPC endpoint and route the subnet to it",
+          "why": "Right: gateway endpoints are free and S3 traffic skips the NAT gateway."
+        },
+        {
+          "t": "Add an S3 interface endpoint",
+          "why": "Wrong: works, but has hourly and per-GB cost; the gateway endpoint is free for in-VPC access."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "A gateway endpoint for S3 removes NAT processing fees.",
+      "remember": "Heavy S3 or DynamoDB traffic from private subnets → gateway endpoint (free, route table entry), not NAT.",
+      "variants": [
+        "On-premises or another Region needs private S3 access → interface endpoint (PrivateLink), since gateway endpoints cannot be used from outside the VPC.",
+        "Bucket must accept only your VPC → aws:SourceVpce or aws:SourceVpc, not aws:SourceIp.",
+        "Big bill with 'Data Transfer' lines → check cross-AZ traffic as well."
+      ]
+    },
+    {
+      "id": "ec2-006",
+      "skill": "1.4.10",
+      "source": "2-storage-networking-scaling-and-availability.md",
+      "q": "A self-managed Kafka and HDFS cluster on EC2 must place replicas on different racks so that one rack failure never removes all copies. Which placement group fits?",
+      "options": [
+        {
+          "t": "Cluster placement group",
+          "why": "Wrong: packs instances close together for low latency, which concentrates failure risk."
+        },
+        {
+          "t": "Spread placement group",
+          "why": "Wrong: limited to 7 running instances per AZ per group, too small for a cluster."
+        },
+        {
+          "t": "No placement group; use several AZs only",
+          "why": "Wrong: does not give rack awareness for replica placement."
+        },
+        {
+          "t": "Partition placement group",
+          "why": "Right: partitions sit on separate racks and instances can see their partition, so HDFS, HBase, Cassandra and Kafka can place replicas accordingly."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Rack-aware distributed systems use partition groups.",
+      "remember": "HDFS, HBase, Cassandra or Kafka rack awareness → partition (up to 7 partitions per AZ). Lowest latency → cluster. A few critical instances apart → spread (7 per AZ).",
+      "variants": [
+        "Tightly coupled HPC or training needing lowest latency → cluster placement group plus EFA.",
+        "Three ZooKeeper nodes must not share hardware → spread placement group.",
+        "Burstable T instances cannot go into a cluster placement group."
+      ]
+    },
+    {
+      "id": "ec2-007",
+      "skill": "1.3.2",
+      "source": "2-storage-networking-scaling-and-availability.md",
+      "q": "An EC2 instance fails the system status check because of an underlying host problem. The application needs the same instance ID and IP addresses back with no manual work. What helps?",
+      "options": [
+        {
+          "t": "Automatic recovery (simplified, on by default, or a CloudWatch alarm with the recover action)",
+          "why": "Right: the instance is recovered on new hardware keeping its ID, private/public/Elastic IPs and EBS volumes."
+        },
+        {
+          "t": "Terminate the instance and launch a new one",
+          "why": "Wrong: a new instance gets a new instance ID and new IPs."
+        },
+        {
+          "t": "Reboot the instance only",
+          "why": "Wrong: a reboot stays on the same failing host."
+        },
+        {
+          "t": "Change the security group",
+          "why": "Wrong: security groups have nothing to do with host failure."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "System check failures are fixed by recovery; instance check failures are not.",
+      "remember": "System status check fails → AWS host problem → recovery or stop/start. Instance status check fails → your OS problem; recovery does not help, fix or reboot it.",
+      "variants": [
+        "Instance-store data after recovery → lost, together with RAM contents.",
+        "Instance status check fails (OOM, bad fstab) → fix the OS, use the Serial Console, or move the root volume.",
+        "Instance in an ASG that fails the checks → ASG terminates and replaces it."
+      ]
+    },
+    {
+      "id": "ec2-008",
+      "skill": "1.3.2",
+      "source": "2-storage-networking-scaling-and-availability.md",
+      "q": "A web tier on EC2 must survive an AZ outage and must also replace instances that are running but whose application is returning errors. Which design is best?",
+      "options": [
+        {
+          "t": "An ASG in one AZ with EC2 status checks only",
+          "why": "Wrong: one AZ is a single point of failure, and EC2 status checks do not see application errors."
+        },
+        {
+          "t": "An ASG across at least two AZs behind an ALB, with ELB health checks enabled on the ASG",
+          "why": "Right: multi-AZ gives resilience; ELB health checks let the ASG replace instances whose app is broken."
+        },
+        {
+          "t": "A single large instance with automatic recovery",
+          "why": "Wrong: one instance in one AZ is not highly available."
+        },
+        {
+          "t": "Two instances in the same AZ behind an ALB",
+          "why": "Wrong: both fail together in an AZ outage."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Multi-AZ ASG plus ELB health checks.",
+      "remember": "High availability on EC2 = multiple instances across AZs behind a load balancer. Turn on ELB health checks in the ASG so broken apps are replaced.",
+      "variants": [
+        "Instances replaced right after launch → grace period too short or wrong health check path.",
+        "Need fixed IPs for partners in front of the fleet → NLB with static IPs per AZ.",
+        "An unhealthy ASG instance is terminated and replaced, not rebooted."
+      ]
+    },
+    {
+      "id": "ec2-009",
+      "skill": "1.3.2",
+      "source": "2-storage-networking-scaling-and-availability.md",
+      "q": "Worker instances process messages from an SQS queue. The fleet must grow and shrink with the amount of work waiting. Which scaling policy is best?",
+      "options": [
+        {
+          "t": "Scheduled scaling at fixed times",
+          "why": "Wrong: only fits load that arrives at known times."
+        },
+        {
+          "t": "Simple scaling on CPU with a 300-second cooldown",
+          "why": "Wrong: legacy policy, and CPU does not reflect queue backlog."
+        },
+        {
+          "t": "Target tracking on backlog per instance (visible messages divided by running instances)",
+          "why": "Right: keeps the queue backlog per worker at a target as the queue grows or drains."
+        },
+        {
+          "t": "Manual changes to desired capacity",
+          "why": "Wrong: not automatic."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Queue workers scale on backlog per instance.",
+      "remember": "Queue-driven ETL fleet → target tracking on SQS backlog per instance. Known daily start → scheduled (or predictive) scaling.",
+      "variants": [
+        "Same load every night at 01:00 → scheduled scaling.",
+        "Regular daily and weekly cycles with slow boot → predictive scaling.",
+        "Several policies at once → the ASG uses the one giving the largest capacity."
+      ]
+    },
+    {
+      "id": "ec2-010",
+      "skill": "1.3.2",
+      "source": "2-storage-networking-scaling-and-availability.md",
+      "q": "Application logs on ASG instances are lost whenever the group scales in. Which approach preserves them?",
+      "options": [
+        {
+          "t": "A termination lifecycle hook (Terminating:Wait) that copies logs to S3 before termination",
+          "why": "Right: the hook pauses the instance so a script can drain work and copy logs off; streaming logs continuously with the CloudWatch agent also works."
+        },
+        {
+          "t": "Scale-out lifecycle hook on Pending:Wait",
+          "why": "Wrong: runs at launch, not at termination."
+        },
+        {
+          "t": "Store logs on instance store",
+          "why": "Wrong: instance store is erased on terminate."
+        },
+        {
+          "t": "Turn on termination protection on the instance",
+          "why": "Wrong: does not stop ASG scale-in; ASGs use their own scale-in protection."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Use a terminate lifecycle hook or stream logs off the instance.",
+      "remember": "Need to do something before an ASG instance dies (copy logs, drain, deregister) → Terminating:Wait lifecycle hook (default 1 hour, max 48 hours). Or stream logs with the CloudWatch agent.",
+      "variants": [
+        "Install software or register at launch → Pending:Wait hook.",
+        "Protect an instance running a long task from scale-in → ASG scale-in protection.",
+        "Take one instance out for maintenance without replacement → standby."
+      ]
+    },
+    {
+      "id": "ec2-011",
+      "skill": "4.3.3",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A team encrypted an AMI's snapshots with the default aws/ebs key and now needs to let another AWS account launch instances from it. What must be done?",
+      "options": [
+        {
+          "t": "Share the AMI directly; the other account can use aws/ebs automatically",
+          "why": "Wrong: AMIs encrypted with the default aws/ebs key cannot be shared."
+        },
+        {
+          "t": "Make the AMI public",
+          "why": "Wrong: exposes the image and still does not fix the key issue."
+        },
+        {
+          "t": "Copy the AMI to another Region",
+          "why": "Wrong: key problem remains and KMS keys are Regional."
+        },
+        {
+          "t": "Re-encrypt with a customer managed KMS key, share the AMI, and grant the other account use of the key",
+          "why": "Right: only customer managed keys can be shared, and the other account also needs key permission."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Cross-account encrypted AMIs need a customer managed key plus key access.",
+      "remember": "Share encrypted AMI or snapshot cross-account → customer managed key, share the image, grant the key. Default aws/ebs cannot be shared.",
+      "variants": [
+        "Same AMI in another Region → copy it, re-encrypting with a key in the destination Region.",
+        "Deregistering an AMI leaves its snapshots, which still cost money.",
+        "Block cross-Region copy for sovereignty → SCP on ec2:CopyImage / CopySnapshot."
+      ]
+    },
+    {
+      "id": "ec2-012",
+      "skill": "4.1.4",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A security audit flags SSRF risk to instance role credentials. After the team enforces IMDSv2, containers running on the EC2 hosts can no longer obtain credentials. What fixes it?",
+      "options": [
+        {
+          "t": "Set HttpTokens back to optional",
+          "why": "Wrong: re-enables IMDSv1 and the SSRF risk."
+        },
+        {
+          "t": "Raise the metadata hop limit to 2",
+          "why": "Right: the default hop limit of 1 stops the token response before it reaches containers behind a bridge network."
+        },
+        {
+          "t": "Open port 80 in the security group",
+          "why": "Wrong: security groups do not filter IMDS traffic."
+        },
+        {
+          "t": "Disable IMDS on the instance",
+          "why": "Wrong: apps then cannot get role credentials at all."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Containers need hop limit 2 for IMDSv2.",
+      "remember": "IMDSv2 (HttpTokens=required) defends against SSRF. Containers on EC2 (Docker bridge, EKS pods) → hop limit 2. Old SDKs using IMDSv1 must be updated.",
+      "variants": [
+        "Enforce IMDSv2 across the org → SCP/IAM condition ec2:MetadataHttpTokens = required, plus the account-level default.",
+        "IMDSv2 token lifetime → 1 second to 6 hours.",
+        "Find remaining IMDSv1 calls → CloudWatch metric MetadataNoToken."
+      ]
+    },
+    {
+      "id": "ec2-013",
+      "skill": "4.4.2",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "Engineers need shell access to instances in private subnets with no inbound ports open, no bastion host and a full audit trail. Choose TWO actions.",
+      "options": [
+        {
+          "t": "Open port 22 from 0.0.0.0/0 and distribute shared SSH keys",
+          "why": "Wrong: exposes SSH to the world and gives no per-user IAM control."
+        },
+        {
+          "t": "Use Session Manager, with the SSM Agent and an instance role that has AmazonSSMManagedInstanceCore",
+          "why": "Right: shell access through IAM with no inbound ports, bastion or keys."
+        },
+        {
+          "t": "Deploy a bastion host in a public subnet",
+          "why": "Wrong: the question asks for no bastion host."
+        },
+        {
+          "t": "Send session logs to S3 or CloudWatch Logs (KMS-encrypted); API calls are recorded in CloudTrail",
+          "why": "Right: gives the audit trail of who ran what."
+        }
+      ],
+      "answer": [
+        1,
+        3
+      ],
+      "explain": "Session Manager plus session logging.",
+      "remember": "Private instance access with audit → Session Manager (IAM, no inbound ports, logs to S3/CloudWatch Logs, calls in CloudTrail). Fully private subnets need SSM interface endpoints or NAT.",
+      "variants": [
+        "SSH/RDP into private instances without bastion or public IP → EC2 Instance Connect Endpoint.",
+        "Session Manager cannot connect → agent not running, role missing AmazonSSMManagedInstanceCore, or no path to SSM.",
+        "Boot or network problems when SSH fails → EC2 Serial Console."
+      ]
+    },
+    {
+      "id": "ec2-014",
+      "skill": "4.1.1",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A security team wants to block one specific malicious IP range from reaching every instance in a subnet. Which control should they use?",
+      "options": [
+        {
+          "t": "A security group deny rule",
+          "why": "Wrong: security groups only have allow rules."
+        },
+        {
+          "t": "Remove the instances' public IPs",
+          "why": "Wrong: does not target one range and breaks legitimate access."
+        },
+        {
+          "t": "A network ACL deny rule on the subnet",
+          "why": "Right: NACLs support deny rules, evaluated in number order, first match wins."
+        },
+        {
+          "t": "A route table entry",
+          "why": "Wrong: route tables do not filter by source range for inbound traffic."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Only NACLs can deny.",
+      "remember": "Block a specific IP/range → NACL deny. Allow by app tier → security group referencing another SG. NACLs are stateless, so allow ephemeral ports 1024-65535 for replies.",
+      "variants": [
+        "Outbound works but replies are dropped with a custom NACL → return ephemeral ports not allowed.",
+        "DB must accept only app servers even as the ASG scales → SG rule with the app SG as source.",
+        "New custom SG → no inbound, all outbound allowed."
+      ]
+    },
+    {
+      "id": "ec2-015",
+      "skill": "4.2.2",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An application on EC2 needs a database password that rotates automatically, and no secret may be stored in the AMI, code or user data. What is the best design?",
+      "options": [
+        {
+          "t": "Read the password from Secrets Manager at runtime using the instance role",
+          "why": "Right: Secrets Manager supports automatic rotation and the instance profile gives temporary credentials."
+        },
+        {
+          "t": "Put the password in user data",
+          "why": "Wrong: user data is not encrypted and is readable through metadata and the API."
+        },
+        {
+          "t": "Bake the password into a golden AMI",
+          "why": "Wrong: cannot rotate and leaks to anyone who can launch the AMI."
+        },
+        {
+          "t": "Store it in an access-key file on the instance",
+          "why": "Wrong: long-lived keys on instances are never recommended."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Fetch secrets at runtime with the instance role.",
+      "remember": "Secrets on EC2 → Secrets Manager (rotation) or Parameter Store SecureString (KMS) read with the instance role. Never in code, AMI or user data.",
+      "variants": [
+        "No rotation needed and cheaper → Parameter Store SecureString.",
+        "AWS access from the instance → IAM role via instance profile, never access keys.",
+        "Launch with a role fails with UnauthorizedOperation → caller needs iam:PassRole."
+      ]
+    },
+    {
+      "id": "ec2-016",
+      "skill": "3.3.4",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A pipeline should scale out its EC2 workers when memory usage is high, but the team cannot find a memory metric in CloudWatch. What should they do?",
+      "options": [
+        {
+          "t": "Enable detailed monitoring and use MemoryUtilization",
+          "why": "Wrong: detailed monitoring only changes the period to 1 minute; no memory metric exists."
+        },
+        {
+          "t": "Use CPUUtilization as a memory proxy only",
+          "why": "Wrong: CPU does not reflect memory pressure."
+        },
+        {
+          "t": "Use the EBSReadBytes metric",
+          "why": "Wrong: measures EBS I/O, not memory."
+        },
+        {
+          "t": "Install the CloudWatch agent and use mem_used_percent in the scaling policy",
+          "why": "Right: memory, disk space and swap are not default metrics and come from the agent."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Memory and disk-used need the CloudWatch agent.",
+      "remember": "Default metrics (CPU, network, disk ops, status checks) come from the hypervisor. Memory, disk space, swap, processes and app logs need the CloudWatch agent (role with CloudWatchAgentServerPolicy).",
+      "variants": [
+        "Out of disk not visible → agent disk_used_percent alarm, grow with Elastic Volumes.",
+        "Faster Auto Scaling reaction → detailed monitoring (1-minute).",
+        "Basic monitoring period → 5 minutes (free)."
+      ]
+    },
+    {
+      "id": "ec2-017",
+      "skill": "3.3.5",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An auditor asks who opened SSH to the world on a security group last week. Which service answers it?",
+      "options": [
+        {
+          "t": "VPC Flow Logs",
+          "why": "Wrong: shows traffic metadata, not who changed the rule."
+        },
+        {
+          "t": "AWS CloudTrail, looking for AuthorizeSecurityGroupIngress",
+          "why": "Right: records EC2 API calls with who, when and from where."
+        },
+        {
+          "t": "Amazon Inspector",
+          "why": "Wrong: scans for vulnerabilities and exposure, not API history."
+        },
+        {
+          "t": "CloudWatch agent logs",
+          "why": "Wrong: collects OS and app logs, not API calls."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "CloudTrail records API calls.",
+      "remember": "Who did an EC2 API action → CloudTrail. What a resource looked like over time → AWS Config. Who talked to an instance → VPC Flow Logs.",
+      "variants": [
+        "Continuously detect SGs open to 0.0.0.0/0 on SSH → AWS Config rule restricted-ssh with SSM remediation.",
+        "Rejected traffic analysis → VPC Flow Logs queried with Athena or Logs Insights.",
+        "Threats like crypto-mining or credential exfiltration → GuardDuty."
+      ]
+    },
+    {
+      "id": "ec2-018",
+      "skill": "4.5.5",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A compliance rule says data must never leave approved Regions. Which control prevents copying AMIs and snapshots to other Regions?",
+      "options": [
+        {
+          "t": "Security groups blocking outbound traffic",
+          "why": "Wrong: do not control API actions like copying images."
+        },
+        {
+          "t": "EBS encryption by default",
+          "why": "Wrong: protects data at rest, not where it is copied."
+        },
+        {
+          "t": "Organizations SCPs that deny actions in other Regions, including ec2:CopyImage and ec2:CopySnapshot",
+          "why": "Right: SCPs on aws:RequestedRegion block the API calls account-wide."
+        },
+        {
+          "t": "A NACL on the subnet",
+          "why": "Wrong: NACLs filter network traffic, not API calls."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Region-deny SCPs enforce data sovereignty.",
+      "remember": "Data sovereignty → SCP using aws:RequestedRegion, also blocking CopyImage, CopySnapshot and Backup copies to forbidden Regions.",
+      "variants": [
+        "Require encrypted volumes everywhere → EBS encryption by default per Region plus SCP on ec2:Encrypted.",
+        "Require IMDSv2 → SCP on ec2:MetadataHttpTokens.",
+        "Detect non-compliance after the fact → AWS Config rules."
+      ]
+    },
+    {
+      "id": "ec2-019",
+      "skill": "1.2.4",
+      "source": "1-basics-instance-types-and-purchase-options.md",
+      "q": "A company runs software licensed per physical core and must report socket and core counts. Which EC2 option fits?",
+      "options": [
+        {
+          "t": "Dedicated Host",
+          "why": "Right: a whole physical server where you see sockets and cores, with host affinity for BYOL."
+        },
+        {
+          "t": "Dedicated Instance",
+          "why": "Wrong: single-tenant but gives no visibility of sockets or cores."
+        },
+        {
+          "t": "On-Demand Capacity Reservation",
+          "why": "Wrong: reserves capacity, not licensing visibility."
+        },
+        {
+          "t": "Spot Instance",
+          "why": "Wrong: interruptible and offers no licence control."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Per-socket or per-core licences need Dedicated Hosts.",
+      "remember": "BYOL tied to sockets or cores → Dedicated Host. Compliance needing only single-tenant hardware → Dedicated Instance (cheaper, simpler, plus a Regional fee).",
+      "variants": [
+        "Dedicated Hosts do not support Capacity Reservations.",
+        "Dedicated Host Reservation → up to 70% off.",
+        "Dedicated Instance fee → $2/hour per Region with any running."
+      ]
+    },
+    {
+      "id": "ec2-020",
+      "skill": "1.2.7",
+      "source": "3-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A new account tries to launch 20 p5 GPU instances and the call fails with VcpuLimitExceeded. What should the team do?",
+      "options": [
+        {
+          "t": "Switch to a Capacity Reservation",
+          "why": "Wrong: reservations also count against the vCPU quota."
+        },
+        {
+          "t": "Add a second AZ",
+          "why": "Wrong: quotas are per Region, not per AZ."
+        },
+        {
+          "t": "Buy a Savings Plan",
+          "why": "Wrong: a discount does not change quotas."
+        },
+        {
+          "t": "Request a quota increase in Service Quotas for that family's vCPU limit",
+          "why": "Right: On-Demand limits are counted in vCPUs per Region and some GPU families default to 0."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Quota errors are fixed in Service Quotas.",
+      "remember": "VcpuLimitExceeded / InstanceLimitExceeded → raise the Regional vCPU quota. InsufficientInstanceCapacity → AWS lacks capacity: other AZ/type, attribute-based selection, or ODCR.",
+      "variants": [
+        "InsufficientInstanceCapacity in a cluster placement group → launch all at once with one type, stop/start the group, or reserve with ODCR.",
+        "Subnet out of IPs → InsufficientFreeAddressesInSubnet; use a larger subnet.",
+        "Stopped and hibernated instances do not count toward the quota; Capacity Reservations do."
+      ]
+    }
+  ]
+}

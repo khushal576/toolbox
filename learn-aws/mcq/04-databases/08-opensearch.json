@@ -1,0 +1,412 @@
+{
+ "questions": [
+  {
+   "id": "opensearch-001",
+   "skill": "2.1.1",
+   "source": "3-availability-storage-tiers-backup-and-security.md",
+   "q": "A domain keeps 90 days of application logs. Only the last 7 days are searched often; older logs are queried rarely but must stay searchable, and are never updated. How should the team cut storage cost with the least manual work?",
+   "options": [
+    {
+     "t": "Add more hot data nodes with larger EBS volumes",
+     "why": "Wrong: it keeps all data on the most expensive tier."
+    },
+    {
+     "t": "An ISM policy that moves indexes to UltraWarm after 7 days, then deletes them",
+     "why": "Right: UltraWarm keeps read-only data in S3 at lower cost and ISM automates the move and delete."
+    },
+    {
+     "t": "Move old indexes to cold storage and query them there",
+     "why": "Wrong: cold indexes are not searchable until migrated back to warm."
+    },
+    {
+     "t": "Set replicas to 0 on every index",
+     "why": "Wrong: it risks data loss and does not shrink storage much compared with a tier change."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Rarely searched, read-only, still searchable: UltraWarm via ISM.",
+   "remember": "Old immutable data that must stay searchable → UltraWarm, automated with an ISM policy (hot → warm → cold → delete).",
+   "variants": [
+    "Data rarely read and does not need to be searchable → cold storage.",
+    "Data must be updated again → migrate it back to hot.",
+    "Ad-hoc SQL on archived logs, very cheap → S3 plus Athena."
+   ]
+  },
+  {
+   "id": "opensearch-002",
+   "skill": "2.3.6",
+   "source": "3-availability-storage-tiers-backup-and-security.md",
+   "q": "A production domain needs 99.99% availability and fast recovery from an Availability Zone failure without data redistribution. Which configuration meets this?",
+   "options": [
+    {
+     "t": "Multi-AZ without Standby across 2 AZs with 2 data nodes",
+     "why": "Wrong: this option offers 99.9% and can mean downtime on an AZ loss."
+    },
+    {
+     "t": "Multi-AZ with Standby: 3 AZs, 3 dedicated masters, data nodes in multiples of 3, at least 2 replicas",
+     "why": "Right: the standby AZ activates in under a minute and no data has to move."
+    },
+    {
+     "t": "A single-AZ domain with 5 dedicated masters",
+     "why": "Wrong: masters do not give AZ resilience and 5 only adds cost."
+    },
+    {
+     "t": "A domain with automated snapshots only",
+     "why": "Wrong: snapshots are for recovery, not availability."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Multi-AZ with Standby is the 99.99% layout.",
+   "remember": "99.99% availability on a domain → Multi-AZ with Standby (3 AZs, 3 masters, 3n data nodes, 2+ replicas, Auto-Tune).",
+   "variants": [
+    "99.9% is enough or an existing workflow needs it → Multi-AZ without Standby.",
+    "Standby needs a Region with 3 AZs.",
+    "Backups and recovery, not availability → snapshots."
+   ]
+  },
+  {
+   "id": "opensearch-003",
+   "skill": "2.3.6",
+   "source": "1-basics-domains-data-model-and-sizing.md",
+   "q": "A team asks for 2 dedicated master nodes for a production domain to save money. What should you recommend?",
+   "options": [
+    {
+     "t": "Use 2 masters, since one is a standby",
+     "why": "Wrong: 2 masters have no quorum after one fails."
+    },
+    {
+     "t": "Use 1 master",
+     "why": "Wrong: one dedicated master is prohibited."
+    },
+    {
+     "t": "Use 3 dedicated masters",
+     "why": "Right: 3 gives a quorum of 2 and is the recommended production count."
+    },
+    {
+     "t": "Use 4 masters for extra safety",
+     "why": "Wrong: 4 is no better than 3 and can hurt Multi-AZ."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Odd count, 3 for production.",
+   "remember": "Dedicated masters: always 3 for production (quorum 2), never an even number; 5 works but wastes money.",
+   "variants": [
+    "Lose quorum → reads and writes fail.",
+    "Masters are spread across 3 AZs even if data nodes use 2.",
+    "More shards or nodes → bigger master instance type."
+   ]
+  },
+  {
+   "id": "opensearch-004",
+   "skill": "2.3.6",
+   "source": "3-availability-storage-tiers-backup-and-security.md",
+   "q": "A domain turns red. Which statement is correct and what is the most urgent concern?",
+   "options": [
+    {
+     "t": "Red means some replicas are unassigned; it is harmless",
+     "why": "Wrong: that is yellow."
+    },
+    {
+     "t": "At least one primary shard is unassigned; automated snapshots fail and ISM does not run while red",
+     "why": "Right: act fast, as unfixed red for about two weeks can lose data permanently."
+    },
+    {
+     "t": "All shards are assigned but latency is high",
+     "why": "Wrong: that is not a health color meaning."
+    },
+    {
+     "t": "The cluster is read-only but healthy and snapshots continue",
+     "why": "Wrong: snapshots fail while red."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Red = primary unassigned; snapshots and ISM stop.",
+   "remember": "Red → primary shard unassigned, snapshots fail, ISM stops, data loss after about two weeks. Yellow → only replicas unassigned.",
+   "variants": [
+    "One-node domain with 1 replica → yellow, expected.",
+    "Fix path → restore from the automated snapshot, add capacity, or reindex.",
+    "Alarm on ClusterStatus.red ≥ 1."
+   ]
+  },
+  {
+   "id": "opensearch-005",
+   "skill": "2.1.3",
+   "source": "2-serverless-vector-search-ingestion-and-integrations.md",
+   "q": "A company needs semantic search for a RAG application over millions of embeddings with hybrid keyword and vector queries. Load is spiky and the team wants no capacity planning. What fits best?",
+   "options": [
+    {
+     "t": "An OpenSearch Serverless vector search collection",
+     "why": "Right: OCUs scale automatically and the vector collection type supports k-NN plus keyword search."
+    },
+    {
+     "t": "An OpenSearch Serverless search collection",
+     "why": "Wrong: search collections do not support k-NN indexes."
+    },
+    {
+     "t": "MemoryDB for Redis OSS",
+     "why": "Wrong: it is fast but memory-bound, and not the best fit for large-scale hybrid keyword and vector search."
+    },
+    {
+     "t": "A time series collection",
+     "why": "Wrong: it is for logs and metrics, not vectors."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Vector collection type for k-NN on Serverless.",
+   "remember": "Spiky GenAI vector workload with no ops → OpenSearch Serverless vector search collection. The collection type cannot be changed later.",
+   "variants": [
+    "Relational data plus vectors → Aurora PostgreSQL pgvector.",
+    "Ultra-low latency in-memory vectors → MemoryDB.",
+    "Vectors with graph traversal → Neptune Analytics."
+   ]
+  },
+  {
+   "id": "opensearch-006",
+   "skill": "2.1.8",
+   "source": "2-serverless-vector-search-ingestion-and-integrations.md",
+   "q": "A k-NN workload uses HNSW and queries slow down after the vector set grows. `KNNGraphMemoryUsage` is near the circuit breaker limit. What is the likely cause and fix?",
+   "options": [
+    {
+     "t": "HNSW graphs exceed off-heap memory; add memory or use quantization or a less memory-hungry method",
+     "why": "Right: graphs are held off-heap and performance drops beyond the budget."
+    },
+    {
+     "t": "The refresh interval is too short; raise it",
+     "why": "Wrong: refresh does not affect graph memory."
+    },
+    {
+     "t": "Too many dedicated masters; reduce them",
+     "why": "Wrong: masters hold no data or queries."
+    },
+    {
+     "t": "Replicas are set to 0; add more",
+     "why": "Wrong: replicas do not reduce graph memory per node."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "HNSW is fast but memory heavy.",
+   "remember": "HNSW = graph, fast, high recall, memory heavy (off-heap, about 25% of RAM by default). IVF needs training and uses less memory.",
+   "variants": [
+    "32 GiB RAM → about 8 GiB of graphs.",
+    "Filters on vectors inside the search → Lucene engine; post-filters can return fewer than k.",
+    "Small or filtered sets → exact k-NN."
+   ]
+  },
+  {
+   "id": "opensearch-007",
+   "skill": "3.3.8",
+   "source": "2-serverless-vector-search-ingestion-and-integrations.md",
+   "q": "Streaming web logs must reach a domain with no custom code, and any documents that fail to index must be kept. Which service fits?",
+   "options": [
+    {
+     "t": "Amazon Data Firehose to OpenSearch with failed documents backed up to S3",
+     "why": "Right: it buffers, batches and can back up failed or all documents to S3."
+    },
+    {
+     "t": "Lambda polling the logs with a cron job",
+     "why": "Wrong: custom code and polling."
+    },
+    {
+     "t": "Athena queries pushed to the domain",
+     "why": "Wrong: Athena queries S3, it does not load data."
+    },
+    {
+     "t": "DynamoDB Streams with Lambda",
+     "why": "Wrong: that syncs a DynamoDB table, not web logs."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "No code log streaming → Firehose.",
+   "remember": "Streaming logs, no code → Firehose. Parse, enrich or route, or OpenTelemetry traces → OpenSearch Ingestion. Custom logic → Lambda.",
+   "variants": [
+    "Transformation and routing needed → OpenSearch Ingestion (Data Prepper).",
+    "Keep a DynamoDB table searchable → Streams + Lambda or zero-ETL.",
+    "Query S3 without copying → direct query or Athena."
+   ]
+  },
+  {
+   "id": "opensearch-008",
+   "skill": "2.3.6",
+   "source": "3-availability-storage-tiers-backup-and-security.md",
+   "q": "A team must keep a domain's snapshot for one year and move data to another domain. Which approach works?",
+   "options": [
+    {
+     "t": "Rely on the hourly automated snapshots",
+     "why": "Wrong: they are retained about 14 days and only for cluster recovery."
+    },
+    {
+     "t": "Manual snapshots to the team's S3 bucket, using an IAM role trusted by `es.amazonaws.com` and a signed repository registration",
+     "why": "Right: manual snapshots are kept until deleted and can move data between domains."
+    },
+    {
+     "t": "Manual snapshots with an S3 Glacier lifecycle rule on the bucket",
+     "why": "Wrong: the snapshot bucket must not use a Glacier lifecycle."
+    },
+    {
+     "t": "Multi-AZ with Standby",
+     "why": "Wrong: replicas copy deletes and bad writes, so it is not a backup."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Long retention or migration → manual snapshots.",
+   "remember": "Automated snapshots: hourly, 336 kept, 14 days, recovery only. Longer retention or moving data → manual snapshots in your S3 bucket.",
+   "variants": [
+    "PassRole error on registration → add iam:PassRole and es:ESHttpPut.",
+    "FGAC on → map manage_snapshots to the signing role.",
+    "Serverless → manual snapshots are not supported."
+   ]
+  },
+  {
+   "id": "opensearch-009",
+   "skill": "4.4.4",
+   "source": "3-availability-storage-tiers-backup-and-security.md",
+   "q": "Analysts must see only some fields and some documents in a domain index, and one sensitive field only as a hash. Which feature provides this?",
+   "options": [
+    {
+     "t": "An IP-based resource policy",
+     "why": "Wrong: it controls source addresses, not fields."
+    },
+    {
+     "t": "Fine-grained access control with document-level and field-level security and field masking",
+     "why": "Right: FGAC adds role-based index, document and field control and masking."
+    },
+    {
+     "t": "A security group on the domain",
+     "why": "Wrong: security groups control network access only."
+    },
+    {
+     "t": "A deny on `restricted-index/*` in the access policy",
+     "why": "Wrong: it can be bypassed with `_all` or `_bulk`."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Per-field and per-document control = FGAC.",
+   "remember": "Per-index, document or field control or masking on a domain → FGAC (needs HTTPS, encryption at rest, node-to-node encryption; cannot be disabled). Serverless → data access policies.",
+   "variants": [
+    "Aggregations on a masked field → pattern-based masking.",
+    "Separate dashboards per team → Dashboards multi-tenancy.",
+    "Resource-policy denies are not real isolation."
+   ]
+  },
+  {
+   "id": "opensearch-010",
+   "skill": "4.4.4",
+   "source": "3-availability-storage-tiers-backup-and-security.md",
+   "q": "A security team requires a domain reachable only from inside the company VPC. A year later someone proposes switching an existing public domain to VPC. What is the result?",
+   "options": [
+    {
+     "t": "Switch it in the console with a blue/green change",
+     "why": "Wrong: public and VPC cannot be changed after creation."
+    },
+    {
+     "t": "Create a new VPC domain and move data with a snapshot restore or reindex",
+     "why": "Right: network type is fixed at creation."
+    },
+    {
+     "t": "Add an IP-based access policy to the VPC domain",
+     "why": "Wrong: IP-based policies are not allowed on VPC domains."
+    },
+    {
+     "t": "Enable fine-grained access control to make it private",
+     "why": "Wrong: FGAC is not a network setting."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Public vs VPC is fixed at creation.",
+   "remember": "Private-only domain → choose VPC at creation; use security groups, not IP policies. Changing later → new domain plus snapshot or reindex.",
+   "variants": [
+    "After creation you can change subnets and security groups but not the VPC.",
+    "Reserve 3 × ceil(data nodes ÷ AZs) IPs per subnet.",
+    "On-premises access → VPN, Direct Connect or proxy."
+   ]
+  },
+  {
+   "id": "opensearch-011",
+   "skill": "2.3.6",
+   "source": "4-performance-cost-monitoring-limits-and-scenarios.md",
+   "q": "Writes to a domain start failing with `ClusterBlockException` and `ClusterIndexWritesBlocked` is 1. `FreeStorageSpace` is near zero. What is the best fix?",
+   "options": [
+    {
+     "t": "Restart the data nodes",
+     "why": "Wrong: it does not free any space."
+    },
+    {
+     "t": "Delete old indexes or add larger EBS volumes or instances, and stay under 80% disk",
+     "why": "Right: low free storage blocks writes; free capacity to recover."
+    },
+    {
+     "t": "Add more dedicated masters",
+     "why": "Wrong: masters do not store data."
+    },
+    {
+     "t": "Increase replicas to 3",
+     "why": "Wrong: replicas consume more storage and worsen it."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Disk full blocks writes.",
+   "remember": "Writes blocked or ClusterBlockException → free or add storage. Insufficient storage is the most common cause of instability; size source × (1 + replicas) × 1.45.",
+   "variants": [
+    "Writes rejected with 429 → thread pool full: slow clients and use bulk.",
+    "JVMMemoryPressure high → fewer shards or larger instances.",
+    "Many tiny shards → shrink or reindex."
+   ]
+  },
+  {
+   "id": "opensearch-012",
+   "skill": "2.3.6",
+   "source": "4-performance-cost-monitoring-limits-and-scenarios.md",
+   "q": "A domain's encryption key was deleted and `KMSKeyInaccessible` is reported. What is the outcome?",
+   "options": [
+    {
+     "t": "Re-enable the key to recover the domain",
+     "why": "Wrong: re-enabling fixes a disabled key (KMSKeyError), not a deleted key."
+    },
+    {
+     "t": "The domain cannot be recovered; restore data from a manual snapshot into a new domain",
+     "why": "Right: deleted key or revoked grant makes the domain unrecoverable."
+    },
+    {
+     "t": "Automated snapshots restore it in place",
+     "why": "Wrong: they are encrypted with the same key and unreadable."
+    },
+    {
+     "t": "Switch to an AWS owned key on the existing domain",
+     "why": "Wrong: encryption at rest cannot be changed that way once enabled."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Key deleted = domain lost.",
+   "remember": "KMSKeyError (disabled) → re-enable the key. KMSKeyInaccessible (deleted or grant revoked) → unrecoverable; use a manual snapshot into a new domain.",
+   "variants": [
+    "Keep the key and its grants safe.",
+    "Alarm on AutomatedSnapshotFailure (no snapshot in 36 hours).",
+    "Encryption at rest cannot be turned off after enabling."
+   ]
+  }
+ ]
+}

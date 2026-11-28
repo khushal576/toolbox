@@ -1,0 +1,344 @@
+{
+ "questions": [
+  {
+   "id": "docdb-001",
+   "skill": "2.1.3",
+   "source": "1-basics-architecture-data-model-and-comparison.md",
+   "q": "A team runs a MongoDB app on EC2 and wants a managed AWS database with the fewest code changes. Documents are up to 5 MB and the app runs aggregation pipelines on many fields. Which service fits?",
+   "options": [
+    {
+     "t": "DynamoDB",
+     "why": "Wrong: items are limited to 400 KB and the data model would need a redesign."
+    },
+    {
+     "t": "Amazon DocumentDB",
+     "why": "Right: it speaks the MongoDB API and drivers, allows 16 MiB documents and supports aggregation pipelines."
+    },
+    {
+     "t": "Aurora PostgreSQL",
+     "why": "Wrong: a relational model means rewriting the data layer."
+    },
+    {
+     "t": "OpenSearch Service",
+     "why": "Wrong: it is a search engine, not the primary store for a MongoDB app."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "MongoDB compatibility plus large documents and ad hoc queries points to DocumentDB.",
+   "remember": "MongoDB drivers and queries with minimal change, or documents over 400 KB with ad hoc queries \u2192 DocumentDB. Key-based access at massive serverless scale \u2192 DynamoDB.",
+   "variants": [
+    "Known key lookups, spiky traffic, no sizing wanted \u2192 DynamoDB on-demand.",
+    "Joins and strict relational integrity \u2192 Aurora or RDS.",
+    "Graph traversal \u2192 Neptune."
+   ]
+  },
+  {
+   "id": "docdb-002",
+   "skill": "2.1.3",
+   "source": "1-basics-architecture-data-model-and-comparison.md",
+   "q": "A DocumentDB application sends heavy read traffic and the primary is busy. The team wants reads served by replicas without changing the endpoint on failover. What should they do?",
+   "options": [
+    {
+     "t": "Connect every client to the cluster endpoint with the default read preference",
+     "why": "Wrong: the cluster endpoint always points to the primary, so reads stay on it."
+    },
+    {
+     "t": "Connect to each replica's instance endpoint",
+     "why": "Wrong: instance endpoints break on failover and are not for app use."
+    },
+    {
+     "t": "Use the cluster endpoint with replicaSet=rs0 and readPreference=secondaryPreferred",
+     "why": "Right: reads go to replicas and writes to the primary, and failover stays transparent."
+    },
+    {
+     "t": "Put an Application Load Balancer in front of the instances",
+     "why": "Wrong: the reader endpoint and replica set mode already handle this, and an ALB does not speak the MongoDB protocol."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Replica set mode with secondaryPreferred offloads reads to replicas.",
+   "remember": "Reads to replicas: replica set mode with secondaryPreferred, or the reader endpoint. Writes always go through the cluster endpoint to the primary.",
+   "variants": [
+    "Need one specific replica for analytics \u2192 its instance endpoint, ideally a dedicated replica.",
+    "Engine older than 8.0.2 \u2192 also add retryWrites=false.",
+    "Reader endpoint balances connections, not queries."
+   ]
+  },
+  {
+   "id": "docdb-003",
+   "skill": "2.1.3",
+   "source": "1-basics-architecture-data-model-and-comparison.md",
+   "q": "A mobile app has spiky, unpredictable traffic. The team wants MongoDB compatibility but does not want to pick instance sizes. Which DocumentDB option fits?",
+   "options": [
+    {
+     "t": "Elastic cluster",
+     "why": "Wrong: elastic clusters shard for huge write and read scale, they are not the answer to unsized spiky load."
+    },
+    {
+     "t": "db.t3.medium burstable instance",
+     "why": "Wrong: it is for dev/test with limited connections and does not scale with load."
+    },
+    {
+     "t": "A global cluster",
+     "why": "Wrong: it adds Regions for DR and local reads, not capacity sizing."
+    },
+    {
+     "t": "DocumentDB Serverless (db.serverless)",
+     "why": "Right: capacity scales in DCUs and is billed per second, which suits spiky load."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Serverless scales compute with demand without disrupting transactions.",
+   "remember": "Spiky or unsized MongoDB-style workload \u2192 DocumentDB Serverless (DCUs). Write scale beyond the largest primary \u2192 elastic cluster.",
+   "variants": [
+    "Writes outgrow the biggest primary \u2192 elastic cluster with a shard key.",
+    "Steady predictable load \u2192 provisioned instances (Reserved Instances).",
+    "Dev/test only \u2192 single instance or burstable class."
+   ]
+  },
+  {
+   "id": "docdb-004",
+   "skill": "2.1.3",
+   "source": "1-basics-architecture-data-model-and-comparison.md",
+   "q": "A DocumentDB primary is at its largest instance size and write throughput is still too low. Data is expected to reach petabytes. What is the best change?",
+   "options": [
+    {
+     "t": "Add 15 read replicas",
+     "why": "Wrong: replicas are read-only, so write throughput does not improve."
+    },
+    {
+     "t": "Move to an elastic cluster and choose a shard key with many unique values",
+     "why": "Right: elastic clusters shard writes across up to 32 shards, and a high-cardinality key avoids hot shards."
+    },
+    {
+     "t": "Switch the storage configuration to I/O-Optimized",
+     "why": "Wrong: it removes per-I/O charges but does not raise write capacity."
+    },
+    {
+     "t": "Enable a global cluster",
+     "why": "Wrong: only the primary Region accepts writes, so write capacity stays the same."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Elastic clusters are how DocumentDB scales writes out.",
+   "remember": "Reads scale with replicas (up to 15); writes scale up the primary, then out with an elastic cluster and a good shard key.",
+   "variants": [
+    "Poor shard key such as low-cardinality values \u2192 hot shards.",
+    "Migrating a sharded MongoDB cluster \u2192 elastic cluster.",
+    "Only more read capacity needed \u2192 add replicas."
+   ]
+  },
+  {
+   "id": "docdb-005",
+   "skill": "2.1.8",
+   "source": "1-basics-architecture-data-model-and-comparison.md",
+   "q": "A team stores embeddings in DocumentDB for semantic search on 5.0 instance-based clusters. Recall matters most, the collection may be empty at index creation, and no training step is wanted. Which index fits?",
+   "options": [
+    {
+     "t": "IVFFlat",
+     "why": "Wrong: it clusters existing data into lists, so it should be created after data is loaded."
+    },
+    {
+     "t": "A compound index on the embedding and a category field",
+     "why": "Wrong: vector indexes do not support compound options."
+    },
+    {
+     "t": "A sparse vector index",
+     "why": "Wrong: sparse options are not supported for vector indexes."
+    },
+    {
+     "t": "HNSW",
+     "why": "Right: best recall and query speed, no training step, and it can be built on an empty collection."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "HNSW suits an empty collection and high recall.",
+   "remember": "Best recall, build on an empty collection \u2192 HNSW. Cheaper, faster build and data already loaded \u2192 IVFFlat. No index \u2192 exact (slow) search.",
+   "variants": [
+    "Data already loaded and cheap build wanted \u2192 IVFFlat.",
+    "No vector index at all \u2192 exact nearest-neighbour search.",
+    "Aurora PostgreSQL equivalent \u2192 pgvector HNSW or IVFFlat."
+   ]
+  },
+  {
+   "id": "docdb-006",
+   "skill": "2.3.6",
+   "source": "2-availability-backup-security-and-operations.md",
+   "q": "A production DocumentDB cluster must survive an AZ failure with a fast, predictable failover. What is the best design?",
+   "options": [
+    {
+     "t": "A single instance, since storage is copied 6 ways across 3 AZs",
+     "why": "Wrong: storage is durable but compute is lost, and recreating a primary is slow."
+    },
+    {
+     "t": "One primary and replicas of the same class in at least three AZs, with failover priority tiers set",
+     "why": "Right: a replica is promoted quickly and tiers choose which one goes first."
+    },
+    {
+     "t": "Two instances in the same AZ",
+     "why": "Wrong: an AZ failure takes both down."
+    },
+    {
+     "t": "Frequent manual snapshots",
+     "why": "Wrong: snapshots protect data but do not give failover."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Storage is already multi-AZ; compute availability comes from replicas.",
+   "remember": "Compute HA = replicas in different AZs (minimum 2 instances in 2 AZs, production 3 in 3). Multi-AZ is not a backup.",
+   "variants": [
+    "Cross-Region DR with RPO in seconds \u2192 global cluster.",
+    "Only one instance fails \u2192 DocumentDB creates a new primary, much slower than promoting a replica.",
+    "Replica is smaller than the primary \u2192 failover can reduce performance."
+   ]
+  },
+  {
+   "id": "docdb-007",
+   "skill": "2.3.6",
+   "source": "2-availability-backup-security-and-operations.md",
+   "q": "A developer drops an important collection by mistake at 14:05. Automated backups are enabled with 7-day retention. What is the correct recovery?",
+   "options": [
+    {
+     "t": "Use Backtrack to rewind the cluster",
+     "why": "Wrong: DocumentDB has no Backtrack-style rewind."
+    },
+    {
+     "t": "Fail over to a replica",
+     "why": "Wrong: replicas copy the same mistake."
+    },
+    {
+     "t": "Restore the cluster in place to 14:04",
+     "why": "Wrong: restores never overwrite the cluster."
+    },
+    {
+     "t": "Point-in-time restore to just before 14:05 into a new cluster, then copy the data back or switch the app",
+     "why": "Right: PITR always creates a new cluster within the retention window."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "PITR makes a new cluster; there is no in-place rewind.",
+   "remember": "Accidental delete \u2192 PITR (to about the last 5 minutes, retention 1-35 days) into a new cluster. Older than the window \u2192 a manual snapshot.",
+   "variants": [
+    "Need an archive for 1 year \u2192 manual snapshots or mongodump to S3; PITR max is 35 days.",
+    "Failover or replicas never protect against logical errors.",
+    "After restore, re-add instances and update connection strings."
+   ]
+  },
+  {
+   "id": "docdb-008",
+   "skill": "4.2.5",
+   "source": "2-availability-backup-security-and-operations.md",
+   "q": "Analysts need read-only access to a single DocumentDB database. The security team requires least privilege and no use of the primary user. What should the admin do?",
+   "options": [
+    {
+     "t": "Create a user in admin with the read role on that database",
+     "why": "Right: built-in RBAC roles scope read access to one database."
+    },
+    {
+     "t": "Share the primary user credentials",
+     "why": "Wrong: the primary user should not be used in apps and has broad rights."
+    },
+    {
+     "t": "Grant readAnyDatabase",
+     "why": "Wrong: it is cluster-wide, which is more than needed."
+    },
+    {
+     "t": "Add an IAM policy allowing read on the cluster",
+     "why": "Wrong: IAM policies do not grant MongoDB data rights, and IAM auth is a login method that maps to DocumentDB users."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "The read role on one database is the least-privilege fit.",
+   "remember": "Per-database access \u2192 RBAC: read or readWrite on that database. Custom single-collection actions \u2192 user-defined role. Users live in the admin database.",
+   "variants": [
+    "Access to one collection only \u2192 user-defined role with specific actions such as find.",
+    "Password-less access from Lambda \u2192 IAM authentication (5.0 instance-based, MONGODB-AWS).",
+    "Cluster-wide read \u2192 readAnyDatabase."
+   ]
+  },
+  {
+   "id": "docdb-009",
+   "skill": "3.3.1",
+   "source": "2-availability-backup-security-and-operations.md",
+   "q": "Auditors want to know who dropped collections in DocumentDB. The team set the cluster parameter audit_logs to ddl, but no events appear in CloudWatch Logs. What is missing?",
+   "options": [
+    {
+     "t": "Enable CloudWatch Logs export for the audit log type on the cluster",
+     "why": "Right: auditing needs both the parameter and the log export."
+    },
+    {
+     "t": "Enable CloudTrail data events",
+     "why": "Wrong: CloudTrail logs management API calls, not MongoDB operations."
+    },
+    {
+     "t": "Turn on the profiler",
+     "why": "Wrong: the profiler logs slow operations, not audit events."
+    },
+    {
+     "t": "Switch to I/O-Optimized storage",
+     "why": "Wrong: storage configuration has nothing to do with audit logs."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Auditing is a two-step setup: parameter plus log export.",
+   "remember": "No audit logs \u2192 one of two steps was skipped: audit_logs parameter, or CloudWatch Logs export for audit. CloudTrail only sees management API calls.",
+   "variants": [
+    "Too much DML noise \u2192 setAuditConfig filters by user, command or namespace.",
+    "Who called ModifyDBCluster \u2192 CloudTrail.",
+    "Audit values: ddl, dml_read, dml_write, all, none (default)."
+   ]
+  },
+  {
+   "id": "docdb-010",
+   "skill": "1.1.1",
+   "source": "3-integrations-migration-performance-cost-limits-and-scenarios.md",
+   "q": "A search index in OpenSearch must stay in sync with a DocumentDB collection in near real time. Which approach fits?",
+   "options": [
+    {
+     "t": "Run mongodump nightly and reload the index",
+     "why": "Wrong: a batch export is far from near real time."
+    },
+    {
+     "t": "Enable change streams on the collection and process events with Lambda into OpenSearch",
+     "why": "Right: change streams provide time-ordered change events, which are disabled by default and enabled per collection."
+    },
+    {
+     "t": "Enable audit_logs=dml_write and parse the logs",
+     "why": "Wrong: audit logs are for compliance, not change data capture."
+    },
+    {
+     "t": "Use the reader endpoint to poll all documents",
+     "why": "Wrong: polling is wasteful and misses deletes."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Change streams are the CDC feature in DocumentDB.",
+   "remember": "Keep another system in sync with DocumentDB \u2192 change streams (enable per collection; default retention 3 hours, up to 7 days) feeding Lambda, then OpenSearch or others.",
+   "variants": [
+    "Online MongoDB migration \u2192 DMS full load plus CDC.",
+    "Event too large (over 16 MB) \u2192 $changeStreamSplitLargeEvent on 8.0.2+.",
+    "Engine 3.6/4.0 \u2192 read change streams from the primary only."
+   ]
+  }
+ ]
+}

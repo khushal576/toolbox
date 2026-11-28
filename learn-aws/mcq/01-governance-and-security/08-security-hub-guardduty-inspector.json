@@ -1,0 +1,412 @@
+{
+ "questions": [
+  {
+   "id": "sechub-001",
+   "skill": "4.4.1",
+   "source": "2-guardduty-inspector-and-scenarios.md",
+   "q": "A data lake team wants to detect unusual activity such as bursts of DeleteObject calls and access from malicious IPs on its S3 buckets. Which feature fits best?",
+   "options": [
+    {
+     "t": "Amazon Inspector EC2 scanning",
+     "why": "Wrong: Inspector finds software vulnerabilities, not S3 activity threats."
+    },
+    {
+     "t": "GuardDuty S3 Protection",
+     "why": "Right: it analyzes S3 data events with threat intelligence and anomaly detection."
+    },
+    {
+     "t": "Amazon Macie",
+     "why": "Wrong: Macie classifies sensitive data in objects, it does not detect destructive activity patterns."
+    },
+    {
+     "t": "AWS Config rule",
+     "why": "Wrong: Config checks configuration compliance, not API behavior."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "S3 Protection analyzes S3 data events for exfiltration and destructive actions.",
+   "remember": "Threat or anomalous activity on S3 → GuardDuty S3 Protection.",
+   "variants": [
+    "Where is PII in S3 → Macie.",
+    "Vulnerable packages on hosts → Inspector.",
+    "Bucket config compliance → Config or Security Hub controls."
+   ]
+  },
+  {
+   "id": "sechub-002",
+   "skill": "4.5.2",
+   "source": "2-guardduty-inspector-and-scenarios.md",
+   "q": "A security team must find which S3 buckets hold personally identifiable information. Which service should it use?",
+   "options": [
+    {
+     "t": "Amazon GuardDuty",
+     "why": "Wrong: it detects threats from logs, it does not classify object content."
+    },
+    {
+     "t": "Amazon Inspector",
+     "why": "Wrong: it scans for CVEs and exposure, not data content."
+    },
+    {
+     "t": "Amazon Macie",
+     "why": "Right: only Macie classifies S3 content for sensitive data."
+    },
+    {
+     "t": "Amazon Detective",
+     "why": "Wrong: it investigates findings, it does not scan data."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Sensitive data discovery is Macie's job.",
+   "remember": "Sensitive data in S3 → Macie, not GuardDuty or Inspector.",
+   "variants": [
+    "Threats → GuardDuty.",
+    "Vulnerabilities → Inspector.",
+    "Investigation of a finding → Detective."
+   ]
+  },
+  {
+   "id": "sechub-003",
+   "skill": "4.4.1",
+   "source": "2-guardduty-inspector-and-scenarios.md",
+   "q": "A company wants GuardDuty to analyze VPC Flow Logs and DNS query logs. What must the team do to enable these data sources?",
+   "options": [
+    {
+     "t": "Turn on VPC Flow Logs and Route 53 query logging and send them to S3",
+     "why": "Wrong: GuardDuty does not use your copies of these logs."
+    },
+    {
+     "t": "Install the GuardDuty agent on every EC2 instance",
+     "why": "Wrong: the agent is only for Runtime Monitoring, not foundational detection."
+    },
+    {
+     "t": "Nothing beyond enabling GuardDuty",
+     "why": "Right: it reads CloudTrail management events, VPC Flow Logs and DNS logs internally."
+    },
+    {
+     "t": "Create a CloudTrail data event trail",
+     "why": "Wrong: data events matter for S3 Protection, not for flow or DNS sources."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Foundational sources are read internally and are agentless.",
+   "remember": "GuardDuty foundational detection = one click; no log setup, no agent.",
+   "variants": [
+    "Container or instance OS events → Runtime Monitoring needs an agent.",
+    "S3 data event analysis → enable S3 Protection.",
+    "Longer finding history → export to S3."
+   ]
+  },
+  {
+   "id": "sechub-004",
+   "skill": "3.3.3",
+   "source": "2-guardduty-inspector-and-scenarios.md",
+   "q": "GuardDuty reports that an IAM role's temporary credentials are used from an unusual external IP. The company wants automated response. Which design is best?",
+   "options": [
+    {
+     "t": "EventBridge rule on the GuardDuty finding invoking Lambda to revoke the role session",
+     "why": "Right: findings go to EventBridge in near real time, and revoking the session is preferred over deleting keys."
+    },
+    {
+     "t": "Poll the GuardDuty console daily and revoke by hand",
+     "why": "Wrong: slow and manual."
+    },
+    {
+     "t": "Add the IP to a GuardDuty trusted IP list",
+     "why": "Wrong: trusted lists suppress findings, which hides the attack."
+    },
+    {
+     "t": "Enable Inspector network reachability",
+     "why": "Wrong: it checks exposure of workloads, not credential misuse."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Detect with GuardDuty, respond via EventBridge and Lambda.",
+   "remember": "GuardDuty finding → EventBridge → Lambda/Step Functions for remediation; prefer role session revocation over key deletion.",
+   "variants": [
+    "Isolate an EC2 instance → Lambda swaps its security group.",
+    "Ticket or alert → EventBridge to SNS.",
+    "Known-good IP noise → trusted IP list or suppression rule."
+   ]
+  },
+  {
+   "id": "sechub-005",
+   "skill": "4.4.1",
+   "source": "2-guardduty-inspector-and-scenarios.md",
+   "q": "A compliance rule requires GuardDuty findings to be kept for 12 months. What should the team do?",
+   "options": [
+    {
+     "t": "Nothing, GuardDuty keeps findings for a year",
+     "why": "Wrong: GuardDuty keeps findings only 90 days."
+    },
+    {
+     "t": "Export findings to S3 encrypted with KMS",
+     "why": "Right: S3 export is needed for retention beyond 90 days."
+    },
+    {
+     "t": "Raise a retention setting in the console",
+     "why": "Wrong: the 90-day retention is fixed."
+    },
+    {
+     "t": "Use Detective as the archive",
+     "why": "Wrong: Detective investigates, it is not a findings archive."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "GuardDuty retains findings 90 days; export to S3 for more.",
+   "remember": "Need more than 90 days of GuardDuty findings → export to S3 (KMS encrypted).",
+   "variants": [
+    "Analytics over findings → Security Lake or Athena on the export.",
+    "Security Hub also consolidates findings but retention there is limited.",
+    "Need alerts, not retention → EventBridge."
+   ]
+  },
+  {
+   "id": "sechub-006",
+   "skill": "3.3.3",
+   "source": "2-guardduty-inspector-and-scenarios.md",
+   "q": "Files are uploaded to a landing bucket and must be scanned for malware before analytics jobs read them. The team wants the least operational work. Which option fits?",
+   "options": [
+    {
+     "t": "GuardDuty Malware Protection for S3",
+     "why": "Right: it scans new uploads, tags the result on the object, and can trigger quarantine."
+    },
+    {
+     "t": "Inspector Lambda code scanning",
+     "why": "Wrong: it scans function code, not uploaded files."
+    },
+    {
+     "t": "Macie classification jobs",
+     "why": "Wrong: Macie finds sensitive data, not malware."
+    },
+    {
+     "t": "Security Hub CIS standard",
+     "why": "Wrong: it checks configuration controls, not file content."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Malware Protection for S3 scans new objects and tags them with a scan status.",
+   "remember": "Malware in uploaded S3 files → GuardDuty Malware Protection for S3.",
+   "variants": [
+    "Malware on EBS volumes of EC2 → Malware Protection for EC2.",
+    "Scan status ACCESS_DENIED → check KMS or bucket policy.",
+    "Sensitive data → Macie."
+   ]
+  },
+  {
+   "id": "sechub-007",
+   "skill": "4.4.1",
+   "source": "2-guardduty-inspector-and-scenarios.md",
+   "q": "A team wants continuous scanning of EC2 hosts, ECR images and Lambda dependencies for CVEs, with severity adjusted by network exposure. Which service?",
+   "options": [
+    {
+     "t": "Amazon GuardDuty",
+     "why": "Wrong: it detects threats, not package vulnerabilities."
+    },
+    {
+     "t": "AWS Config",
+     "why": "Wrong: it tracks configuration, not CVEs."
+    },
+    {
+     "t": "Amazon Inspector",
+     "why": "Right: it continuously scans and uses a risk score that adjusts CVSS for the environment."
+    },
+    {
+     "t": "Amazon Macie",
+     "why": "Wrong: it covers S3 sensitive data."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Inspector is vulnerability management with an environment-adjusted risk score.",
+   "remember": "Vulnerabilities and CVEs on EC2, ECR, Lambda → Inspector.",
+   "variants": [
+    "Threats → GuardDuty.",
+    "Patching the found issues → Systems Manager Patch Manager.",
+    "Inspector not scanning EC2 → check SSM Agent and coverage view."
+   ]
+  },
+  {
+   "id": "sechub-008",
+   "skill": "4.4.1",
+   "source": "2-guardduty-inspector-and-scenarios.md",
+   "q": "Inspector shows no findings for several EC2 instances. Coverage reports them as not scanned. What is the most likely cause?",
+   "options": [
+    {
+     "t": "GuardDuty is disabled",
+     "why": "Wrong: GuardDuty is independent of Inspector scanning."
+    },
+    {
+     "t": "SSM Agent is not running or the instance has no SSM role",
+     "why": "Right: agent-based scanning depends on Systems Manager, and the coverage view shows why."
+    },
+    {
+     "t": "The instances have no public IP",
+     "why": "Wrong: scanning does not require a public IP."
+    },
+    {
+     "t": "Security Hub is not enabled",
+     "why": "Wrong: Security Hub only receives findings, it does not drive scanning."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Missing SSM Agent or role is the classic reason; also unsupported OS.",
+   "remember": "Inspector not scanning EC2 → check SSM Agent, SSM role, OS support in the coverage view.",
+   "variants": [
+    "ECR not scanned → enhanced scanning not enabled.",
+    "Findings missing in Security Hub → integration or Region problem.",
+    "Many ECR rescans costing more → review rescan duration."
+   ]
+  },
+  {
+   "id": "sechub-009",
+   "skill": "4.5.4",
+   "source": "1-security-hub.md",
+   "q": "Security Hub controls for a new account show no data and no evaluations. What prerequisite is probably missing?",
+   "options": [
+    {
+     "t": "AWS Config enabled and recording resources",
+     "why": "Right: most Security Hub controls use Config rules and need recording."
+    },
+    {
+     "t": "A GuardDuty detector",
+     "why": "Wrong: GuardDuty is a finding source, not required for control checks."
+    },
+    {
+     "t": "A CloudWatch alarm",
+     "why": "Wrong: not part of control evaluation."
+    },
+    {
+     "t": "An Inspector delegated administrator",
+     "why": "Wrong: unrelated to controls."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Controls run on AWS Config service-linked rules.",
+   "remember": "No control results in Security Hub → enable AWS Config and recording in that account and Region.",
+   "variants": [
+    "No GuardDuty findings in Security Hub → integration or Region mismatch.",
+    "Global IAM resources → record in one Region only.",
+    "Config cost → recording scope matters."
+   ]
+  },
+  {
+   "id": "sechub-010",
+   "skill": "4.5.4",
+   "source": "1-security-hub.md",
+   "q": "A company with 80 accounts in 3 Regions wants one dashboard of GuardDuty, Inspector, Macie and compliance findings. Which setup is best?",
+   "options": [
+    {
+     "t": "Security Hub with a delegated administrator and cross-Region aggregation",
+     "why": "Right: it normalizes findings and consolidates members and linked Regions into one aggregation Region."
+    },
+    {
+     "t": "Open each account's GuardDuty console",
+     "why": "Wrong: no consolidation, high effort."
+    },
+    {
+     "t": "CloudTrail Lake only",
+     "why": "Wrong: it queries API events, it does not normalize security findings."
+    },
+    {
+     "t": "Detective in each account",
+     "why": "Wrong: it investigates, it does not aggregate posture."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Security Hub aggregates and normalizes findings across accounts and Regions.",
+   "remember": "One view over many accounts and services → Security Hub, delegated admin plus aggregation Region.",
+   "variants": [
+    "Auditors want CIS benchmark → enable the CIS standard with Config.",
+    "Long-term analytics → Security Lake or Firehose export.",
+    "Investigate one finding → Detective."
+   ]
+  },
+  {
+   "id": "sechub-011",
+   "skill": "3.3.3",
+   "source": "1-security-hub.md",
+   "q": "A known and accepted finding keeps appearing in Security Hub and distorts the security score. What is the best fix with little effort?",
+   "options": [
+    {
+     "t": "Delete the Security Hub service-linked role",
+     "why": "Wrong: this breaks the service."
+    },
+    {
+     "t": "Create an automation rule that suppresses matching findings with a note",
+     "why": "Right: automation rules update findings automatically at ingestion."
+    },
+    {
+     "t": "Disable Config recording",
+     "why": "Wrong: removes the control evaluations for everything."
+    },
+    {
+     "t": "Create a custom insight",
+     "why": "Wrong: insights only group findings, they do not change them."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Automation rules suppress or change findings by criteria.",
+   "remember": "Recurring accepted finding → Security Hub automation rule to suppress with a note.",
+   "variants": [
+    "Notify on Critical findings → EventBridge rule.",
+    "Manual push of selected findings to a workflow → custom action.",
+    "Raise or lower severity automatically → automation rule."
+   ]
+  },
+  {
+   "id": "sechub-012",
+   "skill": "3.3.3",
+   "source": "1-security-hub.md",
+   "q": "A critical Security Hub finding must create a ticket automatically. Which design fits?",
+   "options": [
+    {
+     "t": "EventBridge rule on Security Hub findings with severity Critical, targeting Lambda or SNS",
+     "why": "Right: Security Hub publishes finding events (source aws.securityhub) to EventBridge."
+    },
+    {
+     "t": "CloudWatch metric alarm on finding counts",
+     "why": "Wrong: Security Hub has no native finding metrics."
+    },
+    {
+     "t": "Inspector suppression rule",
+     "why": "Wrong: it hides findings, it does not notify."
+    },
+    {
+     "t": "AWS Backup notification",
+     "why": "Wrong: unrelated to security findings."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Findings reach EventBridge, which fans out to Lambda, SNS or ticketing.",
+   "remember": "Alert or ticket from Security Hub → EventBridge rule on findings.",
+   "variants": [
+    "Rule not firing → check pattern source aws.securityhub and the Region.",
+    "Third-party findings in → BatchImportFindings.",
+    "Selected findings by analyst click → custom action to EventBridge."
+   ]
+  }
+ ]
+}

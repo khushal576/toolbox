@@ -1,0 +1,413 @@
+{
+ "questions": [
+  {
+   "id": "ebsefs-001",
+   "skill": "2.1.1",
+   "source": "1-ebs.md",
+   "q": "A gp2 volume on a busy EC2 database is fast for a few days of heavy use, then I/O drops sharply and `BurstBalance` shows 0. The team wants predictable performance at low cost. What should they do?",
+   "options": [
+    {
+     "t": "Change the volume to gp3 with Elastic Volumes",
+     "why": "Right: gp3 has no burst credits, a fixed baseline, and lets you set IOPS and throughput apart from size, at a lower price per GB than gp2."
+    },
+    {
+     "t": "Change the volume to sc1",
+     "why": "Wrong: cold HDD is the slowest and cheapest class, and has its own burst credits."
+    },
+    {
+     "t": "Enable Fast Snapshot Restore on the volume",
+     "why": "Wrong: FSR only removes lazy-load latency for volumes created from snapshots."
+    },
+    {
+     "t": "Turn on Multi-Attach",
+     "why": "Wrong: it shares a volume between instances and does not fix throttling."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "gp2 depends on burst credits; gp3 does not.",
+   "remember": "gp2, st1 and sc1 use burst credits (watch BurstBalance); gp3 and io2 do not. Slowdown after heavy use \u2192 move to gp3, or io2 for strict needs.",
+   "variants": [
+    "Needs more than 80,000 IOPS or sub-millisecond latency \u2192 io2 Block Express.",
+    "Only the IOPS must grow, not the size \u2192 gp3 lets you raise IOPS alone."
+   ]
+  },
+  {
+   "id": "ebsefs-002",
+   "skill": "2.1.1",
+   "source": "1-ebs.md",
+   "q": "A self-managed Kafka cluster on EC2 stores large logs read sequentially. The team wants the lowest cost per MiB/s and does not need the volume to boot the OS. Which EBS type fits?",
+   "options": [
+    {
+     "t": "st1 throughput-optimized HDD",
+     "why": "Right: built for big sequential reads such as logs, data warehouses and Kafka, and cheaper per MiB/s."
+    },
+    {
+     "t": "io2 Block Express",
+     "why": "Wrong: top IOPS and sub-ms latency, but far more expensive than this workload needs."
+    },
+    {
+     "t": "sc1 cold HDD",
+     "why": "Wrong: cheapest, but made for rarely accessed data with lower throughput."
+    },
+    {
+     "t": "gp2",
+     "why": "Wrong: older SSD with IOPS tied to size; not the cheapest for sequential throughput."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Sequential, cost-sensitive \u2192 st1.",
+   "remember": "Large sequential data (logs, Kafka, HDFS) on a budget \u2192 st1; rarely read and cheapest \u2192 sc1. HDD types cannot be boot volumes.",
+   "variants": [
+    "The same disk must also be the boot volume \u2192 use an SSD type (gp3); st1 and sc1 cannot boot.",
+    "Small random I/O \u2192 SSD, not HDD."
+   ]
+  },
+  {
+   "id": "ebsefs-003",
+   "skill": "4.3.2",
+   "source": "1-ebs.md",
+   "q": "A compliance review finds an existing unencrypted EBS volume holding data. The company must encrypt it with a KMS key. What is the correct approach?",
+   "options": [
+    {
+     "t": "Enable encryption on the volume in place",
+     "why": "Wrong: you cannot encrypt an existing unencrypted volume in place."
+    },
+    {
+     "t": "Snapshot it, copy the snapshot with encryption on, create a volume from the copy and swap it in",
+     "why": "Right: encryption can only be added through a snapshot copy or a volume created from the snapshot with encryption."
+    },
+    {
+     "t": "Attach an encrypted volume to the same instance, which encrypts the first one",
+     "why": "Wrong: mixing volumes on an instance does not change either one."
+    },
+    {
+     "t": "Change the KMS key on the volume to a customer managed key",
+     "why": "Wrong: an unencrypted volume has no key, and an existing volume's key cannot be changed anyway."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Encrypt via snapshot copy, then swap volumes.",
+   "remember": "EBS encryption is set at creation. Encrypt an old volume via snapshot copy; to change a key, copy the snapshot with another key. Prevent the problem with encryption by default per Region.",
+   "variants": [
+    "All future volumes must be encrypted \u2192 turn on EBS encryption by default in each Region.",
+    "Block creation of unencrypted volumes \u2192 IAM/SCP with the `ec2:Encrypted` condition key.",
+    "Detect unencrypted volumes \u2192 AWS Config rule `encrypted-volumes`."
+   ]
+  },
+  {
+   "id": "ebsefs-004",
+   "skill": "4.3.3",
+   "source": "1-ebs.md",
+   "q": "A team must share an encrypted EBS snapshot with another AWS account. The snapshot uses the default `aws/ebs` key and sharing fails. What fixes it?",
+   "options": [
+    {
+     "t": "Copy the snapshot, encrypting with a customer managed KMS key, then share the snapshot and allow the other account to use the key",
+     "why": "Right: the AWS managed `aws/ebs` key cannot be shared; a customer managed key can, if the target account may use it."
+    },
+    {
+     "t": "Make the snapshot public",
+     "why": "Wrong: public snapshots of encrypted volumes are not allowed."
+    },
+    {
+     "t": "Remove encryption from the snapshot first",
+     "why": "Wrong: you cannot remove encryption from an encrypted snapshot."
+    },
+    {
+     "t": "Share only the key policy, not the snapshot",
+     "why": "Wrong: the snapshot itself must also be shared."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Cross-account encrypted snapshots need a customer managed key.",
+   "remember": "Encrypted snapshot to another account \u2192 customer managed key, share the snapshot and grant key use. The default aws/ebs key cannot be shared.",
+   "variants": [
+    "Share to another Region for DR \u2192 copy the snapshot cross-Region (can re-encrypt with another key).",
+    "Unencrypted snapshot \u2192 share directly with specific accounts."
+   ]
+  },
+  {
+   "id": "ebsefs-005",
+   "skill": "2.1.2",
+   "source": "1-ebs.md",
+   "q": "A volume created from a snapshot responds slowly on the first read of each block, which hurts a production launch. Which feature removes this latency at volume creation?",
+   "options": [
+    {
+     "t": "Fast Snapshot Restore on the snapshot in that AZ",
+     "why": "Right: volumes from an FSR-enabled snapshot are fully initialized at creation, billed per snapshot per AZ per hour."
+    },
+    {
+     "t": "Snapshot Archive tier",
+     "why": "Wrong: it makes storage cheaper and restores slower."
+    },
+    {
+     "t": "Recycle Bin",
+     "why": "Wrong: it only keeps deleted snapshots for recovery."
+    },
+    {
+     "t": "Multi-Attach",
+     "why": "Wrong: it shares a volume between instances and does not initialize blocks."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Lazy loading is fixed by FSR or by reading all blocks.",
+   "remember": "Slow first reads on a restored volume \u2192 lazy loading; use Fast Snapshot Restore (costs per hour per AZ) or initialize the blocks with fio/dd.",
+   "variants": [
+    "No budget for FSR \u2192 initialize the volume by reading every block before production use.",
+    "A new empty volume \u2192 no pre-warming needed."
+   ]
+  },
+  {
+   "id": "ebsefs-006",
+   "skill": "2.3.6",
+   "source": "1-ebs.md",
+   "q": "Security wants protection from an admin deleting EBS snapshots by mistake and from ransomware that tries to delete backups. Choose TWO features.",
+   "options": [
+    {
+     "t": "Recycle Bin retention rules",
+     "why": "Right: deleted snapshots (and AMIs) stay recoverable for the retention period."
+    },
+    {
+     "t": "Snapshot Lock",
+     "why": "Right: makes snapshots immutable in governance or compliance mode."
+    },
+    {
+     "t": "Fast Snapshot Restore",
+     "why": "Wrong: speeds up restores and does not protect snapshots."
+    },
+    {
+     "t": "Snapshot Archive tier",
+     "why": "Wrong: it lowers cost for rarely restored snapshots and does not stop deletion."
+    },
+    {
+     "t": "Multi-Attach",
+     "why": "Wrong: it is about sharing volumes between instances."
+    }
+   ],
+   "answer": [
+    0,
+    1
+   ],
+   "explain": "Recycle Bin for accidental deletes, Snapshot Lock for immutability.",
+   "remember": "Accidental deletion \u2192 Recycle Bin. Ransomware or compliance immutability \u2192 Snapshot Lock, plus cross-account copy.",
+   "variants": [
+    "Scheduled snapshots with retention \u2192 Data Lifecycle Manager or AWS Backup.",
+    "Immutable backups across many services \u2192 AWS Backup Vault Lock."
+   ]
+  },
+  {
+   "id": "ebsefs-007",
+   "skill": "1.4.7",
+   "source": "2-efs.md",
+   "q": "A Lambda function needs to read a 5 GB machine-learning model shared across many invocations. Which design works?",
+   "options": [
+    {
+     "t": "Mount an EFS file system through an access point, with the function configured in the VPC",
+     "why": "Right: Lambda mounts EFS via an access point and needs VPC settings; good for big shared files and models."
+    },
+    {
+     "t": "Attach an EBS volume to the function",
+     "why": "Wrong: Lambda cannot attach EBS volumes."
+    },
+    {
+     "t": "Mount EFS with no VPC configuration",
+     "why": "Wrong: the function must be in the VPC to reach the mount target."
+    },
+    {
+     "t": "Put the model in the deployment package",
+     "why": "Wrong: package size limits make a model this large unworkable."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Lambda mounts EFS via an access point inside a VPC.",
+   "remember": "Lambda + big shared files \u2192 EFS access point, function in the VPC with a security group allowing port 2049. Lambda cannot use EBS.",
+   "variants": [
+    "Lambda cannot mount \u2192 check VPC config, security group, access point, and mount target in the function's AZ.",
+    "ECS or EKS needing shared persistent storage \u2192 EFS volumes (CSI driver on EKS)."
+   ]
+  },
+  {
+   "id": "ebsefs-008",
+   "skill": "2.1.2",
+   "source": "2-efs.md",
+   "q": "An EFS file system uses Bursting throughput. A spiky analytics job now stalls because `BurstCreditBalance` is 0. The team wants no capacity planning. What should they do?",
+   "options": [
+    {
+     "t": "Switch the file system to Elastic throughput",
+     "why": "Right: Elastic scales throughput up and down automatically and you pay per data read or written."
+    },
+    {
+     "t": "Switch to Max I/O performance mode",
+     "why": "Wrong: it is an older mode with higher latency and is unrelated to burst credits."
+    },
+    {
+     "t": "Add more mount targets in the same AZ",
+     "why": "Wrong: only one mount target per AZ is allowed, and it does not add throughput."
+    },
+    {
+     "t": "Move to One Zone",
+     "why": "Wrong: One Zone limits are not higher, and it lowers availability."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Out of burst credits and spiky load \u2192 Elastic.",
+   "remember": "Spiky or unpredictable throughput \u2192 Elastic (recommended default). Steady, known heavy throughput \u2192 Provisioned. Bursting scales with stored size and can run out of credits.",
+   "variants": [
+    "Steady heavy known throughput \u2192 Provisioned (24-hour wait after changing).",
+    "Throughput should follow stored size and credits are enough \u2192 Bursting."
+   ]
+  },
+  {
+   "id": "ebsefs-009",
+   "skill": "2.1.2",
+   "source": "2-efs.md",
+   "q": "EC2 instances in a new subnet hang when mounting an EFS file system. The file system exists and mount targets exist in other AZs. What are the likely causes? Choose TWO.",
+   "options": [
+    {
+     "t": "The mount target security group does not allow inbound TCP 2049 from the instances",
+     "why": "Right: NFS uses port 2049 and the security group must allow it."
+    },
+    {
+     "t": "There is no mount target in the instances' AZ",
+     "why": "Right: each AZ needs its own mount target, and the DNS name resolves to the one in the client's AZ."
+    },
+    {
+     "t": "The file system uses the Standard storage class",
+     "why": "Wrong: storage class does not affect mounting."
+    },
+    {
+     "t": "EFS requires a public IP on the instance",
+     "why": "Wrong: EFS has no public endpoint and is reached by private mount targets."
+    },
+    {
+     "t": "The instances need an EBS volume attached first",
+     "why": "Wrong: EBS is unrelated to EFS mounting."
+    }
+   ],
+   "answer": [
+    0,
+    1
+   ],
+   "explain": "Check port 2049 and the mount target in that AZ.",
+   "remember": "EFS mount hangs \u2192 security group port 2049, mount target in the AZ, VPC DNS resolution. One mount target per AZ.",
+   "variants": [
+    "Access denied after mounting \u2192 POSIX permissions, IAM ClientMount/ClientWrite, file system policy or access point.",
+    "Windows clients \u2192 EFS is Linux only; use FSx for Windows File Server."
+   ]
+  },
+  {
+   "id": "ebsefs-010",
+   "skill": "2.3.6",
+   "source": "2-efs.md",
+   "q": "A company runs production on a Regional EFS file system and needs a disaster recovery copy in another Region, with a recovery point objective of about 15 minutes and no custom scripts. Which option fits?",
+   "options": [
+    {
+     "t": "EFS replication to a file system in the other Region",
+     "why": "Right: continuous automatic copy of data and metadata, RPO typically 15 minutes; the destination is read-only until you delete the replication configuration."
+    },
+    {
+     "t": "Switch to One Zone storage",
+     "why": "Wrong: One Zone keeps data in one AZ and lowers availability."
+    },
+    {
+     "t": "Mount the file system from the other Region over VPC peering",
+     "why": "Wrong: this is not a copy, so a Region failure still takes the data away."
+    },
+    {
+     "t": "Copy files with a daily cron job on one EC2 instance",
+     "why": "Wrong: a daily job gives an RPO of a day, not 15 minutes, and adds operations work."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Cross-Region DR for EFS is replication or AWS Backup copy.",
+   "remember": "EFS Region-level DR \u2192 replication (RPO about 15 minutes, read-only destination) or AWS Backup cross-Region copy. Regional EFS is already multi-AZ.",
+   "variants": [
+    "Immutable backups needed \u2192 AWS Backup with vault lock.",
+    "The file system is One Zone \u2192 AZ loss loses it; use backups or replication.",
+    "Monitor lag \u2192 `TimeSinceLastSync`."
+   ]
+  },
+  {
+   "id": "ebsefs-011",
+   "skill": "2.1.1",
+   "source": "2-efs.md",
+   "q": "A shared EFS file system holds project files. Most files are not touched for months, but some old files are occasionally opened again. How do you cut cost the most simply, keeping the file system shared across AZs?",
+   "options": [
+    {
+     "t": "Lifecycle management to IA and Archive, with move back to Standard on access",
+     "why": "Right: files not accessed for N days move to cheaper classes, and hot files return to Standard when accessed."
+    },
+    {
+     "t": "Switch to One Zone",
+     "why": "Wrong: it cuts price but loses multi-AZ availability, which the scenario still needs."
+    },
+    {
+     "t": "Copy old files to EBS",
+     "why": "Wrong: EBS is single-instance block storage and not shared."
+    },
+    {
+     "t": "Set Provisioned throughput to the maximum",
+     "why": "Wrong: it raises cost and does not reduce storage cost."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Cold data in EFS \u2192 lifecycle to IA or Archive.",
+   "remember": "EFS cost for cold data \u2192 lifecycle policy to IA/Archive (access fees apply), optionally back to Standard on access. Non-critical re-creatable data \u2192 One Zone classes.",
+   "variants": [
+    "Data can be re-created and cost matters \u2192 One Zone classes.",
+    "Large cold data with API access \u2192 consider S3."
+   ]
+  },
+  {
+   "id": "ebsefs-012",
+   "skill": "4.3.2",
+   "source": "2-efs.md",
+   "q": "A security team needs all EFS client connections to use encryption in transit, and clients mounted with plain NFS must be refused. What should they configure?",
+   "options": [
+    {
+     "t": "A file system policy that denies access when `aws:SecureTransport` is false, and mount with TLS using the EFS mount helper",
+     "why": "Right: the resource-based policy enforces TLS and the mount helper (`-o tls`) or CSI driver supplies it."
+    },
+    {
+     "t": "Enable encryption at rest on the file system",
+     "why": "Wrong: this protects stored data and does nothing for traffic."
+    },
+    {
+     "t": "Open port 2049 only to the VPC CIDR",
+     "why": "Wrong: this limits who connects and does not require encryption."
+    },
+    {
+     "t": "Turn on EBS encryption by default",
+     "why": "Wrong: EBS settings do not apply to EFS."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "TLS is enforced by a file system policy plus a TLS mount.",
+   "remember": "Require TLS to EFS \u2192 file system policy deny on `aws:SecureTransport` false. Encryption at rest is set at creation and cannot be changed later.",
+   "variants": [
+    "Unencrypted file system must be encrypted \u2192 create a new one and copy data (DataSync).",
+    "Need per-app user and root directory \u2192 access point.",
+    "Require IAM authorization for clients \u2192 mount option `iam` and ClientMount/ClientWrite."
+   ]
+  }
+ ]
+}

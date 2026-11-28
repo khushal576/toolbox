@@ -1,0 +1,350 @@
+{
+ "questions": [
+  {
+   "id": "backup-001",
+   "skill": "2.3.6",
+   "source": "2-vaults-vault-lock-air-gapped-copies-and-restores.md",
+   "q": "A financial firm must keep backups for 7 years so that no one, including the root user and AWS, can delete them or shorten retention. Which AWS Backup setting meets this?",
+   "options": [
+    {
+     "t": "Vault access policy that denies backup:DeleteRecoveryPoint",
+     "why": "Wrong: an admin can edit or remove an access policy, so it is not immutable."
+    },
+    {
+     "t": "Vault Lock in governance mode",
+     "why": "Wrong: users with backup:DeleteBackupVaultLockConfiguration can change or remove it."
+    },
+    {
+     "t": "Vault Lock in compliance mode with ChangeableForDays",
+     "why": "Right: after the grace time (minimum 3 days) the lock is immutable for everyone while recovery points exist."
+    },
+    {
+     "t": "S3 Glacier Vault Lock",
+     "why": "Wrong: it locks Glacier vault archives and is unrelated to AWS Backup recovery points."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Only compliance-mode Vault Lock is immutable after its grace time.",
+   "remember": "Immutable, nobody can remove, regulatory WORM \u2192 Vault Lock compliance mode (ChangeableForDays set). Governance mode can be changed by permitted users.",
+   "variants": [
+    "Authorized admins must still be able to remove the lock \u2192 governance mode (omit ChangeableForDays).",
+    "Locking source S3 objects in a live bucket \u2192 S3 Object Lock.",
+    "Just blocking deletes with an exception for a break-glass role \u2192 vault access policy."
+   ]
+  },
+  {
+   "id": "backup-002",
+   "skill": "2.3.6",
+   "source": "2-vaults-vault-lock-air-gapped-copies-and-restores.md",
+   "q": "A security team wants backups that survive a compromise of the production account, and a separate recovery account must be able to restore them quickly. What should they use?",
+   "options": [
+    {
+     "t": "A standard vault with a vault access policy",
+     "why": "Wrong: it stays in the compromised account and policies can be changed."
+    },
+    {
+     "t": "A logically air-gapped vault shared through AWS RAM",
+     "why": "Right: it is always compliance-locked and can be shared so another account can view and restore."
+    },
+    {
+     "t": "Cross-Region copy to a standard vault in the same account",
+     "why": "Wrong: same account, so compromised credentials can still reach it."
+    },
+    {
+     "t": "S3 Replication of the backup bucket",
+     "why": "Wrong: replication is not AWS Backup and gives no isolated, locked recovery vault."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "LAG vault = compliance lock plus cross-account sharing for recovery.",
+   "remember": "Recover after account or credential compromise \u2192 logically air-gapped vault shared via RAM. Vault Lock alone only protects inside your own account.",
+   "variants": [
+    "Only need WORM inside the same account \u2192 Vault Lock compliance mode.",
+    "Share to a whole organization or OU \u2192 not possible, RAM sharing is per account ID only.",
+    "Shared account wants to copy backups out \u2192 not allowed, the owning account makes copies."
+   ]
+  },
+  {
+   "id": "backup-003",
+   "skill": "2.3.6",
+   "source": "1-concepts-plans-rules-assignment-and-resource-support.md",
+   "q": "An S3 bucket must be restorable to any second within the last 14 days, plus monthly backups kept for 5 years. Which design works?",
+   "options": [
+    {
+     "t": "One rule with continuous backup and 5-year retention",
+     "why": "Wrong: continuous backup retention is 1 to 35 days only."
+    },
+    {
+     "t": "One continuous rule (up to 35 days) plus a monthly snapshot rule with long retention",
+     "why": "Right: PITR covers the short window and the snapshot rule covers long retention. Versioning must be on."
+    },
+    {
+     "t": "A daily snapshot rule only",
+     "why": "Wrong: snapshots give no restore to an arbitrary second."
+    },
+    {
+     "t": "A continuous rule with cold storage after 30 days",
+     "why": "Wrong: S3 backups do not support cold storage and continuous cannot exceed 35 days."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Pair a continuous rule with a snapshot rule.",
+   "remember": "PITR needs continuous backup, max 35 days; long retention needs snapshot rules (up to 100 years). S3 needs versioning.",
+   "variants": [
+    "RDS instance instead of S3 \u2192 same pattern, continuous is supported.",
+    "RDS Multi-AZ DB cluster \u2192 continuous not supported.",
+    "DynamoDB PITR \u2192 native feature, 1 to 35 days."
+   ]
+  },
+  {
+   "id": "backup-004",
+   "skill": "2.3.6",
+   "source": "1-concepts-plans-rules-assignment-and-resource-support.md",
+   "q": "A backup rule transitions recovery points to cold storage after 30 days and deletes them after 90 days. The save is rejected. What is the problem?",
+   "options": [
+    {
+     "t": "Nothing, it is valid",
+     "why": "Wrong: cold storage needs a 90-day minimum stay."
+    },
+    {
+     "t": "DeleteAfterDays must be at least MoveToColdStorageAfterDays plus 90",
+     "why": "Right: 30 + 90 = 120, so 90 days is invalid."
+    },
+    {
+     "t": "Cold storage requires 60 days in warm first",
+     "why": "Wrong: the notes do not state a 60-day warm minimum for cold storage."
+    },
+    {
+     "t": "Cold storage cannot be used with EFS",
+     "why": "Wrong: EFS supports cold storage."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Cold storage minimum stay is 90 days.",
+   "remember": "DeleteAfterDays \u2265 MoveToColdStorageAfterDays + 90. Once in cold it cannot move back.",
+   "variants": [
+    "Transition 10 days, delete 100 days \u2192 valid.",
+    "RDS or S3 backups \u2192 cannot use cold storage at all.",
+    "EBS cold \u2192 needs opt-in and a monthly or less frequent schedule."
+   ]
+  },
+  {
+   "id": "backup-005",
+   "skill": "2.3.6",
+   "source": "2-vaults-vault-lock-air-gapped-copies-and-restores.md",
+   "q": "A company must copy backups from many workload accounts to one central backup account in the same organization. Which items are required? (Choose 3)",
+   "options": [
+    {
+     "t": "Cross-account backup turned on in the management account's AWS Backup settings",
+     "why": "Right: it is required for cross-account copy."
+    },
+    {
+     "t": "Destination vault access policy allowing backup:CopyIntoBackupVault",
+     "why": "Right: the destination must permit the copy."
+    },
+    {
+     "t": "A customer managed KMS key for non-fully-managed types, granted to the destination",
+     "why": "Right: AWS managed keys cannot be shared across accounts."
+    },
+    {
+     "t": "VPC peering between the accounts",
+     "why": "Wrong: AWS Backup copies do not use customer networking."
+    },
+    {
+     "t": "An AWS Backup gateway in each account",
+     "why": "Wrong: the gateway is for on-premises and VMware workloads."
+    }
+   ],
+   "answer": [
+    0,
+    1,
+    2
+   ],
+   "explain": "Org setting, destination vault policy and a shareable CMK.",
+   "remember": "Cross-account copy: same organization, cross-account backup enabled, destination vault policy, CMK for non-fully-managed types.",
+   "variants": [
+    "Copying to another Region in the same account \u2192 a copy action, no org setting needed.",
+    "Redshift or standard DynamoDB \u2192 no copy at all.",
+    "Destination is a LAG vault \u2192 copy is encrypted per vault, other types need a CMK."
+   ]
+  },
+  {
+   "id": "backup-006",
+   "skill": "4.5.3",
+   "source": "3-organizations-audit-monitoring-security-cost-and-scenarios.md",
+   "q": "A data sovereignty rule says no backup or copy may ever exist outside eu-west-1 and eu-central-1. What is the most reliable control?",
+   "options": [
+    {
+     "t": "Tell teams not to add copy actions",
+     "why": "Wrong: a process rule can be bypassed."
+    },
+    {
+     "t": "An SCP that denies backup actions when aws:RequestedRegion is not in the approved list",
+     "why": "Right: it enforces the Region limit organization-wide, exempting global services."
+    },
+    {
+     "t": "A vault access policy on the Default vault",
+     "why": "Wrong: it covers one vault, not new vaults in other Regions."
+    },
+    {
+     "t": "Backup Audit Manager report plans",
+     "why": "Wrong: reports detect after the fact and do not prevent."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "SCP Region deny is the preventive control.",
+   "remember": "Prevent backups or copies in disallowed Regions \u2192 SCP with aws:RequestedRegion. SCPs do not apply to the management account.",
+   "variants": [
+    "Detect rather than prevent \u2192 Audit Manager cross-Region control or Config.",
+    "Restrict who deletes recovery points \u2192 SCP deny on backup:DeleteRecoveryPoint.",
+    "Management account workloads \u2192 SCP does not cover them."
+   ]
+  },
+  {
+   "id": "backup-007",
+   "skill": "2.3.6",
+   "source": "3-organizations-audit-monitoring-security-cost-and-scenarios.md",
+   "q": "A platform team needs every new account in an organization to get the same baseline backup plan without logging in to the account. What should they use?",
+   "options": [
+    {
+     "t": "An AWS Backup policy attached to the root or OU",
+     "why": "Right: the effective policy creates an organization-managed plan in each member account."
+    },
+    {
+     "t": "Manual plans in each account",
+     "why": "Wrong: no consistency guarantee."
+    },
+    {
+     "t": "Cross-account monitoring",
+     "why": "Wrong: it only shows jobs, it does not deploy plans."
+    },
+    {
+     "t": "A logically air-gapped vault",
+     "why": "Wrong: it stores copies, it does not deploy plans."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Organizations backup policies deploy plans centrally.",
+   "remember": "Central baseline plans for all accounts \u2192 Organizations backup policy; the target vault and IAM role must already exist in each member account (StackSets). Resources are selected by tag.",
+   "variants": [
+    "Only see jobs across accounts \u2192 cross-account monitoring.",
+    "Keep daily operations out of the management account \u2192 delegated administrator.",
+    "Member wants to edit the plan \u2192 cannot, it is organization-managed."
+   ]
+  },
+  {
+   "id": "backup-008",
+   "skill": "2.3.6",
+   "source": "1-concepts-plans-rules-assignment-and-resource-support.md",
+   "q": "A tag-based assignment is meant to protect resources tagged Backup=daily AND Env=prod, but resources with only Backup=daily are also being backed up. What is the likely cause?",
+   "options": [
+    {
+     "t": "The tags were put in ListOfTags, where any matching tag is included (OR)",
+     "why": "Right: ListOfTags is OR; Conditions are evaluated as AND."
+    },
+    {
+     "t": "The plan has too many rules",
+     "why": "Wrong: rule count does not affect selection."
+    },
+    {
+     "t": "The vault has no KMS key",
+     "why": "Wrong: every vault has a key and it is unrelated to selection."
+    },
+    {
+     "t": "Service opt-in is off",
+     "why": "Wrong: that would skip resources, not include extra ones."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "ListOfTags = OR, Conditions = AND.",
+   "remember": "Need all tags to match \u2192 use Conditions (AND). ListOfTags matches any tag (OR).",
+   "variants": [
+    "Resource not backed up at all \u2192 check service opt-in per Region.",
+    "Exclude scratch volumes \u2192 NotResources.",
+    "Resource assignment IAM role \u2192 needs iam:PassRole for the caller."
+   ]
+  },
+  {
+   "id": "backup-009",
+   "skill": "2.3.6",
+   "source": "1-concepts-plans-rules-assignment-and-resource-support.md",
+   "q": "A backup job for an RDS instance has status EXPIRED every night. The start window is 1 hour and the job is scheduled during the database's maintenance window. What is the best fix?",
+   "options": [
+    {
+     "t": "Lengthen the completion window",
+     "why": "Wrong: the completion window applies after the job starts; this job never started."
+    },
+    {
+     "t": "Move the schedule away from the maintenance window and widen the start window",
+     "why": "Right: databases cannot start a backup during or 1 hour before maintenance, so the job never starts inside the start window."
+    },
+    {
+     "t": "Switch to cold storage",
+     "why": "Wrong: RDS does not support cold storage and it is unrelated."
+    },
+    {
+     "t": "Run two concurrent jobs on the instance",
+     "why": "Wrong: only 1 concurrent job per resource is allowed."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "EXPIRED = never started inside the start window.",
+   "remember": "EXPIRED \u2192 never started in the start window; cancelled \u2192 started but missed the completion window. Avoid maintenance windows (Aurora is exempt).",
+   "variants": [
+    "Job started but ran too long \u2192 completion window (does not apply to FSx).",
+    "FSx \u2192 cannot start 3 hours before maintenance or backup window.",
+    "Aurora \u2192 exempt from the maintenance window restriction."
+   ]
+  },
+  {
+   "id": "backup-010",
+   "skill": "2.3.6",
+   "source": "3-organizations-audit-monitoring-security-cost-and-scenarios.md",
+   "q": "An operations team wants an alert only when AWS Backup jobs fail, with a metric they can alarm on and automated ticket creation. Which combination fits?",
+   "options": [
+    {
+     "t": "CloudWatch metric NumberOfBackupJobsFailed with an alarm, and an EventBridge rule on Backup Job State Change",
+     "why": "Right: metrics drive alarms, EventBridge events (source aws.backup) trigger automation."
+    },
+    {
+     "t": "Vault SNS notifications on BACKUP_JOB_COMPLETED only, unfiltered",
+     "why": "Wrong: that event fires for success and failure, so it is noisy."
+    },
+    {
+     "t": "CloudTrail data events",
+     "why": "Wrong: CloudTrail records API calls, not job outcomes."
+    },
+    {
+     "t": "Audit Manager framework only",
+     "why": "Wrong: it reports compliance on a 24 h or config-change cycle, not job alerts."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Metrics plus EventBridge for job failure alerting.",
+   "remember": "Alert and automate on failed jobs \u2192 CloudWatch AWS/Backup metrics and alarms, EventBridge aws.backup events. SNS BACKUP_JOB_COMPLETED needs a state filter.",
+   "variants": [
+    "Who deleted a recovery point \u2192 CloudTrail.",
+    "Prove policy compliance \u2192 Backup Audit Manager with AWS Config recording.",
+    "Notify per vault \u2192 vault SNS topic, one per vault."
+   ]
+  }
+ ]
+}

@@ -1,0 +1,104 @@
+{
+  "questions": [
+    {
+      "id": "kendra-001",
+      "skill": "2.4.6",
+      "source": "2-kendra-vs-alternatives-migration-and-scenarios.md",
+      "q": "In late 2026 a startup with no existing Kendra usage wants a RAG chatbot over documents in S3 and Confluence. It wants a managed vector store and built-in answer generation with the least operations work. Which service should it use?",
+      "options": [
+        { "t": "A new Amazon Kendra GenAI Enterprise index", "why": "Wrong: Kendra is in maintenance mode and closed to new customers since 30 July 2026." },
+        { "t": "Amazon OpenSearch Service with a k-NN index", "why": "Wrong: it works, but you design mappings, scaling and relevance yourself, and still call an LLM yourself." },
+        { "t": "Amazon Bedrock Managed Knowledge Base", "why": "Right: AWS recommends it for new RAG work; it has S3 and Confluence connectors, a fully managed vector store and RetrieveAndGenerate." },
+        { "t": "A Kendra Basic Developer Edition index", "why": "Wrong: closed to new customers, and Developer Edition is for proof of concept only, not production." }
+      ],
+      "answer": [2],
+      "explain": "New search/RAG builds go to Bedrock Managed Knowledge Base; Kendra is only for existing customers.",
+      "remember": "Kendra is in maintenance mode: existing customers keep full support, new customers cannot start. New RAG → Bedrock Managed KB; existing Kendra → keep it or migrate.",
+      "variants": [
+        "The goal is a finished employee assistant with no custom UI → Amazon Q Business.",
+        "The team needs full control of analyzers, ranking and scale → OpenSearch.",
+        "The company already runs a Kendra GenAI index → use it as a retriever in Bedrock Knowledge Bases instead of rebuilding."
+      ]
+    },
+    {
+      "id": "kendra-002",
+      "skill": "1.2.10",
+      "source": "1-indexes-connectors-queries-and-access-control.md",
+      "q": "A company already runs an Amazon Kendra index. A new application must send relevant text chunks from the index to an LLM, which writes the answer. Which Kendra API should the application call?",
+      "options": [
+        { "t": "Retrieve", "why": "Right: it returns up to 100 semantic passages (chunks of up to about 200 tokens) ranked for RAG." },
+        { "t": "Query", "why": "Wrong: it returns ANSWER, DOCUMENT and FAQ result types for a search box, not passages ranked for an LLM." },
+        { "t": "BatchPutDocument", "why": "Wrong: it adds documents to the index; it does not search." },
+        { "t": "Rescore (Kendra Intelligent Ranking)", "why": "Wrong: it re-ranks results from another search engine such as OpenSearch; it does not read the Kendra index." }
+      ],
+      "answer": [0],
+      "explain": "Passages for an LLM → Retrieve; answers, FAQs and documents for a search box → Query.",
+      "remember": "Retrieve = passages for RAG. Query = search results (extracted answer, documents, FAQ matches) with facets, sorting and suggestions. Both share the same QPS capacity.",
+      "variants": [
+        "The search page needs facets, spell suggestions and FAQ answers → Query.",
+        "Results come from an existing OpenSearch cluster and need better semantic ranking → Kendra Intelligent Ranking (Rescore).",
+        "Documents come from a system with no connector → BatchPutDocument or export to S3."
+      ]
+    },
+    {
+      "id": "kendra-003",
+      "skill": "4.2.5",
+      "source": "1-indexes-connectors-queries-and-access-control.md",
+      "q": "A Kendra Enterprise index syncs SharePoint with a connector that crawls the document ACLs. In testing, every employee can see restricted HR documents in the search results. What is the most likely cause and fix?",
+      "options": [
+        { "t": "The index is not encrypted; add a customer-managed KMS key", "why": "Wrong: encryption at rest does not filter results by user." },
+        { "t": "The users lack kendra:Query in IAM; add it to their role", "why": "Wrong: without the permission they could not query at all; IAM does not filter documents." },
+        { "t": "Kendra cannot read SharePoint permissions; move the files to S3", "why": "Wrong: connectors crawl ACLs from sources such as SharePoint." },
+        { "t": "The app does not send user context; authenticate the user and pass their identity with each query", "why": "Right: if no user information is sent, Kendra returns all documents. User context filtering is not authentication, so the app must supply a verified identity." }
+      ],
+      "answer": [3],
+      "explain": "No user context on the query → Kendra returns all documents, even when ACLs exist.",
+      "remember": "Document-level security needs both: ACLs on the documents (crawled, metadata file or Principal list) and an authenticated user identity sent with every Query/Retrieve. Documents with no ACL are public.",
+      "variants": [
+        "Nobody sees restricted documents → user/group strings do not match the ACL (email vs account ID, case).",
+        "Access must be revoked without re-indexing (S3 or BatchPutDocument docs) → CreateAccessControlConfiguration.",
+        "The index is GenAI Enterprise → only user attributes in AttributeFilter work; token-based control is not supported."
+      ]
+    },
+    {
+      "id": "kendra-004",
+      "skill": "3.3.4",
+      "source": "1-indexes-connectors-queries-and-access-control.md",
+      "q": "A Kendra Enterprise index serves a search page (Query) and a RAG bot (Retrieve). Since the bot launched, both get throttled at peak hours. The document count is well below the storage limit. What should the team do?",
+      "options": [
+        { "t": "Add storage units", "why": "Wrong: storage units add documents and extracted text, not queries per second." },
+        { "t": "Add query units", "why": "Right: QPS is shared by Query and Retrieve, and each Enterprise query unit adds 0.1 QPS." },
+        { "t": "Create a second Developer Edition index for the bot", "why": "Wrong: Developer Edition is not for production and cannot add capacity units." },
+        { "t": "Run the data source sync less often", "why": "Wrong: sync frequency changes connector cost, not query throughput." }
+      ],
+      "answer": [1],
+      "explain": "Throttling on Query/Retrieve → QPS exceeds capacity → add query units.",
+      "remember": "Kendra capacity is bought in units: query units for QPS (shared by Query and Retrieve), storage units for documents/GB. Billing is hourly per provisioned capacity, even when idle.",
+      "variants": [
+        "The index is full (documents or GB over the limit) → add storage units or prune.",
+        "Costs are high but usage is low → delete or downsize units, or move to Bedrock Managed KB.",
+        "A cheap test index is needed → Developer Edition or the GenAI free trial, then delete it."
+      ]
+    },
+    {
+      "id": "kendra-005",
+      "skill": "1.2.3",
+      "source": "2-kendra-vs-alternatives-migration-and-scenarios.md",
+      "q": "A company is migrating from Kendra to Bedrock Managed Knowledge Base. One Kendra data source is ServiceNow, which has no managed BMKB connector. Answers can be a few hours old. What is the simplest way to keep this content in the knowledge base?",
+      "options": [
+        { "t": "Keep calling BatchPutDocument, now against the knowledge base", "why": "Wrong: BatchPutDocument has no direct BMKB equivalent; content must be uploaded to S3 and then ingested." },
+        { "t": "Point the knowledge base at the existing Kendra ServiceNow connector", "why": "Wrong: Kendra connectors sync into a Kendra index, not into a Bedrock Managed KB." },
+        { "t": "Export ServiceNow content to S3 on a schedule with metadata sidecar files, then start an ingestion job", "why": "Right: S3 is supported by BMKB; an EventBridge/Lambda schedule controls freshness and .metadata.json files carry attributes for filters." },
+        { "t": "Load the content into an OpenSearch index and query both systems", "why": "Wrong: adds a second search engine to run and tune for one data source." }
+      ],
+      "answer": [2],
+      "explain": "No BMKB connector → scheduled export to S3 with metadata files, then StartIngestionJob.",
+      "remember": "BMKB has 7 connectors (S3, Confluence, SharePoint, Web Crawler, Google Drive, OneDrive, custom) vs Kendra's ~32+. Anything unsupported → export to S3 with metadata sidecars and ingest.",
+      "variants": [
+        "The app relied on Kendra autocomplete → OpenSearch suggester or an LLM completion service.",
+        "The app relied on Kendra synonyms (thesaurus) → expand the query in the app.",
+        "The app relied on Custom Document Enrichment → pre-process with Step Functions/Lambda before writing to S3."
+      ]
+    }
+  ]
+}

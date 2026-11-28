@@ -163,25 +163,25 @@ Short notes. Each point is a fact you can be asked about.
 - Compare with pgvector on Aurora, OpenSearch k-NN, MemoryDB vector search, S3 Vectors.
 
 ## M. Scenarios (if → then, because)
-- If traffic is unpredictable or the table is new → on-demand, because there is no capacity planning.
-- If traffic is steady and predictable → provisioned with auto scaling (and reserved capacity), because it is cheaper per request.
-- If a job is throttled while table capacity looks fine → hot partition; check key-range throttle metrics and redesign the key or shard writes.
-- If a sale causes a sudden 5x spike beyond past peaks → pre-warm (warm throughput) or ramp up, because on-demand handles only double the previous peak instantly.
-- If you must query by a different key later → add a GSI (can be added any time).
-- If you need strongly consistent query on an alternate sort key → LSI, but it must be created with the table.
-- If you only need a few attributes from the index → INCLUDE or KEYS_ONLY projection to cut cost.
-- If most items don't have the attribute → sparse GSI.
-- If GSI writes throttle and slow the base table → increase GSI write capacity (or on-demand).
-- If reads are repeated and you need microseconds → DAX.
-- If your reads must be strongly consistent → DAX will not help.
-- If an item is read 100,000 times per second → cache (DAX) or replicate the key (read sharding), because one partition caps throughput.
-- If you need to count rows in a huge table → maintain a counter item or export; Scan/COUNT reads everything.
-- If a table is mostly old data and rarely read → Standard-IA table class + TTL for expiry.
-- If storage cost is high and data is cold → export to S3 and delete from DynamoDB.
-- If you want to stop surprise bills in on-demand → set maximum throughput.
-- If provisioned decreases are blocked → you used the daily decrease allowance (4 + 1 per hour).
-- If a batch load is slow and costly → Import from S3, or on-demand + parallel BatchWriteItem with backoff.
-- If the app sees `ProvisionedThroughputExceededException` after scaling events → auto scaling lag; raise min capacity, use on-demand, or retry with backoff.
+- **If** traffic is unpredictable or the table is new, **then** use **on-demand capacity mode**, where you pay per request. **This works because** there is no capacity to plan: a new on-demand table sustains up to **4,000 writes/s** and **12,000 reads/s** and grows with traffic, and an idle table costs nothing for throughput (storage is still billed).
+- **If** traffic is steady and predictable, **then** use **provisioned capacity mode** with **auto scaling** (Application Auto Scaling), and add **reserved capacity** (a 1- or 3-year commitment) for the base load. **This works because** you set reads and writes per second and pay for what you provision, so steady traffic that uses it fully costs less. Auto scaling follows gradual change toward a target utilization such as **70%**.
+- **If** a job is throttled while table capacity looks fine, **then** suspect a **hot partition**: check the key-range throttle metrics (`ReadKeyRangeThroughputThrottleEvents` / `WriteKeyRange...`) and redesign the key or **shard writes** across key suffixes. **This works because** throughput limits apply **per partition**, so one busy key value can be throttled even with spare table capacity.
+- **If** a sale may cause a sudden 5x spike above past peaks, **then** **pre-warm** the table with **warm throughput** (verify specifics) or ramp traffic up over time. **This works because** on-demand instantly handles only up to **double the previous peak**; going beyond that within **30 minutes** can throttle. Warm throughput sets the table ready for higher throughput in advance.
+- **If** you later need to query by a different key, **then** add a **Global Secondary Index (GSI)**, an index with its own partition key and optional sort key. **This works because** a GSI can be added or deleted at any time. On a large table it backfills first, and you can query it only when it is ACTIVE.
+- **If** you need a strongly consistent query on an alternate sort key, **then** use a **Local Secondary Index (LSI)**, which keeps the table's partition key with a different sort key. **This works because** an LSI supports strong reads, while a GSI is eventual only. The catch: an LSI can be created **only with the table**, and it limits each partition key value to a **10 GB** item collection.
+- **If** queries on an index need only a few attributes, **then** use an **INCLUDE** (chosen attributes) or **KEYS_ONLY** projection instead of ALL. **This works because** the index is a copy of the projected attributes, so a smaller projection means cheaper index writes and storage.
+- **If** most items do not have the attribute you want to index (for example only open orders have it), **then** use a **sparse GSI**. **This works because** only items that have the index key attribute appear in the index, so it stays small, cheap and fast.
+- **If** GSI writes are throttled and slow down writes to the base table, **then** raise the GSI's write capacity (or use on-demand). **This works because** each GSI has **its own capacity**, and a throttled GSI pushes back on table writes (back-pressure).
+- **If** the same items are read again and again and you need microsecond reads, **then** use **DynamoDB Accelerator (DAX)**, a managed in-memory cache that runs in your VPC. **This works because** DAX is API-compatible (you swap the client) and serves repeated eventually consistent reads from memory, while writes go through it to DynamoDB.
+- **If** your reads must be strongly consistent, **then** DAX will **not** help. **This works because** DAX passes strongly consistent reads (and TransactGetItems) straight through to DynamoDB without caching them.
+- **If** one item is read **100,000 times per second**, **then** cache it with **DAX** or copy the key into several items (**read sharding**). **This works because** one key lives in one partition, and each partition has a throughput ceiling; the cache or the copies spread the reads. DAX helps only for eventually consistent reads.
+- **If** you need the row count of a huge table, **then** keep a **counter item** updated on each write, or count from an export. **This works because** a Scan with `Select=COUNT` still reads every item and uses the same read capacity as returning them.
+- **If** a table is mostly old data that is rarely read, **then** switch it to the **Standard-Infrequent Access (Standard-IA)** table class and use **Time to Live (TTL)** to expire items you no longer need. **This works because** Standard-IA has a lower storage price but a higher request price, which suits tables where storage is the main cost, and TTL deletes are free. The class can be changed back at any time.
+- **If** storage cost is high and the data is cold, **then** **Export to S3** and delete the old items from DynamoDB. **This works because** S3 stores data cheaply while DynamoDB is for fast operational lookups, and the export uses no read capacity.
+- **If** you want to stop surprise bills on an on-demand table, **then** set its **maximum throughput** setting. **This works because** requests above the cap are throttled instead of billed, which protects against runaway usage.
+- **If** you cannot lower provisioned capacity any more today, **then** you have used the daily **decrease allowance**. **This works because** each UTC day starts with **4** decreases and earns **1 more per hour**, up to **27** per day; the table and each GSI have separate limits.
+- **If** a bulk load is slow and costly, **then** use **Import from S3** for a new table, or on-demand capacity plus parallel **BatchWriteItem** calls with backoff. **This works because** Import uses no write capacity (but only creates new tables), and parallel batches cut round trips; each batched item still costs its own write units.
+- **If** the app sees `ProvisionedThroughputExceededException` after scaling events, **then** this is **auto scaling lag**: raise the minimum capacity, switch to on-demand, or retry with backoff. **This works because** auto scaling acts only after use breaches the target for **2 consecutive minutes**, and the update takes several minutes, so sudden spikes can still throttle.
 
 ## Verified from AWS docs on 2026-10-02
 Capacity modes and scaling, read/write unit rules, secondary indexes, DAX, table classes, service quotas, CloudWatch metrics pages were read. Not confirmed (verify): burst capacity duration, adaptive capacity details, warm throughput specifics, Standard-IA break-even rule, mode switching frequency wording, vector search availability.

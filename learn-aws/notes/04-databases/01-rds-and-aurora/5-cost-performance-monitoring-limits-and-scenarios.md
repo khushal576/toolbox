@@ -137,41 +137,41 @@ Short notes. Each point is a fact you can be asked about.
 - Multi-AZ DB cluster: semisynchronous, 3 instances in 3 AZs.
 
 ## I. Mixed scenarios (if → then, because)
-1. If a web app on MySQL needs HA with automatic failover → Multi-AZ instance (or Aurora MySQL with a replica in another AZ).
-2. If the app also needs to scale reads and wants readable standbys → Multi-AZ DB cluster or Aurora.
-3. If reporting needs a stable copy and 15 readers → Aurora Replicas + custom endpoint for analytics.
-4. If a DR plan needs RPO ~1 s and RTO ~1 min across Regions → Aurora Global Database.
-5. If a DR plan allows hours of RTO and wants minimum cost → cross-Region snapshot copies (or cross-Region automated backups).
-6. If a table was dropped by mistake on Aurora MySQL 20 minutes ago and Backtrack is on → Backtrack; otherwise PITR to a new cluster.
-7. If a nightly job needs a fast prod-like copy → Aurora clone.
-8. If an Oracle app needs custom OS packages → RDS Custom for Oracle.
-9. If a team wants SQL Server backups in S3 → native backup/restore with the `SQLSERVER_BACKUP_RESTORE` option group.
-10. If a startup's traffic is unpredictable and cost must follow usage → Aurora Serverless v2.
-11. If a dev DB is used 8 hours a day → Serverless v2 with auto-pause or scheduled stop.
-12. If many Lambda functions open connections → RDS Proxy (and IAM auth to proxy).
-13. If a data lake needs OLTP data hourly without custom pipelines → zero-ETL to Redshift, or snapshot export to S3 for batch.
-14. If a CDC feed with deletes must reach S3/Kinesis → DMS with CDC (set binlog ROW / logical replication).
-15. If PII must be encrypted at rest with customer-controlled keys → CMK at creation.
-16. If a security team wants who-changed-what at the AWS level → CloudTrail; SQL-level → audit plugin/DAS.
-17. If upgrade from MySQL 5.7 to 8.0 must be low-downtime → Blue/Green Deployment.
-18. If a cost review shows Aurora I/O at 40% of the bill → switch to I/O-Optimized.
-19. If storage grows 5% a week unexpectedly on Aurora → check clones, long transactions, binlog, temp usage.
-20. If CPU is high only during a daily report → read replica or Aurora reader for the report; schedule off-peak.
-21. If connection count is at max → RDS Proxy and fix connection leaks before upsizing.
-22. If failover time matters most → Aurora with a reader in tier 0 (and RDS Proxy).
-23. If a PostgreSQL DB's disk fills because of WAL → find the lagging/unused replication slot and drop it.
-24. If PostgreSQL slows over weeks → bloat/autovacuum lag/stale statistics → tune autovacuum, run ANALYZE.
-25. If a vector search must combine similarity with SQL filters and transactions → pgvector on Aurora/RDS PostgreSQL with HNSW.
-26. If a vector index build runs out of memory → raise `maintenance_work_mem`, lower `m`/`ef_construction`, or use IVFFlat.
-27. If an app needs wide global reads with local latency → Aurora Global Database readers in each Region.
-28. If you need point-in-time recovery across Regions → cross-Region automated backups replication or cross-Region copy of snapshots plus logs.
-29. If you need to prove backups are protected from deletion → AWS Backup vault lock with cross-account copies.
-30. If a team wants a no-ops, globally distributed, strongly consistent SQL database → look at Aurora DSQL (awareness); for key-value use DynamoDB global tables.
-31. If a legacy app can't handle failover DNS changes → RDS Proxy or retry-aware drivers (AWS JDBC wrapper).
-32. If you need to move data from RDS to another account/Region → snapshot share/copy (CMK), or DMS for continuous.
-33. If Oracle licensing cost is a problem → migrate to Aurora PostgreSQL with SCT/DMS Schema Conversion.
-34. If only a few tables of a huge DB are needed in the lake → partial snapshot export (selected tables) or DMS with table mappings.
-35. If you want per-tenant isolation with minimal cost → schema-per-tenant or RLS in PostgreSQL; separate clusters for strict isolation.
+1. **If** a web app on MySQL needs **high availability (HA)** with **automatic failover**, **then** use an **RDS Multi-AZ** DB instance deployment (or **Aurora MySQL** with a replica in another **Availability Zone (AZ)**). **This works because** Multi-AZ keeps a **synchronous standby** in another AZ and moves the endpoint to it on failure. You pay for the standby, so cost doubles.
+2. **If** the app also needs to **scale reads** with **readable standbys**, **then** use an **RDS Multi-AZ DB cluster** or **Amazon Aurora**. **This works because** a Multi-AZ DB cluster has **two standbys that serve reads**, and Aurora readers share the cluster's storage, while a Multi-AZ instance standby cannot serve reads.
+3. **If** reporting needs a **stable copy** and up to **15 readers**, **then** use **Aurora Replicas** with a **custom endpoint** for the analytics readers. **This works because** Aurora supports up to **15** replicas, and a custom endpoint groups chosen instances so reports stay off the readers the app uses.
+4. **If** a DR (disaster recovery) plan needs a **Recovery Point Objective (RPO)** of about **1 second** and a **Recovery Time Objective (RTO)** of about **1 minute** (verify) across Regions, **then** use **Aurora Global Database**. **This works because** it replicates storage to up to **10** secondary Regions with lag usually **under 1 second**, and a secondary can be promoted on failover.
+5. **If** a DR plan allows **hours of RTO** and wants **minimum cost**, **then** use **cross-Region snapshot copies** (or **cross-Region automated backups** replication). **This works because** backup-and-restore is the **cheapest** DR pattern: you only pay for stored copies, and restore when disaster hits.
+6. **If** a table was dropped by mistake on **Aurora MySQL** **20 minutes ago** and **Backtrack** is on, **then** **Backtrack** the cluster; otherwise use **point-in-time recovery (PITR)** to a **new cluster**. **This works because** Backtrack rewinds the cluster **in place** in minutes, while PITR is slower because it creates a new cluster.
+7. **If** a nightly job needs a **fast production-like copy**, **then** use an **Aurora clone**. **This works because** clones are **copy-on-write**: they share pages with the source and store only changes, so they are ready in minutes with little extra storage.
+8. **If** an **Oracle** app needs **custom operating system (OS) packages**, **then** use **RDS Custom for Oracle**. **This works because** RDS Custom gives OS and database admin access, which normal RDS does not.
+9. **If** a team wants **SQL Server backups** in **Amazon S3**, **then** use **native backup/restore** by adding the **`SQLSERVER_BACKUP_RESTORE`** option to an **option group**. **This works because** this option lets SQL Server write and read normal `.bak` files in S3.
+10. **If** a startup's traffic is unpredictable and cost must **follow usage**, **then** use **Aurora Serverless v2**. **This works because** it scales compute automatically in **Aurora Capacity Units (ACU)** and bills **per second** for the ACUs actually used.
+11. **If** a dev database is used only **8 hours a day**, **then** use **Aurora Serverless v2** with **auto-pause**, or a **scheduled stop** of the RDS instance. **This works because** both stop compute billing while the database is idle; storage is still billed.
+12. **If** many **AWS Lambda** functions open connections, **then** use **RDS Proxy** (and **IAM** authentication to the proxy). **This works because** the proxy **pools** connections, so many short Lambda connections share fewer database connections, and IAM auth means no passwords in code.
+13. **If** a data lake needs OLTP data **hourly without custom pipelines**, **then** use a **zero-ETL integration** to **Amazon Redshift**, or **snapshot export to Amazon S3** for batch loads. **This works because** zero-ETL copies data in near real time with no pipeline to build, and snapshot export writes Parquet files without touching the live database.
+14. **If** a **change data capture (CDC)** feed that includes **deletes** must reach Amazon S3 or **Amazon Kinesis**, **then** use **AWS Database Migration Service (DMS)** with CDC. **This works because** DMS reads the database's change log; set MySQL **`binlog_format=ROW`** or PostgreSQL **`rds.logical_replication=1`** first.
+15. **If** **personal data (PII)** must be encrypted at rest with **customer-controlled keys**, **then** choose a **customer managed key (CMK)** in **AWS Key Management Service (KMS)** **when you create** the database. **This works because** encryption can only be turned on at creation, and the key of an encrypted database cannot be changed later without a snapshot copy.
+16. **If** a security team wants to know **who changed what**, **then** use **AWS CloudTrail** for the **AWS level** and the engine **audit plugin** or **Database Activity Streams (DAS)** for the **SQL level**. **This works because** CloudTrail logs API calls but **not** SQL statements; audit logs and DAS record activity inside the database.
+17. **If** an upgrade from **MySQL 5.7 to 8.0** must be **low-downtime**, **then** use an **RDS Blue/Green Deployment**. **This works because** you upgrade and test a synchronized copy (green), then **switch over**, usually in **under one minute**.
+18. **If** a cost review shows Aurora **I/O at 40%** of the bill, **then** switch to **Aurora I/O-Optimized**. **This works because** I/O-Optimized has **no per-I/O charge** and pays off when I/O is **25% or more** of the bill.
+19. **If** Aurora storage grows **5% a week** unexpectedly, **then** check for **clones**, **long-running transactions**, **binlogs** and **temporary** data. **This works because** these keep old data versions or extra data on the cluster volume. Watch **`VolumeBytesUsed`**.
+20. **If** CPU is high **only during a daily report**, **then** run the report on a **read replica** or an **Aurora reader**, or schedule it **off-peak**. **This works because** the report then no longer competes with the app on the primary.
+21. **If** the connection count is **at the maximum**, **then** add **RDS Proxy** and **fix connection leaks** before upsizing. **This works because** pooling and closing unused connections often solve the problem without paying for a bigger instance.
+22. **If** **failover time** matters most, **then** use **Amazon Aurora** with a **reader in promotion tier 0** (and **RDS Proxy**). **This works because** Aurora promotes the reader in the **lowest tier** first, so the takeover target is clear and ready, and RDS Proxy keeps client connections open during the switch.
+23. **If** a PostgreSQL database's disk fills because of **WAL** (write-ahead log), **then** find the **lagging or unused replication slot** and **drop** it. **This works because** a replication slot keeps WAL until its reader catches up, so an abandoned slot makes WAL grow forever.
+24. **If** PostgreSQL slows down over weeks, **then** suspect **bloat**, **autovacuum lag** or **stale statistics**: tune **autovacuum** and run **`ANALYZE`**. **This works because** autovacuum removes old row versions and `ANALYZE` refreshes the statistics the query planner uses.
+25. **If** a vector search must combine **similarity** with **SQL filters** and **transactions**, **then** use **pgvector** on **Aurora or RDS PostgreSQL** with an **HNSW** index. **This works because** vectors sit in a normal table, so one SQL query can filter, join and search, and HNSW gives fast, high-recall approximate search.
+26. **If** a vector index build runs **out of memory**, **then** raise **`maintenance_work_mem`**, lower HNSW's **`m`** or **`ef_construction`**, or use **IVFFlat**. **This works because** a higher `m` uses more memory, and IVFFlat is smaller and cheaper to build than HNSW.
+27. **If** an app needs **global reads** with **local latency**, **then** use **Aurora Global Database** with readers in each Region. **This works because** each secondary Region holds a copy with lag usually **under 1 second** and can have up to **16** readers.
+28. **If** you need **point-in-time recovery (PITR)** across Regions, **then** use **cross-Region automated backups** replication, or **cross-Region copies** of snapshots plus logs. **This works because** PITR needs both snapshots and transaction logs, and this replication copies both to another Region.
+29. **If** you must prove backups are **protected from deletion**, **then** use **AWS Backup** with **vault lock** and **cross-account copies**. **This works because** vault lock blocks deletion, and a copy in another account survives even if the main account is compromised.
+30. **If** a team wants a **no-ops, globally distributed, strongly consistent** SQL database, **then** look at **Aurora DSQL** (awareness); for **key-value** data use **Amazon DynamoDB global tables**. **This works because** Aurora Global Database has only one writing Region, while these are built for multi-Region writes.
+31. **If** a legacy app cannot handle **failover DNS changes**, **then** use **RDS Proxy** or **retry-aware drivers** (the **AWS JDBC wrapper**). **This works because** the proxy keeps client connections and reconnects to the new primary itself, and these drivers know about failover.
+32. **If** you need to move data from RDS to **another account or Region**, **then** **share or copy a snapshot** (encrypted with a **customer managed key (CMK)**), or use **AWS Database Migration Service (DMS)** for a **continuous** copy. **This works because** only CMK-encrypted snapshots can be shared, and DMS keeps streaming changes.
+33. **If** **Oracle licensing** cost is a problem, **then** migrate to **Aurora PostgreSQL** with the **AWS Schema Conversion Tool (SCT)** or **DMS Schema Conversion**. **This works because** PostgreSQL needs no Oracle license, and these tools convert the schema and code between engines.
+34. **If** only a **few tables** of a huge database are needed in the lake, **then** use a **partial snapshot export** (selected tables) or **AWS Database Migration Service (DMS)** with **table mappings**. **This works because** both let you pick just the tables you need instead of copying everything.
+35. **If** you want **per-tenant isolation** at minimal cost, **then** use **schema-per-tenant** or **row-level security (RLS)** in PostgreSQL; use **separate clusters** for strict isolation. **This works because** tenants then share one database cheaply while each sees only its own data. Separate clusters cost more but isolate fully.
 
 ## Verified from AWS docs on 2026-10-02
 RDS quotas, storage, Aurora storage/I-O-Optimized, Serverless v2, Global Database, Backtrack, cloning, RDS Proxy, IAM database authentication, Data API index, zero-ETL, Extended Support, Performance Insights/Database Insights overview pages were read. Not confirmed (verify): backup storage free allowance, RDS Proxy and Data API pricing basis, Reserved Instance coverage details, Aurora max volume size per version, stop/start duration, exact CloudWatch metric set for every engine, rule-of-thumb parameter defaults (shared_buffers, buffer pool %).

@@ -93,16 +93,16 @@ Short notes. Each point is a fact you can be asked about.
 - **4.3.1 Masking and anonymization**: masking after discovery.
 
 ## H. Scenarios: "If X → Y, because Z"
-- If monthly compliance requires a PII inventory by bucket → **scheduled Macie job (monthly) + discovery results in S3 queried by Athena**, because results contain per-object detections.
-- If Macie costs too much → **sample, exclude, scope by prefix and last modified**, because cost is per GB inspected.
-- If an auditor asks "which buckets are public or unencrypted" → **Macie bucket inventory/dashboard and policy findings**, because Macie evaluates bucket security posture continuously.
-- If new accounts must be covered automatically → **Organizations delegated admin + auto-enable**, because it enables Macie in new accounts.
-- If findings should open tickets → **EventBridge rule → SNS/Lambda/Jira integration**, because Macie publishes findings as events.
-- If you need to prevent sensitive data from entering the curated zone → **scan the landing zone first and only promote clean objects (Step Functions + Macie job + EventBridge)**, because detection must happen before promotion.
-- If Macie cannot analyze a Glacier-class dataset → **restore or copy to a readable class first**, because archived objects can't be read **(verify)**.
-- If an SCP denies S3 access to non-listed roles → **exempt Macie's service-linked role**, because it needs to read objects.
-- If Macie detects a false-positive pattern repeatedly → **allow list or suppression rule**, because it reduces noise without disabling detectors.
-- If you must keep findings beyond Macie's retention → **send to Security Hub / S3 via EventBridge and Firehose**, because Macie keeps findings for a limited time.
+- **If** monthly compliance needs a PII inventory by bucket, **then** run a **scheduled Amazon Macie job** (**monthly**) and query its **sensitive data discovery results** in **Amazon S3** with **Amazon Athena** (SQL over S3 files) through an **AWS Glue** table. **This works because** the results are a detailed record of every analyzed object, with **per-object detections**, stored as **.jsonl.gz** in your results bucket.
+- **If** Macie costs too much, **then** reduce what it reads: use a **lower sampling depth** (for example **10–25%** on a first pass), **exclude** log, backup and public-data buckets, and scope jobs by **prefix** and **last modified** date. **This works because** cost is about **$1 per GB inspected**, so fewer bytes scanned means a smaller bill.
+- **If** an auditor asks which buckets are public or unencrypted, **then** show the **Amazon Macie bucket inventory** and its **policy findings** (bucket-level security findings). **This works because** Macie continuously evaluates every S3 bucket for public access, sharing, replication and encryption.
+- **If** new AWS accounts must be covered automatically, **then** use an **AWS Organizations delegated administrator** with **auto-enable** turned on. **This works because** auto-enable turns Macie on in new organization accounts as they are added.
+- **If** findings should open tickets, **then** create an **Amazon EventBridge** rule that sends Macie finding events to **Amazon Simple Notification Service (SNS)**, **AWS Lambda** or a Jira integration. **This works because** Macie publishes every finding as an event in near real time.
+- **If** sensitive data must not reach the curated zone, **then** scan the **landing zone** first and promote only clean objects, using **AWS Step Functions** (workflow), a **Macie job** and **Amazon EventBridge**. Flagged files go to review instead. **This works because** detection must happen **before** promotion, so flagged files never reach the curated zone.
+- **If** Macie cannot analyze a dataset in an **S3 Glacier** class (Glacier Flexible Retrieval or Deep Archive), **then** restore it or copy it to a readable storage class first. **This works because** Macie cannot read archived objects **(verify)**.
+- **If** a service control policy (SCP) in AWS Organizations denies S3 access to roles not on a list, **then** exempt **Macie's service-linked role** (`AWSServiceRoleForAmazonMacie`). **This works because** Macie uses that role to read bucket metadata and objects; if it is blocked, member buckets are not scanned.
+- **If** Macie keeps flagging the same false-positive pattern, **then** add an **allow list** (text or regex to ignore) or a **suppression rule** (hides matching findings). **This works because** both cut noise without turning off the detectors. You can have up to **1,000** filter/suppression rules.
+- **If** you must keep findings longer than Macie does, **then** send them through **Amazon EventBridge** to **AWS Security Hub**, or to **Amazon S3** with **Amazon Data Firehose**. **This works because** Macie keeps findings only for a limited time, about **90 days** **(verify)**.
 
 Verified from AWS docs on 2026-11-03 (What is Macie, Macie quotas, Macie pricing).
 Unconfirmed (verify): suppression behavior toward Security Hub; reveal-samples permission names; VPC endpoint availability; CloudWatch metrics names; automated discovery price unit; archive pricing basis; exact job status names; Glacier handling.

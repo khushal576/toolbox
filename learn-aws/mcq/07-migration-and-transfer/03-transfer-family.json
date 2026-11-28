@@ -1,0 +1,281 @@
+{
+ "questions": [
+  {
+   "id": "transfer-001",
+   "skill": "1.1.8",
+   "source": "1-protocols-endpoints-identity-and-users.md",
+   "q": "A retail partner must upload daily files by SFTP into S3. The partner's firewall team will only allow traffic to a fixed list of IP addresses. The company wants no servers to manage. Which design fits?",
+   "options": [
+    {
+     "t": "Transfer Family server with a VPC internet-facing endpoint and Elastic IPs",
+     "why": "Right: Elastic IPs give fixed addresses the partner can allow-list, and security groups can limit partner CIDRs."
+    },
+    {
+     "t": "Transfer Family server with a public endpoint",
+     "why": "Wrong: public endpoint IPs are AWS-managed and can change, so they cannot be allow-listed."
+    },
+    {
+     "t": "Transfer Family server with a VPC internal endpoint",
+     "why": "Wrong: it has only private IPs and is reachable just from the VPC and connected networks, not the internet."
+    },
+    {
+     "t": "An SFTP server on EC2 behind a Route 53 record",
+     "why": "Wrong: it works but means patching, HA and capacity work, which the company wants to avoid."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Fixed IPs for allow-lists mean a VPC internet-facing endpoint with Elastic IPs.",
+   "remember": "Partner needs a static IP to allow-list \u2192 Transfer Family VPC internet-facing endpoint with Elastic IPs. Public endpoint IPs can change.",
+   "variants": [
+    "No internet exposure at all, only VPN or Direct Connect \u2192 VPC internal endpoint.",
+    "Simplest setup and no IP allow-list needed \u2192 public endpoint.",
+    "Restrict which partner networks may connect \u2192 security group CIDRs on the VPC endpoint."
+   ]
+  },
+  {
+   "id": "transfer-002",
+   "skill": "2.1.4",
+   "source": "1-protocols-endpoints-identity-and-users.md",
+   "q": "Partners authenticate to SFTP with passwords stored in Okta. The company wants to move to Transfer Family without changing how partners log in. Which identity provider option fits?",
+   "options": [
+    {
+     "t": "Service managed users",
+     "why": "Wrong: service managed users use SSH public keys only, not passwords."
+    },
+    {
+     "t": "Custom identity provider using Lambda or API Gateway",
+     "why": "Right: the function checks the password against Okta and returns the IAM role and home directory."
+    },
+    {
+     "t": "AWS Directory Service for Microsoft Active Directory",
+     "why": "Wrong: it is for users that live in AD, not in Okta."
+    },
+    {
+     "t": "An IAM user per partner",
+     "why": "Wrong: Transfer Family does not authenticate SFTP users as IAM users."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Passwords from an external IdP such as Okta need a custom identity provider.",
+   "remember": "Password login against Okta, Entra ID, Cognito or a database \u2192 custom identity provider (Lambda or API Gateway + Lambda). Service managed is SSH keys only.",
+   "variants": [
+    "Users live in corporate Active Directory \u2192 the Directory Service identity provider with group-to-role mapping.",
+    "A few partners using SSH keys \u2192 service managed users.",
+    "Lambda returns an empty response `{}` \u2192 the login is denied."
+   ]
+  },
+  {
+   "id": "transfer-003",
+   "skill": "2.1.4",
+   "source": "1-protocols-endpoints-identity-and-users.md",
+   "q": "A company has an on-premises SFTP server used by many partners. It wants to move to Transfer Family so partners change nothing: same hostname, no known_hosts warnings. Which two actions help? (Choose two.)",
+   "options": [
+    {
+     "t": "Import the existing SFTP host key into the Transfer Family server",
+     "why": "Right: clients keep trusting the same server identity."
+    },
+    {
+     "t": "Point the existing DNS name at the Transfer Family endpoint, for example with Route 53",
+     "why": "Right: partners keep using the same hostname."
+    },
+    {
+     "t": "Enable FTP on the server so old clients work",
+     "why": "Wrong: FTP is unencrypted and does not address host keys or hostnames."
+    },
+    {
+     "t": "Ask every partner to reconfigure a new hostname",
+     "why": "Wrong: it defeats the aim of no partner changes."
+    },
+    {
+     "t": "Switch to AS2",
+     "why": "Wrong: AS2 is a B2B messaging protocol, not a drop-in for SFTP clients."
+    }
+   ],
+   "answer": [
+    0,
+    1
+   ],
+   "explain": "Import the old host key and keep the DNS name so partners see no change.",
+   "remember": "Migrating an SFTP host without partner changes \u2192 import the host key and repoint the DNS name to the Transfer endpoint.",
+   "variants": [
+    "For FTPS the certificate must match the custom hostname.",
+    "If you do not import a key, AWS generates a new host key and clients see a changed identity.",
+    "A custom hostname can be a Route 53 alias or CNAME."
+   ]
+  },
+  {
+   "id": "transfer-004",
+   "skill": "2.1.4",
+   "source": "1-protocols-endpoints-identity-and-users.md",
+   "q": "A SaaS company gives each customer an SFTP login. Each customer must see only their own folder in one shared S3 bucket and must not see the bucket name. What is the best setup?",
+   "options": [
+    {
+     "t": "One shared IAM role with no restrictions and a note to customers",
+     "why": "Wrong: customers could read each other's data."
+    },
+    {
+     "t": "A home directory per user with the Restricted option (or a session policy using `${transfer:UserName}`)",
+     "why": "Right: the user is locked to their home folder and cannot see above it or the bucket name."
+    },
+    {
+     "t": "One bucket per customer with no further controls",
+     "why": "Wrong: it isolates data but adds management work and still needs per-user access controls."
+    },
+    {
+     "t": "Public endpoint with security groups per customer",
+     "why": "Wrong: public endpoints have no security groups and this does not isolate folders."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Home directory plus Restricted (chroot) or a session policy isolates users inside one bucket.",
+   "remember": "Each customer sees only their folder \u2192 home directory including the username plus Restricted or a session policy with policy variables. Logical directories hide the bucket structure.",
+   "variants": [
+    "Present clean friendly paths like /inbox mapped to real prefixes \u2192 logical directories.",
+    "Large multi-tenant S3 access at scale \u2192 S3 Access Points or Access Grants.",
+    "Service managed users have a limit of 2,000 logical directory entries."
+   ]
+  },
+  {
+   "id": "transfer-005",
+   "skill": "2.1.4",
+   "source": "2-workflows-connectors-as2-web-apps-cost-limits-and-scenarios.md",
+   "q": "Files arrive in S3 over SFTP and are PGP-encrypted. The company must decrypt them, tag them and send failures to quarantine, without running servers. Which solution is best?",
+   "options": [
+    {
+     "t": "A Transfer Family managed workflow with decrypt and tag steps and an exception-handling step",
+     "why": "Right: workflows run after upload, with built-in decrypt, tag and copy steps plus exception handling."
+    },
+    {
+     "t": "A cron job on EC2 that polls the bucket",
+     "why": "Wrong: it needs a server to manage and is slower."
+    },
+    {
+     "t": "DataSync task with a filter",
+     "why": "Wrong: DataSync copies data in bulk and does not decrypt PGP files after SFTP upload."
+    },
+    {
+     "t": "A Transfer Family connector",
+     "why": "Wrong: connectors send or pull files to and from remote SFTP servers; they do not decrypt uploads."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Post-upload decrypt, tag and copy are built-in managed workflow steps.",
+   "remember": "Process files after SFTP/FTPS/FTP upload (PGP decrypt, tag, copy, custom Lambda scan) \u2192 managed workflow with an exception path.",
+   "variants": [
+    "Need more than 8 steps or complex orchestration \u2192 S3 events with Lambda, Step Functions or EventBridge.",
+    "Files uploaded over AS2 \u2192 workflows do not run for AS2 messages.",
+    "A zero-byte file is uploaded \u2192 the workflow does not start."
+   ]
+  },
+  {
+   "id": "transfer-006",
+   "skill": "1.1.2",
+   "source": "2-workflows-connectors-as2-web-apps-cost-limits-and-scenarios.md",
+   "q": "A bank publishes statements on its own SFTP server. The company must fetch them nightly into S3 with no custom code, trusting only the bank's known server. Which solution fits?",
+   "options": [
+    {
+     "t": "Transfer Family SFTP connector with Secrets Manager credentials, a trusted host key and an EventBridge schedule",
+     "why": "Right: the connector acts as the SFTP client, and the host key blocks man-in-the-middle servers."
+    },
+    {
+     "t": "A Transfer Family SFTP server",
+     "why": "Wrong: a server accepts inbound connections from partners; it does not pull from a bank."
+    },
+    {
+     "t": "Transfer Family web app",
+     "why": "Wrong: web apps give users a browser UI to S3 data."
+    },
+    {
+     "t": "AS2 agreement with the bank",
+     "why": "Wrong: AS2 is for EDI messaging, and the bank offers SFTP."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "To pull from a partner's SFTP server, use a connector, not a server.",
+   "remember": "Server = partners connect to you. Connector = you connect to partners (send or retrieve, credentials in Secrets Manager, trusted host keys, optional VPC egress).",
+   "variants": [
+    "Static source IP needed for the bank's allow-list \u2192 connector with VPC egress through NAT.",
+    "Schedule the pull \u2192 EventBridge rule calling StartFileTransfer.",
+    "Partners push files to you \u2192 a server."
+   ]
+  },
+  {
+   "id": "transfer-007",
+   "skill": "2.1.4",
+   "source": "1-protocols-endpoints-identity-and-users.md",
+   "q": "A legacy system can speak only FTP. It must send files to S3, and the security team says nothing may be exposed to the internet. Which setup is correct?",
+   "options": [
+    {
+     "t": "FTP on a public endpoint",
+     "why": "Wrong: FTP is not supported on a public endpoint and is unencrypted."
+    },
+    {
+     "t": "FTP on a VPC internal endpoint reached over the private network",
+     "why": "Right: FTP is VPC only, and an internal endpoint keeps it off the internet."
+    },
+    {
+     "t": "FTPS on a public endpoint",
+     "why": "Wrong: FTPS needs a VPC endpoint and an ACM certificate, and the legacy system speaks FTP only."
+    },
+    {
+     "t": "SFTP on a public endpoint",
+     "why": "Wrong: the legacy system cannot speak SFTP."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "FTP works only on VPC endpoints and is unencrypted, so keep it internal.",
+   "remember": "FTP \u2192 VPC only and unencrypted, use inside private networks. FTPS \u2192 VPC endpoint plus ACM certificate. Prefer SFTP when clients allow.",
+   "variants": [
+    "Partners need encryption with FTP clients \u2192 FTPS with an ACM certificate matching the hostname.",
+    "FTP/FTPS connections fail on transfers \u2192 open data ports 8192-8200.",
+    "Clients can use SSH \u2192 SFTP on port 22."
+   ]
+  },
+  {
+   "id": "transfer-008",
+   "skill": "2.1.4",
+   "source": "2-workflows-connectors-as2-web-apps-cost-limits-and-scenarios.md",
+   "q": "A trading partner in retail insists on exchanging EDI documents with signing, encryption and delivery receipts. The company wants the documents stored in EFS. What is the issue?",
+   "options": [
+    {
+     "t": "AS2 on Transfer Family meets the protocol need but supports only S3, not EFS",
+     "why": "Right: AS2 gives signing, encryption and MDN receipts, but it is S3 only."
+    },
+    {
+     "t": "AS2 works with EFS, but only on a public endpoint",
+     "why": "Wrong: AS2 does not support EFS on any endpoint."
+    },
+    {
+     "t": "SFTP satisfies the AS2 requirement unchanged",
+     "why": "Wrong: the partner requires AS2 with MDN receipts."
+    },
+    {
+     "t": "Managed workflows will process AS2 files after upload",
+     "why": "Wrong: AS2 messages do not run workflows."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "AS2 means S3 only and no workflows; it adds signing, encryption and MDN receipts.",
+   "remember": "EDI or B2B with signed, encrypted messages and MDNs \u2192 AS2 (S3 only, no EFS, no workflows). SFTP, FTPS and FTP can use S3 or EFS.",
+   "variants": [
+    "Need EFS with POSIX users \u2192 SFTP, FTPS or FTP, not AS2.",
+    "Business users want a browser to reach S3 \u2192 Transfer Family web apps with IAM Identity Center.",
+    "Bulk historic migration \u2192 DataSync, not Transfer Family."
+   ]
+  }
+ ]
+}

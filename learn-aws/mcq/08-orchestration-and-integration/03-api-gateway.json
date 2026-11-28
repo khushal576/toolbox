@@ -1,0 +1,421 @@
+{
+ "questions": [
+  {
+   "id": "apigw-001",
+   "skill": "1.2.8",
+   "source": "1-basics-api-types-and-integrations.md",
+   "q": "Webhooks arrive in bursts. The team wants to buffer them in SQS with no code and no Lambda cost. Which design fits?",
+   "options": [
+    {
+     "t": "API Gateway REST API with a Lambda proxy integration that calls SQS",
+     "why": "Wrong: works, but adds Lambda cost and latency the team wants to avoid."
+    },
+    {
+     "t": "API Gateway with an AWS service integration to SQS `SendMessage`, an IAM execution role and a mapping template",
+     "why": "Right: API Gateway calls the SQS API directly; no Lambda needed, so it is cheaper and faster."
+    },
+    {
+     "t": "A Lambda function URL that writes to SQS",
+     "why": "Wrong: still needs a function and gives no throttling, keys or validation."
+    },
+    {
+     "t": "API Gateway mock integration",
+     "why": "Wrong: a mock only returns canned responses and sends nothing to SQS."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "AWS service integration lets API Gateway call SQS, Kinesis, DynamoDB and more without Lambda.",
+   "remember": "Put an API in front of SQS/Kinesis/Firehose with no code -> API Gateway AWS service integration with an execution role and VTL mapping template.",
+   "variants": [
+    "The producer sends to a stream -> AWS integration to Kinesis `PutRecord`.",
+    "You need custom business logic first -> Lambda proxy integration.",
+    "You only need a quick endpoint for one Lambda -> function URL."
+   ]
+  },
+  {
+   "id": "apigw-002",
+   "skill": "1.2.8",
+   "source": "1-basics-api-types-and-integrations.md",
+   "q": "A team needs a cheap API for Lambda backends with JWT auth from Okta. It needs no API keys, WAF or caching. Which choice minimises cost?",
+   "options": [
+    {
+     "t": "REST API with a Cognito authorizer",
+     "why": "Wrong: REST costs about $3.50 per million vs $1.00 and Okta is not Cognito."
+    },
+    {
+     "t": "Private REST API with a VPC endpoint",
+     "why": "Wrong: for VPC-only access, and the most costly option."
+    },
+    {
+     "t": "WebSocket API",
+     "why": "Wrong: for two-way persistent connections, not request/response."
+    },
+    {
+     "t": "HTTP API with a JWT authorizer",
+     "why": "Right: HTTP APIs are about 70% cheaper and natively validate OIDC/JWT tokens."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "HTTP API with JWT authorizer is the low-cost choice when no REST-only features are needed.",
+   "remember": "HTTP API unless you need a REST-only feature (API keys, WAF, cache, private API, validation, body mapping, canary).",
+   "variants": [
+    "Per-client quotas needed -> REST with usage plans.",
+    "WAF needed on an HTTP API -> CloudFront + WAF in front, or use REST.",
+    "Must be VPC-only -> Private REST API."
+   ]
+  },
+  {
+   "id": "apigw-003",
+   "skill": "1.2.8",
+   "source": "2-security-throttling-caching-and-traffic-control.md",
+   "q": "A SaaS data API must give each paying customer a different rate limit and a monthly quota. Which design does this?",
+   "options": [
+    {
+     "t": "HTTP API with route-level throttling",
+     "why": "Wrong: HTTP APIs only throttle at stage and route level, not per client."
+    },
+    {
+     "t": "REST API with API keys and usage plans, plus a real authorizer",
+     "why": "Right: usage plans tie keys to throttle (rate and burst) and quota; keys identify but do not authenticate."
+    },
+    {
+     "t": "AWS WAF rate-based rules only",
+     "why": "Wrong: WAF limits by IP, not by customer quota."
+    },
+    {
+     "t": "A stage cache",
+     "why": "Wrong: caching reduces backend calls but does not limit clients."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Per-client throttle and quota is a REST-only feature through usage plans.",
+   "remember": "Per-customer limits/quotas -> REST + API keys + usage plans (and an authorizer). Per-IP limits -> WAF rate-based rules.",
+   "variants": [
+    "Limit by IP address -> WAF rate-based rule.",
+    "HTTP API chosen -> no keys or usage plans exist.",
+    "Hard cost control -> AWS Budgets, WAF, backend limits (usage plans are best effort)."
+   ]
+  },
+  {
+   "id": "apigw-004",
+   "skill": "1.2.8",
+   "source": "2-security-throttling-caching-and-traffic-control.md",
+   "q": "A REST API uses a Lambda `REQUEST` authorizer with caching on. Users who may call both `GET /orders` and `POST /orders` get 403 on the second method shortly after calling the first. What is the likely cause and fix?",
+   "options": [
+    {
+     "t": "The API key is missing; add the `x-api-key` header",
+     "why": "Wrong: a missing key gives 403 too but would fail the first call as well."
+    },
+    {
+     "t": "The stage was not deployed; redeploy",
+     "why": "Wrong: that gives Missing Authentication Token on a bad path, not a deny on a working one."
+    },
+    {
+     "t": "The cache TTL is too high; set it to 3,600 s",
+     "why": "Wrong: a longer TTL makes the problem worse."
+    },
+    {
+     "t": "The WAF is blocking POST; remove the rule",
+     "why": "Wrong: the symptom follows the cached authorizer result, not WAF."
+    },
+    {
+     "t": "The cached policy only allowed one resource; return a policy with a wildcard resource",
+     "why": "Right: the cached policy is reused across methods and paths, so it must cover all resources the caller may use."
+    }
+   ],
+   "answer": [
+    4
+   ],
+   "explain": "The authorizer cache reuses the first policy for other methods.",
+   "remember": "Cached Lambda authorizer policy is reused across the API: write the policy for all resources the caller may use.",
+   "variants": [
+    "Authorizer returns Deny -> 403.",
+    "Authorizer throws `Unauthorized` -> 401.",
+    "Other authorizer errors -> 500."
+   ]
+  },
+  {
+   "id": "apigw-005",
+   "skill": "1.2.8",
+   "source": "2-security-throttling-caching-and-traffic-control.md",
+   "q": "A read-heavy REST API returns the same product catalogue (about 200 KB) to thousands of clients. The backend is slow and costly. What should the engineer do?",
+   "options": [
+    {
+     "t": "Enable the stage cache with a suitable TTL and mark the query parameters as cache keys",
+     "why": "Right: hits skip the backend; unmarked parameters are ignored, so key the ones that change the answer."
+    },
+    {
+     "t": "Raise the account throttle limit",
+     "why": "Wrong: more allowed requests does not reduce backend work."
+    },
+    {
+     "t": "Add an API key requirement",
+     "why": "Wrong: keys identify clients; they do not cache anything."
+    },
+    {
+     "t": "Switch to an HTTP API",
+     "why": "Wrong: HTTP APIs have no stage cache."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "The stage cache cuts backend calls for repeated GETs.",
+   "remember": "Repeated identical reads on REST -> stage cache (or CloudFront). Only GET is cached by default; TTL default 300 s, 0 turns it off.",
+   "variants": [
+    "Response larger than 1 MB -> it is not cached.",
+    "Invalidate one entry -> `Cache-Control: max-age=0` with `execute-api:InvalidateCache`.",
+    "Need global long TTLs -> CloudFront in front."
+   ]
+  },
+  {
+   "id": "apigw-006",
+   "skill": "1.2.8",
+   "source": "3-websocket-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "A data API runs an Athena query that takes about 3 minutes. Clients get 504 Gateway Timeout. Which fix works best?",
+   "options": [
+    {
+     "t": "Return 202 with a job ID from `POST /jobs`, run the work with Step Functions Standard or SQS, and let clients poll `GET /jobs/{id}`",
+     "why": "Right: the default integration timeout is 29 s, so long work must be asynchronous."
+    },
+    {
+     "t": "Enable the stage cache",
+     "why": "Wrong: the first call still times out."
+    },
+    {
+     "t": "Switch to an edge-optimized endpoint",
+     "why": "Wrong: the edge integration timeout cannot be raised."
+    },
+    {
+     "t": "Raise Lambda memory only",
+     "why": "Wrong: it does not change the 29 s API Gateway timeout."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Work longer than 29 s needs the async job pattern.",
+   "remember": "504 = integration exceeded the timeout (29 s default). Fix with 202 + job ID, or streaming / raised timeout on Regional or private REST.",
+   "variants": [
+    "Need to send more than 10 MB -> S3 pre-signed URL.",
+    "Need stream for minutes -> REST response streaming (`STREAM`).",
+    "HTTP API -> fixed 30 s maximum."
+   ]
+  },
+  {
+   "id": "apigw-007",
+   "skill": "1.2.8",
+   "source": "1-basics-api-types-and-integrations.md",
+   "q": "A developer updates a REST API method, but clients still see the old behaviour. Some also get `Missing Authentication Token` on a new path. What is the most likely cause?",
+   "options": [
+    {
+     "t": "The ACM certificate has expired",
+     "why": "Wrong: that breaks TLS on the domain, not new paths."
+    },
+    {
+     "t": "The API was not deployed to the stage after the change",
+     "why": "Right: REST changes are not live until a deployment is created for the stage."
+    },
+    {
+     "t": "The account throttle was reached",
+     "why": "Wrong: that returns 429."
+    },
+    {
+     "t": "The Lambda resource policy is missing",
+     "why": "Wrong: that causes integration errors (500/502), not a missing path."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "REST changes need a deployment to a stage.",
+   "remember": "Missing Authentication Token usually means a wrong URL/path/method or an undeployed stage, not a real auth problem.",
+   "variants": [
+    "HTTP API with `$default` stage and auto-deploy -> changes go live automatically.",
+    "Rollback -> redeploy a previous deployment to the stage.",
+    "CloudFormation REST Deployment not changing -> it needs a trigger to redeploy."
+   ]
+  },
+  {
+   "id": "apigw-008",
+   "skill": "4.1.4",
+   "source": "1-basics-api-types-and-integrations.md",
+   "q": "An API Gateway REST method calls Kinesis `PutRecord` directly. What does API Gateway need to be allowed to do this?",
+   "options": [
+    {
+     "t": "An IAM execution role that API Gateway assumes, with permission on the stream",
+     "why": "Right: AWS service integrations use an execution role supplied by you."
+    },
+    {
+     "t": "A Lambda resource-based policy",
+     "why": "Wrong: that is for invoking a Lambda function."
+    },
+    {
+     "t": "An API key in the integration request",
+     "why": "Wrong: API keys identify callers; they give no AWS permissions."
+    },
+    {
+     "t": "A KMS grant on the API",
+     "why": "Wrong: not how the integration is authorised."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "AWS service integrations use an IAM execution role; Lambda integrations use a resource-based policy.",
+   "remember": "AWS service integration -> API Gateway execution role. Lambda integration -> resource policy for `apigateway.amazonaws.com` (console adds it; IaC needs it added).",
+   "variants": [
+    "Callers use IAM auth -> they need `execute-api:Invoke` on the API ARN.",
+    "Lambda authorizer in another account -> grant `lambda:InvokeFunction` to API Gateway.",
+    "Real-time push to WebSocket clients -> `execute-api:ManageConnections`."
+   ]
+  },
+  {
+   "id": "apigw-009",
+   "skill": "4.1.4",
+   "source": "2-security-throttling-caching-and-traffic-control.md",
+   "q": "A private REST API must be reachable only from two specific VPCs and never from the internet. Which combination is correct?",
+   "options": [
+    {
+     "t": "Edge-optimized endpoint with WAF IP rules",
+     "why": "Wrong: edge endpoints are public through CloudFront."
+    },
+    {
+     "t": "Regional endpoint with API keys",
+     "why": "Wrong: keys are not a network control."
+    },
+    {
+     "t": "HTTP API with a VPC link",
+     "why": "Wrong: a VPC link reaches private backends; it does not make the API private, and HTTP APIs are Regional only."
+    },
+    {
+     "t": "Private endpoint type, an `execute-api` interface VPC endpoint, and a resource policy allowing those VPCs",
+     "why": "Right: private APIs are reachable only through the interface endpoint and controlled by the resource policy."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Private REST APIs use PrivateLink plus a resource policy.",
+   "remember": "Not on the internet -> Private REST API + interface VPC endpoint + resource policy (`aws:SourceVpce`). VPC link is for backends, not for client access.",
+   "variants": [
+    "Expose private containers behind the API -> VPC link to NLB/ALB.",
+    "Reach it from on premises -> through the VPC endpoint over Direct Connect/VPN.",
+    "Another AWS account calls it -> resource policy plus the caller's IAM policy."
+   ]
+  },
+  {
+   "id": "apigw-010",
+   "skill": "3.3.2",
+   "source": "3-websocket-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "The security team must audit who deleted a stage and changed an authorizer on an API. Where do they look?",
+   "options": [
+    {
+     "t": "API Gateway access logs",
+     "why": "Wrong: they record each request, not configuration changes."
+    },
+    {
+     "t": "CloudWatch `Count` metric",
+     "why": "Wrong: it only counts requests."
+    },
+    {
+     "t": "X-Ray traces",
+     "why": "Wrong: traces show request paths and latency."
+    },
+    {
+     "t": "CloudTrail",
+     "why": "Right: it records API Gateway control-plane calls such as `DeleteStage`; invocations are not logged there."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "CloudTrail covers control-plane changes; access logs cover invocations.",
+   "remember": "Who changed the API -> CloudTrail. Who called the API and what happened -> access/execution logs. Configuration drift -> AWS Config.",
+   "variants": [
+    "Per-request data like source IP and status -> access logs (CloudWatch Logs or Firehose for REST).",
+    "Trace across Lambda and downstream -> X-Ray (REST).",
+    "Request/response detail and mapping debugging -> execution logs."
+   ]
+  },
+  {
+   "id": "apigw-011",
+   "skill": "3.3.2",
+   "source": "3-websocket-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "Users report slow responses on a REST API. CloudWatch shows high `Latency` but low `IntegrationLatency`. Where should the engineer look first?",
+   "options": [
+    {
+     "t": "Lambda memory and code in the backend",
+     "why": "Wrong: backend time is in `IntegrationLatency`, which is low."
+    },
+    {
+     "t": "Authorizers, mapping templates, cache misses and payload size in API Gateway",
+     "why": "Right: `Latency` minus `IntegrationLatency` is the API Gateway overhead."
+    },
+    {
+     "t": "DynamoDB read capacity",
+     "why": "Wrong: that is backend time."
+    },
+    {
+     "t": "The 4XXError metric",
+     "why": "Wrong: error counts do not explain latency."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "The gap between Latency and IntegrationLatency is gateway overhead.",
+   "remember": "High Latency but low IntegrationLatency -> overhead in authorizers, VTL mapping, cache misses, edge hop or large payloads. High IntegrationLatency -> backend.",
+   "variants": [
+    "Both high -> the backend is slow.",
+    "Logs missing -> account-level CloudWatch Logs role not set.",
+    "Cache effectiveness -> `CacheHitCount` and `CacheMissCount`."
+   ]
+  },
+  {
+   "id": "apigw-012",
+   "skill": "1.2.4",
+   "source": "3-websocket-deployment-cost-monitoring-limits-and-scenarios.md",
+   "q": "A team wants to cut the API Gateway cost of its APIs and stop invalid calls reaching Lambda. Which two actions help? (Choose two.) Assume the first action applies to an API that needs no REST-only feature, and the second to a REST API that stays on REST.",
+   "options": [
+    {
+     "t": "Enable full request/response logging at INFO",
+     "why": "Wrong: it raises CloudWatch Logs cost and can leak data."
+    },
+    {
+     "t": "Move to an HTTP API",
+     "why": "Right: it costs about $1.00 vs $3.50 per million requests and supports JWT; REST cannot be converted in place, so create a new API."
+    },
+    {
+     "t": "Add REST request validation with a JSON Schema model",
+     "why": "Right: invalid calls return 400 without invoking the backend, saving Lambda cost, as long as the API stays on REST."
+    },
+    {
+     "t": "Add a stage cache",
+     "why": "Wrong: it adds a fixed hourly cost and only pays off with real hit ratios."
+    },
+    {
+     "t": "Raise the account throttle",
+     "why": "Wrong: it does not cut cost."
+    }
+   ],
+   "answer": [
+    1,
+    2
+   ],
+   "explain": "HTTP API cuts per-request price; validation blocks bad calls before the backend.",
+   "remember": "Reduce API Gateway cost: HTTP API when no REST-only features, AWS service integrations instead of glue Lambdas, validation, cache only with good hit ratio, lower log level.",
+   "variants": [
+    "Need validation and REST-only features -> stay on REST.",
+    "Hard cost control against abuse -> WAF rate rules + Budgets.",
+    "Cache is a fixed hourly cost, even with no traffic."
+   ]
+  }
+ ]
+}

@@ -1,0 +1,276 @@
+{
+ "questions": [
+  {
+   "id": "memorydb-001",
+   "skill": "2.1.3",
+   "source": "1-basics-architecture-and-vs-redis.md",
+   "q": "A gaming company wants a Redis-compatible store for player sessions and leaderboards. It will be the only database, and acknowledged writes must never be lost on failover. Which service fits?",
+   "options": [
+    {
+     "t": "Amazon ElastiCache for Redis OSS",
+     "why": "Wrong: it is a cache; replication is asynchronous, so recent writes can be lost on failover."
+    },
+    {
+     "t": "Amazon MemoryDB",
+     "why": "Right: it keeps data in a Multi-AZ transaction log, so it is a durable primary database with the Redis API."
+    },
+    {
+     "t": "Amazon DAX",
+     "why": "Wrong: it only caches DynamoDB and is not a general Redis-compatible database."
+    },
+    {
+     "t": "Amazon DocumentDB",
+     "why": "Wrong: it is a document database, not an in-memory store with Redis data structures such as sorted sets."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Redis API + durability + primary database = MemoryDB.",
+   "remember": "Durable, Redis-compatible, source of truth, no data loss → MemoryDB. Cache in front of another database → ElastiCache.",
+   "variants": [
+    "Cache in front of RDS to speed up reads → ElastiCache (cheaper, no durable log).",
+    "Cache only for DynamoDB → DAX.",
+    "Serverless, huge, cheap key-value storage → DynamoDB."
+   ]
+  },
+  {
+   "id": "memorydb-002",
+   "skill": "2.1.1",
+   "source": "1-basics-architecture-and-vs-redis.md",
+   "q": "An application stores 30 TB in MemoryDB, but only about 15% of the data is read regularly. The team wants to cut cost without changing client code. What should they do?",
+   "options": [
+    {
+     "t": "Move to db.r6gd nodes with data tiering",
+     "why": "Right: cold values move to local SSD by LRU, keys stay in memory, and no client change is needed."
+    },
+    {
+     "t": "Move to db.t4g.medium nodes",
+     "why": "Wrong: burstable nodes are for dev/test and are not suited to production."
+    },
+    {
+     "t": "Add more replicas to each shard",
+     "why": "Wrong: replicas add read capacity but each costs a full node, so cost rises."
+    },
+    {
+     "t": "Put an ElastiCache cluster in front of MemoryDB",
+     "why": "Wrong: it adds a service and cost and does not remove the memory cost of cold data."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Mostly cold data → data tiering on r6gd.",
+   "remember": "Data tiering fits when about 20% or less of the data is hot; cold values go to SSD, keys always stay in memory.",
+   "variants": [
+    "Data tiering cluster later needs to become r7g → not possible, you cannot scale between tiering and non-tiering node families.",
+    "Keys are larger than values → tiering saves little, since keys stay in memory.",
+    "Whole dataset is hot → use normal memory-optimized nodes (r7g)."
+   ]
+  },
+  {
+   "id": "memorydb-003",
+   "skill": "2.1.3",
+   "source": "1-basics-architecture-and-vs-redis.md",
+   "q": "A team wants lowest-latency semantic search for a RAG app and already stores key/value data in MemoryDB. The vectors need to scale across many shards. What is the best advice?",
+   "options": [
+    {
+     "t": "Enable vector search on the existing cluster and add shards",
+     "why": "Wrong: search cannot be enabled on an existing cluster and it is limited to a single shard."
+    },
+    {
+     "t": "Use MemoryDB vector search and scale with shards",
+     "why": "Wrong: vector search does not scale horizontally; only vertical scaling and replicas."
+    },
+    {
+     "t": "Use OpenSearch or Aurora PostgreSQL pgvector for vectors that exceed one shard",
+     "why": "Right: MemoryDB vector search is fast but memory-bound and single-shard, so large vector sets need another store."
+    },
+    {
+     "t": "Use ElastiCache with the t4g node type",
+     "why": "Wrong: it does not solve the scale requirement, and t4g is not for production."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Vectors beyond one shard → OpenSearch or Aurora pgvector.",
+   "remember": "MemoryDB vector search = fastest, but single shard and enabled at cluster creation. Large scale → OpenSearch or pgvector.",
+   "variants": [
+    "Moderate dataset, lowest latency, key/value access too → MemoryDB vector search.",
+    "Add search to an existing cluster → restore a snapshot into a new search-enabled cluster.",
+    "Relational data plus HNSW vectors → Aurora PostgreSQL pgvector."
+   ]
+  },
+  {
+   "id": "memorydb-004",
+   "skill": "2.3.6",
+   "source": "2-operations-security-integrations-cost-limits-and-scenarios.md",
+   "q": "A MemoryDB shard has one node and no replica. The primary node fails. What happens?",
+   "options": [
+    {
+     "t": "A replica is promoted within seconds with no interruption",
+     "why": "Wrong: there is no replica to promote."
+    },
+    {
+     "t": "Writes stop until a new primary is built and synced from the transaction log",
+     "why": "Right: with no replica, nothing can be promoted; the log keeps data safe but the new primary must be rebuilt first."
+    },
+    {
+     "t": "All acknowledged writes are lost",
+     "why": "Wrong: the transaction log keeps all acknowledged writes, so nothing is lost."
+    },
+    {
+     "t": "The cluster switches to another Region automatically",
+     "why": "Wrong: Multi-Region is a separate active-active feature and is not automatic failover."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Single-node shard: no data loss, but writes stop until rebuild.",
+   "remember": "Always keep at least 1 replica per shard; promoting a replica is faster than building a new primary.",
+   "variants": [
+    "Shard has one replica in another AZ → consistent replica promoted in typically a few seconds.",
+    "Whole cluster fails → nodes rebuild from the log, still no data loss.",
+    "App wants to test failover → FailoverShard, max 5 times per 24 hours."
+   ]
+  },
+  {
+   "id": "memorydb-005",
+   "skill": "2.3.6",
+   "source": "2-operations-security-integrations-cost-limits-and-scenarios.md",
+   "q": "An application must read its own writes immediately after saving a session. Reads currently go to replicas and sometimes return old data. What should the team change?",
+   "options": [
+    {
+     "t": "Read from the primary node",
+     "why": "Right: the primary is strongly consistent, including across failover."
+    },
+    {
+     "t": "Add more replicas",
+     "why": "Wrong: replicas are eventually consistent, so more of them does not fix staleness."
+    },
+    {
+     "t": "Enable data tiering",
+     "why": "Wrong: tiering moves cold values to SSD and does not change consistency."
+    },
+    {
+     "t": "Switch to a larger node type",
+     "why": "Wrong: size does not change replica consistency."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Read-after-write → read from the primary.",
+   "remember": "Primary = strongly consistent; replicas (READONLY) = eventually consistent but sequentially ordered. Stale reads acceptable → replicas for more read throughput.",
+   "variants": [
+    "Need more read throughput and stale data is OK → read from replicas.",
+    "Replica lag visible in CloudWatch → ReplicationLag metric.",
+    "Need more write throughput → add shards, not replicas."
+   ]
+  },
+  {
+   "id": "memorydb-006",
+   "skill": "4.2.5",
+   "source": "2-operations-security-integrations-cost-limits-and-scenarios.md",
+   "q": "A security team wants applications to connect to MemoryDB without stored passwords. The cluster runs Valkey 7.2. Which setup meets this?",
+   "options": [
+    {
+     "t": "Use the open-access ACL",
+     "why": "Wrong: it gives full access to anyone and has no authentication; not for production."
+    },
+    {
+     "t": "Create a user with IAM authentication mode and allow memorydb:connect on the cluster and user ARNs",
+     "why": "Right: the client sends a short-lived SigV4 token as the password, so no password is stored."
+    },
+    {
+     "t": "Use a security group rule only",
+     "why": "Wrong: it controls network reach only, not user authorization."
+    },
+    {
+     "t": "Store the password in the cluster name",
+     "why": "Wrong: cluster names appear in public Certificate Transparency logs."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "No stored passwords → IAM authentication (engine 7.0+).",
+   "remember": "IAM auth: memorydb:connect on cluster and user ARN; token valid 15 minutes; connection dropped after 12 hours unless re-authenticated; not inside MULTI/EXEC.",
+   "variants": [
+    "Team may only read keys under app:: → ACL user with `on ~app::* -@all +@read`.",
+    "Engine below 7.0 → IAM authentication is not available; use ACL passwords.",
+    "Cluster without TLS → must use the open-access ACL."
+   ]
+  },
+  {
+   "id": "memorydb-007",
+   "skill": "2.3.6",
+   "source": "2-operations-security-integrations-cost-limits-and-scenarios.md",
+   "q": "A global app needs local reads and writes in several Regions. Two Regions increment the same counter at the same time. What is the result?",
+   "options": [
+    {
+     "t": "Increments from both Regions are added together",
+     "why": "Wrong: counters use full-value replication, so they do not add up."
+    },
+    {
+     "t": "Last writer wins, so one increment can be lost",
+     "why": "Right: Multi-Region uses CRDTs with Last Writer Wins; counters replicate the full value."
+    },
+    {
+     "t": "The write that arrived first is kept",
+     "why": "Wrong: conflicts are resolved by last writer, not first."
+    },
+    {
+     "t": "Both writes are rejected",
+     "why": "Wrong: active-active accepts writes in each Region; conflicts are resolved afterwards."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "MemoryDB Multi-Region is active-active with LWW; counters do not merge.",
+   "remember": "Strings resolve at key level; hashes, sets and sorted sets at element level; counters last writer wins. Replication is asynchronous, usually under a second.",
+   "variants": [
+    "Two Regions add different hash fields → both survive (element-level resolution).",
+    "Need only a DR copy in another Region → copy a snapshot to that Region.",
+    "Region is cut off → pending writes replicate when it returns."
+   ]
+  },
+  {
+   "id": "memorydb-008",
+   "skill": "4.3.2",
+   "source": "2-operations-security-integrations-cost-limits-and-scenarios.md",
+   "q": "A team enables a customer managed KMS key for a MemoryDB cluster. Later an administrator disables the key by mistake. What is the impact?",
+   "options": [
+    {
+     "t": "Nothing; MemoryDB uses its own copy of the key",
+     "why": "Wrong: the cluster depends on the key and its grant."
+    },
+    {
+     "t": "The cluster becomes irrecoverable and cannot be modified or recovered after hardware failure",
+     "why": "Right: disabling or deleting the key, or revoking the grant, breaks the cluster."
+    },
+    {
+     "t": "Encryption at rest turns off automatically",
+     "why": "Wrong: encryption at rest is always on and cannot be turned off."
+    },
+    {
+     "t": "Only the snapshots in S3 become unreadable",
+     "why": "Wrong: the live cluster is also affected, not just snapshots."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Disabled or deleted KMS key → cluster irrecoverable.",
+   "remember": "Encryption at rest is always on (service-managed key by default). Do not delete, disable or revoke the grant; automatic rotation is fine.",
+   "variants": [
+    "Key scheduled for deletion by mistake → cancel the deletion immediately.",
+    "Want a manual key swap → not supported; use automatic rotation.",
+    "Exporting a snapshot to S3 → customer managed KMS keys cannot be used for the export itself."
+   ]
+  }
+ ]
+}

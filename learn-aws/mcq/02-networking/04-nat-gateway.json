@@ -1,0 +1,276 @@
+{
+ "questions": [
+  {
+   "id": "nat-001",
+   "skill": "1.2.4",
+   "source": "1-nat-gateway-instances-cost-and-scenarios.md",
+   "q": "Glue jobs in private subnets read 50 TB per month from S3 through a NAT gateway, and the NAT bill is very high. Which change cuts the cost the most with the least effort?",
+   "options": [
+    {
+     "t": "Add an S3 gateway endpoint and route S3 traffic to it",
+     "why": "Right: it is free and S3 traffic then bypasses NAT per-GB processing charges."
+    },
+    {
+     "t": "Add an S3 interface endpoint",
+     "why": "Wrong: it has hourly and per-GB charges, so it is not the cheapest path for S3."
+    },
+    {
+     "t": "Add a second NAT gateway in the same AZ",
+     "why": "Wrong: this adds hourly cost and does not remove the per-GB processing charge."
+    },
+    {
+     "t": "Move the jobs to a public subnet with public IPs",
+     "why": "Wrong: it raises exposure and public IPv4 cost, and is not recommended for backends."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "S3 and DynamoDB gateway endpoints are free and bypass NAT processing charges.",
+   "remember": "Heavy S3 or DynamoDB traffic from private subnets \u2192 gateway endpoint (free), not NAT. NAT charges per GB processed.",
+   "variants": [
+    "Traffic is to ECR or CloudWatch Logs \u2192 interface endpoints (hourly + per-GB), compare with NAT by volume.",
+    "Traffic is to DynamoDB \u2192 DynamoDB gateway endpoint, also free.",
+    "Traffic must go to a public SaaS \u2192 NAT is still needed."
+   ]
+  },
+  {
+   "id": "nat-002",
+   "skill": "1.3.2",
+   "source": "1-nat-gateway-instances-cost-and-scenarios.md",
+   "q": "A VPC spans three AZs with private subnets. All of them route to one NAT gateway in AZ-a. When AZ-a fails, the other AZs lose internet access. Which design fixes this with the least operational work and avoids cross-AZ charges?",
+   "options": [
+    {
+     "t": "One NAT gateway per AZ, each AZ's private route table pointing to the same-AZ NAT",
+     "why": "Right: an AZ failure only affects that AZ, and same-AZ routing avoids inter-AZ transfer fees."
+    },
+    {
+     "t": "A larger NAT gateway in AZ-a",
+     "why": "Wrong: NAT gateways have no sizes, and it would still sit in one AZ."
+    },
+    {
+     "t": "A NAT instance in AZ-a with a bigger instance type",
+     "why": "Wrong: it is still a single point of failure and adds patching work."
+    },
+    {
+     "t": "Keep the single NAT and add a second route to the IGW",
+     "why": "Wrong: private subnets with an IGW route would expose resources; this is not outbound-only NAT."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "A zonal NAT gateway is redundant only inside its AZ, so use one per AZ.",
+   "remember": "Zonal NAT gateway = one AZ. For HA use one per AZ with same-AZ route tables (or a regional NAT gateway).",
+   "variants": [
+    "Wants one route target and automatic multi-AZ \u2192 regional NAT gateway.",
+    "Dev/test only and cost matters \u2192 a single shared NAT is acceptable.",
+    "Need a private NAT for overlapping CIDRs \u2192 zonal only; regional does not support private NAT."
+   ]
+  },
+  {
+   "id": "nat-003",
+   "skill": "1.1.8",
+   "source": "1-nat-gateway-instances-cost-and-scenarios.md",
+   "q": "A partner API only accepts requests from fixed IP addresses. Workloads run in private subnets across two AZs, each with its own public NAT gateway. What should the team do?",
+   "options": [
+    {
+     "t": "Give the partner the Elastic IPs of both NAT gateways and keep them fixed",
+     "why": "Right: all outbound calls appear from the NAT EIPs, so the partner must allowlist every one."
+    },
+    {
+     "t": "Give the partner the instances' private IPs",
+     "why": "Wrong: private IPs are not routable on the internet and are translated by NAT."
+    },
+    {
+     "t": "Put the partner IP in the instance security group",
+     "why": "Wrong: security groups filter outbound traffic but do not change the source IP."
+    },
+    {
+     "t": "Use a private NAT gateway",
+     "why": "Wrong: a private NAT has no Elastic IP and no internet access."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Public NAT gateway EIPs are the stable source IPs seen by the outside world.",
+   "remember": "Fixed source IP for outbound calls \u2192 public NAT gateway Elastic IP(s); with several AZs, allowlist all EIPs and do not release them.",
+   "variants": [
+    "The NAT gateway is recreated \u2192 a new EIP unless you reuse the old one.",
+    "Traffic to on-prem via Transit Gateway \u2192 source is the NAT private IP.",
+    "Regional NAT in manual mode \u2192 you control the IPs."
+   ]
+  },
+  {
+   "id": "nat-004",
+   "skill": "3.3.4",
+   "source": "1-nat-gateway-instances-cost-and-scenarios.md",
+   "q": "A CloudWatch alarm shows `ErrorPortAllocation` above 0 on a NAT gateway while a crawler makes many connections to one external API. What is the cause and the fix?",
+   "options": [
+    {
+     "t": "Over 55,000 simultaneous connections from one IP to the same destination; add secondary IPs or NAT gateways and reuse connections",
+     "why": "Right: this is port exhaustion per IP per unique destination."
+    },
+    {
+     "t": "The NAT gateway hit the 350 second idle timeout",
+     "why": "Wrong: that is reported by `IdleTimeoutCount`, not `ErrorPortAllocation`."
+    },
+    {
+     "t": "The NAT is dropping packets above 10M packets per second",
+     "why": "Wrong: that would show in `PacketsDropCount`."
+    },
+    {
+     "t": "The route table lacks a route to the NAT gateway",
+     "why": "Wrong: a missing route means no traffic reaches the NAT, so it could not exhaust ports."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "ErrorPortAllocation means port exhaustion toward one destination.",
+   "remember": "`ErrorPortAllocation` > 0 \u2192 55,000 connection limit per IP per destination; add IPs (up to 8 zonal), spread across NATs, pool connections.",
+   "variants": [
+    "Connections drop after 350 s idle \u2192 TCP keep-alive below 350 s; watch `IdleTimeoutCount`.",
+    "`PacketsDropCount` rising \u2192 check AWS service health.",
+    "Cost spike \u2192 watch `BytesOutToDestination`."
+   ]
+  },
+  {
+   "id": "nat-005",
+   "skill": "4.1.1",
+   "source": "1-nat-gateway-instances-cost-and-scenarios.md",
+   "q": "A security team needs private workloads to reach only an approved list of domains on the internet. Outbound traffic goes through a NAT gateway today. What should they add?",
+   "options": [
+    {
+     "t": "AWS Network Firewall with a domain allowlist in the egress path",
+     "why": "Right: it does stateful inspection and filters by SNI/Host domain."
+    },
+    {
+     "t": "A security group on the NAT gateway",
+     "why": "Wrong: NAT gateways do not support security groups."
+    },
+    {
+     "t": "A NACL rule listing domain names",
+     "why": "Wrong: NACLs are stateless and work on IPs and ports, not domains."
+    },
+    {
+     "t": "An S3 gateway endpoint",
+     "why": "Wrong: it only handles S3 traffic and does not filter internet domains."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "NAT allows any outbound destination; Network Firewall adds domain control.",
+   "remember": "NAT is not a firewall: it blocks unsolicited inbound only. Domain egress control \u2192 Network Firewall (plus Route 53 Resolver DNS Firewall).",
+   "variants": [
+    "Block resolution of malicious domains \u2192 DNS Firewall.",
+    "Restrict ports on instances \u2192 security groups on the instances.",
+    "Allow return traffic with NACLs \u2192 open ephemeral ports 1024-65535."
+   ]
+  },
+  {
+   "id": "nat-006",
+   "skill": "1.1.8",
+   "source": "1-nat-gateway-instances-cost-and-scenarios.md",
+   "q": "An engineer wants IPv6 workloads in a private subnet to reach the internet outbound-only, at no processing fee. Which option fits?",
+   "options": [
+    {
+     "t": "An egress-only internet gateway",
+     "why": "Right: it is outbound-only for IPv6 and free of processing fees."
+    },
+    {
+     "t": "A public NAT gateway with an Elastic IP",
+     "why": "Wrong: NAT is for IPv4 and charges per GB."
+    },
+    {
+     "t": "A private NAT gateway",
+     "why": "Wrong: it has no internet access."
+    },
+    {
+     "t": "A NAT instance",
+     "why": "Wrong: it is IPv4 NAT, needs management, and is not the IPv6 answer."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "IPv6 addresses are global, so outbound-only access uses an egress-only IGW.",
+   "remember": "IPv6 outbound-only \u2192 egress-only internet gateway (free). IPv4 outbound-only \u2192 NAT gateway.",
+   "variants": [
+    "IPv6-only workloads reaching IPv4-only services \u2192 NAT gateway NAT64 plus DNS64.",
+    "IPv4 private subnets \u2192 NAT gateway.",
+    "Inbound from the internet \u2192 load balancer, never NAT."
+   ]
+  },
+  {
+   "id": "nat-007",
+   "skill": "1.1.8",
+   "source": "1-nat-gateway-instances-cost-and-scenarios.md",
+   "q": "Two VPCs with overlapping CIDR ranges must reach an on-premises network through a Transit Gateway. Which NAT option solves the overlap?",
+   "options": [
+    {
+     "t": "A zonal private NAT gateway",
+     "why": "Right: it translates to a routable NAT private IP for traffic to other VPCs or on-prem."
+    },
+    {
+     "t": "A public NAT gateway",
+     "why": "Wrong: it is for internet access through an IGW and needs an Elastic IP."
+    },
+    {
+     "t": "A regional NAT gateway",
+     "why": "Wrong: it does not support private NAT."
+    },
+    {
+     "t": "An egress-only internet gateway",
+     "why": "Wrong: it is for IPv6 internet egress, not CIDR translation."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Private NAT hides overlapping ranges behind a non-overlapping NAT IP.",
+   "remember": "Overlapping CIDRs to on-prem or other VPCs \u2192 private NAT gateway (zonal) with Transit Gateway or virtual private gateway.",
+   "variants": [
+    "Traffic from private NAT to an IGW \u2192 dropped.",
+    "Internet egress for private subnets \u2192 public NAT.",
+    "Want HA multi-AZ public NAT with one ID \u2192 regional NAT gateway."
+   ]
+  },
+  {
+   "id": "nat-008",
+   "skill": "1.3.2",
+   "source": "1-nat-gateway-instances-cost-and-scenarios.md",
+   "q": "A team asks for outbound internet access for private subnets that is managed, scalable and needs the least maintenance. A colleague suggests an EC2 NAT instance to save money. What is the best answer?",
+   "options": [
+    {
+     "t": "NAT gateway, because AWS manages patching, scaling and availability within the AZ",
+     "why": "Right: it scales from 5 to 100 Gbps with no operations."
+    },
+    {
+     "t": "NAT instance, because it supports auto-scaling to 100 Gbps",
+     "why": "Wrong: its bandwidth is limited by the instance type."
+    },
+    {
+     "t": "NAT instance, because the NAT AMI is actively maintained",
+     "why": "Wrong: the NAT AMI is based on Amazon Linux 2018.03, with end of maintenance on 31 Dec 2023."
+    },
+    {
+     "t": "A public subnet with public IPs",
+     "why": "Wrong: it exposes resources and adds public IPv4 cost."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Exam default for managed outbound access is the NAT gateway.",
+   "remember": "Managed, scalable, low-ops outbound access \u2192 NAT gateway. NAT instances need patching, scripted failover and a disabled source/destination check.",
+   "variants": [
+    "Need security groups or port forwarding on the NAT box \u2192 NAT instance.",
+    "Tiny dev environment where NAT cost dominates \u2192 small self-built NAT instance or delete NAT when idle.",
+    "Destination sends fragmented packets \u2192 NAT instance."
+   ]
+  }
+ ]
+}

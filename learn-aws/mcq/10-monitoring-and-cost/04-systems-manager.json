@@ -1,0 +1,349 @@
+{
+ "questions": [
+  {
+   "id": "ssm-001",
+   "skill": "4.1.1",
+   "source": "1-capabilities-session-manager-patch-and-automation.md",
+   "q": "Engineers need an interactive shell on EC2 instances in private subnets. Security forbids inbound ports, bastion hosts and SSH keys, and wants an IAM-based audit trail. Which solution fits?",
+   "options": [
+    {
+     "t": "A bastion host with SSH key pairs",
+     "why": "Wrong: it needs an inbound port and key management."
+    },
+    {
+     "t": "Systems Manager Session Manager",
+     "why": "Right: access goes through IAM (`ssm:StartSession`), needs no inbound ports or keys, and sessions are logged to S3 or CloudWatch Logs."
+    },
+    {
+     "t": "Open port 22 to the corporate CIDR in the security group",
+     "why": "Wrong: it still opens an inbound port and relies on keys."
+    },
+    {
+     "t": "Systems Manager Run Command with `AWS-RunShellScript`",
+     "why": "Wrong: it runs scripts, not an interactive shell."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Session Manager gives shell access with no inbound ports, bastion or keys.",
+   "remember": "No-SSH, no-bastion, no-inbound-port shell access with audit \u2192 Session Manager, logged to S3 or CloudWatch Logs.",
+   "variants": [
+    "Run one script on many nodes at once \u2192 Run Command.",
+    "Reach a private RDS or Redshift from a laptop \u2192 Session Manager port forwarding to a remote host.",
+    "SSH/RDP to private instances without an agent \u2192 EC2 Instance Connect Endpoint."
+   ]
+  },
+  {
+   "id": "ssm-002",
+   "skill": "4.1.1",
+   "source": "2-inventory-opscenter-incident-manager-security-and-scenarios.md",
+   "q": "A developer must reach a private Redshift cluster from a laptop. No inbound security group rules may be added. A managed EC2 instance already runs in the same VPC. What should they use?",
+   "options": [
+    {
+     "t": "Session Manager port forwarding to the remote host through the EC2 instance",
+     "why": "Right: the `AWS-StartPortForwardingSessionToRemoteHost` document tunnels to a private host and port with no inbound ports."
+    },
+    {
+     "t": "Run Command to start a database client on the instance",
+     "why": "Wrong: it runs commands on the node and does not create a tunnel to the laptop."
+    },
+    {
+     "t": "Fleet Manager file browser",
+     "why": "Wrong: it browses node files and does not forward database ports."
+    },
+    {
+     "t": "State Manager association",
+     "why": "Wrong: it enforces desired state on a schedule and gives no network access."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Port forwarding to a remote host reaches private databases through a managed node.",
+   "remember": "Tunnel to a private database with no inbound ports \u2192 Session Manager port forwarding to remote host via a managed node.",
+   "variants": [
+    "Interactive shell on the node itself \u2192 Session Manager standard session.",
+    "Many nodes need the same script \u2192 Run Command.",
+    "A node that is not managed cannot be used as a jump host \u2192 fix agent, IAM role and endpoints first."
+   ]
+  },
+  {
+   "id": "ssm-003",
+   "skill": "4.1.1",
+   "source": "1-capabilities-session-manager-patch-and-automation.md",
+   "q": "An EC2 instance in a private subnet with no NAT does not appear in Systems Manager. Which TWO checks address the most likely causes?",
+   "options": [
+    {
+     "t": "Confirm the instance profile (or Default Host Management Configuration) grants `AmazonSSMManagedInstanceCore` permissions",
+     "why": "Right: a managed node needs IAM permission."
+    },
+    {
+     "t": "Confirm interface VPC endpoints exist for `ssm`, `ssmmessages` and `ec2messages`",
+     "why": "Right: the agent needs an outbound HTTPS path to those endpoints; without NAT, endpoints provide it."
+    },
+    {
+     "t": "Open inbound port 22",
+     "why": "Wrong: SSM needs no inbound ports; the agent connects outbound."
+    },
+    {
+     "t": "Create a Resource Data Sync to S3",
+     "why": "Wrong: it exports inventory and does not make a node managed."
+    },
+    {
+     "t": "Enable Change Calendar",
+     "why": "Wrong: it blocks or allows actions on dates and does not affect registration."
+    }
+   ],
+   "answer": [
+    0,
+    1
+   ],
+   "explain": "The three prerequisites are agent, IAM permission and a network path to SSM.",
+   "remember": "Node not managed \u2192 check SSM Agent, instance profile or DHMC, and endpoints (or NAT) to ssm, ssmmessages, ec2messages.",
+   "variants": [
+    "Node is a hybrid server \u2192 it needs a hybrid activation and gets an `mi-` ID.",
+    "Wrong Region or stopped instance \u2192 also makes it unlisted.",
+    "Agent not installed on a custom AMI \u2192 install the SSM Agent."
+   ]
+  },
+  {
+   "id": "ssm-004",
+   "skill": "4.5.4",
+   "source": "1-capabilities-session-manager-patch-and-automation.md",
+   "q": "AWS Config flags S3 buckets without default encryption. The company wants the fix applied automatically with least operational effort. What should it use?",
+   "options": [
+    {
+     "t": "A Config remediation action that runs a Systems Manager Automation runbook",
+     "why": "Right: Automation applies the fix, and AWS-owned runbooks such as `AWS-EnableS3BucketEncryption` exist."
+    },
+    {
+     "t": "A Run Command document on every bucket",
+     "why": "Wrong: Run Command targets nodes, not S3 buckets."
+    },
+    {
+     "t": "A Patch Manager baseline",
+     "why": "Wrong: it patches operating systems, not bucket settings."
+    },
+    {
+     "t": "A Session Manager session to each bucket",
+     "why": "Wrong: sessions give shell access to nodes, not bucket access."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Config auto remediation uses SSM Automation runbooks.",
+   "remember": "A Config rule needs an automatic fix \u2192 Config remediation with an SSM Automation runbook.",
+   "variants": [
+    "Block public access on S3 \u2192 `AWS-ConfigureS3BucketPublicAccessBlock` runbook.",
+    "Remediate on a non-Config event \u2192 EventBridge rule that starts an Automation.",
+    "Fix must wait for a human OK \u2192 add an `aws:approve` step."
+   ]
+  },
+  {
+   "id": "ssm-005",
+   "skill": "4.5.4",
+   "source": "1-capabilities-session-manager-patch-and-automation.md",
+   "q": "A runbook deletes old data and a manager must approve before the delete step runs. Which Automation feature provides this?",
+   "options": [
+    {
+     "t": "The `aws:approve` action, which pauses and notifies through SNS",
+     "why": "Right: it adds a human approval step in the workflow."
+    },
+    {
+     "t": "The `aws:sleep` action",
+     "why": "Wrong: it only waits for a fixed time."
+    },
+    {
+     "t": "The `aws:branch` action",
+     "why": "Wrong: it branches on conditions and does not ask a human."
+    },
+    {
+     "t": "A State Manager association",
+     "why": "Wrong: it re-applies desired state and does not pause for approval."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "`aws:approve` gives human-in-the-loop approval inside a runbook.",
+   "remember": "Runbook needs manager approval \u2192 `aws:approve` step with SNS.",
+   "variants": [
+    "Wait for a resource property \u2192 `aws:waitForAwsResourceProperty`.",
+    "Run a Python script step \u2192 `aws:executeScript`.",
+    "Block changes on freeze dates \u2192 Change Calendar."
+   ]
+  },
+  {
+   "id": "ssm-006",
+   "skill": "4.1.1",
+   "source": "1-capabilities-session-manager-patch-and-automation.md",
+   "q": "A team must patch 500 Linux instances monthly during an approved window and report compliance. Which design fits?",
+   "options": [
+    {
+     "t": "Patch Manager with a custom patch baseline, patch groups, and a maintenance window",
+     "why": "Right: baselines define approved patches, tags map nodes to them, the window schedules the patching, and compliance is reported."
+    },
+    {
+     "t": "Manual SSH sessions to each instance",
+     "why": "Wrong: it does not scale and gives no compliance reporting."
+    },
+    {
+     "t": "Rely on the default patch baseline and Patch Manager rollback",
+     "why": "Wrong: Patch Manager has no automatic rollback; use AMI snapshots or blue-green."
+    },
+    {
+     "t": "Inventory with Resource Data Sync",
+     "why": "Wrong: it collects metadata and does not install patches."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Patch Manager plus baseline plus maintenance window (or patch policy) is the standard pattern.",
+   "remember": "Fleet patching on a schedule with compliance \u2192 Patch Manager with baseline and maintenance window or patch policy.",
+   "variants": [
+    "Org-wide patching across accounts and Regions \u2192 patch policy via Quick Setup.",
+    "EMR or container hosts \u2192 replace AMIs or images, not in-place patching.",
+    "Need rollback \u2192 use AMI snapshots or blue-green, since it is not automatic."
+   ]
+  },
+  {
+   "id": "ssm-007",
+   "skill": "4.1.1",
+   "source": "1-capabilities-session-manager-patch-and-automation.md",
+   "q": "Compliance requires the CloudWatch agent to stay installed on all nodes tagged `env=prod`. If someone removes it, it must be restored on a schedule. Which feature fits?",
+   "options": [
+    {
+     "t": "State Manager association",
+     "why": "Right: it applies a document to tagged targets on a schedule and re-applies the desired state."
+    },
+    {
+     "t": "Run Command run once",
+     "why": "Wrong: it executes once and does not enforce state over time."
+    },
+    {
+     "t": "Incident Manager response plan",
+     "why": "Wrong: it handles incident response, not configuration enforcement."
+    },
+    {
+     "t": "Maintenance window with no tasks",
+     "why": "Wrong: it only provides a schedule; the enforcement comes from associations."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "State Manager enforces desired state through associations.",
+   "remember": "Keep something installed or configured over time \u2192 State Manager association; one-off ad-hoc command \u2192 Run Command.",
+   "variants": [
+    "Run a command on `role=kafka` nodes with a failure limit \u2192 Run Command with concurrency and error thresholds.",
+    "Keep the SSM Agent updated \u2192 association with `AWS-UpdateSSMAgent`.",
+    "Org-wide baseline setup \u2192 Quick Setup."
+   ]
+  },
+  {
+   "id": "ssm-008",
+   "skill": "3.3.3",
+   "source": "2-inventory-opscenter-incident-manager-security-and-scenarios.md",
+   "q": "A critical CloudWatch alarm must page the on-call engineer, escalate if there is no response, and keep a timeline for post-incident review. Which service?",
+   "options": [
+    {
+     "t": "Systems Manager Incident Manager with a response plan",
+     "why": "Right: it engages contacts, escalates, tracks a timeline and supports post-incident analysis."
+    },
+    {
+     "t": "Systems Manager OpsCenter only",
+     "why": "Wrong: it tracks OpsItems for resolution but is not built for on-call engagement and escalation."
+    },
+    {
+     "t": "Change Manager",
+     "why": "Wrong: it manages approved changes, not alarms."
+    },
+    {
+     "t": "Systems Manager Distributor",
+     "why": "Wrong: it distributes software packages."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Incident Manager is the on-call, escalation and timeline tool.",
+   "remember": "Alarm needs paging, escalation and a post-incident review \u2192 Incident Manager response plan.",
+   "variants": [
+    "Alarm should just create a trackable ticket with runbooks \u2192 CloudWatch alarm to OpsCenter OpsItem.",
+    "Production change needs approvals \u2192 Change Manager with Change Calendar.",
+    "Aggregated ops dashboard across accounts \u2192 Explorer."
+   ]
+  },
+  {
+   "id": "ssm-009",
+   "skill": "3.3.3",
+   "source": "2-inventory-opscenter-incident-manager-security-and-scenarios.md",
+   "q": "Alarms and Security Hub findings should open operational issues that engineers investigate and resolve with attached Automation runbooks, without paging anyone. Which feature?",
+   "options": [
+    {
+     "t": "OpsCenter OpsItems",
+     "why": "Right: OpsItems are created automatically from alarms, EventBridge, Security Hub and Config, and runbooks can be attached to resolve them."
+    },
+    {
+     "t": "Incident Manager",
+     "why": "Wrong: it focuses on engagement and escalation for critical incidents."
+    },
+    {
+     "t": "Fleet Manager",
+     "why": "Wrong: it is a GUI for managing nodes."
+    },
+    {
+     "t": "State Manager",
+     "why": "Wrong: it enforces configuration on nodes."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "OpsCenter is the central place to view and resolve OpsItems.",
+   "remember": "Centralize and resolve operational issues with runbooks \u2192 OpsCenter; page and escalate \u2192 Incident Manager.",
+   "variants": [
+    "Dashboard of OpsData across accounts \u2192 Explorer.",
+    "Many OpsItems flood in \u2192 tune and deduplicate sources.",
+    "Approvals for changes \u2192 Change Manager."
+   ]
+  },
+  {
+   "id": "ssm-010",
+   "skill": "4.2.2",
+   "source": "2-inventory-opscenter-incident-manager-security-and-scenarios.md",
+   "q": "A team needs a fleet software inventory they can query with Athena, including data from several accounts. Which design fits?",
+   "options": [
+    {
+     "t": "Systems Manager Inventory with Resource Data Sync to S3",
+     "why": "Right: Resource Data Sync exports inventory as JSON to S3, across accounts and Regions, so Athena can query it."
+    },
+    {
+     "t": "Run Command output in the console",
+     "why": "Wrong: console output is limited and not queryable at scale."
+    },
+    {
+     "t": "Session Manager logs only",
+     "why": "Wrong: they record shell sessions, not installed software."
+    },
+    {
+     "t": "Patch Manager scan only",
+     "why": "Wrong: it reports missing patches, not a full software inventory."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Inventory plus Resource Data Sync to S3 makes fleet metadata queryable.",
+   "remember": "Fleet metadata queryable in Athena or QuickSight \u2192 Inventory with Resource Data Sync to S3.",
+   "variants": [
+    "Inventory missing \u2192 check the association and the S3 bucket policy for the sync.",
+    "Pipeline config or secrets as parameters \u2192 Parameter Store `SecureString`.",
+    "Patch compliance export \u2192 also through Resource Data Sync."
+   ]
+  }
+ ]
+}

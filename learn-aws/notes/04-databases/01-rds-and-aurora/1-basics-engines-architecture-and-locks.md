@@ -108,21 +108,21 @@ Short notes. Each point is a fact you can be asked about.
 - Use Data API (Aurora) for HTTP-based SQL without connections (file 4).
 
 ## J. Scenarios (if → then, because)
-- If you are lifting an existing PostgreSQL/MySQL app → RDS or Aurora of the same engine, because no code change.
-- If an app needs Oracle features and AWS-managed ops → RDS for Oracle; if it needs OS/DB admin access → RDS Custom for Oracle.
-- If a team wants fast failover and many readers → Aurora.
-- If traffic is unpredictable → Aurora Serverless v2.
-- If cost matters and the workload is small and steady → RDS (gp3, Graviton, Reserved Instances).
-- If you need MongoDB-like documents → DocumentDB, not RDS.
-- If a query is blocked for minutes → find the blocking transaction (pg_blocking_pids / innodb_trx), end it, and fix the app's transaction handling.
-- If deadlocks appear → retry logic in the app, consistent lock ordering, shorter transactions.
-- If an app opens thousands of connections from Lambda → RDS Proxy.
-- If you must migrate Oracle to Aurora PostgreSQL → SCT/DMS Schema Conversion for schema + DMS for data (full load + CDC).
-- If reporting queries slow the primary → read replica (or Aurora reader endpoint).
-- If you need cross-Region low-latency reads for global users → Aurora Global Database (or cross-Region read replicas on RDS).
-- If you want to avoid managing a cluster at all → Aurora DSQL or DynamoDB depending on model (awareness).
-- If vector similarity search is needed with SQL → PostgreSQL with pgvector on RDS or Aurora (file 4).
-- If analytics on OLTP data is needed without affecting the database → zero-ETL to Redshift or snapshot export to S3.
+- **If** you are lifting an existing PostgreSQL or MySQL app to AWS, **then** use **Amazon Relational Database Service (RDS)** or **Amazon Aurora** with the **same engine**. **This works because** the same engine behaves the same at the SQL level, so the app needs **no code change**; only operations (storage, replicas, backup) differ.
+- **If** an app needs **Oracle** features and you want AWS to run the operations, **then** use **RDS for Oracle**. If the app also needs **operating system (OS) and database admin access** (custom patches or agents), use **RDS Custom for Oracle**. **This works because** plain RDS gives no OS access or SSH, while RDS Custom opens it up. The catch: with Custom you take on more of the responsibility yourself.
+- **If** a team wants **fast failover** and **many read replicas**, **then** use **Amazon Aurora**. **This works because** Aurora fails over in **tens of seconds** and supports up to **15 Aurora Replicas** (read-only copies) that share one storage volume with the writer, so their lag is only tens of milliseconds.
+- **If** traffic is unpredictable, **then** use **Aurora Serverless v2**. **This works because** it scales compute up and down automatically in small steps, measured in **Aurora Capacity Units (ACU)**, so you do not have to pre-size the instance.
+- **If** cost matters and the workload is **small and steady**, **then** use plain **Amazon RDS** with **gp3** storage (General Purpose SSD), **Graviton** instance classes and **Reserved Instances** (1- or 3-year commitment). **This works because** RDS is often cheaper than Aurora for small steady loads, Graviton is cheaper per unit of performance, and Reserved Instances discount 24/7 use.
+- **If** you need **MongoDB-like documents**, **then** use **Amazon DocumentDB**, not RDS. **This works because** RDS is a relational (tables and SQL) service, while DocumentDB is built for the document model.
+- **If** a query is **blocked for minutes**, **then** find the blocking transaction (`pg_blocking_pids()` in PostgreSQL, `information_schema.innodb_trx` in MySQL), **end it** (`pg_terminate_backend` or `mysql.rds_kill`), and fix how the app handles transactions. **This works because** a long or idle open transaction holds **locks** and blocks everyone behind it, which is a typical cause of "everything is slow". Keep transactions short and set timeouts so it does not come back.
+- **If** **deadlocks** appear (two transactions waiting for each other), **then** add **retry logic** in the app, take locks in a **consistent order**, and keep transactions **short**. **This works because** the engine kills one transaction (the victim) to break a deadlock, so the app must retry it, and consistent ordering plus short transactions make deadlocks rarer.
+- **If** an app opens **thousands of connections from AWS Lambda**, **then** put **RDS Proxy** in front of the database. **This works because** RDS Proxy is a managed connection pooler: many short client connections share a **smaller pool** of database connections, and each database connection uses memory.
+- **If** you must migrate **Oracle to Aurora PostgreSQL**, **then** use the **AWS Schema Conversion Tool (SCT)** or **DMS Schema Conversion** for the schema and code, and **AWS Database Migration Service (DMS)** for the data with a **full load plus change data capture (CDC)**. **This works because** changing engines (a heterogeneous migration) needs the schema converted first, and CDC keeps copying new changes until you cut over.
+- **If** reporting queries slow down the primary, **then** send them to a **read replica** (RDS) or the **Aurora reader endpoint**. **This works because** writes go to one primary, while replicas give extra **read capacity** so long reports no longer compete with the app.
+- **If** global users need **low-latency reads in other Regions**, **then** use **Aurora Global Database** (or **cross-Region read replicas** on RDS). **This works because** Global Database copies data to read-only secondary Regions with about **1 second** of lag, so users read from a nearby Region.
+- **If** you want to avoid managing a cluster at all, **then** look at **Aurora DSQL** (serverless distributed SQL) or **Amazon DynamoDB**, depending on the data model (awareness only). **This works because** both are serverless, so there are no instances to size or patch.
+- **If** you need **vector similarity search** together with SQL, **then** use **PostgreSQL with the pgvector extension** on **RDS or Aurora** (details in file 4). **This works because** pgvector stores embeddings (lists of numbers) in a normal table, so you can mix similarity search with ordinary SQL filters and joins.
+- **If** you need analytics on OLTP (transactional) data without slowing the database, **then** use a **zero-ETL integration** to **Amazon Redshift** or a **snapshot export to Amazon S3**. **This works because** zero-ETL copies data in near real time with no pipeline to build, and snapshot export reads a snapshot in the background, so the live database is not touched.
 
 ## Verified from AWS docs on 2026-10-02
 Aurora cluster overview and storage pages, Multi-AZ overview, RDS quotas page, storage page, Global Database page were read. Not confirmed (verify): Aurora max volume size per version (128 vs 256 TiB), failover DNS TTL, SQL Server HA details, exact lock-kill procedure names, DSQL/Limitless specifics.

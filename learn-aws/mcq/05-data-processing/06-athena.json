@@ -1,0 +1,1208 @@
+{
+ "questions": [
+  {
+   "id": "athena-001",
+   "skill": "1.2.5",
+   "source": "1-basics-engines-and-querying.md",
+   "q": "A security team must run a few SQL checks on 50 GB of CSV logs already in S3. They want the least operational overhead and no cost when nothing runs. Which service fits?",
+   "options": [
+    {
+     "t": "A provisioned Amazon Redshift cluster loaded with COPY",
+     "why": "Wrong: a cluster to size and pay for, plus a load step, for a few ad hoc queries."
+    },
+    {
+     "t": "An Amazon EMR cluster running Hive",
+     "why": "Wrong: a cluster to run and pay for while idle; EMR is for custom code and full framework control."
+    },
+    {
+     "t": "Amazon Athena with a table defined over the S3 prefix",
+     "why": "Right: serverless SQL on S3, no cluster or load step, billed per data scanned."
+    },
+    {
+     "t": "An AWS Glue ETL job that writes results to S3",
+     "why": "Wrong: Glue is for scheduled ETL, not interactive SQL checks."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Ad hoc SQL on S3 with least operations: Athena.",
+   "remember": "Occasional or ad hoc SQL on files in S3, least operational overhead → Athena (serverless, pay per scan, nothing when idle).",
+   "variants": [
+    "Many concurrent BI users with sub-second SLAs and heavy joins → Redshift.",
+    "Custom code, ML, streaming or Hadoop tools → EMR or Glue.",
+    "Row-level OLTP lookups → DynamoDB or RDS, not Athena."
+   ]
+  },
+  {
+   "id": "athena-002",
+   "skill": "1.2.5",
+   "source": "1-basics-engines-and-querying.md",
+   "q": "Hundreds of BI users run dashboards with heavy joins across multi-TB fact tables and need sub-second response with consistent performance. The data is in S3 today. Which choice fits best?",
+   "options": [
+    {
+     "t": "Load the data into Amazon Redshift",
+     "why": "Right: a data warehouse with tuned storage and caching suits high-concurrency BI with strict SLAs."
+    },
+    {
+     "t": "Athena with query result reuse turned on",
+     "why": "Wrong: reuse only helps identical repeated queries; Athena has no tuned storage or guaranteed sub-second latency."
+    },
+    {
+     "t": "Athena with more workgroups, one per team",
+     "why": "Wrong: workgroups share account-level quotas and do not add concurrency or speed."
+    },
+    {
+     "t": "Athena federated query against the source OLTP database",
+     "why": "Wrong: federated query is for small or occasional reads, not high-concurrency BI on an OLTP database."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Heavy, concurrent, SLA-bound BI belongs in Redshift.",
+   "remember": "Many concurrent users + strict SLAs + heavy joins on big tables → Redshift. Athena is for ad hoc and occasional SQL on S3.",
+   "variants": [
+    "Need to join S3 data with local warehouse tables inside Redshift → Redshift Spectrum.",
+    "Only occasional analyst queries on S3 → Athena."
+   ]
+  },
+  {
+   "id": "athena-003",
+   "skill": "3.1.7",
+   "source": "1-basics-engines-and-querying.md",
+   "q": "A downstream ML team needs the full 400 GB result of an Athena SELECT as Parquet files in S3. They do not want a new table in the catalog. The normal query result is too slow to write. What should you use?",
+   "options": [
+    {
+     "t": "Run the SELECT and copy the CSV from the query results location",
+     "why": "Wrong: the normal result is one uncompressed CSV, written without parallelism."
+    },
+    {
+     "t": "UNLOAD with format = 'PARQUET' to an empty S3 prefix",
+     "why": "Right: UNLOAD writes the SELECT result in parallel in Parquet, ORC, Avro, JSON or text, without creating a table."
+    },
+    {
+     "t": "CTAS with format = 'PARQUET'",
+     "why": "Wrong: it works but creates a table in the catalog, which the team does not want."
+    },
+    {
+     "t": "Managed query results and download from the console",
+     "why": "Wrong: the console download limit is 200 MB and the format is still CSV."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Big export in a non-CSV format, no table: UNLOAD.",
+   "remember": "Large result set or a non-CSV format needed, no table → UNLOAD (parallel write; target prefix must be empty; max 100 partitions).",
+   "variants": [
+    "You also want a queryable table over the output → CTAS.",
+    "You only need a small result in a BI tool → normal query results.",
+    "UNLOAD target prefix is not empty → it fails; it does not overwrite."
+   ]
+  },
+  {
+   "id": "athena-004",
+   "skill": "3.1.7",
+   "source": "1-basics-engines-and-querying.md",
+   "q": "A CTAS that converts a year of daily CSV data into Parquet partitioned by day fails with `HIVE_TOO_MANY_OPEN_PARTITIONS: Exceeded limit of 100 open writers`. What is the fix?",
+   "options": [
+    {
+     "t": "Ask AWS Support to raise the partition-per-query quota",
+     "why": "Wrong: 100 partitions per CTAS or INSERT INTO is a hard limit."
+    },
+    {
+     "t": "Add ORDER BY on the partition column to the SELECT",
+     "why": "Wrong: ORDER BY in a CTAS is ignored and does not change the writer count."
+    },
+    {
+     "t": "CTAS the first 100 days with a WHERE filter, then INSERT INTO in batches of up to 100 days with non-overlapping filters",
+     "why": "Right: this is the documented workaround for the 100-writer limit."
+    },
+    {
+     "t": "Add bucketed_by on the date column",
+     "why": "Wrong: buckets multiply the writers (partitions x buckets), making it worse."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "CTAS and INSERT INTO write at most 100 partitions per statement.",
+   "remember": "100-open-writers error → split the load: CTAS for the first ≤100 partitions, then INSERT INTO batches of ≤100 with non-overlapping WHERE filters.",
+   "variants": [
+    "UNLOAD with partitioned_by also has a 100-partition limit.",
+    "Bucketing counts too: partitions x buckets must stay ≤ 100.",
+    "Overlapping INSERT filters → duplicated rows."
+   ]
+  },
+  {
+   "id": "athena-005",
+   "skill": "3.1.7",
+   "source": "1-basics-engines-and-querying.md",
+   "q": "A team turned on query result reuse for a dashboard query, but some queries still scan data every time. Which two causes explain why reuse is not applied? (Choose 2.)",
+   "options": [
+    {
+     "t": "The query reads a table that has Lake Formation fine-grained access controls.",
+     "why": "Right: reuse is not used for tables with Lake Formation fine-grained controls."
+    },
+    {
+     "t": "The query string has extra spaces and a comment compared with the earlier run.",
+     "why": "Wrong: comments and whitespace are ignored when matching strings under 100 KB."
+    },
+    {
+     "t": "The query joins an S3 table with a federated MySQL catalog.",
+     "why": "Right: federated catalogs and queries across more than one catalog are not reused."
+    },
+    {
+     "t": "The max age is set to 60 minutes, the default.",
+     "why": "Wrong: the default is 60 minutes; results inside that age are reused."
+    },
+    {
+     "t": "The query uses ORDER BY together with LIMIT.",
+     "why": "Wrong: the blocker is LIMIT without ORDER BY (non-deterministic), not with it."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Reuse skips LF fine-grained tables and federated or multi-catalog queries.",
+   "remember": "Result reuse needs: same workgroup, same query text, same catalog/database, within max age (default 60 min, max 7 days). Not reused for federated or Hive metastore catalogs, LF fine-grained tables, >20 tables, rand()/LIMIT without ORDER BY, or managed query results.",
+   "variants": [
+    "The workgroup uses managed query results → no reuse.",
+    "The source data changed within max age → reuse returns stale results.",
+    "The query uses rand() → no reuse."
+   ]
+  },
+  {
+   "id": "athena-006",
+   "skill": "3.1.7",
+   "source": "1-basics-engines-and-querying.md",
+   "q": "A team does not want to create, secure or clean up an S3 bucket for Athena query results. Results are only read soon after each query. What should they do?",
+   "options": [
+    {
+     "t": "Use the primary workgroup with no results location",
+     "why": "Wrong: an Athena-run query needs a results location unless managed query results are on."
+    },
+    {
+     "t": "Point results to a bucket in another Region with a 1-day lifecycle rule",
+     "why": "Wrong: the results bucket must be in the query's Region, and it still needs managing."
+    },
+    {
+     "t": "Use UNLOAD for every query",
+     "why": "Wrong: UNLOAD still needs an S3 target you own and clean."
+    },
+    {
+     "t": "Enable Athena managed query results on the workgroup",
+     "why": "Right: Athena stores results for 24 hours and deletes them, at no extra cost, with no bucket to manage."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "No results bucket to manage: managed query results.",
+   "remember": "Managed query results → no results bucket; kept 24 hours, auto-deleted, free; AWS owned key or your CMK; 200 MB console download; not compatible with query result reuse.",
+   "variants": [
+    "Need results longer than 24 hours → your own results bucket + lifecycle rule.",
+    "Dashboard depends on query result reuse → managed results cannot be used.",
+    "Result larger than 200 MB → UNLOAD."
+   ]
+  },
+  {
+   "id": "athena-007",
+   "skill": "3.2.2",
+   "source": "1-basics-engines-and-querying.md",
+   "q": "A table uses the OpenX JSON SerDe. Queries fail with `HIVE_CURSOR_ERROR: Row is not a valid JSON Object`, and `SELECT COUNT(*)` on another file returns 1. What is the cause?",
+   "options": [
+    {
+     "t": "The partition keys are declared as STRING",
+     "why": "Wrong: string is the recommended partition type."
+    },
+    {
+     "t": "The files are gzip-compressed",
+     "why": "Wrong: Athena reads gzip JSON; compression lowers scan cost."
+    },
+    {
+     "t": "The JSON is pretty-printed or not one record per line",
+     "why": "Right: the JSON SerDes need one record per line; multi-line JSON fails or counts as one row."
+    },
+    {
+     "t": "The workgroup uses engine version 3",
+     "why": "Wrong: engine version 3 is the current version and reads JSON lines fine."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "JSON SerDes need newline-delimited records.",
+   "remember": "Athena JSON = one record per line. Pretty-printed → 'Row is not a valid JSON Object'; COUNT(*) = 1 → records not newline-separated. ignore.malformed.json = true turns bad lines into NULL so you can find them.",
+   "variants": [
+    "Column declared map/struct but data is primitive → HIVE_BAD_DATA.",
+    "Need to find bad lines without failing the query → ignore.malformed.json = true.",
+    "Crawler with a custom JSON classifier → table Athena cannot query; use a normal table or CTAS."
+   ]
+  },
+  {
+   "id": "athena-008",
+   "skill": "3.2.3",
+   "source": "1-basics-engines-and-querying.md",
+   "q": "An app builds Athena SQL from user input with string concatenation. Security wants to stop SQL injection and keep the SQL defined in one place that IAM can control. What should the team use?",
+   "options": [
+    {
+     "t": "Prepared statements: PREPARE once, then EXECUTE ... USING with parameters",
+     "why": "Right: parameterized SQL is kept in the workgroup, blocks injection, and access can be restricted with IAM."
+    },
+    {
+     "t": "A view per user input value",
+     "why": "Wrong: views are saved queries without parameters and would not scale to user input."
+    },
+    {
+     "t": "A Lambda UDF that sanitizes the input",
+     "why": "Wrong: UDFs run inside a query; the concatenated string is still the risk, and UDFs are slower."
+    },
+    {
+     "t": "Query result reuse",
+     "why": "Wrong: reuse saves cost on repeats; it does nothing for injection."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Parameterized Athena SQL = prepared statements.",
+   "remember": "User input in Athena SQL → prepared statements (PREPARE / EXECUTE USING), stored per workgroup, max 1,000 per workgroup, controlled by IAM.",
+   "variants": [
+    "Hide a complex join behind one name → view (stored in Glue, no data).",
+    "Custom logic not in built-in functions → Lambda UDF (USING EXTERNAL FUNCTION).",
+    "View fails after the base table changed → 'view is stale', re-create it."
+   ]
+  },
+  {
+   "id": "athena-009",
+   "skill": "3.2.4",
+   "source": "1-basics-engines-and-querying.md",
+   "q": "A data scientist wants to clean S3 data with PySpark interactively, without creating or managing any cluster. Which option fits?",
+   "options": [
+    {
+     "t": "An Athena SQL workgroup with the query editor",
+     "why": "Wrong: the SQL editor runs SQL; Spark needs a Spark-enabled workgroup and notebooks."
+    },
+    {
+     "t": "A provisioned EMR cluster with a Jupyter notebook",
+     "why": "Wrong: it works but needs a cluster to manage."
+    },
+    {
+     "t": "Assign the SQL workgroup to a capacity reservation",
+     "why": "Wrong: capacity reservations are for SQL and do not support Spark workgroups."
+    },
+    {
+     "t": "A Spark-enabled Athena workgroup and an Athena notebook",
+     "why": "Right: Athena for Apache Spark gives serverless interactive PySpark, billed in DPU-hours."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Serverless interactive PySpark on S3: Athena for Apache Spark.",
+   "remember": "PySpark without a cluster → Athena for Apache Spark (Spark-enabled workgroup, notebooks, billed per DPU-hour, not per TB). Spark workgroups cannot use the SQL editor or capacity reservations.",
+   "variants": [
+    "The notebook must enforce Lake Formation permissions → PySpark engine v3 does not support Lake Formation.",
+    "The table uses partition projection → PySpark engine v3 does not support it.",
+    "Long scheduled Spark ETL → Glue or EMR."
+   ]
+  },
+  {
+   "id": "athena-010",
+   "skill": "3.3.4",
+   "source": "1-basics-engines-and-querying.md",
+   "q": "An Athena query that joins two large tables fails with `Query exhausted resources at this scale factor`. What should the engineer do?",
+   "options": [
+    {
+     "t": "Move the workgroup to a larger Athena instance size",
+     "why": "Wrong: Athena scales out, not up; there is no bigger size to choose."
+    },
+    {
+     "t": "Rewrite the query: put the larger table on the left and the smaller on the right, or split the build side",
+     "why": "Right: the right side is hashed in memory per node; rewriting the query is the fix."
+    },
+    {
+     "t": "Raise the DML query timeout to 240 minutes",
+     "why": "Wrong: the failure is memory per node, not time."
+    },
+    {
+     "t": "Turn on query result reuse",
+     "why": "Wrong: reuse only returns earlier successful results."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Memory-per-node failures are fixed by rewriting the query.",
+   "remember": "'Exhausted resources at this scale factor' → rewrite: large table left / small right, approx_distinct instead of COUNT(DISTINCT), narrower windows, fewer GROUP BY columns, or split the query. Execution is not deterministic, so a retry may also pass.",
+   "variants": [
+    "GROUP BY runs out of memory → group by fewer numeric columns and use arbitrary().",
+    "COUNT(DISTINCT) on billions of rows → approx_distinct.",
+    "Window function out of memory → add PARTITION BY or use max_by / ORDER BY LIMIT."
+   ]
+  },
+  {
+   "id": "athena-011",
+   "skill": "3.1.7",
+   "source": "2-tables-formats-partitioning-and-performance.md",
+   "q": "A daily Athena report scans 5 TB of raw JSON in S3. It is slow and the bill is high. Most queries filter by date and read 4 of 60 fields. Which change cuts cost the most?",
+   "options": [
+    {
+     "t": "Convert the data with CTAS to Parquet partitioned by date",
+     "why": "Right: columnar Parquet reads only needed columns, compresses, and date partitions skip whole prefixes."
+    },
+    {
+     "t": "Gzip the JSON files",
+     "why": "Wrong: it lowers bytes, but each row is still read in full and gzip text is not splittable."
+    },
+    {
+     "t": "Add LIMIT to the report queries",
+     "why": "Wrong: LIMIT does not reduce scan for non-columnar data."
+    },
+    {
+     "t": "Move the data to S3 Intelligent-Tiering",
+     "why": "Wrong: storage class does not change bytes scanned by Athena."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Columnar + partitions is the biggest Athena cost lever.",
+   "remember": "Athena cost = bytes scanned (before decompression). Repeated analytics on CSV/JSON → convert to Parquet/ORC with compression and partition on the common filter.",
+   "variants": [
+    "Only compression possible → it helps, but columnar is better.",
+    "Queries filter on hours but rarely → partition by day and sort by timestamp inside files.",
+    "Logs arrive via Firehose → use Firehose record format conversion to Parquet."
+   ]
+  },
+  {
+   "id": "athena-012",
+   "skill": "2.2.4",
+   "source": "2-tables-formats-partitioning-and-performance.md",
+   "q": "New `dt=YYYY-MM-DD-HH` folders land in S3 every hour. An engineer runs `MSCK REPAIR TABLE` after each load, which is slow and keeps getting slower. What is the best fix?",
+   "options": [
+    {
+     "t": "Run a Glue crawler every 5 minutes",
+     "why": "Wrong: still catalog maintenance to run and pay for, and planning still calls GetPartitions."
+    },
+    {
+     "t": "Change the partition column type to TIMESTAMP",
+     "why": "Wrong: partition keys should be STRING; other types are pruned slowly."
+    },
+    {
+     "t": "Enable partition projection with a date-type projection on dt",
+     "why": "Right: Athena computes partitions in memory, so new folders work with no maintenance and planning is faster."
+    },
+    {
+     "t": "Use INSERT INTO to register the new partitions",
+     "why": "Wrong: INSERT INTO writes data; it is not a way to register existing folders."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Predictable time-based partitions: partition projection.",
+   "remember": "Partitions arrive on a predictable schedule (dates, integers, enums) → partition projection: no MSCK, no crawler, no catalog calls. MSCK REPAIR only adds Hive-style partitions, is slow and fails near 100,000+.",
+   "variants": [
+    "Other engines (Spectrum, EMR, Glue) read the table → they ignore projection; register real partitions too.",
+    "Huge partition count but keep the catalog → Glue partition indexes.",
+    "Folders are not key=value → storage.location.template."
+   ]
+  },
+  {
+   "id": "athena-013",
+   "skill": "3.3.4",
+   "source": "2-tables-formats-partitioning-and-performance.md",
+   "q": "A table has 300,000 partitions with an INT partition key `yearmonth`. Queries that filter on it are slow and sometimes time out during planning. What should the engineer change first?",
+   "options": [
+    {
+     "t": "Increase the DML query timeout",
+     "why": "Wrong: it hides the symptom; partition pruning is the problem."
+    },
+    {
+     "t": "Run MSCK REPAIR TABLE before each query",
+     "why": "Wrong: it only adds partitions, is slow, and can fail at this size."
+    },
+    {
+     "t": "Add a Lambda UDF to convert the key",
+     "why": "Wrong: UDFs run per row and do nothing for metadata pruning."
+    },
+    {
+     "t": "Declare the partition key as STRING and cast in queries if needed",
+     "why": "Right: only string keys let Athena push the filter to Glue (metastore-level pruning)."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Partition keys must be STRING for metastore pruning.",
+   "remember": "Always declare partition keys as STRING; non-string keys are pruned on the Athena side, slow with many thousands of partitions, and can time out. For huge counts also consider projection or Glue partition indexes.",
+   "variants": [
+    "Still slow with string keys and huge counts → partition projection or Glue partition indexes.",
+    "Filtering with ranges or missing keys → Athena lists more partitions; equality on all keys is fastest.",
+    "Partition types differ from the table → HIVE_PARTITION_SCHEMA_MISMATCH."
+   ]
+  },
+  {
+   "id": "athena-014",
+   "skill": "3.1.7",
+   "source": "2-tables-formats-partitioning-and-performance.md",
+   "q": "A table uses partition projection and works well in Athena. Redshift Spectrum now queries the same Glue table but returns no rows. Why, and what is the fix?",
+   "options": [
+    {
+     "t": "Spectrum needs engine version 3; upgrade the Redshift workgroup",
+     "why": "Wrong: engine versions are an Athena setting, unrelated to this."
+    },
+    {
+     "t": "Spectrum ignores partition projection; also register real partitions in the Glue catalog",
+     "why": "Right: projection works only through Athena; other engines read the catalog partitions, which are empty."
+    },
+    {
+     "t": "The table must be converted to Iceberg",
+     "why": "Wrong: not needed; Spectrum simply has no partitions to read."
+    },
+    {
+     "t": "Spectrum needs Lake Formation registration of the location",
+     "why": "Wrong: permissions are not the issue; there are no partitions in the catalog."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Projection is Athena-only.",
+   "remember": "Partition projection only works through Athena SQL. Redshift Spectrum, EMR, Glue and Athena Spark read the catalog partitions, so keep real partitions if they share the table.",
+   "variants": [
+    "SHOW PARTITIONS returns nothing on a projected table → expected; projected partitions are not listed.",
+    "Athena PySpark engine v3 → does not support projection tables.",
+    "Only Athena reads the table → projection alone is fine."
+   ]
+  },
+  {
+   "id": "athena-015",
+   "skill": "3.3.4",
+   "source": "2-tables-formats-partitioning-and-performance.md",
+   "q": "Many concurrent Athena queries over a table with hundreds of thousands of small files start failing with `SlowDown: Please reduce your request rate` (HTTP 503). What fixes the cause?",
+   "options": [
+    {
+     "t": "Compact the data into fewer, larger files and stagger the queries",
+     "why": "Right: S3 per-prefix request limits are being hit; fewer files and fewer concurrent reads cut requests."
+    },
+    {
+     "t": "Add more Athena workgroups",
+     "why": "Wrong: the throttling is in S3, and workgroups do not change request counts."
+    },
+    {
+     "t": "Add more partition keys to split the data finer",
+     "why": "Wrong: finer partitions usually mean more, smaller files."
+    },
+    {
+     "t": "Enable S3 Bucket Keys",
+     "why": "Wrong: Bucket Keys reduce KMS throttling, not S3 request throttling."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "SlowDown = S3 throttling from too many requests per prefix.",
+   "remember": "Small files are the #1 Athena performance problem. SlowDown (503) → larger files, fewer partition keys, stagger queries, spread across prefixes. Fix at the source: longer Firehose buffers, compaction (Glue, CTAS, Iceberg OPTIMIZE).",
+   "variants": [
+    "KMS 'exceeded the rate' → S3 Bucket Keys.",
+    "Glue 'Rate exceeded' → fewer partitions or partition projection.",
+    "Lambda TooManyRequestsException in a federated query → raise connector concurrency."
+   ]
+  },
+  {
+   "id": "athena-016",
+   "skill": "2.1.7",
+   "source": "2-tables-formats-partitioning-and-performance.md",
+   "q": "A company must delete one customer's rows from a 20 TB data lake in S3 on request (GDPR), using SQL in Athena. Which approach works?",
+   "options": [
+    {
+     "t": "Run DELETE FROM on the existing Hive Parquet table",
+     "why": "Wrong: UPDATE and DELETE do not work on plain Hive tables."
+    },
+    {
+     "t": "Use an Iceberg table: DELETE FROM, then OPTIMIZE and VACUUM",
+     "why": "Right: Iceberg supports row-level DELETE; OPTIMIZE applies delete files and VACUUM removes old snapshots and files."
+    },
+    {
+     "t": "Use a Delta Lake table and run MERGE from Athena",
+     "why": "Wrong: Athena only reads Delta; UPDATE/MERGE/DELETE work only on Iceberg."
+    },
+    {
+     "t": "Rely on a view that filters the customer out",
+     "why": "Wrong: the data still exists in S3; nothing is deleted."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Row-level changes from Athena need Iceberg.",
+   "remember": "Updates, deletes or upserts from Athena → Iceberg (UPDATE, DELETE, MERGE INTO). To really remove deleted data: OPTIMIZE (apply deletes) + VACUUM (expire snapshots, remove orphans).",
+   "variants": [
+    "Hudi or Delta tables → Athena reads them; writes come from Spark/Glue/EMR.",
+    "Need the table as it was yesterday → Iceberg FOR TIMESTAMP AS OF.",
+    "Need upserts from a CDC feed → Iceberg MERGE INTO."
+   ]
+  },
+  {
+   "id": "athena-017",
+   "skill": "2.1.7",
+   "source": "2-tables-formats-partitioning-and-performance.md",
+   "q": "An Iceberg table is vacuumed weekly with default table properties. Auditors now need to time-travel up to 14 days back. Which setting must change?",
+   "options": [
+    {
+     "t": "Raise vacuum_max_snapshot_age_seconds to at least 14 days",
+     "why": "Right: the default keeps snapshots for 432,000 seconds (5 days); vacuumed snapshots cannot be time-travelled to."
+    },
+    {
+     "t": "Raise vacuum_min_snapshots_to_keep to 14",
+     "why": "Wrong: it keeps a number of snapshots, not a time window; there may be many snapshots per day."
+    },
+    {
+     "t": "Raise optimize_rewrite_data_file_threshold",
+     "why": "Wrong: that controls when OPTIMIZE rewrites files, not snapshot retention."
+    },
+    {
+     "t": "Switch the queries to FOR SYSTEM_TIME AS OF",
+     "why": "Wrong: that is old engine v2 syntax; the problem is retention, not syntax."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "VACUUM expires snapshots older than 5 days by default.",
+   "remember": "Time travel works only for snapshots VACUUM has not expired. Default vacuum_max_snapshot_age_seconds = 432,000 (5 days); vacuum_min_snapshots_to_keep = 1 wins over age. Syntax: FOR TIMESTAMP AS OF / FOR VERSION AS OF.",
+   "variants": [
+    "Time without a zone in time travel → read as UTC.",
+    "Need to see snapshot ids → query \"tbl$snapshots\".",
+    "Table slow after many small inserts → OPTIMIZE ... REWRITE DATA USING BIN_PACK."
+   ]
+  },
+  {
+   "id": "athena-018",
+   "skill": "2.1.5",
+   "source": "3-federated-query-and-connectors.md",
+   "q": "An analyst needs a one-time join of S3 clickstream data with a customer table in Amazon RDS for PostgreSQL. Building an ETL pipeline is not justified. What is the simplest option?",
+   "options": [
+    {
+     "t": "Set up AWS DMS full load + CDC into S3",
+     "why": "Wrong: a continuous pipeline for a one-time question."
+    },
+    {
+     "t": "Configure Redshift zero-ETL from RDS",
+     "why": "Wrong: continuous replication into a warehouse is for heavy repeated analytics."
+    },
+    {
+     "t": "Export an RDS snapshot to S3 every hour",
+     "why": "Wrong: more moving parts than a one-time query needs."
+    },
+    {
+     "t": "Athena federated query with the PostgreSQL connector, joined to the S3 table",
+     "why": "Right: federated query reads the database in place and joins it with S3 in one SQL statement."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Occasional, small, fresh: federated query.",
+   "remember": "Occasional + small + fresh → Athena federated query. Frequent + big → move the data to S3 (DMS, Glue, RDS export) or to the warehouse (zero-ETL).",
+   "variants": [
+    "The same join runs every hour on big tables → land the RDS data in S3 and query Parquet.",
+    "Redshift users must query RDS from the warehouse → Redshift federated queries.",
+    "Cheap one-time lake copy without load on the live DB → RDS snapshot export to S3."
+   ]
+  },
+  {
+   "id": "athena-019",
+   "skill": "1.2.5",
+   "source": "3-federated-query-and-connectors.md",
+   "q": "A join between a large S3 table and a large Aurora MySQL table now runs every hour through an Athena federated query. It is slow, costly and loads the production database. What should the team do?",
+   "options": [
+    {
+     "t": "Raise the connector Lambda memory and reserved concurrency",
+     "why": "Wrong: it can help a little, but the cross-source join still pulls both sides through Lambda every hour."
+    },
+    {
+     "t": "Create a federated view over the join",
+     "why": "Wrong: a view stores no data; every query still hits the database."
+    },
+    {
+     "t": "Land the Aurora data in S3 (DMS or Glue, or an export) and query Parquet with Athena",
+     "why": "Right: for frequent, large use, copy the data to S3 so Athena scans columnar files, not the live DB."
+    },
+    {
+     "t": "Turn on query result reuse",
+     "why": "Wrong: reuse does not work with federated catalogs."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Frequent, large cross-source joins: move the data, do not federate.",
+   "remember": "Federated query is for small lookups and for extracting into S3. Heavy repeated joins → copy the source to S3 (DMS/Glue full load + CDC, or export) and query Parquet.",
+   "variants": [
+    "Must keep federating but protect production → point the connector at a read replica.",
+    "Continuous replication into a warehouse → Redshift zero-ETL.",
+    "Extract many sources into S3 with SQL → CTAS / INSERT INTO over a federated read."
+   ]
+  },
+  {
+   "id": "athena-020",
+   "skill": "1.2.7",
+   "source": "3-federated-query-and-connectors.md",
+   "q": "An Athena federated query to a private Amazon RDS instance hangs and then times out. The connector Lambda is configured in the RDS VPC private subnets and reads credentials from Secrets Manager. What is the most likely fix?",
+   "options": [
+    {
+     "t": "Give the Lambda a route to AWS APIs (NAT gateway or VPC endpoints for S3, Athena, Secrets Manager) and allow its security group on the DB port",
+     "why": "Right: a VPC Lambda has no internet access; it must reach both the DB and the AWS APIs."
+    },
+    {
+     "t": "Increase the Athena DML query timeout to 240 minutes",
+     "why": "Wrong: the Lambda cannot connect; more time does not fix the network."
+    },
+    {
+     "t": "Move the results bucket to the RDS Region",
+     "why": "Wrong: a wrong-Region results bucket gives a clear invalid-location error, not a hang."
+    },
+    {
+     "t": "Switch to the generic AthenaJdbcConnector",
+     "why": "Wrong: it is deprecated, and it would face the same network issue."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Networking is the #1 cause of VPC federated timeouts.",
+   "remember": "VPC connector → subnets + security groups, source SG must allow the connector SG, and NAT or VPC endpoints for Athena, S3 (spill), Secrets Manager, Glue, CloudWatch Logs. Look at the Lambda logs first.",
+   "variants": [
+    "Rate exceeded / TooManyRequestsException → Lambda concurrency throttling.",
+    "Access Denied on spill → S3 read on spill bucket and kms:Decrypt.",
+    "DynamoDB or CloudWatch connectors → usually no VPC setup needed."
+   ]
+  },
+  {
+   "id": "athena-021",
+   "skill": "4.2.4",
+   "source": "3-federated-query-and-connectors.md",
+   "q": "Analysts query an RDS database through an Athena Lambda connector. Compliance now requires column-level access control on that federated data. What should the team do?",
+   "options": [
+    {
+     "t": "Give each analyst lambda:InvokeFunction on a separate copy of the connector",
+     "why": "Wrong: IAM on the Lambda is all-or-nothing for the whole source."
+    },
+    {
+     "t": "Register the connector as a Glue Data Catalog and grant column permissions in Lake Formation",
+     "why": "Right: Lake Formation fine-grained control works for Glue-registered federated catalogs."
+    },
+    {
+     "t": "Create federated views that hide the columns",
+     "why": "Wrong: views are not access control, and federated views are not supported once the source is registered in Lake Formation."
+    },
+    {
+     "t": "Use an Athena data catalog (Athena-type) connector with Lake Formation",
+     "why": "Wrong: Athena-type connectors cannot be registered as Glue/Lake Formation catalogs."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Fine-grained control on federated data = Glue-registered catalog + Lake Formation.",
+   "remember": "Federated access control: unregistered → IAM only (invoke on the Lambda). Column/row control → register as a Glue Data Catalog, then Lake Formation grants; users must not call the Lambda, spill bucket or Glue connection directly.",
+   "variants": [
+    "After registration, federated views and passthrough queries stop working.",
+    "Custom SDK connectors, MSK, Kafka, Neptune → Athena-type only, cannot be registered.",
+    "Cross-account sharing of a registered catalog → Glue/Lake Formation sharing, not connector sharing."
+   ]
+  },
+  {
+   "id": "athena-022",
+   "skill": "1.2.7",
+   "source": "3-federated-query-and-connectors.md",
+   "q": "A Lambda-based Athena connector works, but two issues appear: the spill bucket keeps growing, and some users get Access Denied on large queries while small queries work. Which two actions fix these? (Choose 2.)",
+   "options": [
+    {
+     "t": "Delete the SpillBucket parameter from the connector",
+     "why": "Wrong: SpillBucket is required for Lambda connectors."
+    },
+    {
+     "t": "Add an S3 lifecycle rule to expire objects in the spill bucket",
+     "why": "Right: Athena does not delete spilled data, and it is not reused."
+    },
+    {
+     "t": "Increase the Lambda response size limit",
+     "why": "Wrong: the 6 MB Lambda response limit is why data spills; it is not a setting here."
+    },
+    {
+     "t": "Grant the querying users read on the spill location, plus kms:Decrypt if a KMS key encrypts it",
+     "why": "Right: the query runs as the user, who must read spilled data from S3."
+    },
+    {
+     "t": "Turn on query result reuse for the workgroup",
+     "why": "Wrong: reuse is not used for federated catalogs and does not affect spill."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Spill needs a lifecycle rule and read access for the querying user.",
+   "remember": "Results bigger than the Lambda response limit spill to the spill bucket. Athena never deletes it → lifecycle rule. Users need S3 read (and kms:Decrypt) on the spill location; cross-account users need GetObject/ListBucket too.",
+   "variants": [
+    "INSERT INTO a federated catalog fails → federated sources are read-only.",
+    "Table not found because of case → set the case resolver mode.",
+    "Another account must use the connector → Lambda resource policy + spill bucket policy + AthenaCrossAccountCreate role."
+   ]
+  },
+  {
+   "id": "athena-023",
+   "skill": "4.2.4",
+   "source": "4-security-governance-cost-and-limits.md",
+   "q": "Analysts query an S3 data lake with Athena. They must see only non-PII columns, and must not be able to read the S3 objects directly. Which design meets both needs?",
+   "options": [
+    {
+     "t": "Create views without the PII columns and grant SELECT on the views via IAM",
+     "why": "Wrong: users still need direct S3 read on the data, which they could use to read PII."
+    },
+    {
+     "t": "Use separate workgroups with different results locations",
+     "why": "Wrong: workgroups separate results and history, not column access to the data."
+    },
+    {
+     "t": "Register the S3 location in Lake Formation and grant column-level SELECT; give users no direct S3 permission",
+     "why": "Right: Lake Formation vends temporary credentials scoped to allowed data, so users need no direct S3 access."
+    },
+    {
+     "t": "Encrypt the PII columns with SSE-KMS",
+     "why": "Wrong: SSE-KMS encrypts whole objects; anyone with kms:Decrypt reads all columns."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Column-level control on S3 tables: Lake Formation.",
+   "remember": "Column/row/cell control for Athena → register the location in Lake Formation; Athena gets LF-vended credentials, so users need no S3 grants. LF covers reads only, not writes, query results or query history.",
+   "variants": [
+    "Users must only read data via Athena without LF → aws:CalledVia = athena.amazonaws.com condition.",
+    "Query history shows sensitive column names → separate workgroups per audience.",
+    "CTAS on an LF table → still needs IAM S3 write on the target."
+   ]
+  },
+  {
+   "id": "athena-024",
+   "skill": "4.2.4",
+   "source": "4-security-governance-cost-and-limits.md",
+   "q": "A team uses Lake Formation column grants with Athena. Users who lack access to some columns can still read the query text and column names that colleagues used. What explains this, and what is the fix?",
+   "options": [
+    {
+     "t": "Lake Formation does not cover query history; separate audiences into different workgroups",
+     "why": "Right: query history is per workgroup and shows query text, columns and filters; LF is not applied to it."
+    },
+    {
+     "t": "Lake Formation cell filters are missing; add a row filter",
+     "why": "Wrong: filters control data, not what appears in query history."
+    },
+    {
+     "t": "The results location must be registered in Lake Formation",
+     "why": "Wrong: the results location cannot be registered with Lake Formation."
+    },
+    {
+     "t": "Turn on query result reuse",
+     "why": "Wrong: reuse is unrelated, and it does not work with LF fine-grained tables anyway."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "LF does not protect query history or results.",
+   "remember": "Lake Formation governs reads of data only. Query results (protect with IAM on the results bucket) and query history (per workgroup) are outside LF, so align workgroup membership with LF grants.",
+   "variants": [
+    "Results bucket readable by many users → each workgroup its own results prefix + IAM.",
+    "Avro/custom SerDe tables → schema in properties can leak column names.",
+    "Cell filters on a table do not apply to its views."
+   ]
+  },
+  {
+   "id": "athena-025",
+   "skill": "4.2.4",
+   "source": "4-security-governance-cost-and-limits.md",
+   "q": "Auditors require that Athena access to Lake Formation data be logged and authorized as the real corporate user from the company IdP, not as a shared IAM role. Which setup meets this?",
+   "options": [
+    {
+     "t": "A workgroup with Override client-side settings",
+     "why": "Wrong: that enforces results settings; it does not propagate user identity."
+    },
+    {
+     "t": "SAML federation to Athena through the JDBC driver",
+     "why": "Wrong: the older federated method does not propagate identity to Lake Formation the way TIP does."
+    },
+    {
+     "t": "An aws:CalledVia condition on the S3 policies",
+     "why": "Wrong: it limits how data is reached, not who is logged; it is also not compatible with Identity Center workgroups."
+    },
+    {
+     "t": "An IAM Identity Center–enabled workgroup with trusted identity propagation, Lake Formation and S3 Access Grants",
+     "why": "Right: TIP passes the corporate identity through Athena to Lake Formation and S3, so logs and permissions follow the person."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Real user identity end to end: IAM Identity Center workgroup + TIP.",
+   "remember": "Trusted identity propagation → Identity Center–enabled workgroup (set at creation, cannot convert), users assigned to it, LF configured for Identity Center, S3 Access Grants for results. Queries run from EMR Studio or SageMaker Unified Studio, not the Athena console.",
+   "variants": [
+    "Existing workgroup must use TIP → create a new one; authentication cannot be changed.",
+    "Spark workgroups → not compatible with TIP.",
+    "Isolate each user's results → user-identity S3 prefix."
+   ]
+  },
+  {
+   "id": "athena-026",
+   "skill": "4.2.6",
+   "source": "4-security-governance-cost-and-limits.md",
+   "q": "Data scientists may query an S3 bucket through Athena, but must not download the objects directly with the S3 API or CLI. Lake Formation is not used. Which IAM control fits?",
+   "options": [
+    {
+     "t": "An aws:CalledVia condition allowing S3 and Glue access only when called via athena.amazonaws.com",
+     "why": "Right: access works only when Athena makes the call on the user's behalf."
+    },
+    {
+     "t": "An aws:SourceIp condition on the bucket policy",
+     "why": "Wrong: users can call S3 from the same IP; it does not force access through Athena."
+    },
+    {
+     "t": "A per-query data usage control",
+     "why": "Wrong: it limits bytes scanned per query, not direct S3 access."
+    },
+    {
+     "t": "S3 Block Public Access on the bucket",
+     "why": "Wrong: it stops public access, not access by authenticated users."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Force data access through Athena: aws:CalledVia (or Lake Formation).",
+   "remember": "Users may read data only via Athena → aws:CalledVia = athena.amazonaws.com on S3/Glue, or register the location in Lake Formation (no direct S3 grants). CalledVia is not compatible with Identity Center–enabled workgroups.",
+   "variants": [
+    "Need column-level control too → Lake Formation.",
+    "Queries must not use the internet → interface VPC endpoints for Athena and Glue + S3 gateway endpoint.",
+    "Restrict to the VPC endpoint → endpoint policies and aws:SourceVpce."
+   ]
+  },
+  {
+   "id": "athena-027",
+   "skill": "4.3.2",
+   "source": "4-security-governance-cost-and-limits.md",
+   "q": "Every Athena query in a workgroup must write results to one company bucket with SSE-KMS, even when BI tools send their own output location in the JDBC settings. Which two settings achieve this? (Choose 2.)",
+   "options": [
+    {
+     "t": "Set the workgroup results location and SSE-KMS result encryption",
+     "why": "Right: the workgroup holds the results location and its encryption."
+    },
+    {
+     "t": "Rely on the JDBC driver's output location setting",
+     "why": "Wrong: clients can send any location; that is the problem."
+    },
+    {
+     "t": "Turn on Override client-side settings on the workgroup",
+     "why": "Right: workgroup settings then win over what clients or drivers send."
+    },
+    {
+     "t": "Enable query result reuse",
+     "why": "Wrong: reuse avoids repeated scans; it does not control where results go."
+    },
+    {
+     "t": "Attach the workgroup to a capacity reservation",
+     "why": "Wrong: capacity reservations provide compute, not results settings."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "Workgroup settings + override client-side settings enforce results location and encryption.",
+   "remember": "Enforce results location/encryption → set them on the workgroup and turn on Override client-side settings. A minimum encryption setting can require at least KMS; SCPs can block unencrypted workgroups.",
+   "variants": [
+    "Users must not even manage a results bucket → managed query results.",
+    "Results reads need kms:GenerateDataKey + kms:Decrypt for SSE-KMS.",
+    "Writes from CTAS/INSERT use the result encryption setting for new files."
+   ]
+  },
+  {
+   "id": "athena-028",
+   "skill": "3.3.4",
+   "source": "4-security-governance-cost-and-limits.md",
+   "q": "Athena queries over millions of small SSE-KMS encrypted objects fail with a KMS 'exceeded the rate' error. What is the most effective fix?",
+   "options": [
+    {
+     "t": "Switch the objects to SSE-C",
+     "why": "Wrong: Athena does not support SSE-C."
+    },
+    {
+     "t": "Enable S3 Bucket Keys on the bucket",
+     "why": "Right: Bucket Keys greatly reduce the number of KMS calls for SSE-KMS objects."
+    },
+    {
+     "t": "Turn on Override client-side settings",
+     "why": "Wrong: it controls results settings, not KMS request rate."
+    },
+    {
+     "t": "Use asymmetric KMS keys",
+     "why": "Wrong: asymmetric KMS keys are not supported for Athena data."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "KMS throttling from many SSE-KMS objects: S3 Bucket Keys.",
+   "remember": "KMS 'exceeded the rate' on many small SSE-KMS objects → S3 Bucket Keys (or higher KMS quotas), and fewer, larger files. Athena supports SSE-S3, SSE-KMS, CSE-KMS; not SSE-C or asymmetric keys.",
+   "variants": [
+    "Access denied reading SSE-KMS data → kms:Decrypt in IAM and the key policy.",
+    "CSE-KMS table → has_encrypted_data = true; no cross-Region; prefer SSE-KMS.",
+    "S3 SlowDown errors → larger files, staggered queries."
+   ]
+  },
+  {
+   "id": "athena-029",
+   "skill": "1.2.4",
+   "source": "4-security-governance-cost-and-limits.md",
+   "q": "A finance team wants to stop any single Athena query from scanning more than 1 TB, and to be notified when a team's daily scan total passes 20 TB. Which configuration does this?",
+   "options": [
+    {
+     "t": "A workgroup-level data usage alert set to 1 TB per query",
+     "why": "Wrong: workgroup-level limits only alert; they do not cancel a query."
+    },
+    {
+     "t": "An AWS Budgets alert on Athena spend",
+     "why": "Wrong: it notifies after the fact and cancels nothing."
+    },
+    {
+     "t": "A per-query data usage control of 1 TB plus a workgroup daily alert at 20 TB via CloudWatch alarm and SNS",
+     "why": "Right: the per-query limit cancels the query; the workgroup limit raises an alert."
+    },
+    {
+     "t": "Disable the workgroup every evening",
+     "why": "Wrong: blocks all work and does not cap single queries."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Per-query limit cancels; workgroup limits alert.",
+   "remember": "Per-query data usage control → cancels the query (still billed for bytes read so far; min 10 MB). Per-workgroup limits → CloudWatch alarm → SNS only; add a Lambda or disable the workgroup to act.",
+   "variants": [
+    "Charge costs back to teams → one workgroup per team with cost allocation tags.",
+    "Need a kill switch → disable the workgroup.",
+    "Canceled query → still billed for data scanned before cancel."
+   ]
+  },
+  {
+   "id": "athena-030",
+   "skill": "3.3.4",
+   "source": "4-security-governance-cost-and-limits.md",
+   "q": "A critical 9 a.m. report sometimes queues behind ad hoc queries from other teams and hits TooManyRequestsException. Adding more workgroups did not help. What gives the report guaranteed capacity?",
+   "options": [
+    {
+     "t": "Create a separate workgroup for the report",
+     "why": "Wrong: workgroups share account-level quotas and do not add concurrency."
+    },
+    {
+     "t": "Raise the DML query timeout",
+     "why": "Wrong: the report is waiting for capacity, not running out of time."
+    },
+    {
+     "t": "Use managed query results",
+     "why": "Wrong: it changes where results are stored, not capacity."
+    },
+    {
+     "t": "Assign the report's workgroup to an Athena capacity reservation",
+     "why": "Right: dedicated DPUs, and queries on reserved capacity do not count toward on-demand quotas."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Isolation and guaranteed concurrency: capacity reservations.",
+   "remember": "Capacity reservations → dedicated DPUs per workgroup (min 4 DPUs, ~$0.30/DPU-hour, up to 20 workgroups per reservation, ready in up to 30 min, not for Spark). Queries queue up to 10 hours if capacity is busy.",
+   "variants": [
+    "Steady, very high scan volume → compare reserved DPU-hours with $5/TB on-demand.",
+    "Only bursty client-side throttling → retry with backoff, request a quota increase.",
+    "Spark workgroup needs isolation → capacity reservations do not support Spark."
+   ]
+  },
+  {
+   "id": "athena-031",
+   "skill": "4.4.4",
+   "source": "5-operations-log-analysis-and-scenarios.md",
+   "q": "A security team must find out who deleted an S3 bucket last week. A CloudTrail trail already delivers logs to S3. What is the quickest way with no infrastructure to run?",
+   "options": [
+    {
+     "t": "Load the logs into Redshift and query them",
+     "why": "Wrong: a warehouse and load step for one question."
+    },
+    {
+     "t": "Create an Athena table over the CloudTrail logs and query eventName = 'DeleteBucket'",
+     "why": "Right: CloudTrail logs are in S3, and Athena queries them with SQL, serverless."
+    },
+    {
+     "t": "Use the CloudWatch connector through Athena federated query",
+     "why": "Wrong: the logs are already in S3; the connector is slower and not needed."
+    },
+    {
+     "t": "Start an EMR cluster to parse the logs with Spark",
+     "why": "Wrong: EMR is for very large logs with custom parsing; this is a simple SQL question."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Logs in S3 + SQL question: Athena.",
+   "remember": "Audit and log questions on S3-delivered logs (CloudTrail, ALB, VPC Flow Logs, S3 access logs, CloudFront, WAF, CUR) → Athena table (often with partition projection by date).",
+   "variants": [
+    "Near-real-time search with dashboards → OpenSearch or CloudWatch Logs Insights.",
+    "Recent logs that live in CloudWatch → Logs Insights.",
+    "Logs queried constantly → convert to Parquet with Firehose or scheduled CTAS."
+   ]
+  },
+  {
+   "id": "athena-032",
+   "skill": "3.1.3",
+   "source": "5-operations-log-analysis-and-scenarios.md",
+   "q": "A pipeline starts an Athena CTAS with StartQueryExecution and must run the next step only when the query succeeds, and alert the team on failure. Today a Lambda sleeps in a loop calling GetQueryExecution. What is the better design?",
+   "options": [
+    {
+     "t": "An EventBridge rule on 'Athena Query State Change' events to trigger the next step on SUCCEEDED and SNS on FAILED",
+     "why": "Right: Athena emits state-change events, and FAILED events carry the athenaError block."
+    },
+    {
+     "t": "Poll GetQueryExecution more often from the Lambda",
+     "why": "Wrong: it wastes Lambda time and API quota and can hit ThrottlingException."
+    },
+    {
+     "t": "Read the results bucket until the CSV appears",
+     "why": "Wrong: polling S3 is fragile and does not show failures."
+    },
+    {
+     "t": "Set a longer Lambda timeout so it can wait up to 15 minutes",
+     "why": "Wrong: still paying to sleep, and DML queries can run longer than 15 minutes."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "React to query completion with events, not sleeping Lambdas.",
+   "remember": "Athena is async: StartQueryExecution returns an ID. Wait with EventBridge (source aws.athena, 'Athena Query State Change'), or a Step Functions Athena integration, not a polling Lambda. Use ClientRequestToken for idempotency.",
+   "variants": [
+    "Alert only on failures → EventBridge rule on currentState = FAILED → SNS.",
+    "Many query IDs to check → BatchGetQueryExecution.",
+    "Avoid duplicate queries on retries → ClientRequestToken."
+   ]
+  },
+  {
+   "id": "athena-033",
+   "skill": "3.1.3",
+   "source": "5-operations-log-analysis-and-scenarios.md",
+   "q": "A script submits hundreds of Athena queries and checks each with GetQueryExecution in a tight loop. It now fails with `ThrottlingException: Rate exceeded`, and submissions also get `TooManyRequestsException`. Which change is best?",
+   "options": [
+    {
+     "t": "Create one workgroup per query to spread the load",
+     "why": "Wrong: quotas are account-level and shared across workgroups."
+    },
+    {
+     "t": "Raise the DML query timeout to 240 minutes",
+     "why": "Wrong: timeouts do not affect API rates or the active-query quota."
+    },
+    {
+     "t": "Switch all queries to UNLOAD",
+     "why": "Wrong: UNLOAD is still a DML query counted against the same quota."
+    },
+    {
+     "t": "Retry with exponential backoff, check status with BatchGetQueryExecution or EventBridge, and limit queries in flight",
+     "why": "Right: API rate and active-query quotas are per account; backoff and batching cut calls."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Throttling: back off, batch, react to events.",
+   "remember": "ThrottlingException = API call rate quota → backoff, BatchGetQueryExecution, EventBridge instead of polling. TooManyRequestsException = active DML queries quota (for example 200 in us-east-1, 20 in smaller Regions) → queue/retry, capacity reservation or quota increase.",
+   "variants": [
+    "Critical queries must never wait for others → capacity reservation.",
+    "Need an alarm before hitting the quota → CloudWatch usage metrics.",
+    "Duplicate queries on retry → ClientRequestToken."
+   ]
+  },
+  {
+   "id": "athena-034",
+   "skill": "3.3.4",
+   "source": "5-operations-log-analysis-and-scenarios.md",
+   "q": "An Athena query sometimes fails with `HIVE_FILESYSTEM_ERROR: Incorrect fileSize` or `HIVE_CURSOR_ERROR: ... key does not exist`. An ETL job overwrites files in the same S3 prefix every 10 minutes. What is the fix?",
+   "options": [
+    {
+     "t": "Convert the table to CSV",
+     "why": "Wrong: the format is not the problem; the files change during the query."
+    },
+    {
+     "t": "Write new files or new partitions instead of overwriting files in place",
+     "why": "Right: the objects change between query planning and reading."
+    },
+    {
+     "t": "Set parquet.ignore.statistics = true",
+     "why": "Wrong: that fixes corrupt Parquet stats errors, not files replaced mid-query."
+    },
+    {
+     "t": "Run MSCK REPAIR TABLE after each ETL run",
+     "why": "Wrong: partitions are not the issue; the objects are replaced."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Don't replace S3 files while queries read them.",
+   "remember": "Incorrect fileSize / key does not exist → files deleted or replaced during the query. Write new files or partitions (or use Iceberg, whose commits are atomic).",
+   "variants": [
+    "HIVE_PARTITION_SCHEMA_MISMATCH → drop and re-create the partition.",
+    "Duplicated rows after CTAS → concurrent CTAS to one location or orphan files from a failed run.",
+    "Zero rows → missing partitions, wrong location, hidden files, or projection out of range."
+   ]
+  },
+  {
+   "id": "athena-035",
+   "skill": "3.3.4",
+   "source": "5-operations-log-analysis-and-scenarios.md",
+   "q": "A workgroup's queries got slower. CloudWatch query metrics are enabled. QueryQueueTime is high, but EngineExecutionTime is unchanged. What does this point to?",
+   "options": [
+    {
+     "t": "Too many small files in S3",
+     "why": "Wrong: that would raise engine execution and planning time."
+    },
+    {
+     "t": "A bad join order in the SQL",
+     "why": "Wrong: that would show in EngineExecutionTime."
+    },
+    {
+     "t": "Queries waiting for capacity (active-query quota or a busy capacity reservation)",
+     "why": "Right: queue time is time before the query runs; the engine work itself did not change."
+    },
+    {
+     "t": "Partition keys declared as INT",
+     "why": "Wrong: slow partition pruning shows up in QueryPlanningTime, part of engine time."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Read the time breakdown: queue vs planning vs engine.",
+   "remember": "TotalExecutionTime = queue + planning + engine + service processing. High QueryQueueTime → capacity/quota; high QueryPlanningTime → partitions and catalog; high engine time → data and SQL. Metrics must be enabled per workgroup (namespace AWS/Athena).",
+   "variants": [
+    "High QueryPlanningTime → partition projection, string keys, partition indexes.",
+    "High ProcessedBytes → Parquet, partitions, avoid SELECT *.",
+    "Reserved capacity usage → DPUAllocated / DPUConsumed metrics."
+   ]
+  }
+ ]
+}

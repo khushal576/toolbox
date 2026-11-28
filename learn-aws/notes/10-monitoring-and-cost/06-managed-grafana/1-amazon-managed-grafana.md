@@ -73,13 +73,13 @@ Short notes. Each point is a fact you can be asked about.
 - **3.3.4 Troubleshoot performance**: performance troubleshooting.
 
 ## H. Scenarios: "If X → Y, because Z"
-- If SRE teams already use Grafana and want AWS + Prometheus metrics in one dashboard without hosting → **Amazon Managed Grafana**, because it's managed Grafana with AWS data sources.
-- If you only need AWS service metrics dashboards → **CloudWatch dashboards**, because they are native and free to start.
-- If business users need self-service BI → **QuickSight**, because Grafana targets operational time series.
-- If you need log search/analytics on OpenSearch data → **OpenSearch Dashboards**, because it's tightly integrated.
-- If dashboards must show data from multiple accounts → **organization mode or customer-managed role with cross-account assumable roles**, because it grants cross-account data access.
-- If most users only view → **assign Viewer licenses**, because they cost less than Editor.
-- If a data source is in a private subnet → **VPC connection for the workspace**, because AMG otherwise cannot reach it.
+- **If** site reliability engineering (SRE) teams already use **Grafana** and want AWS metrics and **Prometheus** metrics in one dashboard, without running their own servers, **then** use **Amazon Managed Grafana (AMG)**. You create a **workspace** (your own Grafana server) and add data sources such as **Amazon CloudWatch** and **Amazon Managed Service for Prometheus (AMP)**. **This works because** AMG is fully managed Grafana: AWS sets up, scales, patches and secures the servers, and it connects to many AWS and open-source data sources out of the box.
+- **If** you only need dashboards for AWS service metrics, **then** use **Amazon CloudWatch dashboards**. **This works because** they are native to AWS and simpler, with no workspace or user licenses to manage; the catch is they cover AWS data only.
+- **If** business users need self-service business intelligence (BI) reports, **then** use **Amazon QuickSight**, the AWS BI service for business data. **This works because** Grafana is built for operational monitoring of metrics, logs and traces over time, not for business reporting.
+- **If** you need log search and analytics on data stored in **Amazon OpenSearch Service**, **then** use **OpenSearch Dashboards**. **This works because** it is built into OpenSearch and made for log analytics on that data.
+- **If** dashboards must show data from **many AWS accounts**, **then** use the workspace's **organization** access mode (data sources across accounts through **AWS Organizations**), or a **customer-managed Identity and Access Management (IAM) role** that can assume roles in the other accounts. **This works because** these give the workspace permission to read data in other accounts, so one dashboard can combine accounts and Regions. The catch: the default **service-managed** role is easiest but only covers the data sources you pick; cross-account roles need the customer-managed option, where you write and scope the policies yourself.
+- **If** most users only look at dashboards, **then** give them **Viewer** licenses. **This works because** AMG charges per active user per workspace per month: about **$5** for a Viewer versus about **$9** for an Editor or Admin. A workspace still needs **at least one Editor**, and a user counts as active if they log in or make API calls that month.
+- **If** a data source sits in a **private subnet** of a Virtual Private Cloud (VPC), **then** add a **VPC connection** to the workspace, choosing the private subnets and security groups. **This works because** without it AMG cannot reach the private network. If queries time out, check the connection's subnets, security groups, routes and DNS.
 
 Verified from AWS docs on 2026-11-09 (Amazon Managed Grafana overview and pricing pages).
 Unconfirmed (verify): Grafana versions available; Enterprise features; network access control options; KMS options; workspace quotas; data source list completeness; audit logging.

@@ -151,28 +151,28 @@ Short notes. Each point is a fact you can be asked about.
 - Alternatives: Athena for SQL; byte-range GETs; Lambda or Glue for transformation; CloudFront functions/Lambda@Edge for response changes.
 
 ## K. Scenarios (if → then, because)
-- If reads hit 503 SlowDown on one prefix → spread across more prefixes and retry with backoff, because limits are per prefix and scaling is gradual.
-- If a far-away office uploads 50 GB files slowly → Transfer Acceleration plus multipart, because it uses the edge network.
-- If a download of one huge file is slow → parallel byte-range GETs.
-- If Athena scans cost too much → Parquet, partitions, compaction.
-- If millions of tiny files slow Glue/Athena → compact into 128 MB+ files.
-- If you need to run an action on 2 billion objects → Inventory + Batch Operations.
-- If you need a count/size/class report of billions of objects → Inventory queried with Athena.
-- If you need to know which buckets waste money → Storage Lens (incomplete uploads, noncurrent versions).
-- If a new file should start a pipeline with several consumers → S3 → EventBridge, because it fans out and can replay.
-- If events must go to an SQS FIFO queue → via EventBridge, because direct FIFO is unsupported.
-- If a Lambda triggered by S3 keeps running forever → it writes into the triggering prefix; use a different prefix or bucket.
-- If a partner downloads big datasets and you do not want to pay egress → Requester Pays.
-- If a website needs HTTPS and a custom domain → CloudFront in front of S3 with Origin Access Control.
-- If egress from many repeated downloads is high → CloudFront cache.
-- If you want SQL on a single object without a query engine → S3 Select is closed to new customers; use Athena.
-- If you must reduce NAT cost for S3 traffic → gateway endpoint.
-- If storage grew unexpectedly in a versioned bucket → noncurrent versions; add lifecycle expiry.
-- If KMS bills are large → Bucket Keys.
-- If a team stores 100 KB files and wants IA → not worth it: 128 KB minimum billing; bundle files first.
-- If a data scientist needs file-like access to S3 for training → Mountpoint for Amazon S3 or Express One Zone for speed.
-- If you need billions of small random reads at lowest latency → Express One Zone in the compute AZ.
-- If someone asks "is S3 eventually consistent?" → No, strong read-after-write for all operations.
+- **If** reads get **503 SlowDown** errors on one prefix, **then** spread keys across **more prefixes** and retry with **exponential backoff and jitter**. **This works because** limits apply **per prefix** (at least **5,500 GET** and **3,500 PUT** requests per second each), and S3 scales up to a new rate gradually. The number of prefixes is unlimited, so 10 prefixes give about 55,000 GET/s.
+- **If** a far-away office uploads **50 GB** files slowly, **then** use **S3 Transfer Acceleration** together with **multipart upload**. **This works because** Transfer Acceleration sends data to the nearest Amazon CloudFront edge location and then over the AWS backbone to the bucket, while multipart uploads parts in parallel. It must be enabled per bucket, uses a special endpoint, and adds a per-GB fee (verify).
+- **If** downloading one huge file is slow, **then** use parallel **byte-range GETs**. **This works because** each request reads one part of the object, so many ranges download at the same time; match the range size to the part size (for example 8–16 MB).
+- **If** Amazon Athena scans cost too much, **then** store data as compressed **Parquet**, **partition** it on the columns you filter on, and **compact** small files. **This works because** Athena charges per data scanned, and columnar files plus partitions let it read only the columns and partitions it needs.
+- **If** millions of tiny files slow AWS Glue or Amazon Athena, **then** compact them into files of **128 MB or more** (target 128 MB to 1 GB). **This works because** each file costs one request plus task overhead, so fewer, larger files read much faster.
+- **If** you need to run one action on **2 billion objects**, **then** list them with **S3 Inventory** and act with **S3 Batch Operations**. **This works because** Batch Operations runs one action (copy, tag, restore, invoke Lambda and more) on billions of objects from an Inventory manifest, with job reports and tracking.
+- **If** you need a count, size or storage class report for billions of objects, **then** use **S3 Inventory** and query it with **Amazon Athena**. **This works because** Inventory is a daily or weekly report (CSV, ORC or Parquet) of all objects and their fields, and it is much cheaper than LIST at scale.
+- **If** you need to know which buckets waste money, **then** use **S3 Storage Lens**. **This works because** it shows usage and activity across accounts and the organization, and finds waste such as incomplete multipart upload bytes and noncurrent versions.
+- **If** a new file should start a pipeline with several consumers, **then** send S3 events to **Amazon EventBridge**. **This works because** EventBridge rules can filter events (even by object size or key pattern), fan out to many targets, archive and replay events, and work cross-account. The catch: latency is slightly higher than direct notifications.
+- **If** events must reach an **Amazon SQS FIFO queue**, **then** route them through **Amazon EventBridge**. **This works because** S3 Event Notifications do not support FIFO queues as a direct destination.
+- **If** a Lambda function triggered by S3 keeps running forever, **then** make it write to a **different prefix or bucket**. **This works because** it is writing back into the prefix that triggers it, so each output fires the trigger again.
+- **If** a partner downloads big datasets and you do not want to pay the transfer cost, **then** turn on **Requester Pays** for the bucket. **This works because** the requester then pays the request and transfer cost. Requests must be authenticated and include the `x-amz-request-payer` header.
+- **If** a website needs HTTPS and a custom domain, **then** put **Amazon CloudFront** in front of S3 with **Origin Access Control (OAC)**. **This works because** the S3 website endpoint only serves HTTP, while CloudFront adds HTTPS and the custom domain, and OAC lets CloudFront read the bucket without making it public.
+- **If** data transfer out from many repeated downloads is high, **then** cache the files with **Amazon CloudFront**. **This works because** CloudFront serves repeated downloads from its cache, giving cheaper egress and fewer GET requests to S3.
+- **If** you want SQL on a single object without a query engine, **then** use **Amazon Athena** instead. **This works because** **S3 Select** is no longer offered to new customers (existing customers can keep using it). Byte-range GETs are another way to read part of a file.
+- **If** you must cut NAT gateway cost for S3 traffic, **then** use an **S3 gateway VPC endpoint**. **This works because** gateway endpoints are free, while a NAT gateway charges per GB.
+- **If** storage grew unexpectedly in a **versioned bucket**, **then** look at **noncurrent versions** and add a **lifecycle rule** to expire them. **This works because** every version is billed, so old versions quietly pile up cost.
+- **If** AWS Key Management Service (KMS) bills are large, **then** turn on **S3 Bucket Keys** for SSE-KMS. **This works because** Bucket Keys cut KMS requests, and their cost, by up to **99%**.
+- **If** a team stores **100 KB** files and wants Standard-Infrequent Access (Standard-IA), **then** it is **not worth it**; bundle the files first. **This works because** IA classes bill each object as at least **128 KB**, so every 100 KB file is billed as 128 KB.
+- **If** a data scientist needs file-like access to S3 for training, **then** use **Mountpoint for Amazon S3**, or **S3 Express One Zone** for speed. **This works because** Mountpoint mounts a bucket as a local folder for read-heavy work (not full POSIX), and Express One Zone gives single-digit millisecond latency.
+- **If** you need billions of small random reads at the lowest latency, **then** use **S3 Express One Zone** in the same **Availability Zone (AZ)** as your compute. **This works because** it gives single-digit millisecond latency and request cost about 80% lower than Standard. The catch: it is one AZ only, so do not keep your only copy there.
+- **If** someone asks "is S3 eventually consistent?", **then** the answer is **no**. **This works because** S3 gives **strong read-after-write consistency** for PUT, DELETE and LIST in all Regions, at no extra cost; the old "eventual consistency" advice is out of date.
 
 ## Verified from AWS docs on 2026-10-02
 Performance guidelines (request rates, scaling, latency), event notifications overview, S3 pricing structure, restore tiers, S3 Select/Object Lambda status were read. Not re-checked: Transfer Acceleration details, pre-signed URL expiry limits, bucket count default, user metadata size, exact KMS quota values (verify).

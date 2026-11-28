@@ -1,0 +1,621 @@
+{
+  "questions": [
+    {
+      "id": "batch-001",
+      "skill": "1.2.5",
+      "source": "1-basics-architecture-and-job-configuration.md",
+      "q": "A nightly job runs custom C++ libraries inside a container for about 2 hours. The team wants no scheduler servers to manage. Which service fits best?",
+      "options": [
+        {
+          "t": "AWS Lambda",
+          "why": "Wrong: Lambda stops at 15 minutes."
+        },
+        {
+          "t": "AWS Glue Spark job",
+          "why": "Wrong: Glue is for Spark ETL on catalog data and may not fit custom native dependencies."
+        },
+        {
+          "t": "AWS Batch with a container image",
+          "why": "Right: Batch runs long containerized jobs with queues, retries and scale to zero, and has no scheduler to run."
+        },
+        {
+          "t": "Cron on an EC2 instance",
+          "why": "Wrong: you would manage the server, scaling and failures yourself."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Batch is the managed answer for long, custom, containerized compute jobs.",
+      "remember": "Long (over 15 min), custom-container, any-language jobs with queuing and retries → AWS Batch. Spark/catalog ETL → Glue.",
+      "variants": [
+        "Short event-driven task under 15 minutes → Lambda.",
+        "Spark or SQL ETL on data-lake tables with least ops → Glue.",
+        "Distributed Spark/Hive cluster → EMR."
+      ]
+    },
+    {
+      "id": "batch-002",
+      "skill": "1.4.10",
+      "source": "1-basics-architecture-and-job-configuration.md",
+      "q": "A company must apply the same transformation to 8,000 S3 files with one submission. Each task must know which file to process. What should they use?",
+      "options": [
+        {
+          "t": "One array job of size 8,000 using `AWS_BATCH_JOB_ARRAY_INDEX` to pick the file",
+          "why": "Right: one SubmitJob creates the child jobs and each child reads its own index."
+        },
+        {
+          "t": "8,000 separate SubmitJob calls",
+          "why": "Wrong: SubmitJob is limited to 50 TPS per account, so this is slow and clumsy."
+        },
+        {
+          "t": "A multi-node parallel job",
+          "why": "Wrong: MNP is for tightly coupled jobs like MPI, not independent files."
+        },
+        {
+          "t": "One job with `dependsOn` on 8,000 jobs",
+          "why": "Wrong: dependsOn allows at most 20 dependencies."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Array jobs fan out thousands of independent children from one submit.",
+      "remember": "Many independent items, same code → array job (size 2-10,000); the child uses AWS_BATCH_JOB_ARRAY_INDEX to choose its input.",
+      "variants": [
+        "20,000 files → array size is capped at 10,000, so submit two arrays or batch files per child.",
+        "Tightly coupled MPI across nodes → multi-node parallel job.",
+        "Child i must wait for child i of another array → N_TO_N dependency."
+      ]
+    },
+    {
+      "id": "batch-003",
+      "skill": "1.2.4",
+      "source": "1-basics-architecture-and-job-configuration.md",
+      "q": "Fault-tolerant file conversion jobs must run at the lowest cost and the account should pay nothing when no jobs are queued. Which compute environment settings fit?",
+      "options": [
+        {
+          "t": "Managed On-Demand CE with `minvCpus` = 64",
+          "why": "Wrong: warm instances cost money all day and On-Demand is dearer."
+        },
+        {
+          "t": "Managed EC2 Spot CE with `minvCpus` = 0",
+          "why": "Right: Spot is cheaper, and minvCpus 0 scales the environment to zero when the queue is empty."
+        },
+        {
+          "t": "Unmanaged CE on Reserved Instances",
+          "why": "Wrong: you manage the instances yourself and they do not scale to zero."
+        },
+        {
+          "t": "Fargate CE with `maxvCpus` = 0",
+          "why": "Wrong: maxvCpus 0 would allow no jobs to run at all."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Spot plus minvCpus 0 is the classic cheapest Batch setup.",
+      "remember": "Cheapest Batch: Spot (with retries) and minvCpus = 0. maxvCpus is the spending ceiling, minvCpus above 0 keeps instances warm and billed.",
+      "variants": [
+        "Jobs must start instantly every morning → keep minvCpus above 0 during working hours.",
+        "Need to cap total spend → lower maxvCpus.",
+        "Small spiky jobs with no instance management → Fargate or Fargate Spot."
+      ]
+    },
+    {
+      "id": "batch-004",
+      "skill": "1.3.2",
+      "source": "1-basics-architecture-and-job-configuration.md",
+      "q": "Jobs on a Spot CE sometimes fail with the status reason `Host EC2 (instance i-0abc) terminated`. Application errors should not be retried. What is the best fix?",
+      "options": [
+        {
+          "t": "Set `attempts` to 1",
+          "why": "Wrong: 1 is the default and means no retry."
+        },
+        {
+          "t": "Switch the CE to `BEST_FIT`",
+          "why": "Wrong: the allocation strategy does not stop Spot interruptions and BEST_FIT can limit scaling."
+        },
+        {
+          "t": "Increase `attemptDurationSeconds`",
+          "why": "Wrong: this is not a timeout problem."
+        },
+        {
+          "t": "A retry strategy with `evaluateOnExit` matching `onStatusReason: Host EC2*` to RETRY and a catch-all EXIT",
+          "why": "Right: retries only host-level interruptions and exits on real application errors."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Retry on Host EC2* to survive Spot interruptions.",
+      "remember": "Spot interruption shows as 'Host EC2 ... terminated'. Use attempts (1-10) with evaluateOnExit matching Host EC2* → RETRY, else EXIT, plus checkpointing.",
+      "variants": [
+        "Container killed for memory (exit 137) → raise the MEMORY request, retrying will not help.",
+        "Cancelled or terminated jobs → never retried.",
+        "Long Spot job restarting from zero → add checkpointing to S3 or DynamoDB."
+      ]
+    },
+    {
+      "id": "batch-005",
+      "skill": "3.2.5",
+      "source": "1-basics-architecture-and-job-configuration.md",
+      "q": "A Batch EC2 Spot environment often has to wait because the preferred instance type is unavailable. Which allocation strategy is AWS's recommended choice for Spot?",
+      "options": [
+        {
+          "t": "`SPOT_PRICE_CAPACITY_OPTIMIZED`",
+          "why": "Right: it weighs price and interruption risk across many pools and is recommended for most Spot use."
+        },
+        {
+          "t": "`BEST_FIT`",
+          "why": "Wrong: it is the default, waits for one best type and can limit scaling."
+        },
+        {
+          "t": "`BEST_FIT_PROGRESSIVE_ORDERED`",
+          "why": "Wrong: this one is for On-Demand and follows your ordering."
+        },
+        {
+          "t": "`BEST_FIT_PROGRESSIVE`",
+          "why": "Wrong: recommended for On-Demand, not the Spot recommendation."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Use SPOT_PRICE_CAPACITY_OPTIMIZED for Spot, BEST_FIT_PROGRESSIVE for On-Demand.",
+      "remember": "Spot → SPOT_PRICE_CAPACITY_OPTIMIZED (price + interruption risk). On-Demand → BEST_FIT_PROGRESSIVE. BEST_FIT is the default but can stall scaling.",
+      "variants": [
+        "Spot pools least likely to be interrupted regardless of price → SPOT_CAPACITY_OPTIMIZED.",
+        "On-Demand following your own type order → BEST_FIT_PROGRESSIVE_ORDERED.",
+        "Fargate or ECS Managed Instances CE → no allocation strategy applies."
+      ]
+    },
+    {
+      "id": "batch-006",
+      "skill": "1.2.7",
+      "source": "1-basics-architecture-and-job-configuration.md",
+      "q": "A job requests 16 GiB memory on a CE whose only instance type has exactly 16 GiB. The job stays in RUNNABLE forever. What is the cause?",
+      "options": [
+        {
+          "t": "The job is in STARTING because of an image pull",
+          "why": "Wrong: STARTING is a different state, and the job here was never placed."
+        },
+        {
+          "t": "The queue is FIFO and must be switched to fair-share",
+          "why": "Wrong: scheduling order does not change whether a job fits."
+        },
+        {
+          "t": "The ECS agent and OS reserve memory, so the job never fits; request a bit less",
+          "why": "Right: usable memory is below the instance total, so a full-size request cannot be placed."
+        },
+        {
+          "t": "Batch does not allow more than 10 GiB per job",
+          "why": "Wrong: no such limit; large memory is a reason to choose Batch."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Ask for slightly less than the instance memory.",
+      "remember": "RUNNABLE forever = no CE can fit it: over-large request (including all of an instance's memory), maxvCpus or vCPU quota hit, INVALID CE, or network registration failure.",
+      "variants": [
+        "Job exceeded its memory while running → killed (OOM, exit 137) and FAILED.",
+        "maxvCpus reached → RUNNABLE until capacity frees up.",
+        "One bad job blocking the head → jobStateTimeLimitActions to cancel stuck RUNNABLE jobs."
+      ]
+    },
+    {
+      "id": "batch-007",
+      "skill": "1.3.1",
+      "source": "1-basics-architecture-and-job-configuration.md",
+      "q": "Three teams share one Batch queue and one team floods it, starving the others. What should the data engineer configure?",
+      "options": [
+        {
+          "t": "A larger `maxvCpus`",
+          "why": "Wrong: more capacity does not change the FIFO order."
+        },
+        {
+          "t": "A fair-share scheduling policy with a share identifier per team",
+          "why": "Right: fair-share divides capacity between share identifiers so one backlog cannot starve the rest."
+        },
+        {
+          "t": "`BEST_FIT_PROGRESSIVE` allocation",
+          "why": "Wrong: allocation picks instance types, not job order."
+        },
+        {
+          "t": "More than 3 CEs on the queue",
+          "why": "Wrong: a queue holds at most 3 CEs and it would not change fairness."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Fair-share scheduling policy is the fairness tool.",
+      "remember": "Default queue order is FIFO. Shared teams → scheduling policy with share identifiers. Urgent vs backfill → a high-priority queue on the same CE.",
+      "variants": [
+        "Urgent jobs behind backfill → separate queue with a higher priority sharing the CE.",
+        "Only 5 licenses exist → consumable resources.",
+        "Cap total spend → maxvCpus."
+      ]
+    },
+    {
+      "id": "batch-008",
+      "skill": "1.3.2",
+      "source": "1-basics-architecture-and-job-configuration.md",
+      "q": "A queue should use cheap Spot first and still finish jobs when Spot capacity runs out. What is the right design?",
+      "options": [
+        {
+          "t": "Two separate queues, one per CE, and manual resubmits",
+          "why": "Wrong: adds manual work, the ordered CE list does this automatically."
+        },
+        {
+          "t": "A CE with `minvCpus` above 0",
+          "why": "Wrong: keeps instances warm but does not add a fallback."
+        },
+        {
+          "t": "A queue with four CEs",
+          "why": "Wrong: a queue allows at most 3 compute environments."
+        },
+        {
+          "t": "One queue listing the Spot CE first and an On-Demand CE second",
+          "why": "Right: the queue tries its CEs in order, so On-Demand acts as overflow."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Order CEs in the queue: cheap first, reliable second.",
+      "remember": "A job queue has up to 3 CEs tried in order: Spot then On-Demand, or Fargate then EC2.",
+      "variants": [
+        "Max CEs per queue → 3; max CEs per Region → 50; max queues per Region → 50.",
+        "A queue cannot be fixed by mixing Fargate with GPU needs → GPU needs an EC2 CE.",
+        "Batch on EKS → up to 5 Batch CEs per EKS cluster."
+      ]
+    },
+    {
+      "id": "batch-009",
+      "skill": "1.3.1",
+      "source": "2-pipelines-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An ETL workflow must run a Lambda extract, then a Batch transform that finishes before a Glue load step starts, with retries and error handling. What is the best way to run the Batch step?",
+      "options": [
+        {
+          "t": "Step Functions task `arn:aws:states:::batch:submitJob.sync`",
+          "why": "Right: Step Functions submits the job and waits for it to succeed or fail, with no polling code."
+        },
+        {
+          "t": "Step Functions task `batch:submitJob` without `.sync`",
+          "why": "Wrong: the state ends as soon as the job is submitted, so Glue would start too early."
+        },
+        {
+          "t": "A Lambda that sleeps and polls `DescribeJobs`",
+          "why": "Wrong: Lambda is limited to 15 minutes and polling code is extra work."
+        },
+        {
+          "t": "EventBridge rule on a schedule only",
+          "why": "Wrong: it starts a job but does not coordinate the next steps."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Use .sync to make Step Functions wait for the Batch job.",
+      "remember": "Orchestrate Batch with Step Functions batch:submitJob.sync (waits). Airflow users → MWAA BatchOperator. Simple chains → dependsOn.",
+      "variants": [
+        "Team already uses Airflow → MWAA BatchOperator.",
+        "Plain submitJob without .sync → does not wait.",
+        "Simple extract → transform → load without an orchestrator → dependsOn (up to 20 jobs)."
+      ]
+    },
+    {
+      "id": "batch-010",
+      "skill": "1.1.5",
+      "source": "2-pipelines-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A containerized aggregation must run every night at 02:00, and the team must be alerted if it fails. Which design is best?",
+      "options": [
+        {
+          "t": "A Lambda function with a 2-hour sleep",
+          "why": "Wrong: Lambda stops at 15 minutes."
+        },
+        {
+          "t": "A scheduled EventBridge target calling Batch SubmitJob, plus an EventBridge rule on Batch Job State Change = FAILED to SNS",
+          "why": "Right: schedule and failure alerting both use EventBridge, with SNS for notification."
+        },
+        {
+          "t": "CloudTrail log alarm on SubmitJob",
+          "why": "Wrong: CloudTrail records API calls, not job failures."
+        },
+        {
+          "t": "A CE with `minvCpus` above 0 and no schedule",
+          "why": "Wrong: warm instances do not start a job at 02:00."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Schedule through EventBridge, alert on Batch Job State Change.",
+      "remember": "Batch emits Job State Change events to EventBridge. Match FAILED → SNS or Lambda for alerts. EventBridge needs a role with batch:SubmitJob to start jobs.",
+      "variants": [
+        "Each S3 upload must start a job → S3 to EventBridge to Batch target, passing the key as a parameter.",
+        "Queue head cannot run → Job queue blocked event.",
+        "Who submitted or changed a queue → CloudTrail."
+      ]
+    },
+    {
+      "id": "batch-011",
+      "skill": "4.1.4",
+      "source": "2-pipelines-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A Batch job's code must read one S3 prefix and write to DynamoDB, following least privilege. Which role should carry those permissions?",
+      "options": [
+        {
+          "t": "The ECS instance role",
+          "why": "Wrong: shared by every job on the host, so permissions are too broad."
+        },
+        {
+          "t": "The Batch service-linked role",
+          "why": "Wrong: it lets Batch manage EC2, ECS and Auto Scaling, not your code."
+        },
+        {
+          "t": "The job role (`jobRoleArn`) of the job definition",
+          "why": "Right: the job role is what your container code assumes, and it is set per job definition."
+        },
+        {
+          "t": "The execution role",
+          "why": "Wrong: it pulls images, fetches secrets and writes logs, not your application's data access."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Data access for your code belongs on the job (task) role.",
+      "remember": "Service role = Batch manages infra. Instance role = ECS agent on EC2. Execution role = pull images, fetch secrets, logs (required for Fargate). Job role = your code's permissions.",
+      "variants": [
+        "AccessDenied from S3 inside a job → job role missing or too narrow, or KMS/bucket policy denies.",
+        "Job fails to fetch a secret at start → execution role permissions.",
+        "Containers must not reach the instance role → IMDSv2 with hop limit 1."
+      ]
+    },
+    {
+      "id": "batch-012",
+      "skill": "4.2.2",
+      "source": "2-pipelines-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A job needs a database password at runtime. The password must not appear in the image, command or plain environment variables. What should be used?",
+      "options": [
+        {
+          "t": "The `environment` field with the password",
+          "why": "Wrong: visible in the job definition in plain text."
+        },
+        {
+          "t": "An argument in `command` through a parameter",
+          "why": "Wrong: parameters and commands are visible in job details."
+        },
+        {
+          "t": "Baking it into the ECR image",
+          "why": "Wrong: anyone with the image can read it."
+        },
+        {
+          "t": "The `secrets` field in the job definition referencing Secrets Manager or Parameter Store",
+          "why": "Right: values are injected as environment variables at start, and the execution role reads them."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Use `secrets` plus an execution role that can read them.",
+      "remember": "Secrets → job definition `secrets` (Secrets Manager or SSM Parameter Store); the execution role needs secretsmanager:GetSecretValue / ssm:GetParameters and kms:Decrypt if encrypted.",
+      "variants": [
+        "Who needs the permission to fetch secrets → the execution role.",
+        "Fargate job fails with ResourceInitializationError → cannot fetch secrets or pull image (role or network).",
+        "Many jobs hitting RDS → limit parallelism, use RDS Proxy."
+      ]
+    },
+    {
+      "id": "batch-013",
+      "skill": "1.2.7",
+      "source": "2-pipelines-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "Batch CEs run in private subnets with no NAT gateway. Jobs fail with `CannotPullContainerError`. Which fix gives access to ECR without NAT?",
+      "options": [
+        {
+          "t": "Interface endpoints for ECR API and DKR, an S3 gateway endpoint, and a CloudWatch Logs endpoint",
+          "why": "Right: image layers are stored in S3, so ECR endpoints plus the S3 gateway endpoint cover the pull; logs need their own endpoint."
+        },
+        {
+          "t": "Only an ECR API endpoint",
+          "why": "Wrong: pulls also need the DKR endpoint and S3, which holds the layers."
+        },
+        {
+          "t": "Move the CE to an unmanaged environment",
+          "why": "Wrong: it does not change network paths."
+        },
+        {
+          "t": "Raise `maxvCpus`",
+          "why": "Wrong: this is a network problem, not capacity."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Private subnets need NAT or VPC endpoints for ECR, S3 and logs.",
+      "remember": "No route to ECR/S3 → CannotPullContainerError. Add ecr.api, ecr.dkr, S3 gateway, logs (and ECS endpoints for EC2 CEs), or a NAT. Endpoints also save NAT per-GB cost.",
+      "variants": [
+        "Docker Hub rate limits → ECR pull-through cache.",
+        "Fargate in a public subnet → needs assignPublicIp or NAT.",
+        "Wrong image URI/tag or missing ECR permission → same error."
+      ]
+    },
+    {
+      "id": "batch-014",
+      "skill": "3.3.7",
+      "source": "2-pipelines-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A team wants to find the stdout of a failed Batch job and stop log costs from growing forever. What is correct?",
+      "options": [
+        {
+          "t": "Logs go to S3 by default and expire after 30 days",
+          "why": "Wrong: default is CloudWatch Logs and logs do not expire."
+        },
+        {
+          "t": "Logs go to `/aws/batch/job` by default, so find the stream via `DescribeJobs` and set a retention period on the log group",
+          "why": "Right: the default group never expires logs, retention must be set."
+        },
+        {
+          "t": "Logs appear only in the ECS console",
+          "why": "Wrong: the Batch job details link to CloudWatch Logs streams."
+        },
+        {
+          "t": "Logs go to CloudTrail",
+          "why": "Wrong: CloudTrail records API calls, not container output."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Default group /aws/batch/job; retention is never set by default.",
+      "remember": "Container stdout/stderr → CloudWatch Logs group /aws/batch/job (stream jobDefinitionName/default/<task-id>); never expires by default, so set retention.",
+      "variants": [
+        "Ship logs to OpenSearch or Splunk → awsfirelens or splunk log driver in the job definition.",
+        "Cluster CPU/memory → Container Insights.",
+        "First place to look for why a job failed → statusReason, container.reason and exitCode."
+      ]
+    },
+    {
+      "id": "batch-015",
+      "skill": "3.3.3",
+      "source": "2-pipelines-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "An engineer wants an email whenever any Batch job ends in FAILED, without polling. What is the simplest solution?",
+      "options": [
+        {
+          "t": "A CloudWatch alarm on a native Batch FailedJobs metric",
+          "why": "Wrong: not a built-in metric path in the notes; job counts are usually built from events."
+        },
+        {
+          "t": "A Lambda polling `ListJobs` every second",
+          "why": "Wrong: polling is wasteful when events exist."
+        },
+        {
+          "t": "An EventBridge rule on Batch Job State Change with status FAILED, targeting an SNS topic",
+          "why": "Right: Batch emits state-change events carrying status reason and exit code."
+        },
+        {
+          "t": "CloudTrail Insights",
+          "why": "Wrong: audits API activity, not job outcomes."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Batch Job State Change event → SNS.",
+      "remember": "Job status alerts come from EventBridge events (Job State Change, queue blocked) routed to SNS, Lambda or Step Functions.",
+      "variants": [
+        "Auto-resubmit failed jobs → route the event to Lambda.",
+        "Job queue head cannot run → Job queue blocked event.",
+        "Who submitted the job → CloudTrail."
+      ]
+    },
+    {
+      "id": "batch-016",
+      "skill": "3.3.4",
+      "source": "2-pipelines-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "Jobs in a Batch EC2 environment start slowly every morning after the CE scaled to zero overnight, and the images are large. Which changes improve start time? (Choose two.)",
+      "options": [
+        {
+          "t": "Keep `minvCpus` above 0 during busy hours",
+          "why": "Right: warm instances avoid the minutes spent launching EC2."
+        },
+        {
+          "t": "Set `maxvCpus` to 0",
+          "why": "Wrong: that prevents jobs from running."
+        },
+        {
+          "t": "Use smaller container images",
+          "why": "Right: image pull time shows in STARTING, so smaller images start sooner."
+        },
+        {
+          "t": "Add more security groups",
+          "why": "Wrong: this does not affect launch or pull time."
+        },
+        {
+          "t": "Raise the job `attempts` to 10",
+          "why": "Wrong: retries do not speed up the first start."
+        }
+      ],
+      "answer": [
+        0,
+        2
+      ],
+      "explain": "Two delays: instance launch and image pull.",
+      "remember": "Start time = EC2 launch from zero + image pull (shown in STARTING). Fix with minvCpus > 0, smaller images, ECR in-Region, pull-through cache, custom AMI, or Fargate for small jobs.",
+      "variants": [
+        "Small, short jobs without instance management → Fargate.",
+        "Large dependencies → pre-bake into a custom AMI.",
+        "Cost trade-off: minvCpus above 0 is billed even when idle, so set it back to 0 if warm starts are not needed."
+      ]
+    },
+    {
+      "id": "batch-017",
+      "skill": "1.2.1",
+      "source": "1-basics-architecture-and-job-configuration.md",
+      "q": "A job must run on a GPU with large local storage. Which compute environment type should be chosen?",
+      "options": [
+        {
+          "t": "A Fargate compute environment",
+          "why": "Wrong: Fargate does not support the GPU jobs described in the notes."
+        },
+        {
+          "t": "A Fargate Spot compute environment",
+          "why": "Wrong: same limitation, and it can be interrupted."
+        },
+        {
+          "t": "An EC2 compute environment with GPU instance types and `GPU` in `resourceRequirements`",
+          "why": "Right: GPU jobs need EC2 instance types, not Fargate."
+        },
+        {
+          "t": "An unmanaged CE with no instances",
+          "why": "Wrong: no capacity would exist to run jobs."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "GPU, multi-node, big memory, custom AMIs, privileged containers → EC2 CE.",
+      "remember": "Fargate: small/medium jobs, isolation, no instance management, needs an execution role. EC2: GPU, multi-node parallel, huge memory/vCPU, custom AMI, privileged.",
+      "variants": [
+        "A 32-node MPI job → multi-node parallel on EC2 with EFA and a cluster placement group.",
+        "Many small spiky jobs → Fargate.",
+        "Fargate job pulling from ECR → needs the execution role."
+      ]
+    },
+    {
+      "id": "batch-018",
+      "skill": "1.3.1",
+      "source": "2-pipelines-security-cost-monitoring-limits-and-scenarios.md",
+      "q": "A company needs 3,000 CSV files converted to Parquet with custom code at the lowest cost. Retries and duplicate rows are a concern. What is the best design?",
+      "options": [
+        {
+          "t": "3,000 sequential On-Demand jobs",
+          "why": "Wrong: slow and more expensive."
+        },
+        {
+          "t": "An array job on a Spot CE with retries on host termination and idempotent writes to deterministic S3 keys",
+          "why": "Right: array jobs fan out cheaply, Spot cuts cost, and idempotent outputs make retries safe."
+        },
+        {
+          "t": "A single job on Fargate looping over all files",
+          "why": "Wrong: no parallelism and a failure restarts everything."
+        },
+        {
+          "t": "A Glue Spark job reading CSVs",
+          "why": "Wrong: fits plain Spark on catalog tables, but the scenario calls for custom code at lowest cost with Batch."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Array + Spot + retries + idempotent outputs.",
+      "remember": "Jobs can be retried, so write to deterministic keys or temp prefixes and commit; checkpoint long jobs. Chunk tiny files so container start is amortized.",
+      "variants": [
+        "Plain Spark on catalog tables with least ops → Glue, not Batch.",
+        "A final merge step after the array → job with dependsOn the array.",
+        "Tiny jobs wasting start time → group several files per child."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+ "questions": [
+  {
+   "id": "dx-001",
+   "skill": "1.1.2",
+   "source": "1-aws-data-exchange.md",
+   "q": "Analysts need licensed third-party weather data in the S3 data lake. The vendor publishes a new file update every day, and an ETL job must run as soon as each update lands. Which design needs the least operations work?",
+   "options": [
+    { "t": "A Lambda function on a daily schedule that downloads the vendor's files over HTTPS into S3", "why": "Wrong: you build and run the delivery and licensing checks yourself, and a fixed schedule can run before the update is ready." },
+    { "t": "AWS DataSync from the vendor's storage into the S3 raw zone", "why": "Wrong: it copies data you can already reach; it gives no licensing, subscription or entitlement handling for third-party data." },
+    { "t": "Subscribe to an AWS Data Exchange Files data set with auto-export to S3, and start the ETL from the EventBridge event ADX emits", "why": "Right: each new revision is exported to your bucket automatically, and the event starts the pipeline." },
+    { "t": "Ask the vendor to add a bucket policy that lets your account read their bucket", "why": "Wrong: manual cross-account policies give no entitlement lifecycle (expiry, renewal) and no new-update trigger; ADX handles cross-account entitlement for you." }
+   ],
+   "answer": [2],
+   "explain": "Licensed external data with regular updates: ADX Files data set + auto-export + EventBridge-triggered ETL.",
+   "remember": "Licensed external data that updates over time → AWS Data Exchange. Files data sets with auto-export land each new revision in S3; ADX EventBridge events start the pipeline.",
+   "variants": [
+    "You want to query the vendor data without copying it → a Redshift datashare or S3 data access data set.",
+    "The vendor offers a REST API product → call it through ADX with SigV4 from Lambda, Glue or Step Functions.",
+    "The pipeline has several steps (ETL, data quality, promote) → EventBridge rule → Step Functions."
+   ]
+  },
+  {
+   "id": "dx-002",
+   "skill": "4.5.7",
+   "source": "1-aws-data-exchange.md",
+   "q": "A company must share a data set with an external partner's AWS account for 90 days. It does not want to sell the data or register as an AWS Marketplace seller. Which option fits?",
+   "options": [
+    { "t": "An AWS Data Exchange data grant to the partner's account ID, with a 90-day duration", "why": "Right: any AWS account can send a data grant; the receiver accepts and gets access for the set duration, with no Marketplace registration." },
+    { "t": "A public AWS Data Exchange product with a 90-day offer", "why": "Wrong: Marketplace products need a registered AWS Marketplace seller, and a public offer lists the data for everyone." },
+    { "t": "A private offer on an AWS Marketplace data product", "why": "Wrong: a private offer is still a Marketplace product, so seller registration is required." },
+    { "t": "AWS Clean Rooms collaboration with the partner", "why": "Wrong: Clean Rooms lets parties analyze combined data without sharing raw data; here the partner must receive the data." }
+   ],
+   "answer": [0],
+   "explain": "Direct, time-limited sharing to one AWS account without selling: ADX data grant.",
+   "remember": "Share with a specific external AWS account for a set time, no selling → ADX data grant. Selling or licensing for money → Marketplace product with offers (needs seller registration).",
+   "variants": [
+    "You want to sell the data set → register as a Marketplace seller and publish an ADX product.",
+    "Custom terms for one buyer who pays → a private offer.",
+    "The partner must not see raw data, only joint results → AWS Clean Rooms."
+   ]
+  },
+  {
+   "id": "dx-003",
+   "skill": "4.5.7",
+   "source": "1-aws-data-exchange.md",
+   "q": "A retailer and a brand want to analyze their combined customer data to measure campaign overlap. Neither company may expose its raw customer records to the other. Which service fits?",
+   "options": [
+    { "t": "AWS Data Exchange data grants in both directions", "why": "Wrong: ADX delivers the data to the receiver, so raw records would be exposed." },
+    { "t": "Amazon Redshift data sharing between the two accounts", "why": "Wrong: the consumer gets read access to the shared tables, which exposes the raw data." },
+    { "t": "Lake Formation cross-account sharing with column-level permissions", "why": "Wrong: it still grants the other party direct read access to the rows it can see." },
+    { "t": "AWS Clean Rooms", "why": "Right: parties analyze combined data under query rules without sharing the raw data." }
+   ],
+   "answer": [3],
+   "explain": "Joint analytics without exposing raw data: Clean Rooms. ADX delivers data; it does not hide it.",
+   "remember": "Joint analysis with no raw data exposed → Clean Rooms. Deliver or sell data to outside parties → ADX. Share inside your own organization → Lake Formation + RAM, Redshift datashares or S3 policies.",
+   "variants": [
+    "The data is shared between accounts of the same organization → Lake Formation/RAM or a Redshift datashare, not ADX.",
+    "One company buys the other's data set outright → ADX product.",
+    "Table and column-level control inside the organization → Lake Formation."
+   ]
+  },
+  {
+   "id": "dx-004",
+   "skill": "4.5.1",
+   "source": "1-aws-data-exchange.md",
+   "q": "A finance team subscribes to a large vendor data set through AWS Data Exchange. They want to query it from their Redshift Serverless workgroup with no ETL and no copy of the data in their own storage. Which data set type should they choose?",
+   "options": [
+    { "t": "Files data set with auto-export to S3, then COPY into Redshift", "why": "Wrong: it copies the data into your bucket and then into Redshift, adding ETL and duplicate storage." },
+    { "t": "Amazon Redshift data set (datashare)", "why": "Right: the datashare appears as a database in your Redshift with read-only access and no ETL; you pay compute, the provider pays storage." },
+    { "t": "API data set called from a Glue job", "why": "Wrong: you must pull and load the data yourself, which is ETL." },
+    { "t": "Files data set downloaded and loaded with Glue ETL", "why": "Wrong: downloading and loading means a copy and an ETL job." }
+   ],
+   "answer": [1],
+   "explain": "Query vendor data in Redshift without ETL or copies: ADX Redshift datashare.",
+   "remember": "Use vendor data without copying it → ADX Redshift datashare (query in Redshift) or S3 data access data set (read in place from the provider's bucket). Files data sets copy data into your S3.",
+   "variants": [
+    "The team uses Athena on S3 and wants no copy → S3 data access data set.",
+    "The team wants its own copy in a raw zone → Files data set with auto-export.",
+    "The datashare does not appear → check Region/namespace type and that the provider authorized it."
+   ]
+  },
+  {
+   "id": "dx-005",
+   "source": "1-aws-data-exchange.md",
+   "q": "An AWS Data Exchange auto-export job to a subscriber's S3 bucket keeps failing. The bucket uses SSE-KMS with a customer managed key. The subscription is active and the provider is publishing new revisions. What is the most likely fix?",
+   "options": [
+    { "t": "Re-subscribe to the product to refresh the entitlement", "why": "Wrong: the subscription is active and revisions are published, so entitlement is not the problem." },
+    { "t": "Ask the provider to finalize the revision again", "why": "Wrong: a finalized revision is immutable, and new revisions are already being published." },
+    { "t": "Update the bucket policy and KMS key policy so ADX can write and encrypt objects in the bucket", "why": "Right: auto-export writes into your bucket, so the bucket policy and KMS key must allow ADX; also check the Region." },
+    { "t": "Turn on S3 Transfer Acceleration on the bucket", "why": "Wrong: it speeds up long-distance uploads; it does not fix permission failures." }
+   ],
+   "answer": [2],
+   "explain": "Auto-export failures usually mean the bucket policy or KMS key does not allow ADX, or the Region is wrong.",
+   "remember": "ADX auto-export fails → fix the S3 bucket policy and KMS key grants for ADX (it writes into your bucket) and check the Region.",
+   "variants": [
+    "No new revisions arrive at all → the provider has not published, the subscription expired, or there is no auto-export rule.",
+    "S3 data access is denied → access point/KMS issue, or your IAM lacks S3 permissions.",
+    "An API product call fails → missing IAM permission or SigV4, wrong endpoint, or provider throttling."
+   ]
+  }
+ ]
+}

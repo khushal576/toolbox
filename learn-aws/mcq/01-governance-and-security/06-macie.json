@@ -1,0 +1,273 @@
+{
+ "questions": [
+  {
+   "id": "macie-001",
+   "skill": "4.5.2",
+   "source": "1-basics-discovery-and-identifiers.md",
+   "q": "A company keeps customer records in an Amazon RDS database and wants to find which columns contain PII using Amazon Macie. What should the data engineer do?",
+   "options": [
+    {
+     "t": "Point a Macie discovery job at the RDS instance",
+     "why": "Wrong: Macie only reads Amazon S3 general purpose buckets."
+    },
+    {
+     "t": "Export or replicate the data to S3 (for example with DMS or Glue) and run a Macie job on the export",
+     "why": "Right: Macie analyzes S3 only, so land the data in S3 first."
+    },
+    {
+     "t": "Enable Macie automated discovery in the RDS console",
+     "why": "Wrong: automated discovery samples S3 buckets, not databases."
+    },
+    {
+     "t": "Enable Macie in the Region and wait for it to scan all data stores",
+     "why": "Wrong: enabling Macie does not scan non-S3 stores."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Macie scans S3 only; other stores must be exported to S3 first.",
+   "remember": "Macie = S3 only. For RDS, DynamoDB or Redshift data, export or land it in S3 (DMS, Glue, UNLOAD), then scan the export.",
+   "variants": [
+    "Data already in an S3 data lake \u2192 run a Macie job directly on the bucket.",
+    "The sensitive data is in scanned images \u2192 Macie does not OCR; use Textract plus Comprehend PII."
+   ]
+  },
+  {
+   "id": "macie-002",
+   "skill": "4.3.1",
+   "source": "1-basics-discovery-and-identifiers.md",
+   "q": "After Macie finds PII in a data lake, analysts must see the data with the PII hidden. Which approach meets this?",
+   "options": [
+    {
+     "t": "Configure a Macie job to redact the PII in the objects",
+     "why": "Wrong: Macie finds sensitive data but never changes it."
+    },
+    {
+     "t": "Use Glue Detect PII transforms or Lake Formation column and cell filters to mask or hide it",
+     "why": "Right: masking companions act on the data, Macie only reports locations and counts."
+    },
+    {
+     "t": "Suppress the Macie findings with a suppression rule",
+     "why": "Wrong: suppression only hides findings, the data stays exposed."
+    },
+    {
+     "t": "Add the PII values to a Macie allow list",
+     "why": "Wrong: an allow list stops Macie reporting those matches, it does not protect the data."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Macie detects; masking is done by Glue, Lake Formation or Redshift masking.",
+   "remember": "Macie finds, it does not mask or redact. Pair it with Glue Detect PII, Lake Formation filters or Redshift dynamic data masking.",
+   "variants": [
+    "Data sits in Redshift and must be masked for some users \u2192 Redshift dynamic data masking.",
+    "Only need to know where PII lives \u2192 Macie findings are enough."
+   ]
+  },
+  {
+   "id": "macie-003",
+   "skill": "4.5.2",
+   "source": "1-basics-discovery-and-identifiers.md",
+   "q": "A company wants Macie to detect its internal customer IDs, which follow a fixed pattern and usually appear near the word 'CustID'. What should be configured?",
+   "options": [
+    {
+     "t": "A managed data identifier",
+     "why": "Wrong: managed identifiers are built in and do not know company-specific formats."
+    },
+    {
+     "t": "A custom data identifier with a regex and keywords",
+     "why": "Right: regex defines the pattern and keywords with a match distance reduce false positives."
+    },
+    {
+     "t": "An allow list with the ID pattern",
+     "why": "Wrong: an allow list suppresses matches, the opposite of detecting them."
+    },
+    {
+     "t": "A suppression rule on the findings",
+     "why": "Wrong: it hides findings and cannot create detections."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Company-specific formats need a custom data identifier (regex plus optional keywords).",
+   "remember": "Own format to detect \u2192 custom data identifier (regex, keywords, ignore words). Expected matches to ignore \u2192 allow list.",
+   "variants": [
+    "Public company phone numbers keep being flagged \u2192 allow list.",
+    "Standard credit card numbers \u2192 a managed data identifier already covers them."
+   ]
+  },
+  {
+   "id": "macie-004",
+   "skill": "4.5.2",
+   "source": "2-operations-security-cost-limits-and-scenarios.md",
+   "q": "A security team wants a bucket that becomes publicly accessible to be fixed within minutes, automatically. Macie already monitors the account. Which design fits?",
+   "options": [
+    {
+     "t": "Review the Macie console weekly and fix buckets by hand",
+     "why": "Wrong: manual and slow."
+    },
+    {
+     "t": "Macie policy finding to an EventBridge rule that invokes a Lambda function to enable Block Public Access",
+     "why": "Right: Macie publishes findings as EventBridge events in near real time, enabling auto-remediation."
+    },
+    {
+     "t": "Run a daily scheduled Macie job on all buckets",
+     "why": "Wrong: jobs inspect object content and run on a schedule, so they are not near real time."
+    },
+    {
+     "t": "Enable Macie automated sensitive data discovery",
+     "why": "Wrong: it scores sensitive content, it does not fix bucket access."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Policy finding to EventBridge to Lambda gives near-real-time remediation.",
+   "remember": "Findings are EventBridge events: route to Lambda, SNS, SQS or Step Functions for remediation or tickets.",
+   "variants": [
+    "Findings must be kept for the long term and aggregated \u2192 send to Security Hub or S3.",
+    "Only a notification is needed \u2192 EventBridge rule to SNS."
+   ]
+  },
+  {
+   "id": "macie-005",
+   "skill": "4.3.2",
+   "source": "2-operations-security-cost-limits-and-scenarios.md",
+   "q": "A Macie job reports access denied on objects encrypted with SSE-KMS using a customer managed key. The bucket policy is fine. What is the fix?",
+   "options": [
+    {
+     "t": "Allow the Macie service-linked role to use `kms:Decrypt` and `kms:DescribeKey` in the key policy",
+     "why": "Right: Macie must decrypt objects to analyze them."
+    },
+    {
+     "t": "Switch the objects to client-side encryption",
+     "why": "Wrong: Macie cannot analyze client-side encrypted objects."
+    },
+    {
+     "t": "Enable S3 Block Public Access on the bucket",
+     "why": "Wrong: it is not related to Macie reading objects."
+    },
+    {
+     "t": "Lower the job sampling depth",
+     "why": "Wrong: sampling depth does not grant permissions."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "The customer managed key policy must allow Macie's service-linked role to decrypt.",
+   "remember": "Cannot read SSE-KMS objects \u2192 add the Macie service-linked role to the key policy. Also exempt it from SCPs or bucket Deny statements.",
+   "variants": [
+    "An SCP or bucket Deny blocks non-listed roles \u2192 exempt the Macie service-linked role.",
+    "The results bucket key \u2192 must let Macie GenerateDataKey."
+   ]
+  },
+  {
+   "id": "macie-006",
+   "skill": "4.5.2",
+   "source": "2-operations-security-cost-limits-and-scenarios.md",
+   "q": "A Macie job at 100% sampling over a very large lake produces an unexpectedly high bill. Which actions reduce cost? Choose TWO.",
+   "options": [
+    {
+     "t": "Lower the sampling depth for the first pass",
+     "why": "Right: cost is per GB inspected, so sampling less inspects less."
+    },
+    {
+     "t": "Scope jobs with prefix and last-modified criteria and exclude log or public-data buckets",
+     "why": "Right: fewer bytes inspected means lower cost."
+    },
+    {
+     "t": "Compress all objects to Parquet to shrink bytes",
+     "why": "Wrong: compression expands during analysis, so it does not reduce the cost."
+    },
+    {
+     "t": "Enable Macie in every Region for balance",
+     "why": "Wrong: unused Regions only add cost."
+    },
+    {
+     "t": "Run a full scan every day",
+     "why": "Wrong: it repeats inspection; use incremental jobs on last-modified instead."
+    }
+   ],
+   "answer": [
+    0,
+    1
+   ],
+   "explain": "Macie cost is per GB inspected; sample and scope.",
+   "remember": "Reduce Macie cost by sampling, scoping to important buckets and prefixes, excluding low-value buckets and running incremental jobs.",
+   "variants": [
+    "Need to know cost before running \u2192 use the cost estimate on job creation.",
+    "Job stops partway through the month \u2192 monthly analysis quota (5 TB default) was reached."
+   ]
+  },
+  {
+   "id": "macie-007",
+   "skill": "4.5.2",
+   "source": "2-operations-security-cost-limits-and-scenarios.md",
+   "q": "A company with many accounts wants Macie jobs and findings managed centrally, and every new account covered automatically. What should it do?",
+   "options": [
+    {
+     "t": "Invite each account manually and enable Macie in each",
+     "why": "Wrong: invitations do not auto-cover new accounts and scale worse."
+    },
+    {
+     "t": "Use Organizations with a delegated Macie administrator and auto-enable for new accounts",
+     "why": "Right: the admin runs jobs and sees member findings; auto-enable covers new accounts."
+    },
+    {
+     "t": "Enable Macie in the management account only",
+     "why": "Wrong: member accounts are not scanned."
+    },
+    {
+     "t": "Use GuardDuty S3 protection instead",
+     "why": "Wrong: it detects suspicious access, not sensitive content."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Delegated administrator plus auto-enable via Organizations.",
+   "remember": "Multi-account Macie \u2192 Organizations delegated admin with auto-enable. Macie is per Region, so repeat per Region.",
+   "variants": [
+    "Findings from many Regions in one place \u2192 Security Hub aggregation or EventBridge.",
+    "Detect suspicious access to S3 \u2192 GuardDuty."
+   ]
+  },
+  {
+   "id": "macie-008",
+   "skill": "4.5.2",
+   "source": "1-basics-discovery-and-identifiers.md",
+   "q": "PDFs in an S3 bucket are scans of paper forms (images of text) and may contain PII. Macie finds nothing. What is the best way to detect the PII?",
+   "options": [
+    {
+     "t": "Increase Macie sampling depth to 100%",
+     "why": "Wrong: Macie does not OCR images, so deeper sampling will not help."
+    },
+    {
+     "t": "Extract the text with Textract and detect PII with Comprehend",
+     "why": "Right: Textract performs OCR and Comprehend finds PII in text."
+    },
+    {
+     "t": "Add a custom data identifier",
+     "why": "Wrong: regex cannot match text that is not extracted from the image."
+    },
+    {
+     "t": "Convert the files to ZIP",
+     "why": "Wrong: archives are extracted but images inside still are not read."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Macie has no OCR; use Textract plus Comprehend.",
+   "remember": "Images and scans \u2192 Textract (OCR) then Comprehend PII. Macie handles text-based files, documents, Parquet and archives.",
+   "variants": [
+    "Text-based PDFs, CSV or Parquet \u2192 Macie can analyze them.",
+    "Files above Macie's size limits are skipped entirely."
+   ]
+  }
+ ]
+}

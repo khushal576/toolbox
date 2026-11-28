@@ -1,0 +1,1181 @@
+{
+ "questions": [
+  {
+   "id": "msk-001",
+   "skill": "3.2.5",
+   "source": "1-kafka-concepts-cluster-types-and-storage.md",
+   "q": "A start-up needs a Kafka-compatible stream for a new app. Traffic is spiky and hard to predict but stays well under 100 MBps. Nobody on the team has run Kafka before, and IAM authentication is acceptable. Which option needs the least operations work?",
+   "options": [
+    {
+     "t": "MSK Provisioned with Standard `kafka.m7g.large` brokers and storage auto scaling",
+     "why": "Wrong: you still choose broker count and size and rebalance partitions yourself; managed is not auto-sized on Provisioned."
+    },
+    {
+     "t": "Apache Kafka self-managed on EC2 in an Auto Scaling group",
+     "why": "Wrong: the team would run brokers, metadata nodes, patching and replacement themselves."
+    },
+    {
+     "t": "MSK Serverless",
+     "why": "Right: no brokers to size; capacity scales automatically up to 200 MBps in / 400 MBps out per cluster, and IAM is the only auth method, which is fine here."
+    },
+    {
+     "t": "MSK Provisioned with Express brokers",
+     "why": "Wrong: less ops than Standard, but you still pick broker size and count, which is overkill for small, spiky load."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Spiky, small-to-medium load, little Kafka skill, IAM OK: MSK Serverless.",
+   "remember": "Unpredictable load under ~200 MBps, no sizing wanted and IAM auth is fine → MSK Serverless. Need SCRAM/mTLS/ACLs, broker configs or very high throughput → Provisioned.",
+   "variants": [
+    "Security team requires SASL/SCRAM or mTLS → MSK Provisioned, because Serverless supports IAM only.",
+    "Steady 500 MBps of writes → Provisioned (Express or Standard), because Serverless caps at 200 MBps ingress by default.",
+    "No Kafka needed at all, just an AWS-native stream → Kinesis Data Streams."
+   ]
+  },
+  {
+   "id": "msk-002",
+   "skill": "3.2.5",
+   "source": "1-kafka-concepts-cluster-types-and-storage.md",
+   "q": "A workload needs about 400 MBps of sustained writes into Kafka. The team wants as little broker and storage management as possible and fast scaling. Which MSK option fits best?",
+   "options": [
+    {
+     "t": "MSK Provisioned with Express brokers",
+     "why": "Right: each Express broker gives up to 3x Standard throughput, storage is managed and pay-as-you-go, and scaling is up to 20x faster."
+    },
+    {
+     "t": "MSK Serverless",
+     "why": "Wrong: its default cluster quota is 200 MBps ingress, so 400 MBps would be throttled."
+    },
+    {
+     "t": "MSK Provisioned with Standard brokers and manually sized EBS volumes",
+     "why": "Wrong: it can reach the throughput but needs EBS sizing, storage scaling and manual partition rebalancing, which is more ops."
+    },
+    {
+     "t": "MSK Provisioned with `kafka.t3.small` brokers",
+     "why": "Wrong: T3 brokers run on CPU burst credits and are for dev/test or low throughput."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "High throughput plus minimal ops on MSK: Express brokers.",
+   "remember": "High, steady throughput with the least broker/storage work → Express brokers (managed storage, up to 3x throughput, intelligent rebalancing). Small or spiky → Serverless.",
+   "variants": [
+    "Need tiered storage or the most tunable broker configs → Standard brokers.",
+    "Want Kafka 4.2 → Express, because 4.2 is currently Express only.",
+    "An existing Standard cluster must become Express → create a new Express cluster and migrate; the broker type can't be switched."
+   ]
+  },
+  {
+   "id": "msk-003",
+   "skill": "2.1.1",
+   "source": "1-kafka-concepts-cluster-types-and-storage.md",
+   "q": "An MSK cluster with Standard `kafka.m7g.xlarge` brokers keeps 7 days of clickstream data on EBS. Analysts now need to replay up to 1 year of history through the normal Kafka APIs. The team does not want to add brokers or pay for a year of EBS. What should they do?",
+   "options": [
+    {
+     "t": "Raise `retention.ms` to 1 year and turn on storage auto scaling",
+     "why": "Wrong: it works but keeps the whole year on EBS on every broker, stored RF times, which is the expensive option they want to avoid."
+    },
+    {
+     "t": "Enable tiered storage and set `remote.storage.enable=true`, a short `local.retention.ms` and `retention.ms` of 1 year on the topic",
+     "why": "Right: old segments move to the low-cost tier and clients read them through the same Kafka APIs with no code change."
+    },
+    {
+     "t": "Use Kafka Connect to copy the topic to S3 and have clients read S3 for old data",
+     "why": "Wrong: clients would need new code to read S3; the requirement is replay through Kafka APIs."
+    },
+    {
+     "t": "Set `cleanup.policy=compact` on the topic",
+     "why": "Wrong: compaction keeps only the latest record per key, so it does not keep a full year of history."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Long retention without more brokers or EBS on Standard brokers: tiered storage.",
+   "remember": "Long replay window on Standard brokers → tiered storage (local retention short, total retention long). It needs `cleanup.policy=delete` and is not for t3.small.",
+   "variants": [
+    "The topic is compacted → tiered storage is not supported for compacted topics.",
+    "The cluster uses `kafka.t3.small` → tiered storage is not available; move to m5/m7g first.",
+    "Retention must grow cheaply and the team prefers no storage management at all → Express brokers (managed, pay per GB)."
+   ]
+  },
+  {
+   "id": "msk-004",
+   "skill": "2.1.2",
+   "source": "1-kafka-concepts-cluster-types-and-storage.md",
+   "q": "A topic must always hold the current profile for every customer so a new service can rebuild its cache by reading the topic from the start. Old versions of a profile are not needed. Which topic design fits?",
+   "options": [
+    {
+     "t": "`cleanup.policy=delete` with `retention.ms=-1` and no record key",
+     "why": "Wrong: it keeps every version forever and grows without bound; without keys nothing can be reduced to the latest value."
+    },
+    {
+     "t": "A tiered storage topic with `cleanup.policy=compact`",
+     "why": "Wrong: tiered storage only supports `cleanup.policy=delete`; compacted topics can't be tiered."
+    },
+    {
+     "t": "`cleanup.policy=compact` with the customer ID as the record key",
+     "why": "Right: compaction keeps at least the latest record per key, and a null-value tombstone can remove a customer."
+    },
+    {
+     "t": "`cleanup.policy=delete` with `retention.bytes` set per topic",
+     "why": "Wrong: `retention.bytes` is per partition and deletes whole old segments, so a customer that has not changed for a while would vanish."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Latest state per key: compacted topic keyed by the entity ID.",
+   "remember": "\"Latest value per key\" (profiles, config, CDC snapshots) → `cleanup.policy=compact` with a key. Compaction needs keys, is not instant and can't be used with tiered storage.",
+   "variants": [
+    "Keep latest per key but also drop anything older than 30 days → `cleanup.policy=compact,delete`.",
+    "Remove a customer completely → write a tombstone (key with null value); it is removed after `delete.retention.ms`.",
+    "Records have no key → they can't be compacted."
+   ]
+  },
+  {
+   "id": "msk-005",
+   "skill": "3.3.4",
+   "source": "1-kafka-concepts-cluster-types-and-storage.md",
+   "q": "An MSK Standard cluster's `KafkaDataLogsDiskUsed` reached 85%. An engineer increased broker storage an hour ago, but traffic grew again and the disk is filling. The next storage increase fails. What is the right immediate action?",
+   "options": [
+    {
+     "t": "Retry the storage update every few minutes until it succeeds",
+     "why": "Wrong: after any increase there is a cool-down of at least 6 hours, so retries will keep failing."
+    },
+    {
+     "t": "Decrease storage on one broker and increase it on the others",
+     "why": "Wrong: MSK storage can never be decreased, and all brokers share the same size."
+    },
+    {
+     "t": "Turn on `PER_TOPIC_PER_PARTITION` monitoring",
+     "why": "Wrong: more metrics do not free disk; they only add CloudWatch cost."
+    },
+    {
+     "t": "Lower retention on the largest topics or delete unused topics until the cool-down ends",
+     "why": "Right: freeing space is the only quick lever while the at-least-6-hour cool-down blocks another increase; a full disk stops the broker from accepting writes."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "During the storage cool-down, free disk by cutting retention or deleting topics.",
+   "remember": "Standard EBS storage grows only, with a 6-hour-plus cool-down between increases. Size ahead, use auto scaling (50–60% target), and alarm on `KafkaDataLogsDiskUsed` at 85%.",
+   "variants": [
+    "Disk keeps filling at night with no one awake → storage auto scaling with target tracking.",
+    "Need very long retention without growing EBS → tiered storage or Express.",
+    "Disk filled completely → partitions can go offline (`OfflinePartitionsCount` > 0)."
+   ]
+  },
+  {
+   "id": "msk-006",
+   "skill": "1.2.4",
+   "source": "1-kafka-concepts-cluster-types-and-storage.md",
+   "q": "A cost review finds that an MSK Standard cluster was given 8 TiB of EBS per broker, but each broker uses only 600 GiB. The team wants to cut the storage bill. What can they do?",
+   "options": [
+    {
+     "t": "Create a new, right-sized cluster (or an Express cluster) and migrate the topics and clients to it",
+     "why": "Right: MSK storage can be increased but never decreased, so shrinking means moving to a new cluster."
+    },
+    {
+     "t": "Call the storage update API with a smaller volume size",
+     "why": "Wrong: MSK rejects storage decreases."
+    },
+    {
+     "t": "Turn on storage auto scaling so it scales the volumes in",
+     "why": "Wrong: storage auto scaling only scales out, never in."
+    },
+    {
+     "t": "Enable tiered storage so the unused EBS space is released",
+     "why": "Wrong: tiered storage moves old segments off EBS but does not shrink the provisioned volume you pay for."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Over-provisioned EBS can't shrink; migrate to a new cluster.",
+   "remember": "Standard broker storage is billed per GB-month provisioned, used or not, and can only grow. To shrink, migrate (Express bills only storage used).",
+   "variants": [
+    "Many Standard clusters show idle storage → consider Express, because it charges only for storage used.",
+    "Storage is too small → increase it (online, no downtime), then wait at least 6 hours before the next increase.",
+    "Need throughput, not space → provisioned storage throughput on 4xlarge+ (m5) or 2xlarge+ (m7g)."
+   ]
+  },
+  {
+   "id": "msk-007",
+   "skill": "3.3.4",
+   "source": "4-monitoring-cost-scaling-limits-and-scenarios.md",
+   "q": "Producers writing to an MSK cluster with three `express.m7g.large` brokers report rising latency, and the `ProduceThrottleTime` metric is above zero. CPU is moderate. What is the cause and fix?",
+   "options": [
+    {
+     "t": "The EBS volumes are full; increase broker storage",
+     "why": "Wrong: Express brokers have managed, virtually unlimited storage and no EBS disk metrics."
+    },
+    {
+     "t": "The consumers are too slow; add consumers to the group",
+     "why": "Wrong: consumer speed does not throttle producers."
+    },
+    {
+     "t": "The brokers hit Express per-broker throughput quotas; add brokers or move to a larger Express size",
+     "why": "Right: Express enforces client throughput quotas per broker (large ≈ 15.6 MBps sustained ingress), and throttle time shows they were hit."
+    },
+    {
+     "t": "Intelligent rebalancing is paused; set it to Active",
+     "why": "Wrong: rebalancing spreads partitions but does not raise the per-broker quota."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Throttle time on Express = per-broker quota hit; add or upsize brokers.",
+   "remember": "Express enforces per-broker client quotas so traffic can't starve replication. Size by dividing needed ingress/egress by the per-broker sustained numbers; throttle time means more capacity is needed.",
+   "variants": [
+    "`UnderProvisioned` = 1 on Express → add brokers or scale up so intelligent rebalancing has room.",
+    "Serverless producer slowed down → hit 200 MBps cluster or 5 MBps partition limit; add partitions, spread keys or move to Provisioned.",
+    "Latency high with `BwInAllowanceExceeded` rising on Standard → larger broker size."
+   ]
+  },
+  {
+   "id": "msk-008",
+   "skill": "1.3.2",
+   "source": "1-kafka-concepts-cluster-types-and-storage.md",
+   "q": "A team wants to migrate an existing MSK Standard cluster from ZooKeeper to KRaft in place. The cluster runs Kafka 3.8.x on `kafka.m5.large` brokers in 2 AZs. Which two changes are required before the migration can start? (Choose 2.)",
+   "options": [
+    {
+     "t": "Upgrade the cluster to Kafka 3.9.x",
+     "why": "Right: the in-place migration only starts from 3.9.x, the last version with both ZooKeeper and KRaft."
+    },
+    {
+     "t": "Switch the cluster to Express brokers",
+     "why": "Wrong: the broker type can't be switched, and the migration is supported on Standard brokers."
+    },
+    {
+     "t": "Turn off IAM access control",
+     "why": "Wrong: IAM auth is not a blocker; the prerequisite is that ZooKeeper client access is disabled."
+    },
+    {
+     "t": "Move to a 3-AZ cluster",
+     "why": "Right: ZooKeeper to KRaft migration requires 3 AZs on Standard brokers."
+    },
+    {
+     "t": "Downgrade to Kafka 3.7.x first",
+     "why": "Wrong: version downgrades are not supported, and 3.7.x is not the migration starting point."
+    }
+   ],
+   "answer": [
+    0,
+    3
+   ],
+   "explain": "KRaft migration needs Kafka 3.9.x, 3 AZs, no t3.small, ZooKeeper access off, clients on `--bootstrap-server`.",
+   "remember": "ZooKeeper → KRaft in place: be on 3.9.x, 3 AZs, not t3.small, ZooKeeper client access disabled, all tools on `--bootstrap-server`. It keeps the cluster up, moves no data and can't be reversed.",
+   "variants": [
+    "Brokers are `kafka.t3.small` → move to m5/m7g first.",
+    "Admin scripts still use `--zookeeper` → switch to `--bootstrap-server` (the flag was removed in Kafka 3.0).",
+    "Need more than 30 brokers in one cluster → KRaft raises the quota to 60."
+   ]
+  },
+  {
+   "id": "msk-009",
+   "skill": "1.2.5",
+   "source": "4-monitoring-cost-scaling-limits-and-scenarios.md",
+   "q": "A company is moving an on-premises streaming platform to AWS. It uses Kafka Connect with Debezium, compacted topics for latest-state data, and Kafka transactions for exactly-once Kafka-to-Kafka processing. Which AWS service should host the stream?",
+   "options": [
+    {
+     "t": "Kinesis Data Streams in on-demand mode",
+     "why": "Wrong: it has no log compaction, no native transactions and does not speak the Kafka protocol."
+    },
+    {
+     "t": "Amazon MSK",
+     "why": "Right: it runs open-source Kafka, so Kafka Connect, Debezium, compaction and transactions work unchanged."
+    },
+    {
+     "t": "Amazon Data Firehose",
+     "why": "Wrong: it delivers data to destinations but is not a replayable stream for custom Kafka consumers."
+    },
+    {
+     "t": "Amazon SQS FIFO queues",
+     "why": "Wrong: a queue deletes messages after one consumer handles them; there is no compaction or Kafka API."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Kafka ecosystem, compaction and transactions point to MSK.",
+   "remember": "Pick MSK for Kafka compatibility, Kafka Connect/Debezium, compaction, transactions, long retention or migrating Kafka. Pick Kinesis Data Streams for AWS-native, low-ops streams with IAM only.",
+   "variants": [
+    "Team wants the simplest AWS-native stream and doesn't need Kafka → Kinesis Data Streams.",
+    "Only need to land data in S3/Redshift/OpenSearch with no custom readers → Amazon Data Firehose.",
+    "Each message must be deleted after one worker processes it → SQS."
+   ]
+  },
+  {
+   "id": "msk-010",
+   "skill": "2.3.6",
+   "source": "2-topics-partitions-replication-producers-and-consumers.md",
+   "q": "A payments topic on a 3-AZ MSK Standard cluster (no tiered storage) must never lose an acknowledged write when one broker fails, and writes must continue while one broker restarts. RF is 3. Which two settings meet this? (Choose 2.)",
+   "options": [
+    {
+     "t": "Producer `acks=all` with topic `min.insync.replicas=2`",
+     "why": "Right: a write succeeds only when at least two in-sync copies have it, and one broker down still leaves two."
+    },
+    {
+     "t": "Producer `acks=1` with `min.insync.replicas=3`",
+     "why": "Wrong: minISR is ignored with `acks=1`, and only the leader holds the write when it is acknowledged."
+    },
+    {
+     "t": "`min.insync.replicas=3` with `acks=all`",
+     "why": "Wrong: minISR equal to RF blocks every acks=all write whenever one broker restarts."
+    },
+    {
+     "t": "`unclean.leader.election.enable=false`",
+     "why": "Right: MSK defaults it to true on non-tiered Standard clusters; false stops an out-of-sync replica from becoming leader and dropping data."
+    },
+    {
+     "t": "Lower RF to 2 to speed up replication",
+     "why": "Wrong: RF 2 with minISR 1 lets a single broker acknowledge a write, which can lose data."
+    }
+   ],
+   "answer": [
+    0,
+    3
+   ],
+   "explain": "RF 3 + minISR 2 + acks=all + unclean election off.",
+   "remember": "Durable production triple: RF=3, minISR=2 (RF − 1), `acks=all`, and `unclean.leader.election.enable=false`. minISR = RF blocks writes during rolling restarts.",
+   "variants": [
+    "Producers fail with `NotEnoughReplicas` during patching and minISR = RF → set minISR to RF − 1.",
+    "Cluster uses 2 AZs with defaults → RF 2 / minISR 1; move to 3 AZs for RF 3 / minISR 2.",
+    "Cluster uses Express brokers → RF 3, minISR 2 and unclean election false are fixed already."
+   ]
+  },
+  {
+   "id": "msk-011",
+   "skill": "1.2.4",
+   "source": "4-monitoring-cost-scaling-limits-and-scenarios.md",
+   "q": "After a debugging session, an MSK cluster with 6,000 partitions shows a large jump in its CloudWatch bill. The team only needs broker health and topic-level consumer lag day to day. What should they change?",
+   "options": [
+    {
+     "t": "Turn off open monitoring with Prometheus",
+     "why": "Wrong: open monitoring is free from MSK; only cross-AZ scraping traffic costs money."
+    },
+    {
+     "t": "Delete the `__amazon_msk_canary` topics",
+     "why": "Wrong: they are tiny internal health-check topics and can't be deleted."
+    },
+    {
+     "t": "Switch the broker logs from CloudWatch Logs to S3",
+     "why": "Wrong: logs are not the metric charge; the jump came from per-partition metrics."
+    },
+    {
+     "t": "Set the monitoring level back to `DEFAULT` with `UpdateMonitoring`",
+     "why": "Right: `PER_TOPIC_PER_PARTITION` creates billable metrics per partition; `DEFAULT` is free and includes topic-level lag and broker health."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Partition-level metrics are billed; drop to DEFAULT when not debugging.",
+   "remember": "Only `DEFAULT` MSK metrics are free; `PER_BROKER`, `PER_TOPIC_PER_BROKER` and `PER_TOPIC_PER_PARTITION` cost CloudWatch fees. Change the level any time with no restart.",
+   "variants": [
+    "Need partition-level lag for one day → turn on `PER_TOPIC_PER_PARTITION`, then turn it off.",
+    "Need alerts when consumers fall behind → alarm on `EstimatedMaxTimeLag` or `MaxOffsetLag` (free DEFAULT metrics) to SNS.",
+    "Need request latency, throttling or EBS volume metrics → `PER_BROKER`."
+   ]
+  },
+  {
+   "id": "msk-012",
+   "skill": "1.1.12",
+   "source": "2-topics-partitions-replication-producers-and-consumers.md",
+   "q": "A Java service reads from topic `orders`, enriches each record, and writes to topic `orders-enriched` on MSK. A crash must never cause duplicate or lost output records in Kafka. Which design achieves this?",
+   "options": [
+    {
+     "t": "Enable idempotence on the producer and use `enable.auto.commit=true` on the consumer",
+     "why": "Wrong: idempotence only removes retry duplicates; auto-commit is not tied to the output write, so a crash can duplicate or skip records."
+    },
+    {
+     "t": "Commit offsets before processing each batch",
+     "why": "Wrong: that is at-most-once; a crash after the commit loses records."
+    },
+    {
+     "t": "Use `acks=1` and a high `retries` value",
+     "why": "Wrong: retries without idempotence or transactions can create duplicates, and acks=1 can lose data on leader failure."
+    },
+    {
+     "t": "Use a transactional producer, commit the consumer offsets inside the transaction with `sendOffsetsToTransaction`, and have downstream consumers use `isolation.level=read_committed`",
+     "why": "Right: the output records and offsets commit or abort together, giving exactly-once Kafka in → Kafka out."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Kafka-to-Kafka exactly-once: transactions + offsets in the transaction + read_committed.",
+   "remember": "Exactly-once read-process-write needs a `transactional.id`, `sendOffsetsToTransaction` and `read_committed` consumers. It covers Kafka to Kafka only; outside sinks need idempotent writes.",
+   "variants": [
+    "Only duplicates from producer retries matter → `enable.idempotence=true` (default in Kafka 3.x clients).",
+    "Output goes to S3 or a database → make the sink idempotent or transactional; Kafka transactions don't cover it.",
+    "Using Kafka Streams → `processing.guarantee=exactly_once_v2`."
+   ]
+  },
+  {
+   "id": "msk-013",
+   "skill": "1.1.10",
+   "source": "2-topics-partitions-replication-producers-and-consumers.md",
+   "q": "A topic has 12 partitions. Consumer lag keeps growing, so the team scales the consumer group from 12 to 20 instances, but lag does not improve. Records are not keyed and ordering does not matter. What is the issue and the fix?",
+   "options": [
+    {
+     "t": "Each partition is read by only one consumer in a group, so 8 consumers sit idle; add partitions to the topic",
+     "why": "Right: max useful consumers in a group equals the partition count, and adding partitions is safe here because ordering by key is not needed."
+    },
+    {
+     "t": "The consumers need `auto.offset.reset=earliest`",
+     "why": "Wrong: that only applies when the group has no committed offset; it does not add parallelism."
+    },
+    {
+     "t": "Create a second consumer group with 8 consumers",
+     "why": "Wrong: a new group reads the whole topic again independently (fan-out); it does not share the first group's work."
+    },
+    {
+     "t": "Lower `max.poll.records` on all consumers",
+     "why": "Wrong: it helps slow processing avoid rebalances, but idle consumers still get no partitions."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Parallelism in a group is capped at the partition count.",
+   "remember": "One partition → one consumer per group. Scale consumers up to the partition count; beyond that add partitions (safe if per-key order doesn't matter, because adding partitions remaps keys).",
+   "variants": [
+    "Order per key matters and lag grows → add consumers up to the partition count first, because adding partitions remaps keys.",
+    "Several independent applications need the same data → one consumer group each (Kafka fan-out).",
+    "Lambda ESM consumer → max concurrency ≈ number of partitions."
+   ]
+  },
+  {
+   "id": "msk-014",
+   "skill": "3.4.5",
+   "source": "2-topics-partitions-replication-producers-and-consumers.md",
+   "q": "A multi-tenant topic is keyed by tenant ID. One very large tenant sends 80% of the traffic, so one partition's lag climbs while the others are idle and one broker shows high CPU. Strict ordering across all records of that tenant is not required. What fixes it?",
+   "options": [
+    {
+     "t": "Add more consumers to the group",
+     "why": "Wrong: the hot partition can still be read by only one consumer in the group."
+    },
+    {
+     "t": "Increase the partition count",
+     "why": "Wrong: the same key always hashes to one partition, so the big tenant still lands on a single partition."
+    },
+    {
+     "t": "Salt the heavy tenant's key (add a suffix) or use a custom partitioner",
+     "why": "Right: it spreads that tenant's records over several partitions; ordering for that tenant is lost, which is acceptable here."
+    },
+    {
+     "t": "Turn on `auto.leader.rebalance.enable`",
+     "why": "Wrong: it only moves leadership back to preferred replicas; it does not split a hot key."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Skewed key → salt the key or use a custom partitioner.",
+   "remember": "Hot partition = skewed key. Fix with a salted key or custom partitioner (loses strict per-key order), not with more consumers or more partitions alone.",
+   "variants": [
+    "Uneven CPU because partitions are unevenly placed on brokers → rebalance (Cruise Control or Express intelligent rebalancing).",
+    "Serverless topic throttled on one partition → hit the 5 MBps per-partition ingress limit; spread keys.",
+    "Ordering per tenant must stay strict → keep the key and give the tenant its own topic or scale the consumer."
+   ]
+  },
+  {
+   "id": "msk-015",
+   "skill": "1.1.11",
+   "source": "2-topics-partitions-replication-producers-and-consumers.md",
+   "q": "A bug in a consumer application wrote bad results to a database for the last 6 hours. The bug is fixed. Topic retention is 7 days. How should the team reprocess the affected records?",
+   "options": [
+    {
+     "t": "Recreate the topic and ask producers to resend the last 6 hours",
+     "why": "Wrong: reading does not delete Kafka data, so the records are still in the topic."
+    },
+    {
+     "t": "Stop the consumer group and reset its offsets to a timestamp 6 hours ago with `kafka-consumer-groups.sh`, then restart it",
+     "why": "Right: offsets can be reset to a timestamp while the group is inactive, and the group replays from there."
+    },
+    {
+     "t": "Set `auto.offset.reset=earliest` on the existing consumers",
+     "why": "Wrong: it only applies when the group has no committed offset, so it has no effect on an active group."
+    },
+    {
+     "t": "Increase `retention.ms` and restart the brokers",
+     "why": "Wrong: retention already covers the 6 hours; changing it does not move the group's position."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Replay = reset consumer group offsets (to a timestamp, earliest or an offset).",
+   "remember": "Kafka keeps data until retention or compaction removes it, so replay is a consumer-offset reset, done while the group is inactive. Make processing idempotent because replays re-deliver.",
+   "variants": [
+    "A brand-new group must read all history → `auto.offset.reset=earliest`.",
+    "A Lambda ESM must start from a point in time → `AT_TIMESTAMP` starting position (set at create time).",
+    "Replay must reach back a year cheaply → tiered storage for long retention."
+   ]
+  },
+  {
+   "id": "msk-016",
+   "skill": "1.1.1",
+   "source": "2-topics-partitions-replication-producers-and-consumers.md",
+   "q": "A Lambda function reads an MSK topic through an event source mapping. One malformed record makes the function throw, and processing on that partition has stopped for hours. Which two changes stop one bad record from blocking the partition while keeping it for review? (Choose 2.)",
+   "options": [
+    {
+     "t": "Increase the function timeout to 15 minutes",
+     "why": "Wrong: the MSK ESM maximum function timeout is 14 minutes, and a longer timeout does not fix a record that always fails."
+    },
+    {
+     "t": "Set `MaximumRetryAttempts` (or `MaximumRecordAgeInSeconds`) and turn on `BisectBatchOnFunctionError`",
+     "why": "Right: defaults retry forever; limits plus bisecting isolate the bad record so the rest of the batch moves on."
+    },
+    {
+     "t": "Raise the batch size to 10,000",
+     "why": "Wrong: a bigger batch still contains the bad record and is retried as a whole."
+    },
+    {
+     "t": "Add an on-failure destination such as an SQS queue or S3 bucket",
+     "why": "Right: records that exhaust retries are sent there for review instead of being lost."
+    },
+    {
+     "t": "Switch the starting position to `LATEST`",
+     "why": "Wrong: the starting position is set only at creation and does not affect retries."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Bound retries, bisect, and send failures to an on-failure destination.",
+   "remember": "Lambda ESM for MSK retries a failing batch until success or record expiry (both infinite by default), so a poison record blocks its partition. Set max retries/age, bisect or partial batch responses, and an on-failure destination.",
+   "variants": [
+    "Failed records must go to a Kafka topic → Kafka on-failure destinations need provisioned mode.",
+    "`LATEST` ESM missed the first records → use `TRIM_HORIZON` or `AT_TIMESTAMP`, because polling starts minutes after creation.",
+    "Unwanted records should not invoke the function at all → ESM event filtering."
+   ]
+  },
+  {
+   "id": "msk-017",
+   "skill": "1.1.1",
+   "source": "2-topics-partitions-replication-producers-and-consumers.md",
+   "q": "A Lambda event source mapping in the default on-demand mode reads from an MSK cluster that runs only in private subnets with no internet path. The ESM is enabled but the function is never invoked. What fixes it with the least change to the network?",
+   "options": [
+    {
+     "t": "Enable public access on the MSK cluster",
+     "why": "Wrong: it exposes the brokers to the internet, which is not needed for Lambda polling."
+    },
+    {
+     "t": "Attach the function to a VPC with a larger memory setting",
+     "why": "Wrong: memory does not change the ESM network path."
+    },
+    {
+     "t": "Add an inbound rule on port 443 from 0.0.0.0/0 to the broker security group",
+     "why": "Wrong: the brokers don't need internet inbound; the ESM needs a path to the Lambda and STS APIs."
+    },
+    {
+     "t": "Add VPC endpoints for Lambda and STS (or a NAT gateway), or switch the ESM to provisioned mode",
+     "why": "Right: on-demand ESMs in private subnets need NAT or Lambda/STS endpoints; provisioned mode needs neither."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "On-demand ESM in private subnets needs NAT or Lambda/STS endpoints; provisioned mode does not.",
+   "remember": "Lambda puts an ENI in the cluster's subnets. In on-demand mode it must reach Lambda and STS (and Secrets Manager if used) through NAT or VPC endpoints; provisioned mode avoids that and scales faster.",
+   "variants": [
+    "The ESM uses SCRAM → also allow the Secrets Manager path (endpoint or NAT).",
+    "Sudden spikes need low latency → provisioned mode with a higher minimum poller count.",
+    "Security group check → inbound from itself on the auth port (9098 IAM, 9096 SCRAM, 9094 TLS) and outbound 443."
+   ]
+  },
+  {
+   "id": "msk-018",
+   "skill": "1.1.1",
+   "source": "2-topics-partitions-replication-producers-and-consumers.md",
+   "q": "Analysts want MSK events queryable in Amazon Redshift within seconds, without staging in S3. The MSK cluster currently allows only SASL/SCRAM, and the Redshift external schema fails to connect. What should the team do?",
+   "options": [
+    {
+     "t": "Turn on IAM (or mTLS) authentication on the cluster and create the external schema with `AUTHENTICATION iam`, then an auto-refresh materialized view",
+     "why": "Right: Redshift streaming ingestion supports none, IAM or mTLS, not SASL/SCRAM."
+    },
+    {
+     "t": "Store the SCRAM password in Secrets Manager and reference it in `CREATE EXTERNAL SCHEMA`",
+     "why": "Wrong: Redshift streaming ingestion does not support SCRAM at all."
+    },
+    {
+     "t": "Use Firehose to write the topic to S3, then run `COPY` every hour",
+     "why": "Wrong: it works but adds S3 staging and minutes-to-hours of delay."
+    },
+    {
+     "t": "Use Redshift Spectrum on the MSK topic",
+     "why": "Wrong: Spectrum queries files in S3, not Kafka topics."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Redshift streaming from MSK: none, IAM or mTLS; no SCRAM.",
+   "remember": "Redshift streaming ingestion reads MSK into a materialized view (`AUTO REFRESH YES`) with no S3 staging; auth is none, IAM (Kafka 2.7.1+) or mTLS, and it needs enhanced VPC routing and SG access to brokers.",
+   "variants": [
+    "DMS must write to MSK → the opposite trap: DMS has no IAM auth, so use SCRAM/TLS.",
+    "One view per topic → create one streaming materialized view per topic.",
+    "Data just needs to land in S3 → Firehose with an MSK source."
+   ]
+  },
+  {
+   "id": "msk-019",
+   "skill": "1.1.1",
+   "source": "2-topics-partitions-replication-producers-and-consumers.md",
+   "q": "A team wants to stream Aurora MySQL changes into an MSK Serverless cluster using AWS DMS. The DMS endpoint cannot be created against the cluster. What is the best fix?",
+   "options": [
+    {
+     "t": "Grant the DMS role `kafka-cluster:WriteData` on the topics",
+     "why": "Wrong: DMS Kafka endpoints don't support IAM auth, which is the only auth on Serverless."
+    },
+    {
+     "t": "Set `auto.create.topics.enable=true` on the Serverless cluster",
+     "why": "Wrong: broker configs can't be changed on Serverless, and DMS can't target Serverless anyway."
+    },
+    {
+     "t": "Use an MSK Provisioned cluster with SCRAM or TLS for DMS, or run Debezium on MSK Connect instead",
+     "why": "Right: DMS can't target MSK Serverless or use IAM; Debezium on MSK Connect is the other common CDC path."
+    },
+    {
+     "t": "Enable SASL/SCRAM on the Serverless cluster",
+     "why": "Wrong: Serverless supports IAM access control only."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "DMS → MSK: no Serverless, no IAM; use Provisioned with SCRAM/TLS or Debezium.",
+   "remember": "DMS as an MSK target needs a Provisioned cluster with none, TLS or SASL-SSL/SCRAM (not IAM), and `auto.create.topics.enable=true` unless topics exist. Serverless is never a DMS target.",
+   "variants": [
+    "Cluster runs Kafka 4.0+ → DMS can only connect without SASL.",
+    "Topics don't exist yet → set `auto.create.topics.enable=true` (MSK default is false).",
+    "Low source load CDC with full control → Debezium source connector on MSK Connect."
+   ]
+  },
+  {
+   "id": "msk-020",
+   "skill": "1.1.1",
+   "source": "2-topics-partitions-replication-producers-and-consumers.md",
+   "q": "A company runs an MSK cluster with Express brokers. It wants one topic written as Apache Iceberg tables in S3 Tables, queryable in Athena within about 15 minutes, with no connectors or compute to manage and no extra broker egress. Which option fits?",
+   "options": [
+    {
+     "t": "An S3 sink connector on MSK Connect with an Iceberg converter",
+     "why": "Wrong: it works but means running and scaling connector workers, and it reads through broker egress."
+    },
+    {
+     "t": "MSK data delivery with a Channel to S3 Tables",
+     "why": "Right: it writes Parquet Iceberg tables with inline compaction, freshness 5–15 minutes, no connectors and no broker egress use."
+    },
+    {
+     "t": "A Glue streaming ETL job writing Iceberg",
+     "why": "Wrong: it is a streaming job you build and run, not a no-compute, no-connector option."
+    },
+    {
+     "t": "A Lambda event source mapping that writes Parquet files",
+     "why": "Wrong: custom code, small files and no Iceberg table management."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Express + Iceberg in minutes + no connectors: MSK data delivery.",
+   "remember": "MSK data delivery (Express only) writes a topic to S3 Tables (Iceberg) or an S3 bucket with no compute. Limits: no backfill, same account and Region, no schema evolution, failed records to a required DLQ bucket.",
+   "variants": [
+    "Cluster uses Standard brokers → Firehose with an MSK source, or an S3 sink connector.",
+    "Existing history must also be delivered → data delivery has no backfill; use another path for old data.",
+    "Target is in another account → not supported by data delivery (same account and Region only)."
+   ]
+  },
+  {
+   "id": "msk-021",
+   "skill": "1.1.1",
+   "source": "2-topics-partitions-replication-producers-and-consumers.md",
+   "q": "A team wants to land one topic from an MSK Provisioned cluster in S3 with no code, using Amazon Data Firehose over private connectivity. The cluster uses only SASL/SCRAM today. What must be in place?",
+   "options": [
+    {
+     "t": "A Firehose stream per partition of the topic",
+     "why": "Wrong: Firehose reads one topic per stream, not one stream per partition."
+    },
+    {
+     "t": "Public access on the cluster with SCRAM",
+     "why": "Wrong: private connectivity is requested, and Firehose needs IAM access control."
+    },
+    {
+     "t": "A Lambda transform that decompresses the Kafka messages",
+     "why": "Wrong: Firehose decompresses Kafka messages automatically."
+    },
+    {
+     "t": "IAM access control on the cluster, multi-VPC private connectivity for IAM, and a cluster policy that lets Firehose call `CreateVpcConnection`",
+     "why": "Right: Firehose's MSK source requires IAM auth, and private access goes through multi-VPC connectivity with a cluster policy."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Firehose MSK source: IAM auth + multi-VPC + cluster policy.",
+   "remember": "Firehose reads one MSK topic per stream (fixed at creation) and needs IAM access control; private connectivity uses multi-VPC private connectivity plus a cluster policy. Pick MSK Connect S3 sink for more control.",
+   "variants": [
+    "Need custom partitioning, many topics or Parquet layout control → S3 sink connector on MSK Connect.",
+    "Firehose and cluster are in different accounts → supported, via multi-VPC and the cluster policy.",
+    "Cluster uses Express and wants Iceberg tables → MSK data delivery."
+   ]
+  },
+  {
+   "id": "msk-022",
+   "skill": "4.2.1",
+   "source": "3-security-msk-connect-replicator-and-schema-registry.md",
+   "q": "A producer using IAM access control can write to topic `orders` with idempotence off. After upgrading to a Kafka 3.x client, which turns on `enable.idempotence=true` by default, every send fails with an authorization error. Which permission is missing?",
+   "options": [
+    {
+     "t": "`kafka-cluster:WriteDataIdempotently` on the cluster ARN",
+     "why": "Right: idempotent producers on IAM-auth clusters need this action on the cluster resource in addition to `WriteData`."
+    },
+    {
+     "t": "`kafka:UpdateConnectivity` on the cluster",
+     "why": "Wrong: `kafka:` actions are control-plane cluster management, not producing data."
+    },
+    {
+     "t": "`kafka-cluster:AlterGroup` on the consumer group",
+     "why": "Wrong: group actions are for consumers, not producers."
+    },
+    {
+     "t": "`kms:Decrypt` on the at-rest key",
+     "why": "Wrong: MSK handles at-rest encryption itself; clients don't call KMS to produce."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Idempotent producer with IAM needs `WriteDataIdempotently` on the cluster.",
+   "remember": "IAM produce needs `Connect`, `DescribeTopic`, `WriteData` (+ `WriteDataIdempotently` on the cluster for idempotence). `kafka:` = manage the cluster; `kafka-cluster:` = use the cluster.",
+   "variants": [
+    "Transactional producer → also `DescribeTransactionalId` and `AlterTransactionalId` on the transactional-id ARN.",
+    "Consumer gets authorization errors → add `DescribeGroup` and `AlterGroup` on the group ARN.",
+    "An admin creates topics → `kafka-cluster:CreateTopic`."
+   ]
+  },
+  {
+   "id": "msk-023",
+   "skill": "4.2.6",
+   "source": "3-security-msk-connect-replicator-and-schema-registry.md",
+   "q": "A consumer role on an IAM-auth MSK cluster has `kafka-cluster:Connect` on the cluster and `DescribeTopic` and `ReadData` on topic `orders`. It still fails to consume with an authorization error. What is the least-privilege fix?",
+   "options": [
+    {
+     "t": "Add `kafka-cluster:*` on `*`",
+     "why": "Wrong: it works but grants every data-plane action, the opposite of least privilege."
+    },
+    {
+     "t": "Add a Kafka ACL for the role's principal",
+     "why": "Wrong: Kafka ACLs have no effect on IAM principals."
+    },
+    {
+     "t": "Add `kafka-cluster:DescribeGroup` and `kafka-cluster:AlterGroup` on that consumer group's ARN",
+     "why": "Right: consumers also need group actions to join the group and commit offsets."
+    },
+    {
+     "t": "Set `allow.everyone.if.no.acl.found=true`",
+     "why": "Wrong: that setting doesn't apply to IAM principals."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "IAM consumers need topic read actions plus group actions.",
+   "remember": "Least-privilege IAM consumer: `Connect` on the cluster, `DescribeTopic` + `ReadData` on the topic ARN, `DescribeGroup` + `AlterGroup` on the group ARN. Wildcards work after `topic/` or `group/` in the ARN.",
+   "variants": [
+    "Producer role → `Connect`, `DescribeTopic`, `WriteData`.",
+    "Many topics share a prefix → use a wildcard ARN like `topic/MyCluster/*/orders-*`.",
+    "Partner account must read one topic → cluster policy granting `kafka-cluster` read actions on that topic."
+   ]
+  },
+  {
+   "id": "msk-024",
+   "skill": "4.2.2",
+   "source": "3-security-msk-connect-replicator-and-schema-registry.md",
+   "q": "An engineer creates a Secrets Manager secret named `kafka-app1-creds`, encrypted with the default `aws/secretsmanager` key, in the same account and Region as an MSK cluster. Associating it with the cluster for SASL/SCRAM fails. Which two changes are needed? (Choose 2.)",
+   "options": [
+    {
+     "t": "Rename the secret so it starts with `AmazonMSK_`",
+     "why": "Right: MSK only accepts SCRAM secrets whose names start with `AmazonMSK_`."
+    },
+    {
+     "t": "Move the secret to a different account",
+     "why": "Wrong: the secret must be in the same account and Region as the cluster."
+    },
+    {
+     "t": "Encrypt the secret with a customer managed KMS key",
+     "why": "Right: the default Secrets Manager key does not work for MSK SCRAM secrets."
+    },
+    {
+     "t": "Switch the secret to SCRAM-SHA-256",
+     "why": "Wrong: MSK supports only SCRAM-SHA-512."
+    },
+    {
+     "t": "Encrypt the secret with an asymmetric KMS key",
+     "why": "Wrong: asymmetric keys don't work for MSK SCRAM secrets."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "SCRAM secrets: `AmazonMSK_` prefix, customer managed symmetric KMS key, same account and Region.",
+   "remember": "MSK SCRAM: secrets named `AmazonMSK_*`, encrypted with a customer managed (symmetric) KMS key, same account/Region; SCRAM-SHA-512 only; rotation is password-only and MSK reads `AWSCURRENT`.",
+   "variants": [
+    "Passwords must rotate automatically → Secrets Manager rotation (single-user, password only).",
+    "A username must change → create a new secret, associate it, set ACLs, move clients, then disassociate the old one.",
+    "No passwords at all wanted → IAM access control."
+   ]
+  },
+  {
+   "id": "msk-025",
+   "skill": "4.1.1",
+   "source": "3-security-msk-connect-replicator-and-schema-registry.md",
+   "q": "A SASL/SCRAM MSK cluster has three application users. A security review finds that every user can read every topic, even though no ACLs grant this. What should the team do?",
+   "options": [
+    {
+     "t": "Set `allow.everyone.if.no.acl.found=false` immediately, then create ACLs",
+     "why": "Wrong: setting it false before ACLs exist locks every client out."
+    },
+    {
+     "t": "Remove the brokers' super-user rights",
+     "why": "Wrong: brokers are super users so replication works; removing that would break replication."
+    },
+    {
+     "t": "Switch the users to SCRAM-SHA-256",
+     "why": "Wrong: MSK supports only SCRAM-SHA-512, and the hash type doesn't change authorization."
+    },
+    {
+     "t": "Create Kafka ACLs for each user's topics, then set `allow.everyone.if.no.acl.found=false`",
+     "why": "Right: MSK defaults it to true, so resources without ACLs are open to all; ACLs first, then false."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Create ACLs first, then set `allow.everyone.if.no.acl.found=false`.",
+   "remember": "SCRAM and mTLS authorize with Kafka ACLs. MSK default `allow.everyone.if.no.acl.found=true` leaves ACL-less resources open; set it false only after ACLs exist. Manage ACLs with `--bootstrap-server`.",
+   "variants": [
+    "Everyone is locked out after a config change → the flag was set false before ACLs; add ACLs.",
+    "Clients use IAM auth → ACLs and this flag don't apply; IAM policies decide.",
+    "`UnderReplicatedPartitions` stays above 0 after new ACLs → brokers may be denied READ/DESCRIBE."
+   ]
+  },
+  {
+   "id": "msk-026",
+   "skill": "4.3.4",
+   "source": "3-security-msk-connect-replicator-and-schema-registry.md",
+   "q": "An MSK Provisioned cluster was created with encryption between brokers turned off. The team now needs internet clients to connect with IAM authentication. What must they do?",
+   "options": [
+    {
+     "t": "Turn on in-cluster encryption with `UpdateSecurity`, then enable public access",
+     "why": "Wrong: in-cluster encryption can only be set at creation and can never be changed later."
+    },
+    {
+     "t": "Create a new cluster with in-cluster encryption on, then enable public access on it after creation",
+     "why": "Right: public access and IAM need in-cluster encryption on, and a cluster created with it off can never get it."
+    },
+    {
+     "t": "Enable public access with unauthenticated access as a fallback",
+     "why": "Wrong: unauthenticated access is not allowed with public access."
+    },
+    {
+     "t": "Create the new cluster with public access turned on at creation",
+     "why": "Wrong: public access can't be on at creation; it is turned on later with `UpdateConnectivity`."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "In-cluster encryption off at creation = rebuild before public access.",
+   "remember": "Public access (Provisioned only): turned on after creation, needs public subnets, IAM/SCRAM/mTLS, TLS, in-cluster encryption on and unauthenticated/plaintext off. In-cluster encryption is fixed at creation.",
+   "variants": [
+    "Public access is on but clients can't connect → allow the public ports (9198 IAM, 9196 SCRAM, 9194 mTLS) in the security group.",
+    "Public access with SCRAM/mTLS → set ACLs and `allow.everyone.if.no.acl.found=false` first.",
+    "Clients are in other VPCs, not the internet → multi-VPC private connectivity instead."
+   ]
+  },
+  {
+   "id": "msk-027",
+   "skill": "4.1.5",
+   "source": "3-security-msk-connect-replicator-and-schema-registry.md",
+   "q": "Clients in 10 VPCs across 3 AWS accounts in the same Region must reach an MSK Provisioned cluster privately using IAM auth. Several VPCs have overlapping CIDR ranges. Which approach fits?",
+   "options": [
+    {
+     "t": "Multi-VPC private connectivity with a cluster policy that lets the other accounts call `kafka:CreateVpcConnection`",
+     "why": "Right: MSK-managed PrivateLink connections work across accounts and handle overlapping CIDRs."
+    },
+    {
+     "t": "VPC peering from each client VPC to the cluster VPC",
+     "why": "Wrong: peering doesn't work with overlapping CIDRs and needs many connections."
+    },
+    {
+     "t": "Enable public access and restrict the security group to the VPCs' NAT IPs",
+     "why": "Wrong: traffic leaves the private network, which the requirement rules out."
+    },
+    {
+     "t": "Turn on unauthenticated access and use Transit Gateway",
+     "why": "Wrong: multi-VPC and public access forbid unauthenticated, and overlapping CIDRs break routing."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Many VPCs/accounts, overlapping CIDRs: multi-VPC private connectivity + cluster policy.",
+   "remember": "Multi-VPC private connectivity = MSK-managed PrivateLink for same-Region client VPCs in any account; supports IAM, TLS and SCRAM (not unauthenticated), not t3.small. Cross-account needs a cluster policy.",
+   "variants": [
+    "Firehose, cross-account Lambda or cross-Region Replicator → they also use multi-VPC connectivity plus a cluster policy.",
+    "A partner must read one topic with IAM → the cluster policy can grant `kafka-cluster` read actions on it.",
+    "Clients are on-premises → Site-to-Site VPN or Direct Connect into the VPC."
+   ]
+  },
+  {
+   "id": "msk-028",
+   "skill": "1.3.2",
+   "source": "3-security-msk-connect-replicator-and-schema-registry.md",
+   "q": "Two MSK clusters with IAM auth are in different AWS accounts. The team needs continuous topic replication from one to the other. Which option works?",
+   "options": [
+    {
+     "t": "MSK Replicator in same-Region mode",
+     "why": "Wrong: MSK Replicator only replicates MSK-to-MSK within the same AWS account."
+    },
+    {
+     "t": "MSK Replicator with a cluster policy on the source",
+     "why": "Wrong: the cluster policy doesn't make Replicator cross-account; it is not supported."
+    },
+    {
+     "t": "MirrorMaker 2 run by the team (for example on ECS/EKS or EC2)",
+     "why": "Right: MM2 is the tool for cross-account replication, non-IAM clusters and custom rules."
+    },
+    {
+     "t": "AWS Backup cross-account copy of the MSK cluster",
+     "why": "Wrong: this is not how Kafka topic replication is done; continuous replication needs a replication tool."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Cross-account Kafka replication: MirrorMaker 2.",
+   "remember": "MSK Replicator = managed, same-account replication (cross-Region or same-Region) of data, configs, literal topic ACLs and offsets. Cross-account, non-IAM MSK, or custom rules → MirrorMaker 2.",
+   "variants": [
+    "Same account, other Region, IAM auth → MSK Replicator CRR with offset sync.",
+    "Migrating from self-managed Kafka with SCRAM to MSK Provisioned → Replicator with the self-managed cluster as source.",
+    "MSK clusters use only SCRAM → Replicator needs IAM on MSK clusters; use MM2 or enable IAM."
+   ]
+  },
+  {
+   "id": "msk-029",
+   "skill": "1.3.2",
+   "source": "3-security-msk-connect-replicator-and-schema-registry.md",
+   "q": "A team uses MSK Replicator to copy an IAM-auth cluster to a DR Region in the same account. They need to fail over to DR and later fail back with consumers resuming near their last position. Which setup supports this?",
+   "options": [
+    {
+     "t": "One Replicator with prefixed topic names and legacy one-way offset sync",
+     "why": "Wrong: legacy one-way offset sync has no failback."
+    },
+    {
+     "t": "One Replicator that starts at the latest offset",
+     "why": "Wrong: the start position doesn't add a reverse path for failback."
+    },
+    {
+     "t": "MirrorMaker 2 run by the team on EC2",
+     "why": "Wrong: it can work but must be run and scaled by the team; the managed Replicator supports this directly within one account."
+    },
+    {
+     "t": "Two Replicators (one each way) with identical topic names and enhanced offset sync",
+     "why": "Right: bidirectional replication with identical names and enhanced sync supports both failover and failback; the `__mskmr` header prevents loops."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Failover + failback: two Replicators, identical names, enhanced offset sync.",
+   "remember": "Replicator offset translation is approximate (expect a few duplicates, so make consumers idempotent). Failback needs two Replicators with identical names and enhanced sync; IAM policies are not copied.",
+   "variants": [
+    "IAM clients fail on the DR cluster after failover → create matching IAM policies there; Replicator doesn't copy them.",
+    "Active-active writes in two Regions → prefixed topic names so each Region's data stays separate.",
+    "Replicator `MessageLag` keeps growing → check target capacity and `ThrottleTime`."
+   ]
+  },
+  {
+   "id": "msk-030",
+   "skill": "3.3.5",
+   "source": "3-security-msk-connect-replicator-and-schema-registry.md",
+   "q": "Auditors want two things for an MSK cluster that uses IAM access control: a record of who deleted a topic, and a record of clients that were denied when trying to read a topic. Which two sources provide this? (Choose 2.)",
+   "options": [
+    {
+     "t": "VPC Flow Logs on the broker ENIs",
+     "why": "Wrong: they show IP traffic, not Kafka principals or topic actions."
+    },
+    {
+     "t": "AWS CloudTrail",
+     "why": "Right: with IAM access control, MSK logs Kafka admin actions such as `DeleteTopic` in CloudTrail."
+    },
+    {
+     "t": "CloudWatch `PER_TOPIC_PER_PARTITION` metrics",
+     "why": "Wrong: metrics show throughput and lag, not who did what."
+    },
+    {
+     "t": "Broker authorizer logs delivered to CloudWatch Logs or S3",
+     "why": "Right: authorizer logs record allow/deny decisions; CloudTrail doesn't log produce/consume calls."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Admin actions → CloudTrail; data-access decisions → authorizer logs.",
+   "remember": "CloudTrail logs all MSK API calls and, with IAM auth, Kafka admin actions (create/alter/delete topic, dynamic config). It doesn't log every produce/consume; use broker authorizer logs for data access auditing.",
+   "variants": [
+    "Prove who changed a topic config → CloudTrail (`AlterTopicDynamicConfiguration`).",
+    "Broker logs to Firehose → the Firehose stream needs the tag `LogDeliveryEnabled=true`.",
+    "Logs to an SSE-KMS S3 bucket → key policy must allow `delivery.logs.amazonaws.com`."
+   ]
+  },
+  {
+   "id": "msk-031",
+   "skill": "2.4.2",
+   "source": "3-security-msk-connect-replicator-and-schema-registry.md",
+   "q": "Producers using AWS Glue Schema Registry with Avro will add new fields over time. Existing consumers are not upgraded on the same schedule and must keep reading the new data. Which compatibility mode should the schema use?",
+   "options": [
+    {
+     "t": "FORWARD",
+     "why": "Right: FORWARD guarantees old consumers can read data written with the new version, and it allows adding fields."
+    },
+    {
+     "t": "BACKWARD",
+     "why": "Wrong: BACKWARD protects new consumers reading old data; it is for upgrading consumers first."
+    },
+    {
+     "t": "NONE",
+     "why": "Wrong: it accepts any change, so a breaking change could reach old consumers."
+    },
+    {
+     "t": "DISABLED",
+     "why": "Wrong: no new versions are allowed, so producers can't evolve the schema."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Old readers must read new data → FORWARD (or FULL).",
+   "remember": "BACKWARD = new readers read old data (consumers upgrade first). FORWARD = old readers read new data (producers upgrade first). FULL = both; `_ALL` checks every earlier version.",
+   "variants": [
+    "Consumers upgrade first and must read old data → BACKWARD.",
+    "Both directions must stay safe against all earlier versions → FULL_ALL.",
+    "Adding a required field is rejected under BACKWARD → make it optional with a default."
+   ]
+  },
+  {
+   "id": "msk-032",
+   "skill": "1.1.1",
+   "source": "3-security-msk-connect-replicator-and-schema-registry.md",
+   "q": "Row-level changes from an Amazon RDS for PostgreSQL database must stream into MSK topics, one per table, with minimal load on the database and no servers to manage. Which approach fits?",
+   "options": [
+    {
+     "t": "A JDBC source connector polling each table every minute",
+     "why": "Wrong: polling queries add load to the source and miss deletes and intermediate changes."
+    },
+    {
+     "t": "A Lambda function on a schedule that runs `SELECT` on changed rows",
+     "why": "Wrong: custom code, polling load, and no true row-level CDC."
+    },
+    {
+     "t": "A Debezium source connector on MSK Connect reading the PostgreSQL WAL via logical replication",
+     "why": "Right: Debezium reads the transaction log for row-level CDC with low source load, and MSK Connect runs it without servers."
+    },
+    {
+     "t": "MSK Replicator from the database to the cluster",
+     "why": "Wrong: Replicator copies between Kafka clusters, not from databases."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Low-load CDC into MSK: Debezium on MSK Connect.",
+   "remember": "Debezium reads the database log (MySQL binlog ROW, PostgreSQL logical replication) and writes one compacted topic per table. MSK Connect runs it as a managed connector from a custom plugin in S3.",
+   "variants": [
+    "Target is MSK Serverless and the team wanted DMS → DMS can't target Serverless; Debezium works.",
+    "The connector must reach a SaaS API on the internet → private subnets with a NAT gateway.",
+    "Connector credentials → config providers (Secrets Manager), not plaintext in the config."
+   ]
+  },
+  {
+   "id": "msk-033",
+   "skill": "3.3.4",
+   "source": "4-monitoring-cost-scaling-limits-and-scenarios.md",
+   "q": "All brokers in an MSK Standard cluster average 75% CPU (`CpuUser` + `CpuSystem`) at peak, and partitions are evenly spread. What is AWS's first recommended step?",
+   "options": [
+    {
+     "t": "Add brokers with `UpdateBrokerCount` and do nothing else",
+     "why": "Wrong: new brokers get no existing partitions, so they sit idle and CPU stays high."
+    },
+    {
+     "t": "Turn on `unclean.leader.election.enable`",
+     "why": "Wrong: it affects durability on failover, not CPU."
+    },
+    {
+     "t": "Raise the monitoring level to `PER_TOPIC_PER_PARTITION`",
+     "why": "Wrong: more metrics don't reduce CPU and add CloudWatch cost."
+    },
+    {
+     "t": "Move to the next broker size with `UpdateBrokerType`",
+     "why": "Right: a rolling size change adds compute without moving partitions; AWS advises keeping CPU under 60%."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "CPU over 60% on all brokers → scale up broker size first.",
+   "remember": "AWS order when CPU > 60%: 1) bigger broker size, 2) add brokers + add partitions to unkeyed topics, 3) add brokers + reassign partitions. A size change is rolling, about 10–15 minutes per broker.",
+   "variants": [
+    "High CPU on one broker only → hot partition or uneven placement; rebalance or fix keys.",
+    "t3 cluster slows after some hours → CPU credits exhausted; move to m5/m7g.",
+    "Latency high and network allowance metrics rising → larger broker size."
+   ]
+  },
+  {
+   "id": "msk-034",
+   "skill": "3.3.4",
+   "source": "4-monitoring-cost-scaling-limits-and-scenarios.md",
+   "q": "A team added 3 brokers to a 3-broker MSK Standard cluster. A day later the new brokers have almost no `BytesInPerSec` and the old brokers are still overloaded. What should they do?",
+   "options": [
+    {
+     "t": "Restart the new brokers with `RebootBroker`",
+     "why": "Wrong: a reboot doesn't move any partitions onto them."
+    },
+    {
+     "t": "Reassign partitions to the new brokers with `kafka-reassign-partitions.sh` (with `--throttle`) or Cruise Control",
+     "why": "Right: Kafka doesn't move existing partitions to new brokers by itself; reassignment spreads the load."
+    },
+    {
+     "t": "Turn on `auto.leader.rebalance.enable`",
+     "why": "Wrong: it is already the MSK default and only moves leadership among existing replicas; it doesn't move data."
+    },
+    {
+     "t": "Enable intelligent rebalancing",
+     "why": "Wrong: intelligent rebalancing is an Express feature; this is a Standard cluster."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "After scale out on Standard, reassign partitions; Kafka won't do it automatically.",
+   "remember": "New Standard brokers stay empty until you reassign partitions (or create/add partitions). Reassign in small batches (≤10 per call on Standard) with `--throttle`, and avoid it above ~70% CPU.",
+   "variants": [
+    "Cluster uses Express brokers → keep intelligent rebalancing Active; it moves partitions on scale events.",
+    "Reassignment slows producers → add `--throttle` and move fewer partitions per call.",
+    "Removing brokers → move all user partitions off first until `UserPartitionExists` is 0."
+   ]
+  }
+ ]
+}

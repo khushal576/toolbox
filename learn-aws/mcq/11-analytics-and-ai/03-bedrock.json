@@ -1,0 +1,124 @@
+{
+ "questions": [
+  {
+   "id": "bedrock-001",
+   "skill": "1.2.10",
+   "source": "1-models-apis-endpoints-and-inference-options.md",
+   "q": "A data team must summarize 10 million support tickets stored in S3 with a Bedrock model. Results are needed by the next morning, nobody waits on individual answers, and cost must be as low as possible. Which approach fits?",
+   "options": [
+    { "t": "A Lambda function per ticket calling `InvokeModel` on demand", "why": "Wrong: it works, but pays full on-demand price and runs into TPM/RPM throttling at this volume." },
+    { "t": "Buy Provisioned Throughput for the model for one month", "why": "Wrong: PT bills hourly even when idle and is meant for steady, high, predictable traffic or custom models, not a one-off overnight job." },
+    { "t": "Bedrock batch inference: prompts as JSONL in S3, outputs written back to S3", "why": "Right: batch is asynchronous, built for large offline work, and is discounted versus on-demand for supported models." },
+    { "t": "Priority service tier on `Converse` calls", "why": "Wrong: Priority costs a premium for faster responses; this job is not latency-sensitive." }
+   ],
+   "answer": [2],
+   "explain": "Large, non-interactive model work: batch inference (JSONL in S3, async, cheaper).",
+   "remember": "Bulk offline model work (summarize, classify, embedding backfills) → batch inference or Flex. Latency-critical user traffic → Priority/Reserved. Steady huge volume or a fine-tuned model → Provisioned Throughput.",
+   "variants": [
+    "The records need tool calling in Converse format → batch rejects `toolConfig` records; use the InvokeModel record format.",
+    "The model is a fine-tuned custom model → it needs Provisioned Throughput, and batch does not support provisioned models.",
+    "A customer-facing chat must stay fast at peak → Priority tier (or Reserved capacity)."
+   ]
+  },
+  {
+   "id": "bedrock-002",
+   "skill": "1.1.9",
+   "source": "1-models-apis-endpoints-and-inference-options.md",
+   "q": "A pipeline calls a Bedrock text model with `max_tokens` set to 32,000. Real answers are about 300 tokens, yet calls get `ThrottlingException` (429) well below the expected token rate. What is the most direct fix?",
+   "options": [
+    { "t": "Set `max_tokens` close to the expected output size", "why": "Right: at request start Bedrock reserves input tokens + `max_tokens` against the quota, so a huge `max_tokens` cuts concurrency even when outputs are short." },
+    { "t": "Switch from `Converse` to `InvokeModel`", "why": "Wrong: both use the same quota; the API choice does not change the reservation." },
+    { "t": "Enable model invocation logging", "why": "Wrong: logging records requests but does not change throttling." },
+    { "t": "Raise the quota, which Bedrock grants automatically when you hit the limit", "why": "Wrong: quota increases are not automatic; they are requested and depend on account history, and the real cause here is the reservation." }
+   ],
+   "answer": [0],
+   "explain": "Quota reserved up front = input + max_tokens; oversized max_tokens throttles early.",
+   "remember": "Bedrock throttles on TPM/RPM and reserves input + `max_tokens` at request start. Throttled but outputs are small → lower `max_tokens` first; then backoff with jitter, caching, cross-Region profiles, batch/Flex.",
+   "variants": [
+    "Throttling comes from traffic spikes, not `max_tokens` → a cross-Region inference profile pools capacity.",
+    "A long, identical system prompt is sent every call → prompt caching; cache reads do not count toward the quota.",
+    "The model is an embedding model → it is throttled by RPM, not TPM."
+   ]
+  },
+  {
+   "id": "bedrock-003",
+   "skill": "2.4.6",
+   "source": "2-knowledge-bases-rag-and-vector-stores.md",
+   "q": "A team built a customer-managed Bedrock Knowledge Base on an S3 bucket. New PDFs uploaded yesterday never appear in `RetrieveAndGenerate` answers, and nothing errors. What is the most likely cause?",
+   "options": [
+    { "t": "The vector index dimension does not match the embedding model", "why": "Wrong: a dimension mismatch breaks ingestion with errors, and older documents would also fail." },
+    { "t": "The model's context window is too small for the PDFs", "why": "Wrong: only retrieved chunks go into the prompt, not whole files." },
+    { "t": "Guardrails are blocking the new documents", "why": "Wrong: a guardrail would return a blocked message, not silently ignore new files." },
+    { "t": "No ingestion job (sync) ran after the upload", "why": "Right: a KB does not sync automatically; start a sync (`StartIngestionJob`) or use direct ingestion after files land." }
+   ],
+   "answer": [3],
+   "explain": "Knowledge Bases do not auto-sync: run an ingestion job after new files arrive.",
+   "remember": "New S3 files are invisible to a Knowledge Base until a sync (ingestion job) or direct ingestion runs. Trigger it from the pipeline (for example EventBridge S3 event → start sync); only new, changed or deleted files are processed.",
+   "variants": [
+    "You changed the embedding model → re-ingest everything into a new index with the new dimension.",
+    "Ingestion fails with a dimension error → make the vector index dimension equal the model's output dimension.",
+    "Answers lack citations after a prompt change → keep `$output_format_instructions$` in the template."
+   ]
+  },
+  {
+   "id": "bedrock-004",
+   "skill": "2.4.6",
+   "source": "2-knowledge-bases-rag-and-vector-stores.md",
+   "q": "A company needs a customer-managed Bedrock Knowledge Base over a large archive of policy documents. Queries are rare (a few per day), sub-second response is fine, and the vector store must be the cheapest option. Which store fits?",
+   "options": [
+    { "t": "Amazon OpenSearch Serverless vector collection", "why": "Wrong: strong for heavy search, hybrid search and filters, but OCUs have a minimum cost even when idle." },
+    { "t": "Amazon S3 Vectors", "why": "Right: object-storage pricing with sub-second queries, best for infrequent query workloads." },
+    { "t": "Amazon Aurora PostgreSQL with pgvector", "why": "Wrong: a good fit when data already lives in Postgres or needs SQL joins, but it is a running database, not the cheapest store for rare queries." },
+    { "t": "Neptune Analytics (GraphRAG)", "why": "Wrong: for relationship-aware retrieval between entities, not for lowest cost." }
+   ],
+   "answer": [1],
+   "explain": "Low QPS and lowest cost: S3 Vectors.",
+   "remember": "KB vector store pick: rare queries, lowest cost → S3 Vectors; heavy search, hybrid, rich filters, binary vectors → OpenSearch; data already in Postgres → Aurora pgvector; entity relationships → Neptune Analytics; no store to manage at all → Managed KB.",
+   "variants": [
+    "Keyword + semantic (hybrid) ranking is required → OpenSearch Serverless or Aurora; S3 Vectors falls back to semantic.",
+    "Binary embeddings are needed to cut storage → OpenSearch (Serverless or managed) only.",
+    "The team must reuse an existing OpenSearch domain → customer-managed KB on it, but a KB needs a public domain (VPC-only domains are not supported)."
+   ]
+  },
+  {
+   "id": "bedrock-005",
+   "skill": "4.3.1",
+   "source": "3-agents-guardrails-flows-customization-and-evaluation.md",
+   "q": "A pipeline sends customer emails through a model hosted outside Bedrock. Before the generated replies are stored, any SSNs and addresses must be masked using the same safeguards the company already defined in Bedrock Guardrails. What should the team use?",
+   "options": [
+    { "t": "The `ApplyGuardrail` API with a sensitive-information filter set to mask", "why": "Right: `ApplyGuardrail` evaluates any text without calling a Bedrock model, and the sensitive-information filter masks PII entities and custom regex." },
+    { "t": "A guardrail attached to `Converse` calls", "why": "Wrong: that only checks traffic that goes through a Bedrock model call; this model is outside Bedrock." },
+    { "t": "A Guardrails denied-topics policy", "why": "Wrong: denied topics block subjects of conversation; they do not detect and mask PII values." },
+    { "t": "Guardrails on the `bedrock-mantle` endpoint", "why": "Wrong: `bedrock-mantle` does not support Guardrails." }
+   ],
+   "answer": [0],
+   "explain": "Same guardrail on text from a non-Bedrock model: ApplyGuardrail with PII mask.",
+   "remember": "PII in model input/output → Guardrails sensitive-information filter (block or mask). Text from anywhere else (non-Bedrock model, pipeline content) → `ApplyGuardrail`, which needs no model call.",
+   "variants": [
+    "Hallucinated RAG answers are the problem → contextual grounding check.",
+    "Every Bedrock call in every account must use one guardrail → enforced guardrails (account-level or Organizations Amazon Bedrock policy).",
+    "PII must be found in the S3 bucket before indexing → Macie."
+   ]
+  },
+  {
+   "id": "bedrock-006",
+   "skill": "3.3.2",
+   "source": "4-security-cost-monitoring-limits-and-scenarios.md",
+   "q": "An auditor asks for the full prompts and responses of every Bedrock `Converse` call made by a data application last month, with the caller's identity. Nothing has been configured yet. What must the team set up for future audits?",
+   "options": [
+    { "t": "CloudWatch metrics `InputTokenCount` and `OutputTokenCount`", "why": "Wrong: metrics give counts per model, not the request and response bodies or the caller." },
+    { "t": "Application inference profiles with cost allocation tags", "why": "Wrong: they attribute cost by app or team, not per-request content." },
+    { "t": "AWS Cost Explorer with IAM principal attribution", "why": "Wrong: it shows daily dollars per user or role, not the prompts." },
+    { "t": "Model invocation logging to S3 (and/or CloudWatch Logs), protected with KMS and retention", "why": "Right: it is disabled by default and records full request/response bodies plus `identity.arn`; the logs hold sensitive data, so protect them." }
+   ],
+   "answer": [3],
+   "explain": "Full prompts and answers with caller: model invocation logging, off by default.",
+   "remember": "Need the content of prompts and answers → enable model invocation logging (off by default; S3 and/or CloudWatch Logs in the same account and Region). Who changed a guardrail or enabled a model → CloudTrail management events.",
+   "variants": [
+    "The traffic goes through `bedrock-mantle` → invocation logging does not cover mantle calls.",
+    "Per-prompt token cost per team is needed → request metadata tags in invocation logs.",
+    "Bodies larger than 100 KB or images → they are written to S3 under the data prefix, not inline."
+   ]
+  }
+ ]
+}

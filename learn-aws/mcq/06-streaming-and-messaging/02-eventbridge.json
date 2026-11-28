@@ -1,0 +1,996 @@
+{
+  "questions": [
+    {
+      "id": "eb-001",
+      "skill": "1.1.6",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "CSV files land in an S3 bucket under `raw/`. Three independent consumers (a Lambda function, a Step Functions workflow and a bus in another account) must react only to non-empty `.csv` objects. Which design needs the least custom code?",
+      "options": [
+        {
+          "t": "Turn on \"Send notifications to Amazon EventBridge\" for the bucket and create a rule with prefix, suffix and `numeric` size filters and three targets",
+          "why": "Right: EventBridge patterns filter on key prefix, suffix and size, and one rule can have up to 5 targets, including another account's bus."
+        },
+        {
+          "t": "One S3 Event Notification with prefix `raw/` and suffix `.csv` to the Lambda function, which then calls the other two",
+          "why": "Wrong: S3 notifications cannot filter on size, allow one destination per config, and the Lambda becomes glue code."
+        },
+        {
+          "t": "Three S3 Event Notifications with the same prefix, one per consumer",
+          "why": "Wrong: overlapping prefixes for the same event type are rejected, and Step Functions and buses are not notification destinations."
+        },
+        {
+          "t": "A scheduled Lambda that lists the bucket every minute",
+          "why": "Wrong: polling adds delay, code and request cost."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "S3 → EventBridge gives full content filters and several targets per rule.",
+      "remember": "Several consumers, size or wildcard filters, or Step Functions/cross-account targets on S3 events → S3 to EventBridge plus a rule. Simplest single S3 → Lambda/SQS path → plain S3 Event Notification.",
+      "variants": [
+        "Only one Lambda consumer and a prefix filter → a plain S3 Event Notification is enough.",
+        "Must skip zero-byte \"folder\" objects → add `detail.object.size` `numeric > 0` in the pattern."
+      ]
+    },
+    {
+      "id": "eb-002",
+      "skill": "3.1.2",
+      "source": "3-security-quotas-cost-troubleshooting-and-scenarios.md",
+      "q": "A team created an EventBridge rule on the default bus for `source=aws.s3`, `detail-type=Object Created` on bucket `landing`, in the bucket's Region. Uploads succeed but the rule never fires and `MatchedEvents` shows nothing. What is the most likely cause?",
+      "options": [
+        {
+          "t": "The rule needs state `ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`",
+          "why": "Wrong: that state is for read-only CloudTrail management events, not native S3 EventBridge events."
+        },
+        {
+          "t": "S3 event delivery to EventBridge was never turned on for the bucket",
+          "why": "Right: S3 → EventBridge is off by default and must be switched on per bucket."
+        },
+        {
+          "t": "S3 events are delivered only to custom buses",
+          "why": "Wrong: AWS service events go only to the default bus."
+        },
+        {
+          "t": "The rule needs a CloudTrail trail with S3 data events",
+          "why": "Wrong: that is only for CloudTrail-based API-call events; native S3 events need the bucket switch."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "S3 → EventBridge is a per-bucket switch, off by default.",
+      "remember": "No S3 events in EventBridge → check the bucket's \"Send notifications to Amazon EventBridge\" setting, the Region, and that the rule is on the default bus.",
+      "variants": [
+        "Rule lives on a custom bus → add a forwarding rule on the default bus to that custom bus.",
+        "Rule fires for 0-byte keys ending in `/` → filter `size > 0` or `anything-but` suffix `/`."
+      ]
+    },
+    {
+      "id": "eb-003",
+      "skill": "1.3.1",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "A new object in S3 must start a single AWS Glue ETL job. A developer tries to add the Glue job as a target of an EventBridge rule and cannot find it. Which TWO designs work? (Choose 2.)",
+      "options": [
+        {
+          "t": "Rule target = a Glue workflow whose EVENT trigger starts the job",
+          "why": "Right: Glue workflows are rule targets (the role needs `glue:notifyEvent`)."
+        },
+        {
+          "t": "Rule target = SQS FIFO queue that Glue polls automatically",
+          "why": "Wrong: Glue jobs do not poll SQS queues."
+        },
+        {
+          "t": "Rule target = a Step Functions state machine that runs Glue `startJobRun.sync`",
+          "why": "Right: Step Functions is a rule target and can start the job and wait for it."
+        },
+        {
+          "t": "Rule target = the Glue Data Catalog table",
+          "why": "Wrong: a catalog table is not a target and cannot run a job."
+        }
+      ],
+      "answer": [
+        0,
+        2
+      ],
+      "explain": "A Glue job is not a direct rule target; a Glue workflow or Step Functions is.",
+      "remember": "Event must start a Glue job → rule → Glue workflow (EVENT trigger) or Step Functions; time-based start of one job → Scheduler universal target `glue:startJobRun`.",
+      "variants": [
+        "Many small files should start one Glue run → Glue workflow EVENT trigger with batch size and a window up to 900 s.",
+        "Job runs nightly with no follow-up steps → Scheduler universal target `aws-sdk:glue:startJobRun`."
+      ]
+    },
+    {
+      "id": "eb-004",
+      "skill": "1.3.4",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "The on-call team must get an email whenever any Glue job fails or times out. What is the lowest-effort solution?",
+      "options": [
+        {
+          "t": "A Lambda function that calls `GetJobRuns` every 5 minutes and emails failures",
+          "why": "Wrong: polling code to build and run when Glue already emits events."
+        },
+        {
+          "t": "A CloudTrail trail with a rule matching `AWS API Call via CloudTrail` for `StartJobRun`",
+          "why": "Wrong: that matches the start call, not the job outcome."
+        },
+        {
+          "t": "Enable Glue continuous logging and read the logs daily",
+          "why": "Wrong: not an alert, and manual."
+        },
+        {
+          "t": "Rule on the default bus: `source=aws.glue`, `detail-type=Glue Job State Change`, `detail.state=[\"FAILED\",\"TIMEOUT\"]` → SNS topic with email subscription",
+          "why": "Right: Glue publishes state-change events to the default bus for free, and SNS delivers email."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Glue Job State Change events + SNS is the standard failure alert.",
+      "remember": "Alert on an AWS service's state change → rule on the default bus matching its state-change event → SNS (email/chat). No polling code.",
+      "variants": [
+        "Alert on Step Functions Standard failures → `Step Functions Execution Status Change` with FAILED/TIMED_OUT/ABORTED.",
+        "Express workflows emit no EventBridge events → use CloudWatch Logs/metrics."
+      ]
+    },
+    {
+      "id": "eb-005",
+      "skill": "3.1.9",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "A platform team keeps its rules on a custom bus `ops-bus`. A rule there matching `aws.glue` events never fires, though Glue jobs fail often. What should they do?",
+      "options": [
+        {
+          "t": "Add a rule on the default bus that matches the Glue events and targets `ops-bus`",
+          "why": "Right: AWS service events land only on the default bus; forward them to the custom bus."
+        },
+        {
+          "t": "Add a resource policy on `ops-bus` allowing `glue.amazonaws.com`",
+          "why": "Wrong: Glue does not send to custom buses, whatever the policy says."
+        },
+        {
+          "t": "Change the rule state to `ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`",
+          "why": "Wrong: that is only for read-only CloudTrail events."
+        },
+        {
+          "t": "Turn on schema discovery on `ops-bus`",
+          "why": "Wrong: discovery infers schemas; it does not route events."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Service events reach only the default bus.",
+      "remember": "AWS service events → default bus only. A rule on a custom bus never sees them unless a default-bus rule forwards them.",
+      "variants": [
+        "S3 events wanted on a custom bus → same fix: forwarding rule on the default bus.",
+        "Events from other accounts wanted → cross-account bus target with a role plus receiver bus policy."
+      ]
+    },
+    {
+      "id": "eb-006",
+      "skill": "3.1.2",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "A rule pattern is `{\"source\":[\"aws.glue\"],\"detail\":{\"state\":[\"failed\"]}}`. Failed jobs never trigger it. What is the fix?",
+      "options": [
+        {
+          "t": "Change `source` to `glue`",
+          "why": "Wrong: AWS service sources start with `aws.`."
+        },
+        {
+          "t": "Wrap the pattern in `$or`",
+          "why": "Wrong: `$or` gives OR across fields; it does not change case matching."
+        },
+        {
+          "t": "Use `\"FAILED\"` (or `equals-ignore-case`), because matching is case sensitive",
+          "why": "Right: string matching is exact and case sensitive; Glue sends `FAILED`."
+        },
+        {
+          "t": "Use `{\"exists\": true}` on `state`",
+          "why": "Wrong: that would match every state, including SUCCEEDED."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Pattern strings match exactly, case sensitive.",
+      "remember": "Rule never fires → test the pattern with `TestEventPattern`/Sandbox; check case, spelling, nesting and numbers-as-strings; use `equals-ignore-case` when case varies.",
+      "variants": [
+        "Numbers 300 vs 300.0 do not match as plain values → use `numeric`.",
+        "A brand-new rule does not match a test sent at once → wait for propagation and retest."
+      ]
+    },
+    {
+      "id": "eb-007",
+      "skill": "1.1.9",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "A producer calls `PutEvents` with 10 entries. The call returns HTTP 200, but only 7 events reach the targets. What should the producer do?",
+      "options": [
+        {
+          "t": "Nothing: HTTP 200 means all entries were accepted",
+          "why": "Wrong: partial failures still return 200."
+        },
+        {
+          "t": "Check `FailedEntryCount` and retry only the entries that have an `ErrorCode`",
+          "why": "Right: per-entry failures are reported in the response, not as an exception."
+        },
+        {
+          "t": "Retry the whole batch of 10",
+          "why": "Wrong: resends 7 successful entries and creates duplicates."
+        },
+        {
+          "t": "Lower the batch to 1 entry per call",
+          "why": "Wrong: costs more calls and does not handle failures."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "PutEvents can partly fail with HTTP 200.",
+      "remember": "`PutEvents` 200 is not success for every entry → read `FailedEntryCount`, retry only failed entries with backoff. Throttling raises `ThrottlingException` → back off and retry.",
+      "variants": [
+        "All events vanish with 200 and no failed entries → check the bus name; a missing bus silently drops events.",
+        "`ThrottlingException` → back off, batch up to 10 entries, or raise the quota."
+      ]
+    },
+    {
+      "id": "eb-008",
+      "skill": "1.1.9",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "An application must publish an event that describes a 3 MB data file. What is the best design?",
+      "options": [
+        {
+          "t": "Split the file across several `PutEvents` entries",
+          "why": "Wrong: consumers would have to reassemble pieces, and ordering is not guaranteed."
+        },
+        {
+          "t": "Request a quota increase for the event size",
+          "why": "Wrong: the `PutEvents` request limit is 1 MB total."
+        },
+        {
+          "t": "Send the file through SNS instead",
+          "why": "Wrong: SNS is not a large-payload transport either."
+        },
+        {
+          "t": "Store the file in S3 and put the object URL in the event (claim-check)",
+          "why": "Right: events stay small and the 1 MB request limit is respected."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Large payloads go to S3; the event carries a pointer.",
+      "remember": "PutEvents = up to 10 entries and 1 MB per request; each 64 KB chunk is billed as one event. Big data → S3 + pointer.",
+      "variants": [
+        "Producer sends 900 KB events and the bill is high → shrink them or use claim-check (each 64 KB chunk = one event).",
+        "Old practice exams say 256 KB → current notes say 1 MB per request."
+      ]
+    },
+    {
+      "id": "eb-009",
+      "skill": "1.1.10",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "One rule must deliver every matching event to 7 different targets. What should the architect do?",
+      "options": [
+        {
+          "t": "Raise the targets-per-rule quota in Service Quotas",
+          "why": "Wrong: 5 targets per rule is a fixed limit."
+        },
+        {
+          "t": "Split into two rules with the same pattern, or send to an SNS topic or another bus that fans out",
+          "why": "Right: more rules, SNS or a bus target work around the fixed limit."
+        },
+        {
+          "t": "Use a Scheduler schedule with 7 targets",
+          "why": "Wrong: a schedule has exactly one target."
+        },
+        {
+          "t": "Put all 7 targets in the rule's input transformer",
+          "why": "Wrong: an input transformer shapes the payload; it does not add targets."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "5 targets per rule is a hard limit.",
+      "remember": "Need more than 5 targets → several rules with the same pattern, or fan out through SNS or another event bus.",
+      "variants": [
+        "Thousands of subscribers or email/SMS → SNS fed by EventBridge.",
+        "Scheduler must reach 5 targets → point it at an event bus, SNS or Step Functions."
+      ]
+    },
+    {
+      "id": "eb-010",
+      "skill": "1.1.11",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "A Lambda target was unavailable for 30 hours. The rule uses the default retry policy and has no DLQ. What happened to the events, and what prevents this next time?",
+      "options": [
+        {
+          "t": "They are kept in the bus until the target recovers; nothing to change",
+          "why": "Wrong: EventBridge is not a queue; it does not store events for consumers."
+        },
+        {
+          "t": "They were retried for 24 hours and then dropped; add a standard SQS DLQ to the target",
+          "why": "Right: default max event age is 24 hours; without a DLQ, exhausted events are lost."
+        },
+        {
+          "t": "They were sent to an SQS FIFO DLQ automatically",
+          "why": "Wrong: there is no DLQ unless you set one, and FIFO queues cannot be DLQs."
+        },
+        {
+          "t": "They were retried for 7 days; raise the max age to 14 days",
+          "why": "Wrong: `MaximumEventAgeInSeconds` max is 86,400 (24 hours)."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Default retry = 185 attempts / 24 hours; then dropped unless a DLQ exists.",
+      "remember": "Classic rule targets retry up to 24 h and 185 attempts. Set a standard SQS DLQ (same Region) so exhausted events are kept; put SQS in front of fragile targets.",
+      "variants": [
+        "DLQ creation fails with a FIFO queue → use a standard queue.",
+        "Events go to the DLQ at once with `NO_PERMISSIONS` → permission errors are not retried; fix the role or policy."
+      ]
+    },
+    {
+      "id": "eb-011",
+      "skill": "3.3.5",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "A security team in `eu-west-1` created a rule to catch IAM `CreateUser` API calls via CloudTrail. A trail is active, but the rule never fires. Why?",
+      "options": [
+        {
+          "t": "IAM is a global service whose CloudTrail events appear only in us-east-1, so the rule must be there",
+          "why": "Right: global service events are emitted only in us-east-1."
+        },
+        {
+          "t": "`CreateUser` is a read-only call and needs a special rule state",
+          "why": "Wrong: `CreateUser` is a write call; write events match normal ENABLED rules."
+        },
+        {
+          "t": "CloudTrail events go only to custom buses",
+          "why": "Wrong: they go to the default bus."
+        },
+        {
+          "t": "The rule must target an archive first",
+          "why": "Wrong: archives store events; they do not affect matching."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Global service CloudTrail events appear only in us-east-1.",
+      "remember": "Rules on IAM or Route 53 API calls → create them in us-east-1 with an active trail. Read-only calls (Get/List/Describe) need `ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`.",
+      "variants": [
+        "Rule must react to `ListBuckets` → set state `ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS`.",
+        "Rule must react to S3 `GetObject` → that state plus S3 data events on the trail."
+      ]
+    },
+    {
+      "id": "eb-012",
+      "skill": "1.3.2",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "A company uses an EventBridge global endpoint with event replication between two Regions. Which events are protected by its failover?",
+      "options": [
+        {
+          "t": "All events, including AWS service and partner events",
+          "why": "Wrong: service and partner events are not covered."
+        },
+        {
+          "t": "Only AWS service events on the default bus",
+          "why": "Wrong: these are exactly the ones not covered."
+        },
+        {
+          "t": "Only events written to an archive",
+          "why": "Wrong: failover is not tied to archives."
+        },
+        {
+          "t": "Only custom events the application sends with `PutEvents`",
+          "why": "Right: global endpoints cover custom events only."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Global endpoints fail over custom events only (about 6–7 minutes).",
+      "remember": "Keep producers sending during a Regional outage → global endpoint (Route 53 health check, same-named custom bus in both Regions, replication for automatic failback). Covers custom events only.",
+      "variants": [
+        "Without event replication → failback must be done by manually setting the health check healthy.",
+        "Need to fail over AWS service events → not possible with global endpoints."
+      ]
+    },
+    {
+      "id": "eb-013",
+      "skill": "3.3.2",
+      "source": "1-event-buses-rules-patterns-and-targets.md",
+      "q": "An auditor asks why one custom event never reached its target. Metrics only show counts. Which feature gives a per-event record that proves whether any rule matched?",
+      "options": [
+        {
+          "t": "CloudTrail management events for the bus",
+          "why": "Wrong: CloudTrail records API changes like `PutRule`, not per-event rule matching."
+        },
+        {
+          "t": "Schema discovery on the bus",
+          "why": "Wrong: discovery infers event shapes, not delivery steps."
+        },
+        {
+          "t": "Event bus logging at INFO (or TRACE) level to CloudWatch Logs, Firehose or S3",
+          "why": "Right: INFO logs ingested, rule matched, `No Rules Matched` and invocation results."
+        },
+        {
+          "t": "An archive with replay",
+          "why": "Wrong: archives keep copies of events but do not say what matched."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Bus logging INFO records match / no match per event.",
+      "remember": "\"Did my rule match?\" → bus logging at INFO/TRACE (`No Rules Matched` proves a pattern problem). ERROR level logs only failures. Logs can include sensitive detail data.",
+      "variants": [
+        "Pipes need the same visibility → Pipes logging (ERROR/INFO/TRACE).",
+        "Who changed a rule → CloudTrail `PutRule`/`PutTargets`."
+      ]
+    },
+    {
+      "id": "eb-014",
+      "skill": "1.3.3",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "Messages arrive in an SQS queue and each must start a Step Functions workflow. The team wants no Lambda function and no custom polling code. What should they use?",
+      "options": [
+        {
+          "t": "An EventBridge rule with the SQS queue as event source",
+          "why": "Wrong: rules do not poll SQS; queues are targets of rules, not sources."
+        },
+        {
+          "t": "An SNS subscription on the queue",
+          "why": "Wrong: SQS cannot be subscribed to like a topic."
+        },
+        {
+          "t": "A Lambda event source mapping",
+          "why": "Wrong: it can only invoke Lambda, which the team wants to avoid."
+        },
+        {
+          "t": "EventBridge Pipes with SQS as source and Step Functions as target",
+          "why": "Right: Pipes poll the queue and invoke Step Functions directly."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "SQS → Pipes → Step Functions, no Lambda.",
+      "remember": "Point-to-point \"move records from a queue/stream to service X, maybe filter or enrich, no code\" → EventBridge Pipes. Many-to-many routing → event bus rules.",
+      "variants": [
+        "Source is S3, SNS or an event bus → not a Pipes source; use rules.",
+        "Need Lambda code anyway with ESM features → Lambda event source mapping."
+      ]
+    },
+    {
+      "id": "eb-015",
+      "skill": "1.2.4",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "A pipe reads 10 million SQS messages a month but only messages with `type = ORDER_CREATED` matter to the target. How can the team cut cost the most?",
+      "options": [
+        {
+          "t": "Add a Pipes filter on `body.type`; only events that pass the filter are billed",
+          "why": "Right: filtered-out events are free and never reach enrichment or the target."
+        },
+        {
+          "t": "Filter inside the enrichment Lambda",
+          "why": "Wrong: every message is still billed as a pipe request and pays for Lambda."
+        },
+        {
+          "t": "Filter in the target Step Functions workflow",
+          "why": "Wrong: pays for every pipe request and every execution."
+        },
+        {
+          "t": "Raise the SQS visibility timeout",
+          "why": "Wrong: does not reduce the number of messages processed."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Pipes bill only events that pass the filter.",
+      "remember": "Filter as early as possible: Pipes filter before enrichment and target, rule patterns instead of Lambda filtering. Batching cuts Pipes requests further.",
+      "variants": [
+        "Filter needs `wildcard` or `anything-but` with prefix → not supported on Pipes; only on buses.",
+        "Filtering on body content → the payload must be valid JSON."
+      ]
+    },
+    {
+      "id": "eb-016",
+      "skill": "3.1.2",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "A pipe uses a Step Functions Standard workflow as its enrichment step. Soon after creation the pipe stops. Why, and what is the fix?",
+      "options": [
+        {
+          "t": "Enrichment must be synchronous; Standard workflows cannot run synchronously, so use an Express workflow",
+          "why": "Right: only Express workflows (or Lambda, API Gateway, API destinations) can enrich."
+        },
+        {
+          "t": "The 5-minute execution limit was raised; request a higher limit",
+          "why": "Wrong: the 5-minute pipe execution limit is fixed and not the cause."
+        },
+        {
+          "t": "The pipe role lacks `events:PutEvents`",
+          "why": "Wrong: enrichment does not use PutEvents."
+        },
+        {
+          "t": "Standard workflows need an SNS topic in front",
+          "why": "Wrong: no such requirement; they simply cannot be sync enrichments."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Pipes enrichment is always synchronous.",
+      "remember": "Pipes enrichment = Lambda, Step Functions Express, API Gateway or API destination, always REQUEST_RESPONSE. Standard workflows can only be async targets.",
+      "variants": [
+        "Pipe auto-stopped → read `StateReason` first (usually IAM or networking).",
+        "Standard workflow as target → must be FIRE_AND_FORGET; Pipes cannot retry errors inside it."
+      ]
+    },
+    {
+      "id": "eb-017",
+      "skill": "1.1.9",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "A pipe reads from Kinesis Data Streams and writes to an SQS queue. The engineer sets batch size 100 and the configuration is rejected. Why?",
+      "options": [
+        {
+          "t": "Kinesis sources allow at most 10 records per batch",
+          "why": "Wrong: Kinesis can give up to 10,000 records."
+        },
+        {
+          "t": "The SQS target accepts at most 10 messages per batch, so the pipe max is 10",
+          "why": "Right: batch size is limited by the smallest piece; SQS takes 10."
+        },
+        {
+          "t": "Pipes do not allow Kinesis as a source",
+          "why": "Wrong: Kinesis Data Streams is a supported source."
+        },
+        {
+          "t": "Batching requires an enrichment step",
+          "why": "Wrong: enrichment is optional."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Pipe batch size = the smallest limit across source and target.",
+      "remember": "Pipes batch limits by target: SQS/SNS/event bus 10, Kinesis and Firehose 500, CloudWatch Logs 10,000; Lambda/Step Functions limited by payload.",
+      "variants": [
+        "Target is Firehose → up to 500.",
+        "Target is Lambda → it always gets a JSON array, even with batch size 1."
+      ]
+    },
+    {
+      "id": "eb-018",
+      "skill": "3.1.2",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "A pipe reads from an Amazon MSK cluster in private subnets with no internet access and shows a connection error. What fixes it?",
+      "options": [
+        {
+          "t": "Make the MSK cluster publicly accessible",
+          "why": "Wrong: not needed, and weakens security."
+        },
+        {
+          "t": "Add a dead-letter queue to the pipe",
+          "why": "Wrong: Kafka sources have no DLQ support, and a DLQ would not fix connectivity."
+        },
+        {
+          "t": "Add a NAT gateway or a `pipes-data` VPC endpoint so Pipes can reach the cluster",
+          "why": "Right: Kafka/MQ sources in a VPC need network access to Pipes."
+        },
+        {
+          "t": "Raise the pipe's concurrency",
+          "why": "Wrong: concurrency does not create network paths."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "Kafka/MQ sources in a VPC need NAT or a `pipes-data` endpoint.",
+      "remember": "Pipe in a VPC can't reach Kafka/MQ → NAT gateway or `pipes-data` VPC endpoint; MSK also needs security groups. Read `StateReason`.",
+      "variants": [
+        "Poison record keeps failing on an MSK pipe → handle it in code; no DLQ for Kafka sources.",
+        "Pipe reading a CMK-encrypted SQS queue gets access denied → `kms:Decrypt` in key policy and role policy."
+      ]
+    },
+    {
+      "id": "eb-019",
+      "skill": "1.1.5",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "A nightly job must start at 02:00 New York time all year, including across daylight saving changes. What is the best option?",
+      "options": [
+        {
+          "t": "A legacy scheduled rule with `cron(0 2 * * ? *)`",
+          "why": "Wrong: scheduled rules are UTC only and ignore DST."
+        },
+        {
+          "t": "Two scheduled rules switched by hand at each DST change",
+          "why": "Wrong: manual and error-prone."
+        },
+        {
+          "t": "A Glue crawler schedule",
+          "why": "Wrong: does not start arbitrary jobs and is not the general answer."
+        },
+        {
+          "t": "EventBridge Scheduler cron schedule with time zone `America/New_York`",
+          "why": "Right: Scheduler supports IANA time zones and handles DST."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Scheduler supports time zones; scheduled rules are UTC only.",
+      "remember": "New schedules → EventBridge Scheduler (time zones, one-time `at()`, flexible windows, millions of schedules, retries, DLQ). Scheduled rules are legacy, UTC only.",
+      "variants": [
+        "Job must run once next Tuesday at 15:30 → Scheduler `at()` with `ActionAfterCompletion: DELETE`.",
+        "10,000 hourly schedules hit an API at the same second → flexible time window."
+      ]
+    },
+    {
+      "id": "eb-020",
+      "skill": "1.1.5",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "A Glue job must start every night with no follow-up steps. The team wants the fewest moving parts. What should they create?",
+      "options": [
+        {
+          "t": "An EventBridge Scheduler schedule with universal target `aws-sdk:glue:startJobRun`",
+          "why": "Right: universal targets call almost any API, so no Lambda or Step Functions is needed."
+        },
+        {
+          "t": "A scheduled rule with the Glue job as target",
+          "why": "Wrong: Glue jobs are not classic rule targets."
+        },
+        {
+          "t": "Scheduler → Lambda → Glue `StartJobRun`",
+          "why": "Wrong: works but adds code to maintain."
+        },
+        {
+          "t": "Scheduler universal target `aws-sdk:glue:getJobRuns`",
+          "why": "Wrong: universal targets cannot call read-only actions, and it would not start the job."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Scheduler universal targets reach 6,000+ API actions.",
+      "remember": "Simple timed API call → Scheduler universal target. Multi-step work with retries/branches → Scheduler → Step Functions. Universal target input is not validated at create time: read the DLQ on failures.",
+      "variants": [
+        "Schedule fails on every run but was created fine → bad universal target input; read DLQ `ERROR_MESSAGE`.",
+        "Need follow-up steps (crawler, notify) → Scheduler → Step Functions."
+      ]
+    },
+    {
+      "id": "eb-021",
+      "skill": "1.1.11",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "A consumer bug corrupted 4 hours of output. The bus has an archive. Other rules on the bus must not process those events again. What should the team do after fixing the code?",
+      "options": [
+        {
+          "t": "Replay the 4-hour window to the same bus, limited to the affected rule",
+          "why": "Right: replay can target specific rules on the source bus."
+        },
+        {
+          "t": "Replay the window to a new bus in another account",
+          "why": "Wrong: replay goes back to the same source bus only."
+        },
+        {
+          "t": "Replay to all rules and rely on ordering",
+          "why": "Wrong: other consumers get duplicates, and replay order is not the original order."
+        },
+        {
+          "t": "Restore the archive to S3 and reprocess manually",
+          "why": "Wrong: archives are not exported this way; replay is the built-in path."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Replay → same bus, optionally to specific rules; events carry `replay-name`.",
+      "remember": "Archive + replay: replay a time window to the same bus, optionally to chosen rules; replays are time-sliced and unordered; targets must be idempotent or check `replay-name`. Max 10 concurrent replays.",
+      "variants": [
+        "Events from 30 minutes ago needed → wait about 10 minutes after the window ends; archive delivery lags.",
+        "Replay by position with strict order → Kinesis Data Streams, not EventBridge."
+      ]
+    },
+    {
+      "id": "eb-022",
+      "skill": "1.1.4",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "A rule must push Glue failure events to a SaaS incident tool's HTTPS API that uses OAuth client credentials. The team wants no Lambda. What should they use?",
+      "options": [
+        {
+          "t": "A Lambda function URL that forwards to the SaaS",
+          "why": "Wrong: function URLs receive inbound webhooks; it adds code."
+        },
+        {
+          "t": "An API destination with a connection of type OAuth client credentials",
+          "why": "Right: EventBridge stores the credentials in Secrets Manager and fetches and refreshes the token."
+        },
+        {
+          "t": "An SNS HTTPS subscription with the client secret in the URL",
+          "why": "Wrong: leaks the secret and does not handle OAuth tokens."
+        },
+        {
+          "t": "A partner event bus for the SaaS",
+          "why": "Wrong: partner buses receive events from SaaS; they do not send to it."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "API destinations + connections call HTTPS APIs with Basic, API key or OAuth auth.",
+      "remember": "Outbound to SaaS/HTTP → API destination with a connection (secret kept in Secrets Manager; OAuth token refreshed for you). Inbound from SaaS → partner bus.",
+      "variants": [
+        "Connection shows `DEAUTHORIZED` → update the credentials or OAuth settings.",
+        "Must drop sensitive fields before sending → input transformer on the target."
+      ]
+    },
+    {
+      "id": "eb-023",
+      "skill": "3.1.2",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "An API destination calls a partner API that sometimes takes 8 seconds and sometimes returns HTTP 400 for bad input. Which statement is correct?",
+      "options": [
+        {
+          "t": "Both cases are retried for 24 hours",
+          "why": "Wrong: 400 is not retried."
+        },
+        {
+          "t": "The 8-second calls succeed; 400 responses are retried with backoff",
+          "why": "Wrong: the request timeout is 5 seconds, and 400 is not retried."
+        },
+        {
+          "t": "Calls time out after 5 seconds (and are retried); 400 responses are not retried, so add a DLQ and fix the input",
+          "why": "Right: timeout 5 s max; retries only on 401, 407, 409, 429 and 5xx."
+        },
+        {
+          "t": "Raise the API destination timeout to 30 seconds",
+          "why": "Wrong: 5 seconds is a fixed limit."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "API destinations: 5 s timeout, retry only 401/407/409/429/5xx.",
+      "remember": "Slow API (> 5 s) → put a queue or async endpoint in front. Non-retried 4xx → DLQ and fix the transformer. Rate limit (default 300/s) delays, then drops events past 24 h.",
+      "variants": [
+        "Endpoint returns 429 → retried, and `Retry-After` is honoured.",
+        "Rate limit far below event rate → backlog grows; add a DLQ or raise the rate."
+      ]
+    },
+    {
+      "id": "eb-024",
+      "skill": "4.1.4",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "Every account in an AWS Organization must send Glue failure events to a central bus in the ops account. Which TWO items are required? (Choose 2.)",
+      "options": [
+        {
+          "t": "An IAM role on each sender rule that allows `events:PutEvents` on the central bus",
+          "why": "Right: new cross-account bus targets need a role on the sender's rule."
+        },
+        {
+          "t": "A bus policy listing every account ID one by one",
+          "why": "Wrong: works but is not needed; the org condition is simpler and fits the size limit."
+        },
+        {
+          "t": "An archive in every sender account",
+          "why": "Wrong: archives are for replay, not routing."
+        },
+        {
+          "t": "A central bus policy with `Principal \"*\"` and condition `aws:PrincipalOrgID`",
+          "why": "Right: grants the whole organization in one statement."
+        }
+      ],
+      "answer": [
+        0,
+        3
+      ],
+      "explain": "Cross-account bus routing = sender rule role + receiver bus policy.",
+      "remember": "Cross-account checklist: receiver bus policy (org condition), IAM role on the sender rule, receiver rule (with `account` in the pattern), receiver target permissions.",
+      "variants": [
+        "Account B forwards A's events to C → C never gets them (third-account hop blocked).",
+        "Team only wants events in their SQS queue → direct cross-account SQS target with role and queue policy."
+      ]
+    },
+    {
+      "id": "eb-025",
+      "skill": "1.3.1",
+      "source": "2-pipes-scheduler-archive-replay-schemas-and-api-destinations.md",
+      "q": "About 200 small files land in S3 every minute. Each should not start its own Glue run; one run should process a batch. What is the best design?",
+      "options": [
+        {
+          "t": "A rule per file prefix starting a Glue job each",
+          "why": "Wrong: still one run per file, and Glue jobs are not direct targets."
+        },
+        {
+          "t": "Scheduler every second",
+          "why": "Wrong: not event-driven and wasteful."
+        },
+        {
+          "t": "S3 Event Notifications to Lambda that calls `StartJobRun`",
+          "why": "Wrong: one run per file."
+        },
+        {
+          "t": "S3 → EventBridge rule → Glue workflow with an EVENT trigger using batch size and a batch window (up to 900 s)",
+          "why": "Right: the trigger collects events and starts one run per batch."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Glue workflow EVENT trigger batches events.",
+      "remember": "Many events, one run → Glue workflow EVENT trigger with `BatchSize` and `BatchWindow` (≤ 900 s). Rule target role needs `glue:notifyEvent`.",
+      "variants": [
+        "Multi-step ETL with retries and branches → EventBridge triggers Step Functions.",
+        "Glue workflow not starting → check `glue:notifyEvent` on the role and that S3 EventBridge is on."
+      ]
+    },
+    {
+      "id": "eb-026",
+      "skill": "4.3.2",
+      "source": "3-security-quotas-cost-troubleshooting-and-scenarios.md",
+      "q": "A compliance team requires a customer managed KMS key on a custom bus, and the data team also wants schema discovery on that bus. What is the outcome?",
+      "options": [
+        {
+          "t": "Discovery works once the key policy allows `schemas.amazonaws.com`",
+          "why": "Wrong: discovery is not supported on CMK buses at all."
+        },
+        {
+          "t": "Discovery is not supported on a CMK bus; use a separate AWS-owned-key bus for discovery",
+          "why": "Right: schema discovery cannot run on a bus encrypted with a customer managed key."
+        },
+        {
+          "t": "The CMK also encrypts AWS service events on the bus, so discovery is skipped only for those",
+          "why": "Wrong: the bus CMK never covers AWS service events, and discovery is blocked entirely."
+        },
+        {
+          "t": "Switch to the Glue Schema Registry, which reads the bus",
+          "why": "Wrong: the Glue Schema Registry is for Kafka/Kinesis serialization, not bus discovery."
+        }
+      ],
+      "answer": [
+        1
+      ],
+      "explain": "Schema discovery and a bus CMK cannot be combined.",
+      "remember": "CMK bus: set a DLQ (key errors like `EVENT_DECRYPTION_FAILURE` go there), allow `events.amazonaws.com` in the key policy; no schema discovery; AWS service events still use an AWS owned key.",
+      "variants": [
+        "CMK bus suddenly stops delivering → check if the key was disabled or its policy changed.",
+        "Encrypted SQS/SNS target → its key policy must allow EventBridge `kms:GenerateDataKey` and `kms:Decrypt`."
+      ]
+    },
+    {
+      "id": "eb-027",
+      "skill": "3.1.2",
+      "source": "3-security-quotas-cost-troubleshooting-and-scenarios.md",
+      "q": "A rule's `TriggeredRules` metric rises, but the Lambda target is never invoked. The function's resource policy for `events.amazonaws.com` includes a `SourceAccount` condition. What should be done?",
+      "options": [
+        {
+          "t": "Remove the `SourceAccount` condition and keep `SourceArn` set to the rule ARN",
+          "why": "Right: the docs say a `SourceAccount` field can block EventBridge invocation."
+        },
+        {
+          "t": "Remove all conditions so any rule can invoke it",
+          "why": "Wrong: opens a confused-deputy risk."
+        },
+        {
+          "t": "Add a DLQ to the Lambda function",
+          "why": "Wrong: the event never reaches Lambda; the problem is the policy."
+        },
+        {
+          "t": "Raise the invocation quota",
+          "why": "Wrong: throttling delays invocations; it does not block them."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "Lambda permission with `SourceAccount` can block EventBridge.",
+      "remember": "Debug order: `MatchedEvents` → `TriggeredRules` → `Invocations` → `FailedInvocations`/DLQ. Rule triggered but target silent → permissions: resource policy scoped by `aws:SourceArn`, or an execution role.",
+      "variants": [
+        "`Invocations` > 0 but nothing happens in Lambda → the function failed after async invoke; check its logs and async destinations.",
+        "Encrypted SQS target gets nothing → key policy must allow EventBridge."
+      ]
+    },
+    {
+      "id": "eb-028",
+      "skill": "4.2.6",
+      "source": "3-security-quotas-cost-troubleshooting-and-scenarios.md",
+      "q": "A security review finds that a developer added an extra target to a production rule and copied all matched events to a personal account. What is the best preventive control?",
+      "options": [
+        {
+          "t": "Encrypt the bus with a customer managed key",
+          "why": "Wrong: EventBridge still decrypts and delivers to any configured target."
+        },
+        {
+          "t": "Turn on schema discovery",
+          "why": "Wrong: unrelated to access control."
+        },
+        {
+          "t": "Restrict `events:PutTargets` (and `events:PutRule`) in IAM and alert on CloudTrail `PutTargets` events",
+          "why": "Right: adding targets can exfiltrate every matched event, so treat it like data write access."
+        },
+        {
+          "t": "Lower the rule's retry attempts to 0",
+          "why": "Wrong: does not stop a new target from receiving events."
+        }
+      ],
+      "answer": [
+        2
+      ],
+      "explain": "`PutTargets` is effectively data access.",
+      "remember": "Least privilege: separate roles for producers (PutEvents on one bus ARN), rule admins (PutRule/PutTargets) and readers; audit rule changes with CloudTrail.",
+      "variants": [
+        "Auditor asks who changed a rule → CloudTrail `PutRule`/`PutTargets`.",
+        "Bus accepts events from any account (`Principal \"*\"`, no condition) → add an org condition and `account` in patterns."
+      ]
+    },
+    {
+      "id": "eb-029",
+      "skill": "1.2.4",
+      "source": "3-security-quotas-cost-troubleshooting-and-scenarios.md",
+      "q": "A producer sends 900 KB custom events and the EventBridge bill is much higher than expected for the event count. Why?",
+      "options": [
+        {
+          "t": "Rule evaluation is billed per rule per event",
+          "why": "Wrong: rule evaluation is not billed on classic buses."
+        },
+        {
+          "t": "Same-account target deliveries are billed per target",
+          "why": "Wrong: custom events to same-account targets have no extra charge."
+        },
+        {
+          "t": "Custom events are billed per GB of storage",
+          "why": "Wrong: classic buses bill per million events, not storage."
+        },
+        {
+          "t": "Each 64 KB chunk of an event is billed as one event, so a 900 KB event counts as many events",
+          "why": "Right: billing is per 64 KB chunk; shrink payloads or use claim-check."
+        }
+      ],
+      "answer": [
+        3
+      ],
+      "explain": "Classic bus billing: each 64 KB chunk = one event.",
+      "remember": "Classic cost: AWS service events free to ingest; custom/partner $1 per million; cross-account delivery $1 per million (sender pays); 64 KB chunks. Keep events small, filter in patterns, avoid loops.",
+      "variants": [
+        "Rule fires forever and the bill spikes → infinite loop; narrow the pattern and add a Budgets alarm.",
+        "Scheduler cost → 14 million invocations free per month, then $1 per million."
+      ]
+    },
+    {
+      "id": "eb-030",
+      "skill": "3.3.3",
+      "source": "3-security-quotas-cost-troubleshooting-and-scenarios.md",
+      "q": "Which CloudWatch alarm tells the team that EventBridge is actively losing events because failed deliveries cannot even reach the DLQ?",
+      "options": [
+        {
+          "t": "`InvocationsFailedToBeSentToDlq >= 1`",
+          "why": "Right: those events failed delivery and could not be stored in the DLQ, so they are lost."
+        },
+        {
+          "t": "`MatchedEvents = 0`",
+          "why": "Wrong: only says nothing matched."
+        },
+        {
+          "t": "`ThrottledRules > 0`",
+          "why": "Wrong: throttled invocations are delayed, not dropped."
+        },
+        {
+          "t": "`InvocationsSentToDlq >= 1`",
+          "why": "Wrong: those events are safe in the DLQ for redrive."
+        }
+      ],
+      "answer": [
+        0
+      ],
+      "explain": "DLQ delivery failure = data loss.",
+      "remember": "Alarm on `FailedInvocations >= 1` and `InvocationsFailedToBeSentToDlq >= 1`. Common DLQ faults: missing queue policy, wrong Region, FIFO queue, unusable KMS key. Many metrics appear only when non-zero.",
+      "variants": [
+        "`FailedInvocations` alarm shows no data → normal when there are no failures.",
+        "Target delayed and `ThrottledRules` rising → raise quotas or buffer with SQS."
+      ]
+    }
+  ]
+}

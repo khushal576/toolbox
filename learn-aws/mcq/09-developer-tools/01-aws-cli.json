@@ -1,0 +1,269 @@
+{
+ "questions": [
+  {
+   "id": "cli-001",
+   "skill": "4.1.4",
+   "source": "1-aws-cli-config-credentials-commands-and-scenarios.md",
+   "q": "An engineer runs `aws s3 ls` on a laptop with a configured `dev` profile, but results come from the wrong account. A previous session exported `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for another account. Why does this happen?",
+   "options": [
+    {
+     "t": "The credentials file always wins over the profile",
+     "why": "Wrong: the credentials file is far down the precedence list."
+    },
+    {
+     "t": "Environment variables rank above the credentials file and config profile, so they override it",
+     "why": "Right: order is CLI options, env vars, assume role, web identity, SSO, credentials file, and so on."
+    },
+    {
+     "t": "The CLI picks the most recently created key",
+     "why": "Wrong: the CLI uses a fixed precedence order, not key age."
+    },
+    {
+     "t": "CloudTrail redirects calls to the last used account",
+     "why": "Wrong: CloudTrail only records calls; it never routes them."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Env vars override profiles and instance roles; unset them and check with `aws configure list`.",
+   "remember": "Wrong account or surprise AccessDenied from the CLI \u2192 leftover env-var keys override the profile. Check `aws configure list` and `aws sts get-caller-identity`.",
+   "variants": [
+    "Which identity am I using, with no permissions needed \u2192 `aws sts get-caller-identity`.",
+    "Also an explicit `--profile` flag \u2192 it beats env vars (CLI options rank first)."
+   ]
+  },
+  {
+   "id": "cli-002",
+   "skill": "4.2.2",
+   "source": "1-aws-cli-config-credentials-commands-and-scenarios.md",
+   "q": "Fifty engineers need terminal access to five AWS accounts. Security requires no long-term access keys, MFA through the corporate identity provider, and central control. Which approach fits?",
+   "options": [
+    {
+     "t": "One IAM user per engineer in each account with access keys rotated monthly",
+     "why": "Wrong: long-term keys are the last resort and need per-account management."
+    },
+    {
+     "t": "A shared IAM user whose keys are stored in Secrets Manager",
+     "why": "Wrong: shared long-term keys break traceability and are not short-lived."
+    },
+    {
+     "t": "Keys stored in `~/.aws/config` with `chmod 600`",
+     "why": "Wrong: file permissions do not make keys short-lived or centrally controlled."
+    },
+    {
+     "t": "IAM Identity Center with `aws configure sso` profiles and `aws sso login`",
+     "why": "Right: short-lived credentials, MFA via the identity provider, and central access across accounts."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "IAM Identity Center gives short-lived, centrally managed CLI credentials.",
+   "remember": "Humans on the CLI across many accounts with no long-term keys \u2192 IAM Identity Center (SSO) profiles.",
+   "variants": [
+    "Code running on EC2 \u2192 instance profile, no keys.",
+    "GitHub Actions deploying \u2192 OIDC web identity role.",
+    "On-premises server with X.509 certificates \u2192 IAM Roles Anywhere via `credential_process`."
+   ]
+  },
+  {
+   "id": "cli-003",
+   "skill": "4.1.4",
+   "source": "1-aws-cli-config-credentials-commands-and-scenarios.md",
+   "q": "A GitHub Actions workflow must run `aws cloudformation deploy` against an account. The team will not store any AWS secrets in GitHub. What should be used?",
+   "options": [
+    {
+     "t": "An IAM user with keys saved as repository secrets",
+     "why": "Wrong: that stores long-term keys."
+    },
+    {
+     "t": "An OIDC token exchanged through `AssumeRoleWithWebIdentity` for a role",
+     "why": "Right: CI gets an OIDC token and receives temporary credentials, with no stored secrets."
+    },
+    {
+     "t": "An EC2 instance profile on the GitHub runner",
+     "why": "Wrong: hosted runners are not your EC2 instances, so no instance profile exists."
+    },
+    {
+     "t": "`aws configure` with the root user keys",
+     "why": "Wrong: root keys are the worst option and still long-term."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "CI systems use web identity federation to get temporary role credentials.",
+   "remember": "CI/CD (GitHub, GitLab) calling AWS without stored secrets \u2192 OIDC web identity role.",
+   "variants": [
+    "Pod on EKS needing AWS access \u2192 IRSA or Pod Identity (also web identity).",
+    "Interactive human \u2192 IAM Identity Center."
+   ]
+  },
+  {
+   "id": "cli-004",
+   "skill": "3.1.3",
+   "source": "1-aws-cli-config-credentials-commands-and-scenarios.md",
+   "q": "A script runs `aws lambda invoke --function-name f --payload '{\"k\":\"v\"}' out.json` with CLI v2 and fails with an invalid base64 error. How do you fix it?",
+   "options": [
+    {
+     "t": "Switch the command to `aws lambda invoke-async`",
+     "why": "Wrong: this does not address the encoding of the payload."
+    },
+    {
+     "t": "Add `--cli-binary-format raw-in-base64-out`",
+     "why": "Right: CLI v2 expects base64 for blob parameters unless told the payload is raw text."
+    },
+    {
+     "t": "Add `--output text`",
+     "why": "Wrong: output format does not change how the input is parsed."
+    },
+    {
+     "t": "Use `--no-paginate`",
+     "why": "Wrong: pagination has nothing to do with the payload."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "CLI v2 treats blobs as base64 by default; the flag allows raw JSON.",
+   "remember": "`Invalid base64` on a v2 call with a blob (Lambda payload, Kinesis data) \u2192 `--cli-binary-format raw-in-base64-out`.",
+   "variants": [
+    "Uploading a zip with `update-function-code` \u2192 `--zip-file fileb://f.zip`.",
+    "Passing JSON from a file \u2192 `file://`; binary from a file \u2192 `fileb://`."
+   ]
+  },
+  {
+   "id": "cli-005",
+   "skill": "3.1.3",
+   "source": "1-aws-cli-config-credentials-commands-and-scenarios.md",
+   "q": "A script lists thousands of EC2 instances and only needs the IDs of running ones. The team wants the least data returned and cleanly parsable output in bash. Which is best?",
+   "options": [
+    {
+     "t": "`--query` with a JMESPath filter on the full response, output json",
+     "why": "Wrong: `--query` filters on the client after the data is downloaded and gives no server-side reduction."
+    },
+    {
+     "t": "`--no-paginate` and pipe to `grep running`",
+     "why": "Wrong: this returns only the first page and parses text unreliably."
+    },
+    {
+     "t": "`--page-size 1` with `--max-items 1`",
+     "why": "Wrong: this returns almost nothing and does not filter."
+    },
+    {
+     "t": "`--filters Name=instance-state-name,Values=running` plus `--query` and `--output text`",
+     "why": "Right: server-side filters reduce data, and `--query` with text output gives plain IDs for scripts."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Use server-side filters to cut data, `--query` plus `--output text` for scripting.",
+   "remember": "`--query` is client-side and does not cut API calls or cost; use `--filters`, `--prefix` or similar to reduce data server-side.",
+   "variants": [
+    "DynamoDB scan with `--filter-expression` \u2192 still reads all items and uses capacity.",
+    "Capping total results \u2192 `--max-items` with `--starting-token` to continue."
+   ]
+  },
+  {
+   "id": "cli-006",
+   "skill": "3.1.3",
+   "source": "1-aws-cli-config-credentials-commands-and-scenarios.md",
+   "q": "A nightly job syncs Airflow DAGs to the MWAA bucket with `aws s3 sync dags/ s3://mwaa-bucket/dags/ --delete`. After a path typo, many DAGs vanished. How should the team protect against this?",
+   "options": [
+    {
+     "t": "Replace `sync` with `aws s3 mv`",
+     "why": "Wrong: `mv` copies then deletes the source, which is riskier."
+    },
+    {
+     "t": "Run with `--dryrun` first and enable bucket versioning for recovery",
+     "why": "Right: `--dryrun` previews deletions and versioning makes them recoverable."
+    },
+    {
+     "t": "Remove `--delete` and `--exclude`, then use `cp --recursive`",
+     "why": "Wrong: `cp` re-uploads everything and still does not prevent overwrites."
+    },
+    {
+     "t": "Increase `max_concurrent_requests`",
+     "why": "Wrong: concurrency affects speed, not what is deleted."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "`--delete` removes destination files absent from the source; test with `--dryrun`.",
+   "remember": "`s3 sync --delete` removes destination-only files \u2192 always `--dryrun` first and keep versioning on.",
+   "variants": [
+    "Only new or changed files to upload \u2192 `sync` (size and modified time), not `cp --recursive`.",
+    "Filter order with `--exclude`/`--include` \u2192 later filters win."
+   ]
+  },
+  {
+   "id": "cli-007",
+   "skill": "4.1.2",
+   "source": "1-aws-cli-config-credentials-commands-and-scenarios.md",
+   "q": "An EC2 instance in a private subnet with no internet route hangs on `aws s3 cp` and `aws glue get-tables`. The team wants no NAT gateway. What should they add?",
+   "options": [
+    {
+     "t": "`--no-verify-ssl` on every command",
+     "why": "Wrong: this only affects TLS checks; the problem is the missing route."
+    },
+    {
+     "t": "A larger `multipart_chunksize`",
+     "why": "Wrong: transfer tuning does not fix a missing route."
+    },
+    {
+     "t": "`--endpoint-url` pointing to the public endpoint",
+     "why": "Wrong: the public endpoint is still unreachable without internet."
+    },
+    {
+     "t": "A gateway VPC endpoint for S3 and an interface endpoint for Glue",
+     "why": "Right: gateway endpoints cover S3 and DynamoDB, interface endpoints cover most other services, and private DNS needs no `--endpoint-url`."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "No route to the service endpoint means a VPC endpoint or NAT is needed.",
+   "remember": "CLI hangs in a private subnet \u2192 VPC endpoints (gateway for S3/DynamoDB, interface for the rest) or NAT; also check SGs, NACLs and proxy.",
+   "variants": [
+    "Interface endpoint with private DNS on \u2192 normal hostnames resolve to it, so no `--endpoint-url`.",
+    "Testing against LocalStack \u2192 `--endpoint-url http://localhost:4566`."
+   ]
+  },
+  {
+   "id": "cli-008",
+   "skill": "4.4.1",
+   "source": "1-aws-cli-config-credentials-commands-and-scenarios.md",
+   "q": "Auditors ask which human ran a CLI command through a shared assumed role, and from where. What helps most?",
+   "options": [
+    {
+     "t": "CloudTrail events, using `role_session_name` set to the user's name and `sourceIPAddress`",
+     "why": "Right: CloudTrail records every CLI call, and the session name and source IP identify the person."
+    },
+    {
+     "t": "The `~/.aws/cli/cache` files on the shared host",
+     "why": "Wrong: the cache holds temporary tokens, not an audit trail, and is not centralized."
+    },
+    {
+     "t": "The `--debug` output of each command",
+     "why": "Wrong: it is local, can leak secrets and is not an audit source."
+    },
+    {
+     "t": "`aws configure list`",
+     "why": "Wrong: it shows local settings, not who ran past calls."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "CloudTrail plus role session name and source IP gives traceability.",
+   "remember": "Who ran a CLI call as a role \u2192 CloudTrail: `userAgent` shows aws-cli, session name shows the person, `sourceIPAddress` the origin. Set `role_session_name`.",
+   "variants": [
+    "Decode a long EC2 `UnauthorizedOperation` message \u2192 `aws sts decode-authorization-message`.",
+    "Check permissions without acting \u2192 `--dry-run` (EC2)."
+   ]
+  }
+ ]
+}

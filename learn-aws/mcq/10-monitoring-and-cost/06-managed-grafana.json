@@ -1,0 +1,83 @@
+{
+ "questions": [
+  {
+   "id": "grafana-001",
+   "skill": "3.2.1",
+   "source": "1-amazon-managed-grafana.md",
+   "q": "An SRE team already builds Grafana dashboards. They want pipeline metrics from CloudWatch and Amazon Managed Service for Prometheus in one dashboard, with SSO sign-in and no servers to patch or scale. Which option fits?",
+   "options": [
+    { "t": "CloudWatch dashboards", "why": "Wrong: native and simple, but AWS-only and not Grafana, so the team cannot reuse its Grafana dashboards and Prometheus workflow." },
+    { "t": "Self-managed Grafana on EC2", "why": "Wrong: gives more control, but the team must provision, patch and scale the servers." },
+    { "t": "Amazon Managed Grafana", "why": "Right: fully managed Grafana workspaces with CloudWatch and Prometheus data sources and SSO through IAM Identity Center or SAML." },
+    { "t": "Amazon QuickSight", "why": "Wrong: it is BI for business data, not operational time-series dashboards." }
+   ],
+   "answer": [2],
+   "explain": "Grafana users + AWS and Prometheus metrics + no hosting: Amazon Managed Grafana.",
+   "remember": "Teams that want Grafana dashboards over many AWS and open-source sources without running servers → Amazon Managed Grafana.",
+   "variants": [
+    "Only AWS service metrics are needed → CloudWatch dashboards.",
+    "Business users need self-service BI → QuickSight.",
+    "Log search and analytics on OpenSearch data → OpenSearch Dashboards."
+   ]
+  },
+  {
+   "id": "grafana-002",
+   "skill": "3.3.2",
+   "source": "1-amazon-managed-grafana.md",
+   "q": "A data platform runs pipelines in 12 accounts in one AWS Organization. Operations wants a single Amazon Managed Grafana dashboard showing CloudWatch metrics from all of them. How should the workspace get access to the data?",
+   "options": [
+    { "t": "Use organization access mode, or a customer-managed role that assumes cross-account roles", "why": "Right: both give the workspace cross-account data access for a single multi-account dashboard." },
+    { "t": "Create one Grafana workspace per account and share links", "why": "Wrong: it does not give one pane, and more workspaces mean more user licenses to pay for." },
+    { "t": "Keep current-account mode with the service-managed role", "why": "Wrong: that role only covers data sources in the workspace's own account." },
+    { "t": "Create local Grafana users in each account", "why": "Wrong: Managed Grafana has no local users, and users do not grant data access anyway; sign-in is via IAM Identity Center or SAML." }
+   ],
+   "answer": [0],
+   "explain": "Multi-account dashboards need organization mode or customer-managed cross-account roles.",
+   "remember": "Dashboards across several accounts → organization access mode or a customer-managed role with cross-account assumable roles. Service-managed is the easy single-account option.",
+   "variants": [
+    "Only one account and the easiest setup → service-managed permissions.",
+    "Fine-grained, least-privilege policies are required → customer-managed role.",
+    "Users cannot sign in → check their assignment to the workspace or the Identity Center group."
+   ]
+  },
+  {
+   "id": "grafana-003",
+   "skill": "3.3.4",
+   "source": "1-amazon-managed-grafana.md",
+   "q": "An Amazon Managed Grafana panel that queries a PostgreSQL database in a private subnet keeps timing out. The CloudWatch panels in the same workspace work. What should the team configure?",
+   "options": [
+    { "t": "Grant the workspace role `cloudwatch:GetMetricData`", "why": "Wrong: that fixes empty CloudWatch panels, and CloudWatch already works here." },
+    { "t": "Move the database to a public subnet", "why": "Wrong: it exposes the database and weakens security when a private path exists." },
+    { "t": "Add a Viewer license for the dashboard user", "why": "Wrong: licenses control who can view or edit, not network reach to a data source." },
+    { "t": "A VPC connection for the workspace, with the right private subnets and security groups", "why": "Right: without a VPC connection the workspace cannot reach data sources in private subnets." }
+   ],
+   "answer": [3],
+   "explain": "Private-subnet data source: give the workspace a VPC connection and check subnets, security groups, routes and DNS.",
+   "remember": "A data source in a private subnet → VPC connection for the workspace. Timeouts afterwards → check the connection's subnets, security groups, routes and DNS.",
+   "variants": [
+    "A CloudWatch panel shows no data → the role lacks `cloudwatch:GetMetricData`, or the wrong Region or account is selected.",
+    "An Athena panel errors → workgroup or output bucket permissions, Glue catalog access or Lake Formation.",
+    "Alerts are not delivered → contact point misconfiguration or SNS permissions."
+   ]
+  },
+  {
+   "id": "grafana-004",
+   "source": "1-amazon-managed-grafana.md",
+   "q": "A company gives 300 staff access to Amazon Managed Grafana. Only 10 engineers build dashboards; everyone else just looks at them. The bill is high. What is the best cost fix?",
+   "options": [
+    { "t": "Create a separate workspace for each team", "why": "Wrong: users are billed per workspace, so more workspaces do not lower cost; share dashboards instead." },
+    { "t": "Give the viewing staff Viewer licenses and keep Editor only for the builders", "why": "Right: Viewer is about $5 per active user per month versus about $9 for Editor or Admin." },
+    { "t": "Raise dashboard refresh frequency so users log in less", "why": "Wrong: users still count as active when they log in once in the month, and frequent refreshes raise data source query costs." },
+    { "t": "Add Enterprise plugins to every user", "why": "Wrong: Enterprise plugins add about $45 per user, raising cost." }
+   ],
+   "answer": [1],
+   "explain": "Most users only view: assign Viewer licenses; Editor/Admin costs more.",
+   "remember": "Managed Grafana bills per active user per workspace per month, with Editor/Admin dearer than Viewer. Give view-only users Viewer and remove inactive users.",
+   "variants": [
+    "Many users are inactive → remove them; users count only if they log in or call the API in the month.",
+    "Athena panels drive cost → cache heavy queries; scan costs are billed by Athena, not Grafana.",
+    "Automation uses API keys or service accounts → they are billed like users."
+   ]
+  }
+ ]
+}

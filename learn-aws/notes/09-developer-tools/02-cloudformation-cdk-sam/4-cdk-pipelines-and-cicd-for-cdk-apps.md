@@ -91,16 +91,16 @@ Short notes. Each point is a fact you can be asked about. (File 3 covers CDK bas
 - **Rollback `UPDATE_ROLLBACK_FAILED`** → continue rollback and skip stuck resources, then fix the template.
 
 ## J. Scenarios: "If X → Y, because Z"
-- If a CDK app must deploy to dev, test and prod accounts from one pipeline → **CDK Pipelines with a `Stage` per account and bootstrapped trust (`--trust`)**, because it wires cross-account roles and keys.
-- If someone changes the pipeline code and wants it live without manual steps → **self-mutation (`UpdatePipeline`)**, because the pipeline deploys itself before app stages.
-- If production deploys need a human gate → **`ManualApprovalStep` in the Prod stage `pre`**, because the pipeline pauses until approved.
-- If IAM permissions must not widen silently → **`ConfirmPermissionsBroadening`**, because it pauses for review when permissions grow.
-- If several Regions should deploy in parallel → **`addWave`**, because stages in a wave run concurrently.
-- If artifacts must be readable from other accounts → **`crossAccountKeys: true`**, because it creates a KMS key whose policy allows cross-account roles.
-- If CloudFormation in the target account should not have admin rights → **`--cloudformation-execution-policies` with a scoped policy**, because it limits what stacks can create.
-- If your team already uses GitHub Actions and one account → **`cdk deploy` with OIDC role**, because it is simpler than a full pipeline.
-- If a SAM (not CDK) app needs CI/CD → **`sam pipeline init`**, because it generates CodePipeline templates for SAM.
-- If the pipeline stops after a bad change to the pipeline stack → **`cdk deploy` locally to repair**, because self-mutation cannot fix a broken self-mutation step.
+- **If** an AWS Cloud Development Kit (CDK) app must deploy to dev, test and prod accounts from one pipeline, **then** use **CDK Pipelines** with one **`Stage`** per account (each with an explicit `env`), and bootstrap each target with **`--trust`** for the pipeline account (verify exact flags). **This works because** CDK Pipelines wires the cross-account roles and AWS Key Management Service (KMS) keys for you, and `--trust` lets the pipeline account assume the target's deploy roles.
+- **If** someone changes the pipeline code and wants it live without manual steps, **then** rely on **self-mutation** (the **`UpdatePipeline`** stage). **This works because** after Build, the pipeline runs `cdk deploy` on its own stack, updates itself, and restarts with the new definition **before** deploying app stages.
+- **If** production deploys need a human gate, **then** add a **`ManualApprovalStep`** in the Prod stage's **`pre`** steps. **This works because** the pipeline pauses before deploying Prod until someone approves.
+- **If** Identity and Access Management (IAM) permissions must not widen silently, **then** add **`ConfirmPermissionsBroadening`** (verify). **This works because** it pauses the pipeline with a manual gate when IAM or security group permissions grow.
+- **If** several Regions should deploy in parallel, **then** use **`pipeline.addWave()`** and add a stage per Region to it. **This works because** stages in a wave deploy at the same time, giving faster multi-Region rollouts.
+- **If** pipeline artifacts must be readable from other accounts, **then** set **`crossAccountKeys: true`**. **This works because** it creates a **customer-managed KMS key** on the artifact bucket that other accounts can use to decrypt. The key has a cost, and without it only same-account deploys work.
+- **If** CloudFormation in the target account should not have admin rights, **then** bootstrap it with **`--cloudformation-execution-policies`** set to a **scoped policy** (or use a permissions boundary) (verify exact flags). **This works because** the CloudFormation execution role can only create what that policy allows; avoid `AdministratorAccess` in production.
+- **If** your team already uses GitHub Actions and deploys to one account, **then** run **`cdk deploy`** from GitHub Actions using an **OpenID Connect (OIDC)** role. **This works because** external CI is simpler for single-account setups, and OIDC avoids long-lived keys.
+- **If** an AWS Serverless Application Model (SAM) app (not CDK) needs CI/CD, **then** use **`sam pipeline init`**. **This works because** it generates AWS CodePipeline, AWS CodeBuild and OIDC role templates for SAM apps; CDK Pipelines is only for CDK apps.
+- **If** the pipeline stops after a bad change to the pipeline stack, **then** fix the problem and run **`cdk deploy`** on the pipeline stack **locally** to repair it. **This works because** a broken self-mutation step (for example a synth bug or broken source connection permissions) cannot update the pipeline it runs in.
 
 Verified from AWS docs on 2026-11-01: only the CDK Pipelines docs page outline loaded; the descriptions here come from earlier knowledge and a summary of the CDK v2 pipelines API, and were not checked line by line.
 Unconfirmed (verify): CodePipeline V2 features and pricing; CodeConnections naming; `ConfirmPermissionsBroadening` and stack-step options; exact bootstrap flags and qualifier default; Proton status; the `codePipeline` reuse property; CodeBuild defaults for asset publishing; all pricing figures.

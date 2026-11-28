@@ -1,0 +1,687 @@
+{
+ "questions": [
+  {
+   "id": "elb-001",
+   "skill": "1.2.8",
+   "source": "1-basics-types-and-core-concepts.md",
+   "q": "A data team exposes one HTTPS endpoint. Requests to `/v1/query` must go to a query service and requests to `/v1/ingest` to a separate ingestion service, both running on ECS. Which load balancer setup fits with the least effort?",
+   "options": [
+    {
+     "t": "A Network Load Balancer with one TCP listener per service",
+     "why": "Wrong: an NLB works at layer 4 and cannot read the URL path."
+    },
+    {
+     "t": "A Gateway Load Balancer in front of both services",
+     "why": "Wrong: GWLB inserts virtual appliances such as firewalls; it does not route HTTP requests."
+    },
+    {
+     "t": "One Application Load Balancer with path-based listener rules to two target groups",
+     "why": "Right: path routing is a layer 7 feature of the ALB, and one ALB can front many services."
+    },
+    {
+     "t": "Two Classic Load Balancers, one per service",
+     "why": "Wrong: CLB is previous generation, has no path routing and doubles the hourly cost."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Routing by URL path is layer 7 work: ALB listener rules.",
+   "remember": "Route by path, host header, HTTP header, method or query string → ALB listener rules (checked in priority order, default rule last).",
+   "variants": [
+    "Route by host name (`api.` vs `admin.`) → ALB host-based rules.",
+    "The endpoint should invoke a Lambda function over HTTP → ALB `lambda` target group.",
+    "The protocol is raw TCP/UDP, not HTTP → NLB."
+   ]
+  },
+  {
+   "id": "elb-002",
+   "skill": "1.1.8",
+   "source": "1-basics-types-and-core-concepts.md",
+   "q": "A partner will only send data to your ingestion endpoint if it can allowlist fixed IP addresses in its firewall. The endpoint receives TCP traffic. Which design meets this?",
+   "options": [
+    {
+     "t": "An internet-facing Network Load Balancer with an Elastic IP in each AZ",
+     "why": "Right: NLB IPs are static per AZ, and an internet-facing NLB can use your own Elastic IPs, which partners can allowlist."
+    },
+    {
+     "t": "An internet-facing ALB, sharing its current IPs with the partner",
+     "why": "Wrong: ALB IPs change as it scales; never hard-code them."
+    },
+    {
+     "t": "A NAT gateway with an Elastic IP",
+     "why": "Wrong: a NAT gateway gives a fixed IP for outbound traffic from your VPC, not for inbound traffic to you."
+    },
+    {
+     "t": "A Route 53 CNAME pointing to the ALB DNS name",
+     "why": "Wrong: a DNS name does not give the partner a fixed IP to allowlist."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Inbound fixed IPs: NLB Elastic IPs (or Global Accelerator static IPs).",
+   "remember": "Someone must allowlist the IPs of your endpoint → NLB with Elastic IPs or Global Accelerator. ALB IPs change, so never use them.",
+   "variants": [
+    "Your VPC calls the partner and they must allowlist your source IP → NAT gateway Elastic IP.",
+    "Fixed IPs plus multi-Region failover → Global Accelerator.",
+    "Fixed IPs plus HTTP path routing → NLB with an `alb` target, or Global Accelerator in front of the ALB."
+   ]
+  },
+  {
+   "id": "elb-003",
+   "skill": "1.1.8",
+   "source": "1-basics-types-and-core-concepts.md",
+   "q": "A data API behind an ALB uses host- and path-based rules. A new customer requires static IP addresses to allowlist. The team wants to keep the ALB routing. Which TWO options meet the requirement? (Choose 2)",
+   "options": [
+    {
+     "t": "Assign Elastic IPs directly to the ALB",
+     "why": "Wrong: an ALB cannot take Elastic IPs; its node IPs change as it scales."
+    },
+    {
+     "t": "Put an NLB in front with an `alb` target group pointing to the ALB",
+     "why": "Right: the NLB gives static IPs per AZ and forwards to the ALB, which keeps its layer 7 rules."
+    },
+    {
+     "t": "Replace the ALB with an NLB and move the rules to the NLB",
+     "why": "Wrong: an NLB does not do host or path routing, so the routing would be lost."
+    },
+    {
+     "t": "Put AWS Global Accelerator in front of the ALB",
+     "why": "Right: Global Accelerator provides static anycast IPs and forwards to the ALB."
+    },
+    {
+     "t": "Hard-code the ALB's current IPs in the customer's firewall",
+     "why": "Wrong: ALB IPs change; this breaks when the ALB scales."
+    }
+   ],
+   "answer": [
+    1,
+    3
+   ],
+   "explain": "Static IPs + HTTP routing: NLB → ALB (alb target type) or Global Accelerator → ALB.",
+   "remember": "Need static IPs and still need ALB features → put an NLB (alb target type) or Global Accelerator in front of the ALB.",
+   "variants": [
+    "Only static IPs are needed, plain TCP → NLB with Elastic IPs alone.",
+    "Static IPs plus fast multi-Region failover → Global Accelerator with an endpoint group per Region."
+   ]
+  },
+  {
+   "id": "elb-004",
+   "skill": "1.2.8",
+   "source": "1-basics-types-and-core-concepts.md",
+   "q": "An ECS service on Fargate (awsvpc networking) must be registered behind an ALB. Which target type should the target group use?",
+   "options": [
+    {
+     "t": "`instance`",
+     "why": "Wrong: Fargate tasks have no EC2 instance ID to register."
+    },
+    {
+     "t": "`ip`",
+     "why": "Right: awsvpc tasks and EKS pods get their own IP addresses, so they register as IP targets."
+    },
+    {
+     "t": "`lambda`",
+     "why": "Wrong: it is only for a single Lambda function behind an ALB."
+    },
+    {
+     "t": "`alb`",
+     "why": "Wrong: this type exists only on an NLB, to place an ALB behind it."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "awsvpc tasks and pods have their own IPs: target type `ip`.",
+   "remember": "Containers with their own IP (Fargate, EKS pods), on-prem servers over VPN/DX, peered VPC IPs → `ip` targets. EC2 by instance ID → `instance`.",
+   "variants": [
+    "The backend is on-premises servers reached over Direct Connect → `ip` targets.",
+    "The backend is one Lambda function → `lambda` target group (ALB only).",
+    "An NLB must forward to an ALB → `alb` target type."
+   ]
+  },
+  {
+   "id": "elb-005",
+   "skill": "1.3.2",
+   "source": "1-basics-types-and-core-concepts.md",
+   "q": "EC2 instances in an Auto Scaling group sit behind an ALB. When an application hangs, the ALB stops sending it traffic, but the broken instance keeps running for days. How do you get broken instances replaced automatically?",
+   "options": [
+    {
+     "t": "Lower the ALB health check interval to 5 seconds",
+     "why": "Wrong: faster checks only detect the failure sooner; the ALB still just skips the instance."
+    },
+    {
+     "t": "Enable cross-zone load balancing",
+     "why": "Wrong: it changes how traffic is spread across AZs, not how failed instances are handled."
+    },
+    {
+     "t": "Raise the deregistration delay",
+     "why": "Wrong: it only controls how long in-flight requests may finish during deregistration."
+    },
+    {
+     "t": "Set the Auto Scaling group health check type to ELB",
+     "why": "Right: the ASG then treats instances failing the load balancer health check as unhealthy and replaces them."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "ASG health check type ELB = failing targets are replaced, not just bypassed.",
+   "remember": "Load balancer health checks only stop traffic. To replace the instance, the ASG must use health check type ELB.",
+   "variants": [
+    "Slow-starting ECS containers fail health checks during startup → set `healthCheckGracePeriodSeconds` on the service.",
+    "Targets fail health checks right after launch on EC2 → check the target SG allows the health check port from the LB SG."
+   ]
+  },
+  {
+   "id": "elb-006",
+   "skill": "1.2.4",
+   "source": "1-basics-types-and-core-concepts.md",
+   "q": "An NLB spans two AZs. AZ-a has 2 targets and AZ-b has 8. The AZ-a targets are overloaded. What fixes the imbalance, and what is the cost side-effect?",
+   "options": [
+    {
+     "t": "Enable cross-zone load balancing on the NLB; inter-AZ data transfer is charged",
+     "why": "Right: NLB cross-zone is off by default; turning it on spreads traffic across all AZs but adds inter-AZ data charges."
+    },
+    {
+     "t": "Enable cross-zone load balancing on the NLB; it is free like on the ALB",
+     "why": "Wrong: only ALB cross-zone is free. NLB cross-zone adds inter-AZ data transfer charges."
+    },
+    {
+     "t": "Switch the NLB algorithm to least outstanding requests",
+     "why": "Wrong: least outstanding requests is an ALB algorithm; the NLB uses a flow hash."
+    },
+    {
+     "t": "Enable sticky sessions by source IP",
+     "why": "Wrong: stickiness makes load more uneven, not less."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Uneven targets per AZ behind an NLB: cross-zone on (paid inter-AZ traffic) or balance targets per AZ.",
+   "remember": "Cross-zone: ALB always on and free; NLB and GWLB off by default and charge inter-AZ data when on. With cross-zone off, keep equal capacity per AZ.",
+   "variants": [
+    "NLB inter-AZ data charges are high and targets are balanced per AZ → turn cross-zone off.",
+    "Same imbalance on an ALB → cross-zone is already on at the LB level, at no charge.",
+    "Many ALBs each with little traffic → consolidate them onto one ALB with host/path rules."
+   ]
+  },
+  {
+   "id": "elb-007",
+   "skill": "3.3.4",
+   "source": "1-basics-types-and-core-concepts.md",
+   "q": "An ALB fronts a data API. Some requests run heavy queries for seconds, others return in milliseconds. With round robin, some targets pile up slow requests while others idle. Which setting fixes this?",
+   "options": [
+    {
+     "t": "Enable slow start on the target group",
+     "why": "Wrong: slow start only ramps up traffic to newly added targets."
+    },
+    {
+     "t": "Enable duration-based sticky sessions",
+     "why": "Wrong: stickiness pins users to targets and makes load less even."
+    },
+    {
+     "t": "Change the routing algorithm to least outstanding requests",
+     "why": "Right: LOR sends each request to the target with the fewest in-flight requests, which suits requests of very different cost."
+    },
+    {
+     "t": "Lower the deregistration delay",
+     "why": "Wrong: it affects draining during scale-in and deployments, not load spread."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Requests of mixed cost: ALB least outstanding requests.",
+   "remember": "Round robin assumes equal requests. When request cost varies, use least outstanding requests (it cannot be combined with slow start).",
+   "variants": [
+    "A new instance is overwhelmed right after joining → slow start (30–900 s ramp).",
+    "Users lose sessions when hitting a different server → keep sessions in ElastiCache/DynamoDB, or sticky sessions as a short-term fix.",
+    "Uneven load behind an NLB with few long-lived connections → flow hash keeps each connection on one target; shorten connection reuse."
+   ]
+  },
+  {
+   "id": "elb-008",
+   "skill": "3.1.5",
+   "source": "1-basics-types-and-core-concepts.md",
+   "q": "An application behind an ALB logs every request as coming from private 10.x addresses, but the security team needs the real client IP. What should the application read?",
+   "options": [
+    {
+     "t": "The source IP of the TCP connection",
+     "why": "Wrong: the ALB replaces the source IP with its own node IP; that is the 10.x address being logged."
+    },
+    {
+     "t": "The `X-Amzn-Trace-Id` header",
+     "why": "Wrong: it carries a trace ID for request tracing, not the client IP."
+    },
+    {
+     "t": "Proxy Protocol v2 headers",
+     "why": "Wrong: Proxy Protocol v2 is an NLB feature, not used by an ALB."
+    },
+    {
+     "t": "The `X-Forwarded-For` header",
+     "why": "Right: the ALB puts the client IP chain in `X-Forwarded-For`."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Behind an ALB the client IP is in `X-Forwarded-For`.",
+   "remember": "ALB → client IP in `X-Forwarded-For` (protocol in `X-Forwarded-Proto`). NLB → client IP preservation, or Proxy Protocol v2 when it cannot be preserved.",
+   "variants": [
+    "Behind an NLB via PrivateLink, where the IP cannot be preserved → Proxy Protocol v2.",
+    "The app must know whether the client used HTTP or HTTPS → `X-Forwarded-Proto`."
+   ]
+  },
+  {
+   "id": "elb-009",
+   "skill": "3.1.5",
+   "source": "2-alb-nlb-gwlb-features.md",
+   "q": "A data provider must offer its query API privately to 20 customer AWS accounts. Several customers use VPC CIDRs that overlap with the provider's. Traffic must not cross the internet. Which design fits?",
+   "options": [
+    {
+     "t": "VPC peering with each customer VPC behind an internal ALB",
+     "why": "Wrong: peering does not work with overlapping CIDRs and does not scale well to 20 accounts."
+    },
+    {
+     "t": "An NLB as a VPC endpoint service (PrivateLink); customers create interface endpoints",
+     "why": "Right: an NLB is required for an endpoint service; consumers connect through interface endpoints with no peering and no CIDR clashes."
+    },
+    {
+     "t": "An internet-facing ALB restricted by WAF IP sets",
+     "why": "Wrong: traffic would cross the internet."
+    },
+    {
+     "t": "A Gateway Load Balancer shared through AWS RAM",
+     "why": "Wrong: GWLB is for inserting virtual appliances into the traffic path, not for publishing an API."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Private service for other VPCs/accounts, overlapping CIDRs: NLB + PrivateLink endpoint service.",
+   "remember": "Offer a service privately to other VPCs or accounts without peering → NLB behind a VPC endpoint service; consumers use interface endpoints.",
+   "variants": [
+    "The consumers are in the same VPC → an internal ALB or NLB is enough.",
+    "The service needs HTTP routing too → NLB endpoint service with an `alb` target."
+   ]
+  },
+  {
+   "id": "elb-010",
+   "skill": "4.1.1",
+   "source": "2-alb-nlb-gwlb-features.md",
+   "q": "Security requires all traffic entering several VPCs to pass through a fleet of third-party firewall appliances, transparently and with automatic scaling of the fleet. Which service fits?",
+   "options": [
+    {
+     "t": "Gateway Load Balancer with GWLB endpoints in the route tables",
+     "why": "Right: GWLB sends IP packets to appliances using GENEVE (UDP 6081), and GWLB endpoints are inserted in the traffic path through routing."
+    },
+    {
+     "t": "Network Load Balancer with TCP listeners to the appliances",
+     "why": "Wrong: an NLB is a proxy target for connections, not a transparent layer 3 bump in the wire."
+    },
+    {
+     "t": "Application Load Balancer with AWS WAF",
+     "why": "Wrong: WAF filters HTTP requests at an ALB; it does not run third-party appliances."
+    },
+    {
+     "t": "Security groups that only allow traffic from the appliance subnets",
+     "why": "Wrong: security groups filter traffic but cannot force it through the appliances."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Third-party firewall/IDS fleet in the traffic path: GWLB + GWLB endpoints.",
+   "remember": "Insert third-party appliances transparently → GWLB (layer 3, GENEVE on UDP 6081), usually in a central inspection VPC with GWLB endpoints or Transit Gateway routing.",
+   "variants": [
+    "A managed firewall with no appliances to run → AWS Network Firewall.",
+    "Protect an HTTP API from SQL injection and bad bots → AWS WAF on the ALB."
+   ]
+  },
+  {
+   "id": "elb-011",
+   "skill": "3.1.5",
+   "source": "2-alb-nlb-gwlb-features.md",
+   "q": "A new version of a data API must receive 10% of traffic before full rollout, with instant rollback and users kept on one version. Which ALB feature fits?",
+   "options": [
+    {
+     "t": "Two ALBs with Route 53 weighted records",
+     "why": "Wrong: possible, but costs a second ALB and DNS caching makes shift and rollback slow."
+    },
+    {
+     "t": "Slow start on the new target group",
+     "why": "Wrong: slow start ramps traffic to new targets within one group; it does not split traffic between versions."
+    },
+    {
+     "t": "A weighted forward action across two target groups with target group stickiness",
+     "why": "Right: one forward action can split traffic across up to 5 target groups by weight, and target group stickiness keeps users on one version."
+    },
+    {
+     "t": "A fixed-response action for 10% of requests",
+     "why": "Wrong: a fixed response returns a static reply and never reaches the new version."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Canary or blue/green on an ALB: weighted forward to target groups.",
+   "remember": "Split traffic between versions → ALB weighted forward (up to 5 target groups per action); add target group stickiness to keep users on one version.",
+   "variants": [
+    "Users must log in through the corporate IdP first → ALB authenticate-oidc or Cognito action.",
+    "A maintenance page with no backend → fixed-response action.",
+    "HTTP must always go to HTTPS → redirect action on the port 80 listener."
+   ]
+  },
+  {
+   "id": "elb-012",
+   "skill": "1.2.8",
+   "source": "2-alb-nlb-gwlb-features.md",
+   "q": "Thousands of devices send syslog over UDP to an ingestion service on ECS that writes to Kinesis. Which load balancer should front the service?",
+   "options": [
+    {
+     "t": "Application Load Balancer",
+     "why": "Wrong: an ALB only accepts HTTP, HTTPS, HTTP/2, gRPC and WebSockets, not UDP."
+    },
+    {
+     "t": "Classic Load Balancer",
+     "why": "Wrong: CLB supports HTTP, HTTPS, TCP and SSL, not UDP, and is previous generation."
+    },
+    {
+     "t": "Gateway Load Balancer",
+     "why": "Wrong: GWLB forwards packets to inspection appliances, not to an application service."
+    },
+    {
+     "t": "Network Load Balancer with a UDP listener",
+     "why": "Right: the NLB is the layer 4 balancer that supports UDP, at very high throughput."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "UDP or other non-HTTP high-throughput ingestion: NLB.",
+   "remember": "TCP/UDP non-HTTP traffic, very low latency, millions of connections → NLB (UDP uses: DNS, syslog, IoT, gaming, media).",
+   "variants": [
+    "The producers send HTTPS JSON and need per-client API keys and throttling → API Gateway.",
+    "The producers send HTTP and you need path routing → ALB."
+   ]
+  },
+  {
+   "id": "elb-013",
+   "skill": "1.3.2",
+   "source": "3-security-availability-cost-monitoring-limits-and-scenarios.md",
+   "q": "A product launch at a known time will bring a sudden 10x traffic spike to an ALB. The team worries the load balancer will not scale fast enough. What should they do?",
+   "options": [
+    {
+     "t": "Open a support ticket to pre-warm the ALB",
+     "why": "Wrong: LCU Reservation replaces the old pre-warming support tickets."
+    },
+    {
+     "t": "Reserve LCU capacity with LCU Reservation before the event",
+     "why": "Right: LCU Reservation sets a minimum capacity ahead of a known spike; usage above it is billed normally."
+    },
+    {
+     "t": "Enable cross-zone load balancing",
+     "why": "Wrong: it spreads traffic across AZs but does not add load balancer capacity."
+    },
+    {
+     "t": "Add a second listener on another port",
+     "why": "Wrong: listeners do not add capacity."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Known sudden spike: LCU Reservation ahead of the event.",
+   "remember": "ALB/NLB scale automatically; for a sudden huge spike at a known time, use LCU Reservation (Region quota starts at 0, so request it first).",
+   "variants": [
+    "`RejectedConnectionCount` rises on the ALB → it is at its connection limit; wait for scaling or reserve LCUs.",
+    "The service must survive an AZ failure → 2–3 AZs with targets in each, health checks and zonal shift."
+   ]
+  },
+  {
+   "id": "elb-014",
+   "skill": "3.3.4",
+   "source": "3-security-availability-cost-monitoring-limits-and-scenarios.md",
+   "q": "Users of a data API behind an ALB see random HTTP 502 errors under load. The targets are healthy and `HTTPCode_ELB_502_Count` is rising. What is the most likely cause?",
+   "options": [
+    {
+     "t": "The backend keep-alive timeout is shorter than the ALB idle timeout",
+     "why": "Right: the target closes idle connections the ALB still wants to reuse, so the ALB gets a closed connection and returns 502."
+    },
+    {
+     "t": "The target group has no registered targets",
+     "why": "Wrong: that gives 503 Service Unavailable."
+    },
+    {
+     "t": "Queries run longer than the ALB idle timeout",
+     "why": "Wrong: a target that does not respond in time gives 504 Gateway Timeout."
+    },
+    {
+     "t": "The client closed the connection before the response",
+     "why": "Wrong: that is logged as HTTP 460, not 502."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Random 502 under load: backend keep-alive shorter than the ALB idle timeout.",
+   "remember": "502 = target closed the connection or sent a bad response (keep-alive too short, crash, bad Lambda response). 503 = no targets. 504 = target too slow for the idle timeout. Check `error_reason` in access logs.",
+   "variants": [
+    "503s right after a deployment → the target group has no registered/healthy targets yet.",
+    "Alarm on app-side errors → `HTTPCode_Target_5XX_Count`; LB-side errors → `HTTPCode_ELB_5XX_Count`.",
+    "504s on long reports → raise the idle timeout or make the work async."
+   ]
+  },
+  {
+   "id": "elb-015",
+   "skill": "3.3.4",
+   "source": "3-security-availability-cost-monitoring-limits-and-scenarios.md",
+   "q": "A report endpoint behind an ALB runs queries that take about 90 seconds. Users get HTTP 504 Gateway Timeout every time. Which TWO changes fix this? (Choose 2)",
+   "options": [
+    {
+     "t": "Raise the ALB idle timeout above the query duration",
+     "why": "Right: the default idle timeout is 60 s (configurable 1–4,000 s), so a 90 s silent response is cut off."
+    },
+    {
+     "t": "Lower the deregistration delay",
+     "why": "Wrong: it controls draining during deregistration, not request timeouts."
+    },
+    {
+     "t": "Make the work async: start a job, then return the result through an S3 presigned URL",
+     "why": "Right: the request returns quickly and the long work no longer waits on the connection."
+    },
+    {
+     "t": "Enable cross-zone load balancing",
+     "why": "Wrong: it does not change how long the ALB waits for a response."
+    },
+    {
+     "t": "Switch to least outstanding requests",
+     "why": "Wrong: it changes target choice, not timeouts."
+    }
+   ],
+   "answer": [
+    0,
+    2
+   ],
+   "explain": "504 on long requests: raise the idle timeout or move to an async pattern.",
+   "remember": "ALB idle timeout default 60 s. Long-running requests need a higher idle timeout or an async job + S3 presigned URL pattern.",
+   "variants": [
+    "504s because the target SG blocks the target port → fix the security group.",
+    "Long downloads cut at 60 s → raise the idle timeout.",
+    "Random 502s → backend keep-alive shorter than the ALB idle timeout."
+   ]
+  },
+  {
+   "id": "elb-016",
+   "skill": "4.1.1",
+   "source": "3-security-availability-cost-monitoring-limits-and-scenarios.md",
+   "q": "EC2 targets behind an internet-facing ALB are in private subnets. The security team wants targets to accept traffic only from the load balancer. How should the target security group be set?",
+   "options": [
+    {
+     "t": "Allow inbound from 0.0.0.0/0 on the app port",
+     "why": "Wrong: it opens the targets to any source that can reach them."
+    },
+    {
+     "t": "Allow inbound from the public subnet CIDR blocks",
+     "why": "Wrong: it works, but any resource in those subnets could reach the targets; it is not least privilege."
+    },
+    {
+     "t": "Allow inbound on the app and health check ports only from the ALB's security group",
+     "why": "Right: an SG reference to the LB security group is the standard least-privilege pattern, and health checks also need to be allowed."
+    },
+    {
+     "t": "Rely on the network ACL of the private subnets",
+     "why": "Wrong: NACLs are stateless subnet rules and cannot reference the load balancer."
+    }
+   ],
+   "answer": [
+    2
+   ],
+   "explain": "Target SG: inbound only from the LB security group (app port + health check port).",
+   "remember": "Targets accept traffic only from the LB → reference the LB security group in the target SG; also allow the health check port, or targets show unhealthy.",
+   "variants": [
+    "Targets are unhealthy right after setup → the target SG does not allow the health check port from the LB SG.",
+    "CloudFront fronts the ALB and direct ALB access must be blocked → allow only the CloudFront managed prefix list in the ALB SG.",
+    "NACLs on LB subnets → must allow listener ports and return ephemeral ports."
+   ]
+  },
+  {
+   "id": "elb-017",
+   "skill": "4.3.4",
+   "source": "3-security-availability-cost-monitoring-limits-and-scenarios.md",
+   "q": "Compliance requires data to be encrypted in transit all the way to the targets, not only up to the load balancer. Which TWO designs meet this? (Choose 2)",
+   "options": [
+    {
+     "t": "ALB HTTPS listener forwarding to an HTTP target group",
+     "why": "Wrong: traffic from the ALB to the targets is plaintext."
+    },
+    {
+     "t": "ALB HTTPS listener forwarding to an HTTPS target group (re-encrypt)",
+     "why": "Right: the ALB decrypts and then re-encrypts to targets that have their own certificates."
+    },
+    {
+     "t": "NLB TCP listener on 443 with targets terminating TLS (passthrough)",
+     "why": "Right: the NLB never sees plaintext; targets hold the certificates."
+    },
+    {
+     "t": "ALB HTTP listener with AWS WAF",
+     "why": "Wrong: WAF filters requests but does not encrypt anything."
+    }
+   ],
+   "answer": [
+    1,
+    2
+   ],
+   "explain": "End-to-end encryption: ALB re-encrypt or NLB TCP passthrough.",
+   "remember": "Encrypt to the targets → ALB HTTPS listener + HTTPS target group (re-encrypt), or NLB TCP listener with TLS passthrough so targets terminate TLS.",
+   "variants": [
+    "Clients must present certificates validated centrally → ALB mTLS verify mode with a trust store.",
+    "Old TLS 1.0 clients must be blocked → a TLS 1.2/1.3 security policy on the listener.",
+    "Free auto-renewing certificates → ACM, requested in the same Region as the LB."
+   ]
+  },
+  {
+   "id": "elb-018",
+   "skill": "4.3.4",
+   "source": "3-security-availability-cost-monitoring-limits-and-scenarios.md",
+   "q": "One load balancer must serve HTTPS for 15 customer domains, each with its own certificate, and route each domain to its own target group. Which setup fits?",
+   "options": [
+    {
+     "t": "One ALB per domain",
+     "why": "Wrong: it works but multiplies the hourly cost; one ALB can hold many certificates."
+    },
+    {
+     "t": "An NLB TCP listener on 443 with one certificate",
+     "why": "Wrong: TCP listeners do not hold certificates, and an NLB cannot route by host."
+    },
+    {
+     "t": "A Classic Load Balancer with one certificate per listener",
+     "why": "Wrong: CLB is previous generation and cannot do host-based routing."
+    },
+    {
+     "t": "One ALB HTTPS listener with SNI certificates and host-based rules",
+     "why": "Right: SNI lets one listener hold up to 25 extra certificates and pick one by host name; host rules route each domain."
+    }
+   ],
+   "answer": [
+    3
+   ],
+   "explain": "Many domains on one ALB: SNI certificates + host-based rules.",
+   "remember": "Several TLS domains on one listener → SNI (up to 25 extra certificates per ALB/NLB); route each with host-based rules.",
+   "variants": [
+    "Browsers show a certificate error for one domain → the domain is missing from the SNI list, or the ACM certificate is in another Region.",
+    "Domains need routing to different services on one ALB → host-based listener rules."
+   ]
+  },
+  {
+   "id": "elb-019",
+   "skill": "3.3.8",
+   "source": "3-security-availability-cost-monitoring-limits-and-scenarios.md",
+   "q": "The security team wants to know which client IPs received HTTP 403 responses from an ALB last week, and which paths they requested. What is the best source?",
+   "options": [
+    {
+     "t": "ALB access logs in S3 queried with Amazon Athena",
+     "why": "Right: access logs record client IP, request line and status codes for every request, and Athena queries them in place."
+    },
+    {
+     "t": "CloudTrail event history",
+     "why": "Wrong: CloudTrail records API calls that change the load balancer, not individual requests."
+    },
+    {
+     "t": "The CloudWatch `HTTPCode_ELB_4XX_Count` metric",
+     "why": "Wrong: metrics give counts only, with no client IP or path."
+    },
+    {
+     "t": "VPC Flow Logs on the ALB network interfaces",
+     "why": "Wrong: flow logs show packets accepted or rejected, not HTTP paths or status codes."
+    }
+   ],
+   "answer": [
+    0
+   ],
+   "explain": "Per-request questions (who, what path, which status): access logs in S3 + Athena.",
+   "remember": "Access logs (delivered to S3 every 5 minutes) hold per-request detail; query them with Athena. Metrics give counts, CloudTrail gives config changes.",
+   "variants": [
+    "Who changed a listener rule → CloudTrail.",
+    "Packet-level accept/reject on LB ENIs → VPC Flow Logs.",
+    "An alarm when targets return errors → CloudWatch `HTTPCode_Target_5XX_Count`."
+   ]
+  },
+  {
+   "id": "elb-020",
+   "skill": "4.4.1",
+   "source": "3-security-availability-cost-monitoring-limits-and-scenarios.md",
+   "q": "Routing on a production ALB broke overnight. The team suspects someone changed a listener rule. How do they find who made the change and when?",
+   "options": [
+    {
+     "t": "ALB access logs",
+     "why": "Wrong: access logs show which rule matched each request, not who changed the rule."
+    },
+    {
+     "t": "CloudTrail events such as `CreateRule` or `ModifyListener`",
+     "why": "Right: CloudTrail records API changes to load balancers, listeners, rules, targets and certificates, with the caller identity."
+    },
+    {
+     "t": "CloudWatch `RequestCount` metric",
+     "why": "Wrong: a metric shows traffic volume, not configuration changes or who made them."
+    },
+    {
+     "t": "ALB connection logs",
+     "why": "Wrong: connection logs hold TLS and client certificate details, not API changes."
+    }
+   ],
+   "answer": [
+    1
+   ],
+   "explain": "Who changed the load balancer: CloudTrail. What happened to requests: access logs.",
+   "remember": "CloudTrail audits ELB API calls (create, modify, register, certificate changes), not individual requests; access logs cover requests.",
+   "variants": [
+    "Which rule a request matched → the access logs' matched rule field.",
+    "Protect a load balancer from accidental deletion → enable deletion protection.",
+    "Control who can modify listeners → IAM permissions on `elasticloadbalancing:*` actions."
+   ]
+  }
+ ]
+}
