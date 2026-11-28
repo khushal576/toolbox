@@ -116,21 +116,21 @@ Short notes. Each point is a fact you can be asked about.
 - **Resize** affects availability briefly (elastic) or longer (classic).
 
 ## Scenarios (if → then, because)
-- If a dashboard's 1-second queries wait behind a 20-minute ETL → put ETL in its own queue with LOW priority or use automatic WLM priorities + SQA, because queues isolate workloads.
-- If 100 analysts query at 9 am and queues build → enable concurrency scaling on the BI queue, because extra capacity is added only while needed (free credits cover much of it).
-- If you want strict isolation between ETL and BI with separate bills → data sharing with a consumer cluster/workgroup per team.
-- If a runaway query keeps killing performance → QMR: abort when `query_execution_time` or nested-loop rows exceeds a limit.
-- If a query shows `DS_DIST_BOTH` on two huge tables → set a DISTKEY on the join column for both, because it removes network redistribution.
-- If one slice has 10× the rows → change the distribution key (skew), because work is uneven.
-- If a query is "disk-based" → give it more memory (fewer WLM slots, more nodes) or reduce selected columns.
-- If a query suddenly slowed after a big load → `ANALYZE` and check unsorted %, because stats and sort order are stale.
-- If the same expensive report runs hourly → materialized view (auto refresh), because it reuses precomputed results.
-- If repeated identical query returns in milliseconds → result cache hit; if the underlying data changed the cache is invalid.
-- If a temp-table query isn't going to the scaling cluster → expected; temp tables aren't supported by concurrency scaling.
-- If you have a table with an interleaved sort key and concurrency scaling isn't helping → known limitation.
-- If Serverless costs spike → set a **max RPU** and usage limits, check long-running or runaway queries, and tune queries.
-- If `CommitQueueLength` is high → batch many small writes into fewer transactions.
-- If your WLM has queues with 50 total slots and queries spill to disk → reduce slots or switch to automatic WLM.
+- **If** a dashboard's **1-second** queries wait behind a **20-minute** ETL job, **then** use **workload management (WLM)**: put ETL in its own queue with **LOW** priority, or use **automatic WLM** priorities (verify details) plus **short query acceleration (SQA)**, which runs predicted short queries in a dedicated fast lane (verify). **This works because** WLM queues split cluster memory and concurrency, so short dashboard queries are protected from long ETL instead of waiting for a free slot.
+- **If** **100** analysts query at 9 am and queues build up, **then** turn on **concurrency scaling** for the BI queue (`Concurrency Scaling mode = auto`). **This works because** Redshift adds **temporary extra clusters** only while queries are waiting, and users still see current data. You get **1 free hour** of scaling per **24 hours** the main cluster runs; beyond that it is billed **per second**.
+- **If** you want strict isolation between ETL and BI teams with separate bills, **then** use **data sharing** with its own consumer cluster or workgroup per team. **This works because** each consumer runs on **separate compute** reading the producer's live data, and each consumer pays for its own compute, which makes chargeback easy.
+- **If** a runaway query keeps hurting performance, **then** add a **query monitoring rule (QMR)** to the queue that **aborts** a query when `query_execution_time` or the **nested loop join** row count passes a limit (verify exact metric list). **This works because** QMR checks running queries against limits and takes the action (log, hop, abort or change priority) automatically.
+- **If** the query plan shows **`DS_DIST_BOTH`** on two huge tables, **then** set a **DISTKEY** on the join column for **both** tables. **This works because** `DS_DIST_BOTH` means both tables are redistributed over the network during the join; with matching keys, joined rows already sit on the same slice.
+- **If** one **slice** (parallel worker) holds **10×** the rows of others, **then** change the **distribution key**, or use EVEN. **This works because** this is **data skew**: work is uneven, so the whole query waits for the overloaded slice. Check `skew_rows` in `SVV_TABLE_INFO`.
+- **If** a query is **disk-based** (its intermediate results don't fit in memory and spill to disk), **then** give it more memory with **fewer WLM slots** or **more nodes**, or select fewer columns. **This works because** queue memory is split evenly across slots, so fewer slots means more memory per query.
+- **If** a query suddenly slowed after a big load, **then** run **`ANALYZE`** and check the **unsorted %** (VACUUM if high). **This works because** stale statistics give the planner a bad plan, and many unsorted rows mean zone maps can skip fewer blocks.
+- **If** the same expensive report runs every hour, **then** create a **materialized view (MV)** with **auto refresh**. **This works because** the MV stores the precomputed result, so each run reads it instead of recomputing the joins and aggregates.
+- **If** a repeated identical query returns in milliseconds, **then** it was a **result cache** hit, which uses no compute. If the underlying data changed, the cache is invalidated and the query runs again (verify invalidation rules).
+- **If** a query on a **temporary table** isn't going to the concurrency-scaling cluster, **then** that is **expected**: concurrency scaling does not support temporary tables, so the query stays on the main cluster.
+- **If** a table has an **interleaved sort key** and concurrency scaling isn't helping its queries, **then** that is a **known limitation**: concurrency scaling does not support queries on tables with interleaved sort keys. Consider a compound sort key instead.
+- **If** **Redshift Serverless** costs spike, **then** set a **max RPU** (Redshift Processing Unit) cap and **usage limits**, find long-running or runaway queries, and tune them. **This works because** Serverless bills for compute used, so capping capacity and fixing heavy queries directly limits the bill.
+- **If** the **`CommitQueueLength`** metric is high, **then** batch many small writes into fewer transactions. **This works because** each commit waits in a queue, so many tiny autocommit statements pile up there.
+- **If** manual WLM queues use all **50** total slots and queries spill to disk, **then** **reduce the slots** or switch to **automatic WLM**. **This works because** a queue's memory is split evenly across its slots, so many slots leave little memory per query; automatic WLM sizes memory to each query's needs.
 
 ## Verified from AWS docs on 2026-10-02
 Read: query performance factors page, manual WLM page, concurrency scaling page, CloudWatch metrics page. Not confirmed (verify): automatic WLM details, SQA default state and mechanics, exact QMR metric list, which WLM changes need reboot, Redshift Advisor recommendation list, EXPLAIN label meanings (general knowledge), view names beyond those in the docs (SYS_QUERY_DETAIL etc.), result-cache invalidation rules.

@@ -105,21 +105,21 @@ Short notes. Each point is a fact you can be asked about.
 - **Aurora PostgreSQL**: pgvector, optimized reads (NVMe), cluster cache management, Babelfish (SQL Server compatibility layer, verify), zero-ETL.
 
 ## I. Scenarios (if → then, because)
-- If you need predictable high IOPS for a business-critical OLTP → io2 Block Express (RDS) or Aurora with I/O-Optimized.
-- If storage fills up unexpectedly → enable storage autoscaling with a max threshold (RDS); Aurora grows automatically.
-- If you need to shrink storage → create a smaller new instance and migrate (no in-place shrink).
-- If gp2 volume performance drops after bursts → move to gp3 or larger gp2/provisioned IOPS.
-- If the instance hits connection limits → RDS Proxy, bigger instance class, tune `max_connections`.
-- If traffic is spiky and nobody wants to pre-size → Aurora Serverless v2.
-- If dev databases sit idle overnight → Serverless v2 with auto-pause (0 ACU), or stop the RDS instance (7-day limit).
-- If a big Oracle database needs more than 64 TiB → additional storage volumes (up to 256 TiB total).
-- If you need to upgrade a major version with minimal downtime → Blue/Green Deployment, then switch over.
-- If an old MySQL 5.7 can't be upgraded yet → RDS Extended Support (paid) as a bridge.
-- If you need OS-level access for a legacy Oracle/SQL Server app → RDS Custom.
-- If a parameter change "does nothing" → it's static; reboot to apply (check `pending-reboot`).
-- If I/O costs on Aurora exceed a quarter of the bill → switch to Aurora I/O-Optimized.
-- If a transaction log or WAL fills storage → find long-running transactions or stuck replication slots; add DLV or storage; fix the cause.
-- If a burstable instance slows after hours of load → CPU credits exhausted; move to a non-burstable class.
+- **If** a business-critical OLTP (transactional) database needs **predictable high IOPS** (input/output operations per second), **then** use **io2 Block Express** storage on **Amazon RDS**, or **Amazon Aurora** with the **I/O-Optimized** configuration. **This works because** io2 Block Express is Provisioned IOPS storage with up to **256,000 IOPS** and sub-millisecond latency, while Aurora I/O-Optimized removes per-I/O charges. The catch: the instance class also caps IOPS, so a small class cannot use huge provisioned IOPS.
+- **If** storage fills up unexpectedly, **then** turn on **storage autoscaling** with a **maximum storage threshold** on **Amazon RDS**; **Amazon Aurora** grows its storage automatically. **This works because** RDS adds storage when free space runs low (rule of thumb: under **10%** free, at least **6 hours** after the last change – verify). Autoscaling never shrinks storage.
+- **If** you need to **shrink** storage, **then** create a **new, smaller instance** and move the data into it (dump/restore or **AWS Database Migration Service (DMS)**). **This works because** RDS lets you **increase** storage but never decrease it in place.
+- **If** a **gp2** volume slows down after bursts, **then** move to **gp3**, a **larger gp2** volume, or **Provisioned IOPS** storage. **This works because** gp2 gives **3 IOPS per GiB** and small volumes burst to **3,000 IOPS** only while credits last, while gp3 has a fixed baseline of **3,000 IOPS** and **125 MiB/s** at any size.
+- **If** the instance hits its **connection limit**, **then** add **RDS Proxy**, move to a **bigger instance class**, or tune **`max_connections`**. **This works because** RDS Proxy shares a smaller pool of database connections among many clients, and the default connection limit is calculated from the instance's **memory** (a db.t3.micro MySQL allows only about **60**).
+- **If** traffic is spiky and nobody wants to pre-size the database, **then** use **Aurora Serverless v2**. **This works because** each instance scales between your minimum and maximum **Aurora Capacity Units (ACU)** (1 ACU is about 2 GiB of memory) in steps as small as **0.5 ACU**, while connections keep running, and you pay per second for what you use.
+- **If** dev databases sit **idle overnight**, **then** use **Aurora Serverless v2** with **auto-pause** (minimum **0 ACU**), or **stop** the RDS instance (up to **7 days**, then it starts again – verify). **This works because** a paused or stopped database stops compute billing; storage is still billed.
+- **If** a big **Oracle** database needs more than **64 TiB**, **then** attach **additional storage volumes** (up to 3 more) for up to **256 TiB** in total. **This works because** RDS for Oracle and SQL Server can spread data over extra volumes, which you can add or remove to grow or shrink capacity.
+- **If** you must upgrade a **major version** with minimal downtime, **then** use an **RDS Blue/Green Deployment** and **switch over**. **This works because** it copies production (blue) into a synchronized staging copy (green); you upgrade and test green, and the switchover usually takes **under one minute**. The old blue environment stays for rollback.
+- **If** an old **MySQL 5.7** database cannot be upgraded yet, **then** use **RDS Extended Support** as a paid bridge. **This works because** it keeps you on a major version after standard support ends, for up to **3 years**, at an extra **per-vCPU-hour** fee.
+- **If** a legacy **Oracle** or **SQL Server** app needs **operating system (OS) level access**, **then** use **RDS Custom**. **This works because** RDS Custom gives OS and database admin access for custom patches or agents, which normal RDS never gives. You take on more of the responsibility.
+- **If** a **parameter** change "does nothing", **then** **reboot** the instance. **This works because** the parameter is **static**: it only applies after a reboot, and the status shows **`pending-reboot`** until then.
+- **If** **I/O** charges are more than **a quarter (25%)** of your Aurora bill, **then** switch to **Aurora I/O-Optimized**. **This works because** I/O-Optimized has **no per-I/O charge**, in exchange for a higher instance and storage price. You can switch to I/O-Optimized once every **30 days** and back to Standard at any time.
+- **If** a **transaction log** or PostgreSQL **WAL** (write-ahead log) fills the storage, **then** find **long-running transactions** or **stuck replication slots**, fix that cause, and add storage or a **Dedicated Log Volume (DLV)**. **This works because** those transactions and slots stop old logs from being removed. A DLV moves the logs to their own volume, but only with Provisioned IOPS storage.
+- **If** a **burstable** instance (db.t3/db.t4g) slows down after hours of load, **then** move to a **non-burstable** class. **This works because** burstable classes run on **CPU credits**; when the credits run out, the CPU is throttled (watch `CPUCreditBalance`).
 
 ## Verified from AWS docs on 2026-10-02
 RDS storage page, Aurora storage and Serverless v2 pages, quotas page, Blue/Green overview, Extended Support overview, Multi-AZ cluster instance classes were read. Not confirmed (verify): storage autoscaling trigger numbers, modification cool-down, stop duration, Reserved Instance coverage of Serverless v2, Oracle replica modes licensing, SQL Server HA details, Babelfish.

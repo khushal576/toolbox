@@ -114,25 +114,25 @@ Short notes. Each point is a fact you can be asked about.
 - Hybrid: store metadata in DynamoDB and big blobs in S3; use S3 events to update DynamoDB.
 
 ## J. Scenarios (if → then, because)
-- If a mobile user must only read their own items → Cognito identity pool + IAM policy with `dynamodb:LeadingKeys` = user ID.
-- If an app role must not run Scans → policy denying `dynamodb:Scan` (and PartiQL scans).
-- If another AWS account must read a table → resource-based policy on the table (or cross-account role).
-- If a table's data must be encrypted with keys you control and can revoke → customer managed KMS key.
-- If you need to see every read of sensitive items → enable CloudTrail data events for the table (cost).
-- If an EC2 app in a private subnet must reach DynamoDB with no internet and no extra cost → gateway VPC endpoint.
-- If on-premises servers must call DynamoDB privately → interface VPC endpoint over Direct Connect/VPN.
-- If only your VPC may use the table → endpoint policy + IAM `aws:SourceVpce` condition.
-- If analytics runs slow your production table → stop scanning it; use Export to S3 (or zero-ETL).
-- If you want near-real-time data in Redshift with no pipeline → zero-ETL integration (needs PITR).
-- If search on DynamoDB attributes is required (text, fuzzy) → OpenSearch zero-ETL.
-- If you want to react to item changes → Streams + Lambda (or EventBridge Pipes).
-- If several consumers need the change feed and replay → Kinesis Data Streams for DynamoDB.
-- If PII must not be visible to analysts → keep PII out of the exported datasets, mask in ETL, restrict attributes via IAM, and use Lake Formation on the lake copy.
-- If you must stop deletion of production tables → deletion protection plus an SCP denying `DeleteTable`.
-- If you must detect tables without PITR → AWS Config rule.
-- If a Lambda writes to DynamoDB and retries cause duplicates → conditional writes with an idempotency key (and TTL).
-- If you want a REST API on a table with no code → API Gateway direct integration.
-- If you store attribute-level secrets that even admins shouldn't read → client-side encryption (Database Encryption SDK).
+- **If** a mobile user must read only their own items, **then** use an **Amazon Cognito identity pool** for temporary credentials plus an **Identity and Access Management (IAM)** policy with the condition key `dynamodb:LeadingKeys` = the user's ID. **This works because** LeadingKeys allows access only to items whose partition key equals that value, giving per-user row-level access.
+- **If** an app role must not run Scans, **then** attach a policy that **denies** `dynamodb:Scan`, and also deny PartiQL full table scans with the PartiQL condition key (verify names). **This works because** an explicit Deny always wins, forcing the app to use key-based GetItem and Query.
+- **If** another AWS account must read a table, **then** attach a **resource-based policy** to the table, or let that account assume a role in the table's account. **This works because** a resource-based policy grants principals in another account access without role assumption. If the table uses a customer managed key, they also need KMS permissions.
+- **If** table data must be encrypted with keys you control and can revoke, **then** use a **customer managed key** in **AWS Key Management Service (KMS)**. **This works because** you control its key policy, rotation and disabling, and its use is logged in CloudTrail. The catch: if the key is disabled or deleted, the table becomes inaccessible.
+- **If** you need a record of every read of sensitive items, **then** enable **AWS CloudTrail data events** for the table. **This works because** CloudTrail logs only control-plane calls by default; data events add item calls like GetItem and Query. The catch: they are paid and high volume.
+- **If** an Amazon EC2 app in a private subnet must reach DynamoDB with no internet access and no extra cost, **then** use a **gateway VPC endpoint**. **This works because** it is a free route-table target that keeps traffic on the AWS network. The catch: it serves only resources inside the VPC (no on-premises, no cross-Region access).
+- **If** on-premises servers must call DynamoDB privately, **then** use an **interface VPC endpoint** (AWS PrivateLink) reached over **AWS Direct Connect** or VPN. **This works because** it places private IPs in your subnets that on-premises networks can reach, which a gateway endpoint cannot do. The catch: it is billed hourly and per GB.
+- **If** only your VPC may use the table, **then** add a **VPC endpoint policy** (allow only the needed tables and actions) and an IAM condition on `aws:SourceVpce`. **This works because** the endpoint policy limits what passes through the endpoint, and the IAM condition refuses requests that do not come through it.
+- **If** analytics jobs slow your production table, **then** stop scanning it and use **Export to S3** (or **zero-ETL**). **This works because** scans use the table's read capacity, while an export (which needs PITR) uses no read capacity and has no performance impact.
+- **If** you want near-real-time data in **Amazon Redshift** with no pipeline to build, **then** use the **zero-ETL integration**. **This works because** it continuously replicates the table into Redshift. The catch: it needs **Point-in-Time Recovery (PITR)** turned on.
+- **If** you need text or fuzzy search on DynamoDB attributes, **then** use the **Amazon OpenSearch Service zero-ETL integration** (needs PITR). **This works because** DynamoDB only finds items by key and cannot search text, and zero-ETL feeds OpenSearch automatically.
+- **If** you want to react to item changes, **then** use **DynamoDB Streams** with **AWS Lambda**, or **Amazon EventBridge Pipes** to filter, enrich and send changes to targets like SQS or SNS. **This works because** Streams records each item change, in order per item, for 24 hours, without slowing the table.
+- **If** several consumers need the change feed and the ability to replay it, **then** use **Kinesis Data Streams for DynamoDB**. **This works because** Kinesis keeps data longer (up to 365 days) and supports many consumers with enhanced fan-out, plus Firehose and Flink pipelines.
+- **If** analysts must not see personal data (PII), **then** keep PII out of the exported datasets, mask it during ETL, restrict attributes with the IAM condition `dynamodb:Attributes`, and use **AWS Lake Formation** on the data lake copy. **This works because** DynamoDB has **no built-in masking**, so protection must be added at each copy and access point.
+- **If** production tables must never be deleted, **then** turn on **deletion protection** and add a **service control policy (SCP)** that denies `DeleteTable`. **This works because** deletion protection blocks deletes until it is turned off, and the SCP caps what every role in the account may do.
+- **If** you must detect tables without PITR, **then** use an **AWS Config** rule. **This works because** Config has rules that check settings such as PITR, encryption and deletion protection.
+- **If** a Lambda function writes to DynamoDB and retries create duplicates, **then** use **conditional writes** with an **idempotency key** (`attribute_not_exists`), plus **TTL** to clear old keys. **This works because** a repeated write with the same key fails its condition instead of creating a duplicate, and TTL removes keys after the idempotency window.
+- **If** you want a REST API on a table with no code, **then** use **Amazon API Gateway** direct service integration. **This works because** API Gateway can call DynamoDB directly for simple create, read, update and delete, with no Lambda function.
+- **If** you store attribute-level secrets that even admins should not read, **then** use **client-side encryption** with the **AWS Database Encryption SDK**. **This works because** the data is encrypted before it reaches AWS, so even AWS never sees the plaintext. The catch: encrypted attributes cannot be queried or sorted in the usual way.
 
 ## Verified from AWS docs on 2026-10-02
 Security overview, resource-based policies, PrivateLink/gateway endpoint comparison, DAX encryption mention, zero-ETL and Kinesis integration pages were read. Not confirmed (verify): exact condition-key names for PartiQL, key-type switching rules, global table per-replica key behavior, DMS source/target detail, Redshift COPY READRATIO, Glue export-read option.

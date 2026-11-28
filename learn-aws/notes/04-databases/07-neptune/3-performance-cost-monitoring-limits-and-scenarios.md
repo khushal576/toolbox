@@ -136,21 +136,21 @@ Short notes. Each point is a fact you can be asked about.
 - "Keep I/O cost predictable" → I/O-Optimized storage.
 
 ## Scenarios (if → then, because)
-- If latency rises and `BufferCacheHitRatio` is 97% → use a larger memory instance, because the graph working set doesn't fit in cache.
-- If a spike hits for a few minutes daily → Serverless with a generous max NCU, because capacity scales in seconds.
-- If readers run at 80% CPU for hours → add readers (auto scaling on CPU) or scale up.
-- If one team runs heavy analytics queries that hurt OLTP reads → custom endpoint pointing to dedicated replicas.
-- If the app talks to only one replica from a long WebSocket → close and reconnect so DNS returns another replica.
-- If a failover happened and the app still errors → new connection + no DNS caching + retry logic.
-- If the bill is dominated by I/O charges → switch to I/O-Optimized (once per 30 days limit).
-- If dev/test sits idle → stop the cluster or use Serverless / t4g.medium.
-- If storage keeps growing near 128 TiB → alarm on `VolumeBytesLeftTotal`; archive old subgraphs to S3 or split graphs.
-- If throttling (429) appears → queue is full; add capacity, smooth requests, batch writes.
-- If bulk load of a huge file is slow → temporary larger writer, split into many files, load from same-Region S3.
-- If you must export changes to S3/OpenSearch continuously → Neptune Streams consumer.
-- If a Region fails and you have a Global Database → detach-and-promote a secondary cluster (unplanned) or use managed failover for planned moves.
-- If an upgrade fails with rollback → check `UndoLogListSize`; scale the writer to purge faster, then retry.
-- If an auditor asks "who can query?" → IAM policies (query-action condition keys) plus CloudTrail and audit logs.
+- **If** latency rises and `BufferCacheHitRatio` is **97%**, **then** move to a larger instance class with more memory. **This works because** graph traversals rely on the **buffer cache** in memory; below **99.9%** the working set does not fit, so queries go to storage more often. Keep writer and readers on the same class.
+- **If** a spike hits for a few minutes daily, **then** use **Neptune Serverless** with a generous maximum **Neptune Capacity Unit (NCU)** setting (1 NCU = 2 GiB memory). **This works because** compute scales automatically in **half-NCU** steps between your min and max, and you pay **NCU-hours per second**. Too low a max causes **timeouts**.
+- **If** readers run at **80% CPU** for hours, **then** add readers with **read-replica auto scaling** (target tracking on average reader CPU, up to **15** replicas) or scale up the instances. **This works because** reads spread over more replicas, and auto scaling adds a reader after a **3-minute** breach.
+- **If** one team's heavy analytics queries hurt the app's OLTP reads, **then** create a **custom endpoint** (up to **5** per cluster) that points only to dedicated, possibly bigger, replicas. **This works because** a custom endpoint is a group of instances you choose, so analytics traffic stays off the replicas that serve the app.
+- **If** the app talks to only one replica over a long **WebSocket** connection, **then** close it and reconnect so DNS returns another replica. **This works because** the **reader endpoint** balances only **connections** by changing DNS answers; every request on an open connection stays on the same replica.
+- **If** a failover happened and the app still errors, **then** open a **new connection**, **disable DNS caching** (JVM, proxies) and add **retry logic**. **This works because** old WebSocket connections and cached DNS still point to the old primary; the cluster endpoint moves to the new primary only through a DNS update.
+- **If** the bill is dominated by **I/O charges**, **then** switch storage to **I/O-Optimized** (engine **1.3.0.0+**). **This works because** it has **no per-I/O charge**, in exchange for higher instance and storage prices. The catch: you can switch storage type only **once per 30 days**.
+- **If** dev/test sits idle, **then** stop the cluster (usually max 7 days, then it auto-starts: verify), or use **Neptune Serverless** or a small burstable **t4g.medium** instance. **This works because** provisioned instances are billed **per hour**, so idle compute is wasted money.
+- **If** storage keeps growing near **128 TiB**, **then** set an alarm on **`VolumeBytesLeftTotal`**, the best metric for nearing the cap, and archive old subgraphs to **Amazon Simple Storage Service (S3)** or split graphs. **This works because** the cluster volume cannot grow past 128 TiB (64 TiB in China and GovCloud), and when space left reaches zero you get out-of-space errors. Storage is billed on the **high-water mark**.
+- **If** throttling (HTTP **429**, verify) appears, **then** add capacity, smooth the request rate and batch writes. **This works because** requests beyond capacity wait in a queue, and once the queue is full Neptune throttles. Watch **`MainRequestQueuePendingRequests`** to see it coming.
+- **If** bulk load of a huge file is slow, **then** use a **temporary larger writer**, split the data into many files, and load from an S3 bucket in the **same Region**. **This works because** a bigger instance loads faster and several files let the load run in parallel. Resize back afterwards, and avoid repeated restarts.
+- **If** you must export changes to S3 or OpenSearch continuously, **then** run a consumer that reads **Neptune Streams**. **This works because** Streams logs every graph change in strict order with no duplicates; there is no native trigger, so the consumer polls the stream's HTTP API.
+- **If** a Region fails and you have **Neptune Global Database**, **then** **detach and promote** a secondary cluster to a standalone primary (unplanned); for planned moves such as maintenance, use **managed planned failover**. **This works because** secondaries already hold a storage-level copy, and managed failover moves the primary with **no data loss**.
+- **If** an upgrade fails with a rollback, **then** check **`UndoLogListSize`**, scale up the writer so it purges faster, then retry. **This works because** only the writer purges the undo log, and before upgrading to **1.2.0.0+** this value must be under about **40k** (4xlarge and larger) or **10k** (smaller), or the upgrade rolls back.
+- **If** an auditor asks "who can query?", **then** show the **Identity and Access Management (IAM)** policies, including **query-action condition keys**, plus **AWS CloudTrail** for API calls and Neptune **audit logs** (verify). **This works because** Neptune has no users or passwords: access is controlled by IAM with SigV4-signed requests.
 
 ## Verified from AWS docs on 2026-10-02
 Read: best practices index, CloudWatch metrics page, storage types page, auto scaling page, Serverless capacity page, limits page, Global Database page, pricing summary. Not confirmed (verify): default query timeout, Performance Insights support, stop/start maximum duration, reserved instances availability, Database Savings Plans terms for Neptune, audit log availability, exact queue and throttling error codes, paused Neptune Analytics price.

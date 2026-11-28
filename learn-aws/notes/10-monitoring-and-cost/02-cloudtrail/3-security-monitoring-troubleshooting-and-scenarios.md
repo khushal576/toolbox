@@ -78,15 +78,15 @@ Short notes. Each point is a fact you can be asked about.
 - **3.3.2 Logging and monitoring for auditing and traceability**: alerts and monitoring.
 
 ## H. Scenarios: "If X → Y, because Z"
-- If a bucket policy was changed and you need the actor → **CloudTrail `PutBucketPolicy` event**, because management events record the caller.
-- If you need alarms for root logins → **EventBridge/CloudWatch metric filter on `userIdentity.type = Root`**, because CloudTrail logs root activity.
-- If logs must be tamper-evident → **log file validation + Object Lock + separate account**, because digests detect changes and Object Lock prevents deletion.
-- If you want to know every access to PII objects → **S3 data events limited to the PII prefixes**, because object-level reads aren't logged by default.
-- If an auditor asks who decrypted data → **KMS `Decrypt` events (management event, includes encryption context)**, because KMS key use is logged.
-- If a trail was deleted → **SCP to prevent it and alarm on `DeleteTrail`**, because deletion stops audit evidence.
-- If events from SaaS apps must join AWS audit data → **Lake channels + queries**, because Lake ingests external audit events.
-- If costs rise from S3 data events → **narrow selectors or exclude read events on low-risk buckets**, because charge is per event.
-- If you need a cheap multi-year archive → **S3 trail + lifecycle to Glacier + Athena when needed**, because storage is cheap.
+- **If** a bucket policy was changed and you need to know who did it, **then** find the **`PutBucketPolicy`** event in **AWS CloudTrail**. **This works because** management events record the caller (`userIdentity`) along with the time and source IP.
+- **If** you need alarms for root logins, **then** use an **Amazon EventBridge** rule, or an **Amazon CloudWatch Logs metric filter** with an alarm, matching **`userIdentity.type = Root`** (for example `ConsoleLogin` by root). **This works because** CloudTrail logs root activity, including sign-in events, as management events. Root usage is also a standard CIS benchmark alarm.
+- **If** logs must be tamper-evident, **then** combine **log file validation**, **S3 Object Lock** (compliance mode) and a **separate log archive account**. **This works because** the hourly signed **digest files** detect changed or deleted logs, Object Lock **prevents deletion**, and a separate account keeps the logs away from workload admins.
+- **If** you want to know every access to objects holding personal data (PII), **then** turn on **S3 data events** limited to the PII prefixes. **This works because** object-level reads are **not logged by default**. Data events reveal sensitive object names, so restrict who can read these logs.
+- **If** an auditor asks who decrypted data, **then** query **AWS Key Management Service (KMS) `Decrypt`** events (logged as management events), for example `eventSource = 'kms.amazonaws.com' AND eventName = 'Decrypt'`. **This works because** CloudTrail logs KMS key use, and the event includes the **encryption context** (`requestParameters.encryptionContext`) showing what was decrypted.
+- **If** a trail was deleted, **then** add a **Service Control Policy (SCP)** that denies `DeleteTrail` (and `StopLogging`, `UpdateTrail`) plus an **alarm** on `DeleteTrail`. **This works because** deleting a trail stops new audit evidence. Members also cannot change an **organization trail**.
+- **If** events from Software as a Service (SaaS) apps must be joined with AWS audit data, **then** use **CloudTrail Lake channels** and run SQL queries across both. **This works because** Lake can ingest external audit events into the same event data store as CloudTrail events.
+- **If** costs rise from S3 data events, **then** narrow the **event selectors** to sensitive buckets, or exclude **read** events on low-risk buckets. **This works because** data events are charged **per event** (about **$0.10 per 100,000**), so fewer logged events means a smaller bill.
+- **If** you need a cheap multi-year archive, **then** use an **S3 trail** with **S3 Lifecycle** rules that move old logs to **Glacier**, and query with **Amazon Athena** only when needed. **This works because** S3 storage is cheap and Athena charges only for the data each query scans.
 
 Verified from AWS docs on 2026-11-09 (CloudTrail concepts, quotas, pricing).
 Unconfirmed (verify): managed policy names; Config rule names; Lake CloudWatch metrics; exact CIS filter list; query examples syntax for resources arrays.

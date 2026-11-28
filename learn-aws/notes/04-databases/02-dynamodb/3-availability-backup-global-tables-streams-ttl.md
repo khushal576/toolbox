@@ -134,25 +134,25 @@ Short notes. Each point is a fact you can be asked about.
 - Test restores regularly and measure RTO.
 
 ## K. Scenarios (if → then, because)
-- If you must undo a bad deploy that corrupted data 20 minutes ago → PITR restore to a new table at a time before the bug, then switch the app or copy items back.
-- If an auditor wants a snapshot before a schema migration → on-demand backup.
-- If backups must be centrally governed across accounts with retention rules → AWS Backup.
-- If you need analytics on a table without touching production capacity → Export to S3 (PITR on) then Athena; or zero-ETL to Redshift.
-- If you must load 500 GB into a new table cheaply → Import from S3.
-- If users worldwide need local low-latency writes → global tables (MREC).
-- If you can't tolerate any data loss on Region failure → MRSC global tables.
-- If two Regions update the same item at once → last writer wins; design so one Region owns each item, or merge in the app.
-- If an action must run when an item changes → Streams + Lambda.
-- If you need to replay changes from 3 days ago → Kinesis Data Streams for DynamoDB (24-hour Streams is not enough).
-- If several teams need the change feed independently → Kinesis Data Streams with enhanced fan-out.
-- If a Lambda on a stream is stuck on one record → add retry limits, bisect batch, failure destination; fix the bad record.
-- If sessions should disappear after 30 minutes → TTL attribute set to now + 1800 seconds, and filter by `ttl > now` in reads.
-- If an item must be deleted at exactly midnight for compliance → explicit delete job, not TTL.
-- If you want to archive expired items → Streams + Lambda reads the service-delete record and writes to S3.
-- If a TTL value is stored as a string or in milliseconds → TTL ignores it (needs Number in seconds).
-- If production tables get deleted by mistake → deletion protection + restricted IAM + PITR.
-- If a restored table loses its auto scaling/alarms/TTL setup → re-create those; restore does not bring all settings (verify list).
-- If compliance needs cross-account backup copies → AWS Backup with cross-account copy and vault lock.
+- **If** a bad deploy corrupted data 20 minutes ago, **then** use **Point-in-Time Recovery (PITR)** to restore to a **new table** at a second before the bug, then switch the app to it or copy the good items back. **This works because** PITR keeps continuous backups and restores to any second in its window (**1–35 days**); the latest restorable time is about 5 minutes ago. A restore never overwrites the source table.
+- **If** an auditor wants a snapshot before a schema migration, **then** take an **on-demand backup**. **This works because** it is a full copy taken when you ask, kept until you delete it, with no effect on table performance.
+- **If** backups must be governed centrally across accounts with retention rules, **then** use **AWS Backup**. **This works because** it gives central policies and schedules, cross-account and cross-Region copies, vault lock and lifecycle to cold storage. Restores through AWS Backup are limited to 50 at once totaling **25 TB**.
+- **If** you need analytics on a table without using production capacity, **then** turn on PITR, **Export to S3** and query with **Amazon Athena**; or use **zero-ETL** to **Amazon Redshift**. **This works because** the export uses **no read capacity** and does not affect table performance; incremental exports (15 minutes to 24 hours) keep the copy fresh.
+- **If** you must load 500 GB into a new table cheaply, **then** use **Import from S3** (CSV, DynamoDB JSON or Ion files; verify formats). **This works because** import uses no write capacity and is the cheapest, fastest bulk load. The catch: it always creates a **new table** and cannot load into an existing one.
+- **If** users worldwide need low-latency local writes, **then** use **global tables** in the default **Multi-Region Eventual Consistency (MREC)** mode. **This works because** every replica accepts reads and writes, and changes replicate asynchronously in about a second. The catch: conflicts are settled by **last writer wins**, and reads in another Region may be briefly stale.
+- **If** you cannot lose any data when a Region fails, **then** use global tables in **Multi-Region Strong Consistency (MRSC)** mode. **This works because** MRSC gives **zero RPO** (Recovery Point Objective, the data you can lose) and strongly consistent reads across Regions. The catch: higher write latency, same-account only, and the mode is chosen at creation and cannot change.
+- **If** two Regions update the same item at nearly the same time, **then** expect **last writer wins**: the later timestamp is kept and the other update is lost, so design one home Region to own each item's writes, or merge in the app. **This works because** MREC replication is asynchronous, so nothing locks the item across Regions.
+- **If** an action must run whenever an item changes, **then** use **DynamoDB Streams** with an **AWS Lambda** trigger. **This works because** Streams is a change log of item creates, updates and deletes, in order per item, and Lambda reads it through an event source mapping with no impact on table performance.
+- **If** you need to replay changes from 3 days ago, **then** use **Kinesis Data Streams for DynamoDB**. **This works because** DynamoDB Streams keeps records only **24 hours**, while Kinesis retention can be up to **365 days**. Kinesis records can be out of order or duplicated, so order and dedupe them with `ApproximateCreationDateTime`.
+- **If** several teams need the change feed independently, **then** use **Kinesis Data Streams for DynamoDB** with **enhanced fan-out**. **This works because** Kinesis supports many consumers, while DynamoDB Streams allows at most **two** readers per shard before throttling.
+- **If** a Lambda function on a stream is stuck on one record, **then** set **retry limits**, **bisect batch on error** and an **on-failure destination**, and fix the bad record. **This works because** a failing batch otherwise blocks that shard until it succeeds or the records expire after 24 hours, so one poison record can stall processing.
+- **If** sessions should disappear after 30 minutes, **then** enable **Time to Live (TTL)**, set the TTL attribute to now + **1800 seconds** (epoch seconds), and filter with `ttl > now` in reads. **This works because** TTL deletes expired items for free in the background, but **typically within a few days**, so expired items can still be read until then.
+- **If** an item must be deleted at exactly midnight for compliance, **then** run an explicit **DeleteItem** job, not TTL. **This works because** TTL deletion is neither exact nor instant; it can take days.
+- **If** you want to archive expired items, **then** use **DynamoDB Streams** plus **Lambda**: the function reads the TTL delete record (marked as a service delete; verify field) and writes the item to **Amazon S3**. **This works because** TTL deletions appear in the stream, so you keep a cheap history while the table stays small.
+- **If** a TTL value is stored as a String or in milliseconds, **then** store it as a **Number** in **Unix epoch seconds**. **This works because** TTL ignores items whose TTL attribute is not a Number, and it reads the value as seconds, so a milliseconds value will not expire at the intended time.
+- **If** production tables could be deleted by mistake, **then** turn on **deletion protection**, restrict `DeleteTable` with **Identity and Access Management (IAM)**, and enable **PITR**. **This works because** deletion protection blocks `DeleteTable` until it is turned off, IAM limits who can try, and PITR lets you recover the data.
+- **If** a restored table is missing its auto scaling, alarms or TTL setup, **then** re-create those settings yourself. **This works because** a restore does not bring back every setting: auto scaling, IAM policies, CloudWatch alarms, stream settings, TTL and deletion protection may be lost (verify list), and the restored table has a new name.
+- **If** compliance needs backup copies in another account, **then** use **AWS Backup** with **cross-account copy** and **vault lock**. **This works because** a copy in a separate account protects against account compromise, and AWS Backup manages those copies and their retention centrally.
 
 ## Verified from AWS docs on 2026-10-02
 PITR page, export to S3 overview and limits, global tables overview and quotas, Streams page, Kinesis Data Streams for DynamoDB page, TTL page, service quotas were read. Not confirmed (verify): SLA percentages, exact list of what restore does not bring back, import formats, MRSC replica count details, TTL stream field names, TTL top-level attribute rule.
